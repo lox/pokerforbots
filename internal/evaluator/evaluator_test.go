@@ -7,13 +7,7 @@ import (
 )
 
 func TestEvaluateRoyalFlush(t *testing.T) {
-	cards := []deck.Card{
-		{Suit: deck.Spades, Rank: deck.Ace},
-		{Suit: deck.Spades, Rank: deck.King},
-		{Suit: deck.Spades, Rank: deck.Queen},
-		{Suit: deck.Spades, Rank: deck.Jack},
-		{Suit: deck.Spades, Rank: deck.Ten},
-	}
+	cards := MustParseCards("AsKsQsJsTs")
 
 	hand := EvaluateHand(cards)
 	if hand.Rank != RoyalFlush {
@@ -22,13 +16,7 @@ func TestEvaluateRoyalFlush(t *testing.T) {
 }
 
 func TestEvaluateStraightFlush(t *testing.T) {
-	cards := []deck.Card{
-		{Suit: deck.Hearts, Rank: deck.Nine},
-		{Suit: deck.Hearts, Rank: deck.Eight},
-		{Suit: deck.Hearts, Rank: deck.Seven},
-		{Suit: deck.Hearts, Rank: deck.Six},
-		{Suit: deck.Hearts, Rank: deck.Five},
-	}
+	cards := MustParseCards("9h8h7h6h5h")
 
 	hand := EvaluateHand(cards)
 	if hand.Rank != StraightFlush {
@@ -40,13 +28,7 @@ func TestEvaluateStraightFlush(t *testing.T) {
 }
 
 func TestEvaluateFourOfAKind(t *testing.T) {
-	cards := []deck.Card{
-		{Suit: deck.Spades, Rank: deck.Ace},
-		{Suit: deck.Hearts, Rank: deck.Ace},
-		{Suit: deck.Diamonds, Rank: deck.Ace},
-		{Suit: deck.Clubs, Rank: deck.Ace},
-		{Suit: deck.Spades, Rank: deck.King},
-	}
+	cards := MustParseCards("AsAhAdAcKs")
 
 	hand := EvaluateHand(cards)
 	if hand.Rank != FourOfAKind {
@@ -58,13 +40,7 @@ func TestEvaluateFourOfAKind(t *testing.T) {
 }
 
 func TestEvaluateFullHouse(t *testing.T) {
-	cards := []deck.Card{
-		{Suit: deck.Spades, Rank: deck.King},
-		{Suit: deck.Hearts, Rank: deck.King},
-		{Suit: deck.Diamonds, Rank: deck.King},
-		{Suit: deck.Clubs, Rank: deck.Queen},
-		{Suit: deck.Spades, Rank: deck.Queen},
-	}
+	cards := MustParseCards("KsKhKdQcQs")
 
 	hand := EvaluateHand(cards)
 	if hand.Rank != FullHouse {
@@ -76,13 +52,7 @@ func TestEvaluateFullHouse(t *testing.T) {
 }
 
 func TestEvaluateFlush(t *testing.T) {
-	cards := []deck.Card{
-		{Suit: deck.Clubs, Rank: deck.Ace},
-		{Suit: deck.Clubs, Rank: deck.Jack},
-		{Suit: deck.Clubs, Rank: deck.Nine},
-		{Suit: deck.Clubs, Rank: deck.Seven},
-		{Suit: deck.Clubs, Rank: deck.Five},
-	}
+	cards := MustParseCards("AcJc9c7c5c")
 
 	hand := EvaluateHand(cards)
 	if hand.Rank != Flush {
@@ -94,13 +64,7 @@ func TestEvaluateFlush(t *testing.T) {
 }
 
 func TestEvaluateStraight(t *testing.T) {
-	cards := []deck.Card{
-		{Suit: deck.Spades, Rank: deck.Ten},
-		{Suit: deck.Hearts, Rank: deck.Nine},
-		{Suit: deck.Diamonds, Rank: deck.Eight},
-		{Suit: deck.Clubs, Rank: deck.Seven},
-		{Suit: deck.Spades, Rank: deck.Six},
-	}
+	cards := MustParseCards("Ts9h8d7c6s")
 
 	hand := EvaluateHand(cards)
 	if hand.Rank != Straight {
@@ -113,13 +77,7 @@ func TestEvaluateStraight(t *testing.T) {
 
 func TestEvaluateWheelStraight(t *testing.T) {
 	// A-2-3-4-5 straight (wheel)
-	cards := []deck.Card{
-		{Suit: deck.Spades, Rank: deck.Ace},
-		{Suit: deck.Hearts, Rank: deck.Five},
-		{Suit: deck.Diamonds, Rank: deck.Four},
-		{Suit: deck.Clubs, Rank: deck.Three},
-		{Suit: deck.Spades, Rank: deck.Two},
-	}
+	cards := MustParseCards("As5h4d3c2s")
 
 	hand := EvaluateHand(cards)
 	if hand.Rank != Straight {
@@ -131,13 +89,7 @@ func TestEvaluateWheelStraight(t *testing.T) {
 }
 
 func TestEvaluateThreeOfAKind(t *testing.T) {
-	cards := []deck.Card{
-		{Suit: deck.Spades, Rank: deck.Jack},
-		{Suit: deck.Hearts, Rank: deck.Jack},
-		{Suit: deck.Diamonds, Rank: deck.Jack},
-		{Suit: deck.Clubs, Rank: deck.Nine},
-		{Suit: deck.Spades, Rank: deck.Seven},
-	}
+	cards := MustParseCards("JsJhJd9c7s")
 
 	hand := EvaluateHand(cards)
 	if hand.Rank != ThreeOfAKind {
@@ -149,13 +101,7 @@ func TestEvaluateThreeOfAKind(t *testing.T) {
 }
 
 func TestEvaluateTwoPair(t *testing.T) {
-	cards := []deck.Card{
-		{Suit: deck.Spades, Rank: deck.Ace},
-		{Suit: deck.Hearts, Rank: deck.Ace},
-		{Suit: deck.Diamonds, Rank: deck.Eight},
-		{Suit: deck.Clubs, Rank: deck.Eight},
-		{Suit: deck.Spades, Rank: deck.Five},
-	}
+	cards := MustParseCards("AsAh8d8c5s")
 
 	hand := EvaluateHand(cards)
 	if hand.Rank != TwoPair {
@@ -167,13 +113,7 @@ func TestEvaluateTwoPair(t *testing.T) {
 }
 
 func TestEvaluateOnePair(t *testing.T) {
-	cards := []deck.Card{
-		{Suit: deck.Spades, Rank: deck.King},
-		{Suit: deck.Hearts, Rank: deck.King},
-		{Suit: deck.Diamonds, Rank: deck.Jack},
-		{Suit: deck.Clubs, Rank: deck.Nine},
-		{Suit: deck.Spades, Rank: deck.Seven},
-	}
+	cards := MustParseCards("KsKhJd9c7s")
 
 	hand := EvaluateHand(cards)
 	if hand.Rank != OnePair {
@@ -185,13 +125,7 @@ func TestEvaluateOnePair(t *testing.T) {
 }
 
 func TestEvaluateHighCard(t *testing.T) {
-	cards := []deck.Card{
-		{Suit: deck.Spades, Rank: deck.Ace},
-		{Suit: deck.Hearts, Rank: deck.Jack},
-		{Suit: deck.Diamonds, Rank: deck.Nine},
-		{Suit: deck.Clubs, Rank: deck.Seven},
-		{Suit: deck.Spades, Rank: deck.Five},
-	}
+	cards := MustParseCards("AsJh9d7c5s")
 
 	hand := EvaluateHand(cards)
 	if hand.Rank != HighCard {
@@ -204,42 +138,16 @@ func TestEvaluateHighCard(t *testing.T) {
 
 func TestHandComparison(t *testing.T) {
 	// Royal flush beats straight flush
-	royalFlush := EvaluateHand([]deck.Card{
-		{Suit: deck.Spades, Rank: deck.Ace},
-		{Suit: deck.Spades, Rank: deck.King},
-		{Suit: deck.Spades, Rank: deck.Queen},
-		{Suit: deck.Spades, Rank: deck.Jack},
-		{Suit: deck.Spades, Rank: deck.Ten},
-	})
-
-	straightFlush := EvaluateHand([]deck.Card{
-		{Suit: deck.Hearts, Rank: deck.Nine},
-		{Suit: deck.Hearts, Rank: deck.Eight},
-		{Suit: deck.Hearts, Rank: deck.Seven},
-		{Suit: deck.Hearts, Rank: deck.Six},
-		{Suit: deck.Hearts, Rank: deck.Five},
-	})
+	royalFlush := EvaluateHand(MustParseCards("AsKsQsJsTs"))
+	straightFlush := EvaluateHand(MustParseCards("9h8h7h6h5h"))
 
 	if !royalFlush.IsStrongerThan(straightFlush) {
 		t.Error("Royal flush should beat straight flush")
 	}
 
 	// Ace-high beats King-high
-	aceHigh := EvaluateHand([]deck.Card{
-		{Suit: deck.Spades, Rank: deck.Ace},
-		{Suit: deck.Hearts, Rank: deck.Jack},
-		{Suit: deck.Diamonds, Rank: deck.Nine},
-		{Suit: deck.Clubs, Rank: deck.Seven},
-		{Suit: deck.Spades, Rank: deck.Five},
-	})
-
-	kingHigh := EvaluateHand([]deck.Card{
-		{Suit: deck.Spades, Rank: deck.King},
-		{Suit: deck.Hearts, Rank: deck.Jack},
-		{Suit: deck.Diamonds, Rank: deck.Nine},
-		{Suit: deck.Clubs, Rank: deck.Seven},
-		{Suit: deck.Hearts, Rank: deck.Five},
-	})
+	aceHigh := EvaluateHand(MustParseCards("AsJh9d7c5s"))
+	kingHigh := EvaluateHand(MustParseCards("KsJh9d7c5h"))
 
 	if !aceHigh.IsStrongerThan(kingHigh) {
 		t.Error("Ace high should beat King high")
@@ -249,15 +157,7 @@ func TestHandComparison(t *testing.T) {
 func TestFindBestHandFrom7Cards(t *testing.T) {
 	// 7 cards: A♠ A♥ K♠ K♥ Q♠ J♠ T♠
 	// Best hand should be royal flush (A♠ K♠ Q♠ J♠ T♠)
-	cards := []deck.Card{
-		{Suit: deck.Spades, Rank: deck.Ace},
-		{Suit: deck.Hearts, Rank: deck.Ace},
-		{Suit: deck.Spades, Rank: deck.King},
-		{Suit: deck.Hearts, Rank: deck.King},
-		{Suit: deck.Spades, Rank: deck.Queen},
-		{Suit: deck.Spades, Rank: deck.Jack},
-		{Suit: deck.Spades, Rank: deck.Ten},
-	}
+	cards := MustParseCards("AsAhKsKhQsJsTs")
 
 	hand := FindBestHand(cards)
 	if hand.Rank != RoyalFlush {
