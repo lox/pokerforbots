@@ -8,7 +8,6 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.5
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/log v0.4.2
-	github.com/chzyer/readline v1.5.1
 )
 
 require (

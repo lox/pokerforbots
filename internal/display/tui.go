@@ -263,9 +263,21 @@ func (m *TUIModel) renderActionPane() string {
 		actions := m.renderAvailableActions(currentPlayer)
 		content.WriteString(actions)
 		content.WriteString("\n")
+	} else if currentPlayer == nil {
+		// Between hands - show continuation prompt
+		content.WriteString(m.styles.HandInfo.Render("Hand Complete"))
+		content.WriteString("\n")
 	}
 
-	// Show input field
+	// Update input placeholder based on game state and show input field
+	if currentPlayer == nil {
+		// Between hands
+		m.actionInput.Placeholder = "Enter to continue, 'quit' to exit"
+	} else {
+		// During hand
+		m.actionInput.Placeholder = "Enter your action (call, raise 50, fold, check, etc.)"
+	}
+	
 	content.WriteString(m.actionInput.View())
 	content.WriteString("\n")
 	
@@ -274,8 +286,17 @@ func (m *TUIModel) renderActionPane() string {
 		content.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render(
 			"Log focused: ↑↓ scroll, PgUp/PgDn half page, Home/End, Tab to input"))
 	} else {
-		content.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render(
-			"Tab to scroll log • Enter to submit • Ctrl+C to quit"))
+		// Different help text based on game state
+		currentPlayer := m.table.GetCurrentPlayer()
+		if currentPlayer == nil {
+			// Between hands - minimal help
+			content.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render(
+				"Tab to scroll log • Ctrl+C to quit"))
+		} else {
+			// During hand
+			content.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render(
+				"Tab to scroll log • Enter to submit • Ctrl+C to quit"))
+		}
 	}
 
 	// Style based on focus
@@ -385,6 +406,12 @@ func (m *TUIModel) AddLogEntry(entry string) {
 	if m.logViewport.Height > 0 && m.logViewport.Width > 0 {
 		m.logViewport.GotoBottom()
 	}
+}
+
+// ClearLog clears the game log
+func (m *TUIModel) ClearLog() {
+	m.gameLog = []string{}
+	m.logViewport.SetContent("")
 }
 
 // processAction processes a user action

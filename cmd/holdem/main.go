@@ -54,7 +54,7 @@ func startInteractiveGame(seats int) error {
 		return fmt.Errorf("failed to create main debug log: %w", err)
 	}
 	defer debugFile.Close()
-	
+
 	logger := log.NewWithOptions(debugFile, log.Options{
 		ReportTimestamp: true,
 		TimeFormat:      "15:04:05",
@@ -75,7 +75,7 @@ func startInteractiveGame(seats int) error {
 	}
 
 	// Create human interface and AI engine
-	hi, err := display.NewTUIInterface(table, logger)
+	hi, err := display.NewTUIInterface(table, logger, debugFile)
 	if err != nil {
 		return fmt.Errorf("failed to create interface: %w", err)
 	}
@@ -83,7 +83,7 @@ func startInteractiveGame(seats int) error {
 	if err != nil {
 		return fmt.Errorf("failed to start TUI: %w", err)
 	}
-	
+
 	// Set up signal handling for graceful shutdown
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -92,7 +92,7 @@ func startInteractiveGame(seats int) error {
 		hi.Close()
 		os.Exit(0)
 	}()
-	
+
 	defer hi.Close()
 
 	ai := game.NewAIEngine()
@@ -106,7 +106,7 @@ func startInteractiveGame(seats int) error {
 	// Main game loop
 	for {
 		logger.Info("Starting new hand")
-		
+
 		// Hand loop
 		for {
 			currentPlayer := table.GetCurrentPlayer()
@@ -177,11 +177,10 @@ func startInteractiveGame(seats int) error {
 			}
 		}
 
-		// Hand is complete, ask if player wants to continue
+		// Hand is complete, clear current player and ask if player wants to continue
 		logger.Info("Hand complete, asking if player wants to continue")
-		hi.AddLogEntry("\n=== Hand Complete ===")
-		hi.AddLogEntry("Press Enter to start new hand, or type 'quit' to exit...")
-		
+		table.ActionOn = -1 // Clear current player so TUI shows continuation prompt
+
 		shouldContinue, err := hi.PromptForAction()
 		if err != nil {
 			logger.Error("Error prompting for continuation", "error", err)
@@ -190,12 +189,13 @@ func startInteractiveGame(seats int) error {
 		if shouldContinue {
 			logger.Info("Player chose to continue to next hand")
 		} else {
-			logger.Info("Player chose to quit after hand completion") 
+			logger.Info("Player chose to quit after hand completion")
 			break
 		}
 
 		// Start new hand
 		logger.Info("Starting new hand")
+		hi.ClearLog() // Clear the display for fresh start
 		table.StartNewHand()
 		hi.InitializeHand(len(table.ActivePlayers))
 	}
