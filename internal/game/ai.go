@@ -747,6 +747,9 @@ func (ai *AIEngine) getDecisionReasoning(action Action, strength HandStrength, p
 		return "Hand not strong enough to continue"
 	case Check:
 		if table.CurrentBet == 0 {
+			if table.CurrentRound == River {
+				return "No bet to call, checking to showdown"
+			}
 			return "No bet to call, checking to see next card"
 		}
 		return "Checking as safe option"

@@ -2,8 +2,11 @@ package display
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -16,6 +19,7 @@ type TUIInterface struct {
 	program              *tea.Program
 	table                *game.Table
 	uiLogger, mainLogger *log.Logger
+	handActions          []string // Store action log for current hand
 }
 
 // NewTUIInterface creates a new TUI-based interface
@@ -92,6 +96,11 @@ func (ti *TUIInterface) processAction(action string, args []string) (bool, error
 	if action == "" {
 		ti.mainLogger.Info("Empty action (Enter pressed), returning true to continue")
 		return true, nil
+	}
+
+	// Handle save command (can be done anytime, doesn't require current player check)
+	if action == "save" || action == "s" {
+		return ti.handleSave(args)
 	}
 
 	currentPlayer := ti.table.GetCurrentPlayer()
@@ -290,6 +299,7 @@ func (ti *TUIInterface) handleHelp(_ []string) (bool, error) {
 	ti.model.AddLogEntry("  pot        - Show pot information")
 	ti.model.AddLogEntry("  players    - Show all player information")
 	ti.model.AddLogEntry("Utility:")
+	ti.model.AddLogEntry("  save       - Save hand history to file")
 	ti.model.AddLogEntry("  help       - Show this help")
 	ti.model.AddLogEntry("  quit       - Quit the game")
 	return true, nil
@@ -307,6 +317,9 @@ func (ti *TUIInterface) AddLogEntry(entry string) {
 	// Also log to file for complete history (strip ANSI codes)
 	cleanEntry := stripANSI(entry)
 	ti.uiLogger.Info(cleanEntry)
+	
+	// Store action for hand history (strip ANSI codes)
+	ti.handActions = append(ti.handActions, cleanEntry)
 }
 
 // ClearLog clears the game log display
@@ -314,8 +327,16 @@ func (ti *TUIInterface) ClearLog() {
 	ti.model.ClearLog()
 }
 
+// ResetHandActions clears the hand action log for a new hand
+func (ti *TUIInterface) ResetHandActions() {
+	ti.handActions = nil
+}
+
 // InitializeHand initializes the display for a new hand
 func (ti *TUIInterface) InitializeHand(seats int) {
+	// Reset hand actions for new hand
+	ti.ResetHandActions()
+	
 	// Log game state context to file
 	ti.mainLogger.Info("New hand started",
 		"handNumber", ti.table.HandNumber,
@@ -564,4 +585,115 @@ func getInHandPlayers(table *game.Table) []*game.Player {
 		}
 	}
 	return inHand
+}
+
+// handleSave saves the current hand history to a file
+func (ti *TUIInterface) handleSave(args []string) (bool, error) {
+	handNumber := ti.table.HandNumber
+	
+	// Create handhistory directory if it doesn't exist
+	if err := os.MkdirAll("handhistory", 0755); err != nil {
+		ti.model.AddLogEntry(fmt.Sprintf("Error creating handhistory directory: %v", err))
+		return true, nil
+	}
+	
+	// Generate filename
+	filename := filepath.Join("handhistory", fmt.Sprintf("hand_%d.txt", handNumber))
+	
+	// Generate hand history content
+	content := ti.generateHandHistory()
+	
+	// Write to file
+	if err := os.WriteFile(filename, []byte(content), 0644); err != nil {
+		ti.model.AddLogEntry(fmt.Sprintf("Error saving hand history: %v", err))
+		return true, nil
+	}
+	
+	ti.model.AddLogEntry(fmt.Sprintf("Hand history saved to %s", filename))
+	return true, nil
+}
+
+// generateHandHistory creates a detailed hand history string
+func (ti *TUIInterface) generateHandHistory() string {
+	t := ti.table
+	var history string
+	
+	// Header
+	history += fmt.Sprintf("=== HAND #%d ===\n", t.HandNumber)
+	history += fmt.Sprintf("Date: %s\n", time.Now().Format("2006-01-02 15:04:05"))
+	history += fmt.Sprintf("Blinds: %d/%d\n", t.SmallBlind, t.BigBlind)
+	history += fmt.Sprintf("Players: %d\n", len(t.Players))
+	history += fmt.Sprintf("Dealer Position: %d\n\n", t.DealerPosition)
+	
+	// Starting positions and chip counts
+	history += "STARTING POSITIONS:\n"
+	for i, player := range t.Players {
+		history += fmt.Sprintf("Seat %d: %s (%d chips)\n", i+1, player.Name, player.Chips)
+	}
+	history += "\n"
+	
+	// Hole cards (only show if showdown reached or player folded)
+	history += "HOLE CARDS:\n"
+	for _, player := range t.Players {
+		if len(player.HoleCards) > 0 {
+			history += fmt.Sprintf("%s: %s %s\n", player.Name, 
+				player.HoleCards[0].String(), player.HoleCards[1].String())
+		}
+	}
+	history += "\n"
+	
+	// Hand action sequence  
+	if len(ti.handActions) > 0 {
+		history += "HAND ACTION:\n"
+		for _, action := range ti.handActions {
+			// Filter out non-game actions and UI messages
+			if action != "" && !isUIMessage(action) {
+				history += fmt.Sprintf("%s\n", action)
+			}
+		}
+		history += "\n"
+	}
+	
+	// Current pot and player positions
+	history += fmt.Sprintf("CURRENT POT: %d\n", t.Pot)
+	
+	// Show current player positions
+	history += "\nCURRENT POSITIONS:\n"
+	for _, player := range t.Players {
+		status := "active"
+		if player.IsFolded {
+			status = "folded"
+		} else if player.IsAllIn {
+			status = "all-in"
+		}
+		history += fmt.Sprintf("%s: %d chips (%s)\n", player.Name, player.Chips, status)
+	}
+	
+	history += "\n=== END HAND ===\n"
+	
+	return history
+}
+
+// isUIMessage checks if a log entry is a UI message that shouldn't be in hand history
+func isUIMessage(entry string) bool {
+	// Filter out UI-specific messages that aren't part of game action
+	uiKeywords := []string{
+		"Error:",
+		"Unknown command:",
+		"Not your turn",
+		"Hand history saved",
+		"Available commands:",
+		"Game Actions:",
+		"Information:",
+		"Utility:",
+		"Hand #", // Remove duplicate hand header
+		"*** HOLE CARDS ***", // Remove section headers (already have hole cards above)
+	}
+	
+	for _, keyword := range uiKeywords {
+		if len(entry) >= len(keyword) && entry[:len(keyword)] == keyword {
+			return true
+		}
+	}
+	return false
 }
