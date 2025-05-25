@@ -1,0 +1,92 @@
+version: '3'
+
+vars:
+  DIST_DIR: dist
+  BINARY_NAME: holdem
+  GO_MODULE: github.com/lox/holdem-cli
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./...
+
+  test-verbose:
+    desc: Run tests with verbose output
+    cmds:
+      - go test -v ./...
+
+  test-coverage:
+    desc: Run tests with coverage report
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "Coverage report generated at coverage.html"
+
+  lint:
+    desc: Run linter (golangci-lint)
+    cmds:
+      - golangci-lint run
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - go fmt ./...
+      - goimports -w .
+
+  build:
+    desc: Build the application
+    deps: [clean]
+    cmds:
+      - mkdir -p {{.DIST_DIR}}
+      - go build -o {{.DIST_DIR}}/{{.BINARY_NAME}} ./cmd/holdem
+
+  build-all:
+    desc: Build for multiple platforms
+    deps: [clean]
+    cmds:
+      - mkdir -p {{.DIST_DIR}}
+      - GOOS=linux GOARCH=amd64 go build -o {{.DIST_DIR}}/{{.BINARY_NAME}}-linux-amd64 ./cmd/holdem
+      - GOOS=darwin GOARCH=amd64 go build -o {{.DIST_DIR}}/{{.BINARY_NAME}}-darwin-amd64 ./cmd/holdem
+      - GOOS=darwin GOARCH=arm64 go build -o {{.DIST_DIR}}/{{.BINARY_NAME}}-darwin-arm64 ./cmd/holdem
+      - GOOS=windows GOARCH=amd64 go build -o {{.DIST_DIR}}/{{.BINARY_NAME}}-windows-amd64.exe ./cmd/holdem
+
+  run:
+    desc: Run the application (6-player table, default)
+    cmds:
+      - go run ./cmd/holdem
+
+  run-9:
+    desc: Run the application (9-player table)
+    cmds:
+      - go run ./cmd/holdem --players 9
+
+  run-test:
+    desc: Run the application in test mode
+    cmds:
+      - go run ./cmd/holdem --test-mode
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf {{.DIST_DIR}}
+      - rm -f coverage.out coverage.html
+
+  deps:
+    desc: Download dependencies
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  check:
+    desc: Run all checks (test, lint, build)
+    deps: [test, lint, build]
+
+  dev:
+    desc: Development setup - format, test, lint
+    deps: [fmt, test, lint]
