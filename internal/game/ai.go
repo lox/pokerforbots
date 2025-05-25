@@ -34,6 +34,16 @@ const (
 	VeryStrong
 )
 
+// BoardTexture represents how coordinated the board is
+type BoardTexture int
+
+const (
+	DryBoard BoardTexture = iota
+	SemiWetBoard
+	WetBoard
+	VeryWetBoard
+)
+
 // String returns the string representation of hand strength
 func (hs HandStrength) String() string {
 	switch hs {
@@ -185,37 +195,268 @@ func (ai *AIEngine) evaluatePostFlopStrength(player *Player, communityCards []de
 	// Get best hand
 	bestHand := evaluator.FindBestHand(allCards)
 
-	// Evaluate based on hand rank
+	// Evaluate draws
+	drawStrength := ai.evaluateDraws(player.HoleCards, communityCards)
+
+	// Base hand strength evaluation
+	var baseStrength HandStrength
 	switch bestHand.Rank {
 	case evaluator.RoyalFlush, evaluator.StraightFlush:
-		return VeryStrong
+		baseStrength = VeryStrong
 	case evaluator.FourOfAKind, evaluator.FullHouse:
-		return VeryStrong
+		baseStrength = VeryStrong
 	case evaluator.Flush, evaluator.Straight:
-		return Strong
+		baseStrength = Strong
 	case evaluator.ThreeOfAKind:
-		return Strong
+		baseStrength = Strong
 	case evaluator.TwoPair:
-		return Medium
+		baseStrength = Medium
 	case evaluator.OnePair:
 		// Evaluate pair strength
 		if len(bestHand.Kickers) > 0 {
 			pairRank := bestHand.Kickers[0]
 			if pairRank >= deck.Jack {
-				return Medium
+				baseStrength = Medium
+			} else {
+				baseStrength = Weak
 			}
-			return Weak
+		} else {
+			baseStrength = Weak
 		}
-		return Weak
 	case evaluator.HighCard:
 		// High card hands are generally weak
 		if len(bestHand.Kickers) > 0 && bestHand.Kickers[0] == deck.Ace {
-			return Weak
+			baseStrength = Weak
+		} else {
+			baseStrength = VeryWeak
 		}
-		return VeryWeak
+	default:
+		baseStrength = Medium
 	}
 
-	return Medium
+	// Upgrade based on draw strength
+	if drawStrength >= 2 {
+		switch baseStrength {
+		case VeryWeak:
+			if drawStrength >= 3 {
+				return Weak // Strong draws upgrade very weak hands
+			}
+		case Weak:
+			if drawStrength >= 3 {
+				return Medium // Strong draws upgrade weak hands
+			}
+		}
+	}
+
+	return baseStrength
+}
+
+// evaluateDraws evaluates drawing potential and returns draw strength (0-4)
+func (ai *AIEngine) evaluateDraws(holeCards []deck.Card, communityCards []deck.Card) int {
+	if len(holeCards) != 2 || len(communityCards) < 3 {
+		return 0
+	}
+
+	card1, card2 := holeCards[0], holeCards[1]
+	drawStrength := 0
+
+	// Check for flush draws
+	if card1.Suit == card2.Suit {
+		suitCount := 2 // Start with hole cards
+		for _, comm := range communityCards {
+			if comm.Suit == card1.Suit {
+				suitCount++
+			}
+		}
+		if suitCount == 4 {
+			drawStrength += 2 // Flush draw (9 outs)
+		}
+	}
+
+	// Check for straight draws
+	allCards := make([]deck.Card, 0, len(holeCards)+len(communityCards))
+	allCards = append(allCards, holeCards...)
+	allCards = append(allCards, communityCards...)
+
+	// Get unique ranks and sort them
+	ranks := make(map[deck.Rank]bool)
+	for _, card := range allCards {
+		ranks[card.Rank] = true
+	}
+
+	// Convert to sorted slice
+	var sortedRanks []deck.Rank
+	for rank := deck.Two; rank <= deck.Ace; rank++ {
+		if ranks[rank] {
+			sortedRanks = append(sortedRanks, rank)
+		}
+	}
+
+	// Check for straight draws
+	straightDraws := ai.countStraightDraws(sortedRanks)
+	if straightDraws > 0 {
+		// Open-ended straight draw (8 outs) or gutshot (4 outs)
+		if straightDraws >= 8 {
+			drawStrength += 2 // Open-ended
+		} else if straightDraws >= 4 {
+			drawStrength += 1 // Gutshot
+		}
+	}
+
+	// Check for overcards
+	if len(communityCards) >= 3 {
+		overCards := 0
+		boardHigh := deck.Two
+		for _, comm := range communityCards {
+			if comm.Rank > boardHigh {
+				boardHigh = comm.Rank
+			}
+		}
+		
+		for _, hole := range holeCards {
+			if hole.Rank > boardHigh {
+				overCards++
+			}
+		}
+		
+		if overCards >= 2 {
+			// Only count if both are decent overcards (Jack or higher)
+			highOverCards := 0
+			for _, hole := range holeCards {
+				if hole.Rank > boardHigh && hole.Rank >= deck.Jack {
+					highOverCards++
+				}
+			}
+			if highOverCards >= 2 {
+				drawStrength += 1 // Two high overcards (6 outs)
+			}
+		}
+	}
+
+	return drawStrength
+}
+
+// countStraightDraws estimates straight draw outs
+func (ai *AIEngine) countStraightDraws(sortedRanks []deck.Rank) int {
+	if len(sortedRanks) < 3 {
+		return 0
+	}
+
+	maxOuts := 0
+
+	// Check each possible 5-card straight
+	for i := 0; i <= len(sortedRanks)-3; i++ {
+		// Look for sequences that could make straights
+		consecutive := 1
+		gaps := 0
+		
+		for j := i + 1; j < len(sortedRanks) && j < i+5; j++ {
+			diff := int(sortedRanks[j]) - int(sortedRanks[j-1])
+			if diff == 1 {
+				consecutive++
+			} else if diff == 2 {
+				gaps++
+				consecutive++
+			} else if diff > 2 {
+				break
+			}
+		}
+
+		// Estimate outs based on pattern
+		if consecutive >= 4 && gaps <= 1 {
+			if gaps == 0 {
+				maxOuts = 8 // Open-ended straight draw
+			} else {
+				maxOuts = max(maxOuts, 4) // Gutshot
+			}
+		}
+	}
+
+	return maxOuts
+}
+
+// analyzeBoardTexture analyzes how coordinated the board is
+func (ai *AIEngine) analyzeBoardTexture(communityCards []deck.Card) BoardTexture {
+	if len(communityCards) < 3 {
+		return DryBoard
+	}
+
+	wetness := 0
+
+	// Check for flush possibilities
+	suitCounts := make(map[deck.Suit]int)
+	for _, card := range communityCards {
+		suitCounts[card.Suit]++
+	}
+	
+	maxSuitCount := 0
+	for _, count := range suitCounts {
+		if count > maxSuitCount {
+			maxSuitCount = count
+		}
+	}
+	
+	if maxSuitCount >= 3 {
+		wetness += 2 // Flush draw possible
+	} else if maxSuitCount == 2 {
+		wetness += 1 // Two-suited
+	}
+
+	// Check for straight possibilities
+	ranks := make([]deck.Rank, len(communityCards))
+	for i, card := range communityCards {
+		ranks[i] = card.Rank
+	}
+	
+	// Sort ranks
+	for i := 0; i < len(ranks); i++ {
+		for j := i + 1; j < len(ranks); j++ {
+			if ranks[i] > ranks[j] {
+				ranks[i], ranks[j] = ranks[j], ranks[i]
+			}
+		}
+	}
+
+	// Check connectivity
+	connectedCards := 1
+	for i := 1; i < len(ranks); i++ {
+		if int(ranks[i])-int(ranks[i-1]) <= 2 {
+			connectedCards++
+		}
+	}
+	
+	if connectedCards >= 3 {
+		wetness += 2 // Straight draws possible
+	}
+
+	// Check for pairs
+	rankCounts := make(map[deck.Rank]int)
+	for _, card := range communityCards {
+		rankCounts[card.Rank]++
+	}
+	
+	pairs := 0
+	for _, count := range rankCounts {
+		if count >= 2 {
+			pairs++
+		}
+	}
+	
+	if pairs >= 1 {
+		wetness += 1 // Paired board
+	}
+
+	// Classify based on wetness
+	switch {
+	case wetness >= 5:
+		return VeryWetBoard
+	case wetness >= 3:
+		return WetBoard
+	case wetness >= 1:
+		return SemiWetBoard
+	default:
+		return DryBoard
+	}
 }
 
 // getPositionFactor returns a factor based on position (lower = tighter play)
@@ -256,6 +497,9 @@ func (ai *AIEngine) calculatePotOdds(player *Player, table *Table) float64 {
 
 // makeDecisionBasedOnFactors makes the final decision
 func (ai *AIEngine) makeDecisionBasedOnFactors(player *Player, table *Table, strength HandStrength, positionFactor, potOdds float64) Action {
+	// Check for continuation betting opportunity
+	shouldCBet := ai.shouldContinuationBet(player, table, strength, positionFactor)
+
 	// Base probabilities for each action based on hand strength
 	var foldProb, callProb, raiseProb float64
 
@@ -290,6 +534,26 @@ func (ai *AIEngine) makeDecisionBasedOnFactors(player *Player, table *Table, str
 		foldProb = foldProb / positionFactor
 		callProb = callProb * positionFactor
 		raiseProb = raiseProb * positionFactor
+	}
+
+	// Enhanced position-based adjustments for draws and aggression
+	if table.CurrentRound > PreFlop && positionFactor > 1.0 {
+		// More aggressive with draws in position
+		drawStrength := ai.evaluateDraws(player.HoleCards, table.CommunityCards)
+		if drawStrength >= 2 && strength == VeryWeak {
+			// Semi-bluff more in position with strong draws
+			raiseProb += 0.2
+			callProb += 0.1
+			foldProb -= 0.3
+		}
+	}
+
+	// Continuation betting logic
+	if shouldCBet && table.CurrentBet == 0 {
+		// Increase betting frequency when we should c-bet
+		raiseProb += 0.3
+		callProb -= 0.15
+		foldProb -= 0.15
 	}
 
 	// Adjust for pot odds
@@ -347,6 +611,40 @@ func (ai *AIEngine) makeDecisionBasedOnFactors(player *Player, table *Table, str
 	} else {
 		return Raise
 	}
+}
+
+// shouldContinuationBet determines if player should continuation bet
+func (ai *AIEngine) shouldContinuationBet(player *Player, table *Table, strength HandStrength, positionFactor float64) bool {
+	// Only apply on post-flop streets
+	if table.CurrentRound == PreFlop {
+		return false
+	}
+
+	// Only if there's no bet to call (we can bet)
+	if table.CurrentBet > 0 {
+		return false
+	}
+
+	// Simple heuristic: more likely to c-bet in position with any playable hand
+	// This should be enhanced with proper pre-flop aggressor tracking
+	if positionFactor > 1.0 && strength >= VeryWeak {
+		// Analyze board texture
+		boardTexture := ai.analyzeBoardTexture(table.CommunityCards)
+		
+		// More likely to c-bet on dry boards
+		switch boardTexture {
+		case DryBoard:
+			return ai.rng.Float64() < 0.7 // High c-bet frequency on dry boards
+		case SemiWetBoard:
+			return ai.rng.Float64() < 0.5 // Medium frequency
+		case WetBoard:
+			return ai.rng.Float64() < 0.3 // Lower frequency on wet boards
+		case VeryWetBoard:
+			return ai.rng.Float64() < 0.2 // Very low frequency
+		}
+	}
+
+	return false
 }
 
 // GetRaiseAmount determines how much to raise

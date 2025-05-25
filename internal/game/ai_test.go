@@ -188,3 +188,318 @@ func TestAIExecuteAction(t *testing.T) {
 		}
 	}
 }
+
+func TestAIDrawEvaluation(t *testing.T) {
+	logger := log.NewWithOptions(io.Discard, log.Options{})
+	ai := NewAIEngine(logger)
+
+	// Test flush draw (K♥Q♥ on J♠T♠4♥)
+	holeCards := []deck.Card{
+		{Suit: deck.Hearts, Rank: deck.King},
+		{Suit: deck.Hearts, Rank: deck.Queen},
+	}
+	communityCards := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Jack},
+		{Suit: deck.Spades, Rank: deck.Ten},
+		{Suit: deck.Hearts, Rank: deck.Four},
+	}
+
+	drawStrength := ai.evaluateDraws(holeCards, communityCards)
+	if drawStrength < 1 {
+		t.Errorf("K♥Q♥ on J♠T♠4♥ should have draw strength >= 1 (gutshot + overcards), got %d", drawStrength)
+	}
+
+	// Test flush draw (A♠K♠ on Q♠J♠2♥)
+	flushDrawHole := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Ace},
+		{Suit: deck.Spades, Rank: deck.King},
+	}
+	flushDrawBoard := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Queen},
+		{Suit: deck.Spades, Rank: deck.Jack},
+		{Suit: deck.Hearts, Rank: deck.Two},
+	}
+
+	drawStrength = ai.evaluateDraws(flushDrawHole, flushDrawBoard)
+	if drawStrength < 3 {
+		t.Errorf("A♠K♠ on Q♠J♠2♥ should have high draw strength (flush + straight + overcards), got %d", drawStrength)
+	}
+
+	// Test open-ended straight draw (9♥8♥ on 7♠6♣2♦)
+	straightDrawHole := []deck.Card{
+		{Suit: deck.Hearts, Rank: deck.Nine},
+		{Suit: deck.Hearts, Rank: deck.Eight},
+	}
+	straightDrawBoard := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Seven},
+		{Suit: deck.Clubs, Rank: deck.Six},
+		{Suit: deck.Diamonds, Rank: deck.Two},
+	}
+
+	drawStrength = ai.evaluateDraws(straightDrawHole, straightDrawBoard)
+	if drawStrength < 2 {
+		t.Errorf("9♥8♥ on 7♠6♣2♦ should have good draw strength (open-ended straight), got %d", drawStrength)
+	}
+
+	// Test no draws (2♥3♣ on A♠K♦Q♠)
+	noDrawHole := []deck.Card{
+		{Suit: deck.Hearts, Rank: deck.Two},
+		{Suit: deck.Clubs, Rank: deck.Three},
+	}
+	noDrawBoard := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Ace},
+		{Suit: deck.Diamonds, Rank: deck.King},
+		{Suit: deck.Spades, Rank: deck.Queen},
+	}
+
+	drawStrength = ai.evaluateDraws(noDrawHole, noDrawBoard)
+	if drawStrength > 0 {
+		t.Errorf("2♥3♣ on A♠K♦Q♠ should have no draws, got %d", drawStrength)
+	}
+}
+
+func TestAIBoardTextureAnalysis(t *testing.T) {
+	logger := log.NewWithOptions(io.Discard, log.Options{})
+	ai := NewAIEngine(logger)
+
+	// Test dry board (A♠7♥2♣)
+	dryBoard := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Ace},
+		{Suit: deck.Hearts, Rank: deck.Seven},
+		{Suit: deck.Clubs, Rank: deck.Two},
+	}
+	texture := ai.analyzeBoardTexture(dryBoard)
+	if texture != DryBoard {
+		t.Errorf("A♠7♥2♣ should be dry board, got %v", texture)
+	}
+
+	// Test wet board (J♠T♠9♥)
+	wetBoard := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Jack},
+		{Suit: deck.Spades, Rank: deck.Ten},
+		{Suit: deck.Hearts, Rank: deck.Nine},
+	}
+	texture = ai.analyzeBoardTexture(wetBoard)
+	if texture == DryBoard {
+		t.Errorf("J♠T♠9♥ should not be dry board, got %v", texture)
+	}
+
+	// Test very wet board (Q♠J♠T♠)
+	veryWetBoard := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Queen},
+		{Suit: deck.Spades, Rank: deck.Jack},
+		{Suit: deck.Spades, Rank: deck.Ten},
+	}
+	texture = ai.analyzeBoardTexture(veryWetBoard)
+	if texture < WetBoard {
+		t.Errorf("Q♠J♠T♠ should be wet or very wet board, got %v", texture)
+	}
+
+	// Test paired board (K♠K♥7♣)
+	pairedBoard := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.King},
+		{Suit: deck.Hearts, Rank: deck.King},
+		{Suit: deck.Clubs, Rank: deck.Seven},
+	}
+	texture = ai.analyzeBoardTexture(pairedBoard)
+	if texture == DryBoard {
+		t.Errorf("K♠K♥7♣ should not be dry board due to pair, got %v", texture)
+	}
+}
+
+func TestAIPostFlopStrengthWithDraws(t *testing.T) {
+	logger := log.NewWithOptions(io.Discard, log.Options{})
+	ai := NewAIEngine(logger)
+
+	// Test K♥Q♥ on J♠T♠4♥ (the problematic hand from the log)
+	player := NewPlayer(1, "Test", AI, 100)
+	player.HoleCards = []deck.Card{
+		{Suit: deck.Hearts, Rank: deck.King},
+		{Suit: deck.Hearts, Rank: deck.Queen},
+	}
+	
+	communityCards := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Jack},
+		{Suit: deck.Spades, Rank: deck.Ten},
+		{Suit: deck.Hearts, Rank: deck.Four},
+	}
+
+	strength := ai.evaluatePostFlopStrength(player, communityCards)
+	if strength == VeryWeak {
+		t.Errorf("K♥Q♥ on J♠T♠4♥ should not be VeryWeak (has gutshot + overcards), got %s", strength.String())
+	}
+
+	// Test A♠K♠ with flush draw + straight draw
+	player.HoleCards = []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Ace},
+		{Suit: deck.Spades, Rank: deck.King},
+	}
+	
+	flushDrawBoard := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Queen},
+		{Suit: deck.Spades, Rank: deck.Jack},
+		{Suit: deck.Hearts, Rank: deck.Two},
+	}
+
+	strength = ai.evaluatePostFlopStrength(player, flushDrawBoard)
+	if strength < Medium {
+		t.Errorf("A♠K♠ on Q♠J♠2♥ should be at least Medium (monster draw), got %s", strength.String())
+	}
+
+	// Test weak hand with no draws - adjust expectation since ace high might upgrade to Weak
+	player.HoleCards = []deck.Card{
+		{Suit: deck.Hearts, Rank: deck.Two},
+		{Suit: deck.Clubs, Rank: deck.Three},
+	}
+	
+	dryBoard := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Ace},
+		{Suit: deck.Diamonds, Rank: deck.King},
+		{Suit: deck.Hearts, Rank: deck.Queen},
+	}
+
+	strength = ai.evaluatePostFlopStrength(player, dryBoard)
+	if strength > Weak {
+		t.Errorf("2♥3♣ on A♠K♦Q♥ should not be stronger than Weak, got %s", strength.String())
+	}
+}
+
+func TestAIContinuationBetting(t *testing.T) {
+	logger := log.NewWithOptions(io.Discard, log.Options{})
+	ai := NewAIEngine(logger)
+	
+	table := NewTable(6, 1, 2)
+	table.CurrentRound = Flop
+	table.CurrentBet = 0 // No bet to call
+
+	player := NewPlayer(1, "Test", AI, 100)
+	player.Position = Button // In position
+
+	// Test on dry board - should c-bet more frequently
+	dryBoard := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Ace},
+		{Suit: deck.Hearts, Rank: deck.Seven},
+		{Suit: deck.Clubs, Rank: deck.Two},
+	}
+	table.CommunityCards = dryBoard
+
+	cBetCount := 0
+	totalTests := 100
+	for i := 0; i < totalTests; i++ {
+		if ai.shouldContinuationBet(player, table, Weak, 1.2) {
+			cBetCount++
+		}
+	}
+
+	// Should c-bet frequently on dry boards in position
+	cBetFreq := float64(cBetCount) / float64(totalTests)
+	if cBetFreq < 0.5 {
+		t.Errorf("Should c-bet more frequently on dry board in position, got %.2f", cBetFreq)
+	}
+
+	// Test on wet board - should c-bet less frequently
+	wetBoard := []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Jack},
+		{Suit: deck.Spades, Rank: deck.Ten},
+		{Suit: deck.Hearts, Rank: deck.Nine},
+	}
+	table.CommunityCards = wetBoard
+
+	cBetCount = 0
+	for i := 0; i < totalTests; i++ {
+		if ai.shouldContinuationBet(player, table, Weak, 1.2) {
+			cBetCount++
+		}
+	}
+
+	wetCBetFreq := float64(cBetCount) / float64(totalTests)
+	if wetCBetFreq >= cBetFreq {
+		t.Errorf("Should c-bet less on wet board (%.2f) than dry board (%.2f)", wetCBetFreq, cBetFreq)
+	}
+
+	// Test out of position - should c-bet less
+	player.Position = UnderTheGun // Out of position
+	table.CommunityCards = dryBoard
+
+	cBetCount = 0
+	for i := 0; i < totalTests; i++ {
+		if ai.shouldContinuationBet(player, table, Weak, 0.7) {
+			cBetCount++
+		}
+	}
+
+	oopCBetFreq := float64(cBetCount) / float64(totalTests)
+	if oopCBetFreq >= cBetFreq {
+		t.Errorf("Should c-bet less out of position (%.2f) than in position (%.2f)", oopCBetFreq, cBetFreq)
+	}
+
+	// Test pre-flop - should not c-bet
+	table.CurrentRound = PreFlop
+	if ai.shouldContinuationBet(player, table, Strong, 1.2) {
+		t.Error("Should not c-bet pre-flop")
+	}
+
+	// Test when there's a bet to call - should not c-bet
+	table.CurrentRound = Flop
+	table.CurrentBet = 10
+	if ai.shouldContinuationBet(player, table, Strong, 1.2) {
+		t.Error("Should not c-bet when there's already a bet")
+	}
+}
+
+func TestAIEnhancedPositionPlay(t *testing.T) {
+	logger := log.NewWithOptions(io.Discard, log.Options{})
+	ai := NewAIEngine(logger)
+	
+	table := NewTable(6, 1, 2)
+	table.CurrentRound = Flop
+	table.CurrentBet = 0
+	table.Pot = 20
+
+	// Player in position with draw
+	player := NewPlayer(1, "Test", AI, 100)
+	player.Position = Button
+	player.HoleCards = []deck.Card{
+		{Suit: deck.Hearts, Rank: deck.King},
+		{Suit: deck.Hearts, Rank: deck.Queen},
+	}
+
+	table.CommunityCards = []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Jack},
+		{Suit: deck.Spades, Rank: deck.Ten},
+		{Suit: deck.Hearts, Rank: deck.Four},
+	}
+	table.ActivePlayers = []*Player{player}
+
+	// Count aggressive actions (raise) vs passive (check/call)
+	aggressiveCount := 0
+	totalTests := 100
+
+	for i := 0; i < totalTests; i++ {
+		action := ai.MakeDecision(player, table)
+		if action == Raise {
+			aggressiveCount++
+		}
+	}
+
+	aggressiveFreq := float64(aggressiveCount) / float64(totalTests)
+
+	// Now test same hand out of position
+	player.Position = UnderTheGun
+	oopAggressiveCount := 0
+
+	for i := 0; i < totalTests; i++ {
+		action := ai.MakeDecision(player, table)
+		if action == Raise {
+			oopAggressiveCount++
+		}
+	}
+
+	oopAggressiveFreq := float64(oopAggressiveCount) / float64(totalTests)
+
+	// Should be more aggressive in position with draws
+	if aggressiveFreq <= oopAggressiveFreq {
+		t.Errorf("Should be more aggressive in position (%.2f) than out of position (%.2f) with draws", 
+			aggressiveFreq, oopAggressiveFreq)
+	}
+}
