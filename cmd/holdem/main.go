@@ -7,39 +7,40 @@ import (
 	"syscall"
 
 	"github.com/alecthomas/kong"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 
 	"github.com/lox/holdem-cli/internal/display"
 	"github.com/lox/holdem-cli/internal/game"
 )
 
-var (
-	titleStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FAFAFA")).
-		Background(lipgloss.Color("#7D56F4")).
-		Padding(0, 1).
-		Bold(true)
-)
-
 type CLI struct {
-	Players int `short:"p" help:"Number of players at the table (6 or 9)" default:"6"`
+	Players  int    `short:"p" help:"Number of players at the table (6 or 9)" default:"6"`
+	LogLevel string `help:"Set the log-level" enum:"debug,info,warn,error" default:"info"`
+	LogFile  string `help:"The logfile to write logs to" default:"holdem.log"`
 }
 
 func main() {
 	var cli CLI
 	ctx := kong.Parse(&cli)
 
+	// Set up logging
+	logger, closer, err := createLogger(cli.LogFile, cli.LogLevel)
+	if err != nil {
+		log.Error("Error creating logger: %v", err)
+		ctx.Exit(1)
+	}
+	defer func() {
+		if err := closer; err != nil {
+			log.Error("Failed to close debug file", "error", err)
+		}
+	}()
+
 	if cli.Players != 6 && cli.Players != 9 {
 		log.Fatal("Invalid number of players. Must be 6 or 9.")
 	}
 
-	fmt.Print(titleStyle.Render(" ♠ ♥ Texas Hold'em CLI ♦ ♣ "))
-	fmt.Println()
-	fmt.Println()
-
 	// Start interactive game
-	err := startInteractiveGame(cli.Players)
+	err = startInteractiveGame(cli.Players, logger)
 	if err != nil {
 		log.Fatal("Failed to start game", "error", err)
 	}
@@ -47,24 +48,32 @@ func main() {
 	ctx.Exit(0)
 }
 
-func startInteractiveGame(seats int) error {
-	// Set up debug logging
-	debugFile, err := os.OpenFile("holdem-main.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
-	if err != nil {
-		return fmt.Errorf("failed to create main debug log: %w", err)
-	}
-	defer func() {
-		if err := debugFile.Close(); err != nil {
-			log.Error("Failed to close debug file", "error", err)
-		}
-	}()
+func createLogger(logFile string, level string) (*log.Logger, func() error, error) {
+	nilCloser := func() error { return nil }
 
+	parsedLevel, err := log.ParseLevel(level)
+	if err != nil {
+		return nil, nilCloser, fmt.Errorf("error parsing level %s: %w", level, err)
+	}
+
+	// Set up debug logging
+	debugFile, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	if err != nil {
+		return nil, nilCloser, fmt.Errorf("failed to create main debug log: %w", err)
+	}
+
+	// Create logger with specified level
 	logger := log.NewWithOptions(debugFile, log.Options{
 		ReportTimestamp: true,
+		Prefix:          "main",
 		TimeFormat:      "15:04:05",
-		Prefix:          "MAIN",
+		Level:           parsedLevel,
 	})
-	logger.Info("Starting interactive game", "seats", seats)
+
+	return logger, debugFile.Close, nil
+}
+
+func startInteractiveGame(seats int, logger *log.Logger) error {
 	// Create table
 	table := game.NewTable(seats, 1, 2)
 
@@ -79,7 +88,7 @@ func startInteractiveGame(seats int) error {
 	}
 
 	// Create human interface and AI engine
-	hi, err := display.NewTUIInterface(table, logger, debugFile)
+	hi, err := display.NewTUIInterface(table, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create interface: %w", err)
 	}
@@ -151,9 +160,11 @@ func startInteractiveGame(seats int) error {
 			if table.IsBettingRoundComplete() {
 				hi.ShowBettingRoundComplete()
 
-				activePlayers := len(getActivePlayers(table))
+				activePlayers := len(table.GetActivePlayers())
 				if activePlayers <= 1 {
 					// Hand over, someone won by everyone else folding
+					winner := table.FindWinner()
+					table.AwardPot(winner)
 					hi.ShowCompleteShowdown()
 					hi.ShowHandSummary()
 					break // Break out of hand loop
@@ -173,6 +184,8 @@ func startInteractiveGame(seats int) error {
 				case game.River:
 					// Go to showdown
 					table.CurrentRound = game.Showdown
+					winner := table.FindWinner()
+					table.AwardPot(winner)
 					hi.ShowCompleteShowdown()
 					hi.ShowHandSummary()
 				case game.Showdown:
@@ -211,14 +224,4 @@ func startInteractiveGame(seats int) error {
 	}
 
 	return nil
-}
-
-func getActivePlayers(table *game.Table) []*game.Player {
-	var active []*game.Player
-	for _, player := range table.ActivePlayers {
-		if player.IsInHand() {
-			active = append(active, player)
-		}
-	}
-	return active
 }

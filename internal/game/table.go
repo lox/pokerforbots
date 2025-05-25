@@ -2,10 +2,25 @@ package game
 
 import (
 	"fmt"
+	"math/rand"
 	"sort"
+	"time"
 
 	"github.com/lox/holdem-cli/internal/deck"
 )
+
+// RandSource interface for dependency injection of randomness
+type RandSource interface {
+	Intn(n int) int
+}
+
+// TableConfig holds configuration for creating a table
+type TableConfig struct {
+	MaxSeats   int
+	SmallBlind int
+	BigBlind   int
+	RandSource RandSource
+}
 
 // BettingRound represents the current betting round
 type BettingRound int
@@ -91,17 +106,31 @@ type Table struct {
 
 	// Hand tracking
 	PlayersActed map[int]bool // Track which players have acted this round
+	
+	// Dependencies
+	randSource RandSource // Random number generator
 }
 
-// NewTable creates a new poker table
+// NewTable creates a new poker table with default configuration
 func NewTable(maxSeats int, smallBlind, bigBlind int) *Table {
+	config := TableConfig{
+		MaxSeats:   maxSeats,
+		SmallBlind: smallBlind,
+		BigBlind:   bigBlind,
+		RandSource: rand.New(rand.NewSource(time.Now().UnixNano())),
+	}
+	return NewTableWithConfig(config)
+}
+
+// NewTableWithConfig creates a new poker table with custom configuration
+func NewTableWithConfig(config TableConfig) *Table {
 	return &Table{
-		MaxSeats:       maxSeats,
-		SmallBlind:     smallBlind,
-		BigBlind:       bigBlind,
-		Players:        make([]*Player, 0, maxSeats),
-		ActivePlayers:  make([]*Player, 0, maxSeats),
-		DealerPosition: 1, // Start with seat 1 as dealer
+		MaxSeats:       config.MaxSeats,
+		SmallBlind:     config.SmallBlind,
+		BigBlind:       config.BigBlind,
+		Players:        make([]*Player, 0, config.MaxSeats),
+		ActivePlayers:  make([]*Player, 0, config.MaxSeats),
+		DealerPosition: -1, // Will be set randomly when first hand starts
 		CurrentRound:   PreFlop,
 		State:          WaitingToStart,
 		HandNumber:     0,
@@ -109,9 +138,10 @@ func NewTable(maxSeats int, smallBlind, bigBlind int) *Table {
 		CommunityCards: make([]deck.Card, 0, 5),
 		Pot:            0,
 		CurrentBet:     0,
-		MinRaise:       bigBlind,
+		MinRaise:       config.BigBlind,
 		ActionOn:       -1,
 		PlayersActed:   make(map[int]bool),
+		randSource:     config.RandSource,
 	}
 }
 
@@ -168,6 +198,9 @@ func (t *Table) StartNewHand() {
 		}
 	}
 
+	// Set dealer position for the hand
+	t.setDealerPosition()
+
 	// Set positions
 	t.setPositions()
 
@@ -182,62 +215,120 @@ func (t *Table) StartNewHand() {
 	t.setFirstToAct()
 }
 
-// setPositions assigns positions to active players based on dealer button
-func (t *Table) setPositions() {
-	numPlayers := len(t.ActivePlayers)
-	if numPlayers < 2 {
+// setDealerPosition sets the dealer position for the hand
+func (t *Table) setDealerPosition() {
+	if len(t.ActivePlayers) < 2 {
 		return
 	}
 
-	// Find dealer in active players
-	dealerIndex := -1
+	if t.DealerPosition == -1 {
+		// First hand - set random starting position
+		randomIndex := t.randSource.Intn(len(t.ActivePlayers))
+		t.DealerPosition = t.ActivePlayers[randomIndex].SeatNumber
+	} else {
+		// Move button to next active player
+		t.moveButtonToNextPlayer()
+	}
+}
+
+// moveButtonToNextPlayer moves the dealer button to the next active player
+func (t *Table) moveButtonToNextPlayer() {
+	if len(t.ActivePlayers) < 2 {
+		return
+	}
+
+	// Find current dealer in active players
+	currentDealerIndex := -1
 	for i, player := range t.ActivePlayers {
 		if player.SeatNumber == t.DealerPosition {
-			dealerIndex = i
+			currentDealerIndex = i
 			break
 		}
 	}
 
-	// If dealer not found or not active, move button
-	if dealerIndex == -1 {
-		dealerIndex = 0
+	// If current dealer not found or not active, start from beginning
+	if currentDealerIndex == -1 {
 		t.DealerPosition = t.ActivePlayers[0].SeatNumber
+		return
 	}
 
-	// Assign positions
+	// Move to next active player
+	nextIndex := (currentDealerIndex + 1) % len(t.ActivePlayers)
+	t.DealerPosition = t.ActivePlayers[nextIndex].SeatNumber
+}
+
+// setPositions assigns positions to active players based on dealer button
+func (t *Table) setPositions() {
+	positions := calculatePositions(t.DealerPosition, t.ActivePlayers)
+	
+	// Apply the calculated positions
+	for _, player := range t.ActivePlayers {
+		if pos, exists := positions[player.SeatNumber]; exists {
+			player.Position = pos
+		}
+	}
+}
+
+// calculatePositions is a pure function that determines poker positions
+// This is extracted for easier testing
+func calculatePositions(dealerSeat int, activePlayers []*Player) map[int]Position {
+	positions := make(map[int]Position)
+	numPlayers := len(activePlayers)
+	
+	if numPlayers < 2 {
+		return positions
+	}
+	
+	// Find dealer index in active players
+	dealerIndex := -1
+	for i, player := range activePlayers {
+		if player.SeatNumber == dealerSeat {
+			dealerIndex = i
+			break
+		}
+	}
+	
+	// If dealer not found, use first player
+	if dealerIndex == -1 {
+		dealerIndex = 0
+	}
+	
+	// Assign positions relative to dealer
 	for i := 0; i < numPlayers; i++ {
 		playerIndex := (dealerIndex + i) % numPlayers
-		player := t.ActivePlayers[playerIndex]
-
+		player := activePlayers[playerIndex]
+		
 		if numPlayers == 2 {
 			// Heads-up: dealer is small blind
 			if i == 0 {
-				player.Position = SmallBlind
+				positions[player.SeatNumber] = SmallBlind
 			} else {
-				player.Position = BigBlind
+				positions[player.SeatNumber] = BigBlind
 			}
 		} else {
-			// Multi-way
+			// Multi-way positions
 			switch i {
 			case 0:
-				player.Position = Button
+				positions[player.SeatNumber] = Button
 			case 1:
-				player.Position = SmallBlind
+				positions[player.SeatNumber] = SmallBlind
 			case 2:
-				player.Position = BigBlind
+				positions[player.SeatNumber] = BigBlind
 			case 3:
-				player.Position = UnderTheGun
+				positions[player.SeatNumber] = UnderTheGun
 			default:
 				if i < numPlayers-2 {
-					player.Position = EarlyPosition
+					positions[player.SeatNumber] = EarlyPosition
 				} else if i == numPlayers-2 {
-					player.Position = Cutoff
+					positions[player.SeatNumber] = Cutoff
 				} else {
-					player.Position = LatePosition
+					positions[player.SeatNumber] = LatePosition
 				}
 			}
 		}
 	}
+	
+	return positions
 }
 
 // dealHoleCards deals 2 cards to each active player
@@ -443,6 +534,43 @@ func (t *Table) String() string {
 			}
 			return "None"
 		}())
+}
+
+// AwardPot awards the entire pot to the specified winner
+func (t *Table) AwardPot(winner *Player) {
+	if winner != nil && t.Pot > 0 {
+		winner.Chips += t.Pot
+		t.Pot = 0
+	}
+}
+
+// FindWinner determines the winner of the hand
+// For now, this is a simple implementation - in a full game it would evaluate hands
+func (t *Table) FindWinner() *Player {
+	activePlayers := t.GetActivePlayers()
+	if len(activePlayers) == 0 {
+		return nil
+	}
+	
+	// If only one player left, they win
+	if len(activePlayers) == 1 {
+		return activePlayers[0]
+	}
+	
+	// For now, just return the first non-folded player
+	// TODO: Implement proper hand evaluation for showdown
+	return activePlayers[0]
+}
+
+// GetActivePlayers returns players who are still in the hand (not folded)
+func (t *Table) GetActivePlayers() []*Player {
+	var active []*Player
+	for _, player := range t.ActivePlayers {
+		if player.IsInHand() {
+			active = append(active, player)
+		}
+	}
+	return active
 }
 
 // Helper function

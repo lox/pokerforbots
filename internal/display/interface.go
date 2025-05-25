@@ -2,7 +2,6 @@ package display
 
 import (
 	"fmt"
-	"io"
 	"regexp"
 	"strconv"
 
@@ -13,30 +12,22 @@ import (
 
 // TUIInterface handles human player interaction through a TUI
 type TUIInterface struct {
-	model      *TUIModel
-	program    *tea.Program
-	table      *game.Table
-	uiLogger   *log.Logger // For UI messages shown to user
-	mainLogger *log.Logger // For internal game state logging
+	model                *TUIModel
+	program              *tea.Program
+	table                *game.Table
+	uiLogger, mainLogger *log.Logger
 }
 
 // NewTUIInterface creates a new TUI-based interface
-func NewTUIInterface(table *game.Table, logger *log.Logger, logWriter io.Writer) (*TUIInterface, error) {
-	model := NewTUIModel(table)
+func NewTUIInterface(table *game.Table, logger *log.Logger) (*TUIInterface, error) {
+	model := NewTUIModel(table, logger)
 	program := tea.NewProgram(model, tea.WithAltScreen())
-
-	// Create a sub-logger with UI prefix
-	uiLogger := log.NewWithOptions(logWriter, log.Options{
-		ReportTimestamp: true,
-		TimeFormat:      "15:04:05",
-		Prefix:          "UI",
-	})
 
 	return &TUIInterface{
 		model:      model,
 		program:    program,
 		table:      table,
-		uiLogger:   uiLogger,
+		uiLogger:   logger.WithPrefix("ui"),
 		mainLogger: logger,
 	}, nil
 }
@@ -347,24 +338,6 @@ func (ti *TUIInterface) InitializeHand(seats int) {
 
 	// Show hand header
 	ti.AddLogEntry(fmt.Sprintf("Hand #%d • %d players • $1/$2", ti.table.HandNumber, seats))
-
-	// Show player positions
-	for _, player := range ti.table.Players {
-		position := ""
-		switch player.Position {
-		case game.Button:
-			position = " 🔘 BTN"
-		case game.SmallBlind:
-			position = " SB"
-		case game.BigBlind:
-			position = " BB"
-		}
-		ti.AddLogEntry(fmt.Sprintf("Seat %d: %s (%s)%s - $%d",
-			player.ID, player.Name,
-			map[game.PlayerType]string{game.Human: "You", game.AI: "AI"}[player.Type],
-			position, player.Chips))
-	}
-
 	ti.AddLogEntry("")
 	ti.AddLogEntry("*** HOLE CARDS ***")
 
@@ -502,10 +475,13 @@ func (ti *TUIInterface) ShowCompleteShowdown() {
 
 // ShowHandSummary shows the hand summary
 func (ti *TUIInterface) ShowHandSummary() {
+	// Store pot amount before it gets reset by AwardPot
+	finalPot := ti.table.Pot
+	
 	// Log final hand state to file
 	ti.mainLogger.Info("=== HAND COMPLETE ===",
 		"handNumber", ti.table.HandNumber,
-		"finalPot", ti.table.Pot,
+		"finalPot", finalPot,
 		"finalBet", ti.table.CurrentBet)
 
 	// Log final board
@@ -537,28 +513,27 @@ func (ti *TUIInterface) ShowHandSummary() {
 	// Clean poker-style summary
 	ti.AddLogEntry("")
 	ti.AddLogEntry("*** SUMMARY ***")
-	ti.AddLogEntry(fmt.Sprintf("Total pot $%d", ti.table.Pot))
+	ti.AddLogEntry(fmt.Sprintf("Total pot $%d", finalPot))
 
 	if len(ti.table.CommunityCards) > 0 {
 		ti.AddLogEntry(fmt.Sprintf("Board %s", ti.model.formatCards(ti.table.CommunityCards)))
 	}
 
 	// Show each player's result
-	activePlayers := getInHandPlayers(ti.table)
-	winner := findWinner(activePlayers)
+	winner := ti.table.FindWinner()
 
 	for _, player := range ti.table.Players {
 		seatInfo := fmt.Sprintf("Seat %d: %s", player.ID, player.Name)
 
 		// Add position info
-		 switch player.Position {
-		 case game.Button:
-		 seatInfo += " (button)"
-		 case game.SmallBlind:
-		 seatInfo += " (small blind)"
-		 case game.BigBlind:
-		 seatInfo += " (big blind)"
-		 }
+		switch player.Position {
+		case game.Button:
+			seatInfo += " (button)"
+		case game.SmallBlind:
+			seatInfo += " (small blind)"
+		case game.BigBlind:
+			seatInfo += " (big blind)"
+		}
 
 		if player.IsFolded {
 			seatInfo += " folded"
@@ -567,7 +542,7 @@ func (ti *TUIInterface) ShowHandSummary() {
 			}
 		} else if player == winner {
 			cards := ti.model.formatCards(player.HoleCards)
-			seatInfo += fmt.Sprintf(" showed %s and won ($%d)", cards, ti.table.Pot)
+			seatInfo += fmt.Sprintf(" showed %s and won ($%d)", cards, finalPot)
 		} else {
 			cards := ti.model.formatCards(player.HoleCards)
 			seatInfo += fmt.Sprintf(" mucked %s", cards)
@@ -589,13 +564,4 @@ func getInHandPlayers(table *game.Table) []*game.Player {
 		}
 	}
 	return inHand
-}
-
-func findWinner(players []*game.Player) *game.Player {
-	if len(players) == 0 {
-		return nil
-	}
-	// For now, just return the first non-folded player
-	// In a real implementation, this would evaluate hands
-	return players[0]
 }

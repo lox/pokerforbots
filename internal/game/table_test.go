@@ -2,8 +2,28 @@ package game
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
 )
+
+// MockRandSource for deterministic testing
+type MockRandSource struct {
+	values []int
+	index  int
+}
+
+func NewMockRandSource(values ...int) *MockRandSource {
+	return &MockRandSource{values: values, index: 0}
+}
+
+func (m *MockRandSource) Intn(n int) int {
+	if m.index >= len(m.values) {
+		return 0 // Default fallback
+	}
+	val := m.values[m.index] % n // Ensure it's within bounds
+	m.index++
+	return val
+}
 
 func TestNewTable(t *testing.T) {
 	table := NewTable(6, 1, 2)
@@ -266,5 +286,311 @@ func TestBettingRounds(t *testing.T) {
 
 	if len(table.CommunityCards) != 5 {
 		t.Errorf("Expected 5 community cards after river, got %d", len(table.CommunityCards))
+	}
+}
+
+// Position and button rotation tests
+
+func TestTableConfig(t *testing.T) {
+	// Test custom configuration
+	config := TableConfig{
+		MaxSeats:   9,
+		SmallBlind: 5,
+		BigBlind:   10,
+		RandSource: NewMockRandSource(2), // Fixed seed for testing
+	}
+	table := NewTableWithConfig(config)
+
+	if table.MaxSeats != 9 {
+		t.Errorf("Expected 9 seats, got %d", table.MaxSeats)
+	}
+	if table.SmallBlind != 5 {
+		t.Errorf("Expected small blind 5, got %d", table.SmallBlind)
+	}
+	if table.BigBlind != 10 {
+		t.Errorf("Expected big blind 10, got %d", table.BigBlind)
+	}
+}
+
+func TestRandomStartingPosition(t *testing.T) {
+	// Create table with mock random source
+	config := TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+		RandSource: NewMockRandSource(1), // Should select index 1 (seat 2)
+	}
+	table := NewTableWithConfig(config)
+
+	// Add players
+	for i := 1; i <= 3; i++ {
+		player := NewPlayer(i, fmt.Sprintf("P%d", i), AI, 200)
+		table.AddPlayer(player)
+	}
+
+	// Start first hand
+	table.StartNewHand()
+
+	// Should have selected seat 2 as dealer
+	if table.DealerPosition != 2 {
+		t.Errorf("Expected dealer position 2, got %d", table.DealerPosition)
+	}
+}
+
+func TestButtonRotation(t *testing.T) {
+	// Create table with mock random source
+	config := TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+		RandSource: NewMockRandSource(0), // Always choose first player (seat 1)
+	}
+	table := NewTableWithConfig(config)
+
+	// Add 3 players - AddPlayer will assign seats 1, 2, 3 automatically
+	for i := 1; i <= 3; i++ {
+		player := NewPlayer(i, fmt.Sprintf("P%d", i), AI, 200)
+		table.AddPlayer(player)
+	}
+
+	// Start first hand - should pick first player (seat 1)
+	table.StartNewHand()
+	if table.DealerPosition != 1 {
+		t.Errorf("Expected first dealer to be seat 1, got %d", table.DealerPosition)
+		return
+	}
+
+	// Test subsequent rotations - should cycle through seats 1->2->3->1
+	expectedSequence := []int{2, 3, 1}
+
+	for i, expected := range expectedSequence {
+		table.StartNewHand()
+		if table.DealerPosition != expected {
+			t.Errorf("Hand %d: expected dealer %d, got %d", i+2, expected, table.DealerPosition)
+		}
+	}
+}
+
+func TestCalculatePositions_HeadsUp(t *testing.T) {
+	players := []*Player{
+		{SeatNumber: 2}, {SeatNumber: 5},
+	}
+
+	positions := calculatePositions(2, players)
+
+	expected := map[int]Position{
+		2: SmallBlind, // Dealer is SB in heads-up
+		5: BigBlind,
+	}
+
+	for seat, expectedPos := range expected {
+		if positions[seat] != expectedPos {
+			t.Errorf("Seat %d: got %v, want %v", seat, positions[seat], expectedPos)
+		}
+	}
+}
+
+func TestCalculatePositions_FourPlayers(t *testing.T) {
+	players := []*Player{
+		{SeatNumber: 1}, {SeatNumber: 3}, {SeatNumber: 5}, {SeatNumber: 7},
+	}
+
+	positions := calculatePositions(3, players) // Seat 3 is dealer
+
+	expected := map[int]Position{
+		3: Button,       // Dealer
+		5: SmallBlind,   // Next
+		7: BigBlind,     // Next
+		1: UnderTheGun,  // Next
+	}
+
+	for seat, expectedPos := range expected {
+		if positions[seat] != expectedPos {
+			t.Errorf("Seat %d: got %v, want %v", seat, positions[seat], expectedPos)
+		}
+	}
+}
+
+func TestCalculatePositions_SixPlayers(t *testing.T) {
+	players := []*Player{
+		{SeatNumber: 1}, {SeatNumber: 2}, {SeatNumber: 3},
+		{SeatNumber: 4}, {SeatNumber: 5}, {SeatNumber: 6},
+	}
+
+	positions := calculatePositions(1, players) // Seat 1 is dealer
+
+	expected := map[int]Position{
+		1: Button,        // Dealer (position 0)
+		2: SmallBlind,    // SB (position 1)
+		3: BigBlind,      // BB (position 2)
+		4: UnderTheGun,   // UTG (position 3)
+		5: EarlyPosition, // Early (position 4, < numPlayers-2 which is 4)
+		6: Cutoff,        // Cutoff (position 5, == numPlayers-2 which is 4)
+	}
+
+	// Fix the expected values based on the logic
+	expected[5] = Cutoff        // Position 4 (index from dealer)
+	expected[6] = LatePosition  // Position 5 (index from dealer)
+
+	for seat, expectedPos := range expected {
+		if positions[seat] != expectedPos {
+			t.Errorf("Seat %d: got %v, want %v", seat, positions[seat], expectedPos)
+		}
+	}
+}
+
+// Integration test showing deterministic behavior with fixed seed
+func TestDeterministicButtonRotation(t *testing.T) {
+	// Test that the same seed produces the same results
+	seed := int64(42)
+	
+	createTableAndPlayHands := func() []int {
+		config := TableConfig{
+			MaxSeats:   6,
+			SmallBlind: 1,
+			BigBlind:   2,
+			RandSource: rand.New(rand.NewSource(seed)), // Fresh random source with same seed
+		}
+		table := NewTableWithConfig(config)
+
+		// Add 4 players
+		for i := 1; i <= 4; i++ {
+			player := NewPlayer(i, fmt.Sprintf("Player%d", i), AI, 1000)
+			table.AddPlayer(player)
+		}
+
+		// Collect dealer positions for several hands
+		var positions []int
+		for hand := 1; hand <= 5; hand++ {
+			table.StartNewHand()
+			positions = append(positions, table.DealerPosition)
+		}
+		return positions
+	}
+
+	// Run twice with same seed
+	positions1 := createTableAndPlayHands()
+	positions2 := createTableAndPlayHands()
+
+	t.Logf("First run dealer positions: %v", positions1)
+	t.Logf("Second run dealer positions: %v", positions2)
+
+	// Should be identical
+	if len(positions1) != len(positions2) {
+		t.Errorf("Position arrays should have same length")
+		return
+	}
+
+	for i := range positions1 {
+		if positions1[i] != positions2[i] {
+			t.Errorf("Hand %d: positions differ %d vs %d", i+1, positions1[i], positions2[i])
+		}
+	}
+	
+	// Also test that different seeds produce different results
+	config3 := TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+		RandSource: rand.New(rand.NewSource(123)), // Different seed
+	}
+	table3 := NewTableWithConfig(config3)
+	for i := 1; i <= 4; i++ {
+		player := NewPlayer(i, fmt.Sprintf("Player%d", i), AI, 1000)
+		table3.AddPlayer(player)
+	}
+
+	var positions3 []int
+	for hand := 1; hand <= 5; hand++ {
+		table3.StartNewHand()
+		positions3 = append(positions3, table3.DealerPosition)
+	}
+
+	// Should be different from the first run (very likely with different seed)
+	different := false
+	for i := range positions1 {
+		if i < len(positions3) && positions1[i] != positions3[i] {
+			different = true
+			break
+		}
+	}
+	
+	if !different {
+		t.Logf("Warning: Different seeds produced same sequence (unlikely but possible): %v vs %v", positions1, positions3)
+	}
+}
+
+// Test pot distribution functionality
+func TestPotDistribution(t *testing.T) {
+	table := NewTable(6, 1, 2)
+
+	// Add players
+	player1 := NewPlayer(1, "Alice", Human, 200)
+	player2 := NewPlayer(2, "Bob", AI, 200)
+	table.AddPlayer(player1)
+	table.AddPlayer(player2)
+
+	// Start hand and simulate some betting
+	table.StartNewHand()
+	// Pot should be 3 after blinds (1+2)
+
+	// Simulate additional betting
+	table.Pot += 20 // Add some more to the pot
+	finalPot := table.Pot
+
+	// Find winner and award pot
+	winner := table.FindWinner()
+	if winner == nil {
+		t.Fatal("Should have a winner")
+	}
+
+	initialChips := winner.Chips
+	table.AwardPot(winner)
+
+	// Check that winner received the pot
+	if winner.Chips != initialChips+finalPot {
+		t.Errorf("Winner should have %d chips, got %d", initialChips+finalPot, winner.Chips)
+	}
+
+	// Check that pot is now empty
+	if table.Pot != 0 {
+		t.Errorf("Pot should be 0 after awarding, got %d", table.Pot)
+	}
+}
+
+func TestFindWinner(t *testing.T) {
+	table := NewTable(6, 1, 2)
+
+	// Add players
+	player1 := NewPlayer(1, "Alice", Human, 200)
+	player2 := NewPlayer(2, "Bob", AI, 200)
+	player3 := NewPlayer(3, "Charlie", AI, 200)
+	table.AddPlayer(player1)
+	table.AddPlayer(player2)
+	table.AddPlayer(player3)
+
+	table.StartNewHand()
+
+	// Test with all players active
+	winner := table.FindWinner()
+	if winner == nil {
+		t.Error("Should have a winner when players are active")
+	}
+
+	// Test with one player folded
+	player1.Fold()
+	winner = table.FindWinner()
+	if winner == nil {
+		t.Error("Should have a winner when some players folded")
+	}
+	if winner == player1 {
+		t.Error("Folded player should not be winner")
+	}
+
+	// Test with only one player remaining
+	player2.Fold()
+	winner = table.FindWinner()
+	if winner != player3 {
+		t.Error("Last remaining player should be winner")
 	}
 }

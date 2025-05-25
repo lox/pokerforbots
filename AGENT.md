@@ -8,8 +8,6 @@ This is a **Texas Hold'em CLI poker game** with AI opponents, built in Go. The g
 - Clean architecture with separated presentation logic
 - Test mode for automated gameplay
 
-For detailed progress and feature status, see [TODO.md](TODO.md).
-
 ## Project Commands
 - Run: `go run cmd/holdem/main.go [--players N]` or `./bin/task run`
 - Tests: `go test ./...` or `./bin/task test`
@@ -41,12 +39,6 @@ For detailed progress and feature status, see [TODO.md](TODO.md).
 - **CLI Interface**: Kong for argument parsing, Bubble Tea for interactive TUI
 - **Styling**: Lipgloss for terminal styling within TUI components
 - **Clean Architecture**: Presentation logic completely separated from game logic
-
-## Current Status
-The game is **feature-complete** for core poker gameplay. See [TODO.md](TODO.md) for:
-- ✅ Completed features (most core functionality done)
-- 📋 Remaining enhancements (winner explanations, continuous play)
-- 📅 Future features (statistics, tournaments, etc.)
 
 ## Development Notes
 - Use Hermit for dependency management
