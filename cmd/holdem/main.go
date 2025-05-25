@@ -164,9 +164,9 @@ func startInteractiveGame(seats int, logger *log.Logger) error {
 				if activePlayers <= 1 {
 					// Hand over, someone won by everyone else folding
 					winner := table.FindWinner()
-					table.AwardPot(winner)
 					hi.ShowCompleteShowdown()
 					hi.ShowHandSummary()
+					table.AwardPot(winner)
 					break // Break out of hand loop
 				}
 
@@ -185,9 +185,9 @@ func startInteractiveGame(seats int, logger *log.Logger) error {
 					// Go to showdown
 					table.CurrentRound = game.Showdown
 					winner := table.FindWinner()
-					table.AwardPot(winner)
 					hi.ShowCompleteShowdown()
 					hi.ShowHandSummary()
+					table.AwardPot(winner)
 				case game.Showdown:
 					// Showdown is complete, end the hand
 					break
