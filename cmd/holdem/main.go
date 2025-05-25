@@ -53,7 +53,11 @@ func startInteractiveGame(seats int) error {
 	if err != nil {
 		return fmt.Errorf("failed to create main debug log: %w", err)
 	}
-	defer debugFile.Close()
+	defer func() {
+		if err := debugFile.Close(); err != nil {
+			log.Error("Failed to close debug file", "error", err)
+		}
+	}()
 
 	logger := log.NewWithOptions(debugFile, log.Options{
 		ReportTimestamp: true,
@@ -89,13 +93,19 @@ func startInteractiveGame(seats int) error {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		hi.Close()
+		if err := hi.Close(); err != nil {
+			log.Error("Failed to close interface", "error", err)
+		}
 		os.Exit(0)
 	}()
 
-	defer hi.Close()
+	defer func() {
+		if err := hi.Close(); err != nil {
+			log.Error("Failed to close interface", "error", err)
+		}
+	}()
 
-	ai := game.NewAIEngine()
+	ai := game.NewAIEngine(logger)
 
 	// Start first hand
 	table.StartNewHand()

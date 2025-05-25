@@ -98,41 +98,41 @@ func (a Action) String() string {
 
 // Player represents a poker player
 type Player struct {
-	ID          int         // Unique identifier
-	Name        string      // Player name
-	Type        PlayerType  // Human or AI
-	Chips       int         // Current chip count
-	HoleCards   []deck.Card // Player's hole cards
-	Position    Position    // Current position at table
-	SeatNumber  int         // Seat number (1-based)
-	
+	ID         int         // Unique identifier
+	Name       string      // Player name
+	Type       PlayerType  // Human or AI
+	Chips      int         // Current chip count
+	HoleCards  []deck.Card // Player's hole cards
+	Position   Position    // Current position at table
+	SeatNumber int         // Seat number (1-based)
+
 	// Current hand state
-	IsActive    bool   // Still in the hand
-	IsFolded    bool   // Has folded this hand
-	IsAllIn     bool   // Is all-in
-	BetThisRound int   // Amount bet in current betting round
-	TotalBet    int    // Total amount bet this hand
-	
+	IsActive     bool // Still in the hand
+	IsFolded     bool // Has folded this hand
+	IsAllIn      bool // Is all-in
+	BetThisRound int  // Amount bet in current betting round
+	TotalBet     int  // Total amount bet this hand
+
 	// Action tracking
-	LastAction  Action // Last action taken
-	ActionAmount int   // Amount of last action (for raises/calls)
+	LastAction   Action // Last action taken
+	ActionAmount int    // Amount of last action (for raises/calls)
 }
 
 // NewPlayer creates a new player
 func NewPlayer(id int, name string, playerType PlayerType, startingChips int) *Player {
 	return &Player{
-		ID:          id,
-		Name:        name,
-		Type:        playerType,
-		Chips:       startingChips,
-		HoleCards:   make([]deck.Card, 0, 2),
-		Position:    UnknownPosition,
-		IsActive:    true,
-		IsFolded:    false,
-		IsAllIn:     false,
+		ID:           id,
+		Name:         name,
+		Type:         playerType,
+		Chips:        startingChips,
+		HoleCards:    make([]deck.Card, 0, 2),
+		Position:     UnknownPosition,
+		IsActive:     true,
+		IsFolded:     false,
+		IsAllIn:      false,
 		BetThisRound: 0,
-		TotalBet:    0,
-		LastAction:  NoAction,
+		TotalBet:     0,
+		LastAction:   NoAction,
 		ActionAmount: 0,
 	}
 }
@@ -162,7 +162,7 @@ func (p *Player) Call(amount int) bool {
 		// Not enough chips to call, go all-in instead
 		return p.AllIn()
 	}
-	
+
 	p.Chips -= amount
 	p.BetThisRound += amount
 	p.TotalBet += amount
@@ -176,7 +176,7 @@ func (p *Player) Raise(totalAmount int) bool {
 	if totalAmount > p.Chips {
 		return false // Not enough chips
 	}
-	
+
 	p.Chips -= totalAmount
 	p.BetThisRound += totalAmount
 	p.TotalBet += totalAmount
@@ -196,7 +196,7 @@ func (p *Player) AllIn() bool {
 	if p.Chips <= 0 {
 		return false
 	}
-	
+
 	amount := p.Chips
 	p.Chips = 0
 	p.BetThisRound += amount
@@ -236,12 +236,12 @@ func (p *Player) GetBestHand(communityCards []deck.Card) evaluator.Hand {
 	if len(p.HoleCards) != 2 {
 		panic("Player must have exactly 2 hole cards")
 	}
-	
+
 	// Combine hole cards and community cards
 	allCards := make([]deck.Card, 0, 7)
 	allCards = append(allCards, p.HoleCards...)
 	allCards = append(allCards, communityCards...)
-	
+
 	return evaluator.FindBestHand(allCards)
 }
 

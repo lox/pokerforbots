@@ -19,13 +19,13 @@ func EvaluateHand(cards []deck.Card) Hand {
 
 	// Check for flush
 	isFlush := isFlush(sortedCards)
-	
+
 	// Check for straight
 	isStraight, straightHigh := isStraight(sortedCards)
-	
+
 	// Count ranks
 	rankCounts := countRanks(sortedCards)
-	
+
 	// Determine hand type
 	if isFlush && isStraight {
 		if straightHigh == deck.Ace && sortedCards[1].Rank == deck.King {
@@ -45,7 +45,7 @@ func EvaluateHand(cards []deck.Card) Hand {
 			HighCard: straightHigh,
 		}
 	}
-	
+
 	// Check for four of a kind
 	if fourOfAKindRank := findNOfAKind(rankCounts, 4); fourOfAKindRank != 0 {
 		kicker := findKicker(rankCounts, fourOfAKindRank)
@@ -56,7 +56,7 @@ func EvaluateHand(cards []deck.Card) Hand {
 			HighCard: fourOfAKindRank,
 		}
 	}
-	
+
 	// Check for full house
 	threeOfAKindRank := findNOfAKind(rankCounts, 3)
 	pairRank := findNOfAKind(rankCounts, 2)
@@ -68,7 +68,7 @@ func EvaluateHand(cards []deck.Card) Hand {
 			HighCard: threeOfAKindRank,
 		}
 	}
-	
+
 	// Check for flush
 	if isFlush {
 		kickers := make([]deck.Rank, len(sortedCards))
@@ -82,7 +82,7 @@ func EvaluateHand(cards []deck.Card) Hand {
 			HighCard: sortedCards[0].Rank,
 		}
 	}
-	
+
 	// Check for straight
 	if isStraight {
 		return Hand{
@@ -92,7 +92,7 @@ func EvaluateHand(cards []deck.Card) Hand {
 			HighCard: straightHigh,
 		}
 	}
-	
+
 	// Check for three of a kind
 	if threeOfAKindRank != 0 {
 		kickers := findKickers(rankCounts, threeOfAKindRank, 2)
@@ -103,7 +103,7 @@ func EvaluateHand(cards []deck.Card) Hand {
 			HighCard: threeOfAKindRank,
 		}
 	}
-	
+
 	// Check for pairs
 	pairs := findAllPairs(rankCounts)
 	if len(pairs) >= 2 {
@@ -126,7 +126,7 @@ func EvaluateHand(cards []deck.Card) Hand {
 			HighCard: pairs[0],
 		}
 	}
-	
+
 	if len(pairs) == 1 {
 		// One pair
 		kickers := findKickers(rankCounts, pairs[0], 3)
@@ -137,7 +137,7 @@ func EvaluateHand(cards []deck.Card) Hand {
 			HighCard: pairs[0],
 		}
 	}
-	
+
 	// High card
 	kickers := make([]deck.Rank, len(sortedCards))
 	for i, card := range sortedCards {
@@ -156,22 +156,22 @@ func FindBestHand(cards []deck.Card) Hand {
 	if len(cards) < 5 {
 		panic("FindBestHand requires at least 5 cards")
 	}
-	
+
 	if len(cards) == 5 {
 		return EvaluateHand(cards)
 	}
-	
+
 	// Generate all possible 5-card combinations
 	var bestHand Hand
 	combinations := generateCombinations(cards, 5)
-	
+
 	for i, combo := range combinations {
 		hand := EvaluateHand(combo)
 		if i == 0 || hand.IsStrongerThan(bestHand) {
 			bestHand = hand
 		}
 	}
-	
+
 	return bestHand
 }
 
@@ -192,21 +192,21 @@ func isStraight(cards []deck.Card) (bool, deck.Rank) {
 	sorted := make([]deck.Card, len(cards))
 	copy(sorted, cards)
 	sort.Sort(cardsByRankDesc(sorted))
-	
+
 	// Check for A-2-3-4-5 straight (wheel)
-	if sorted[0].Rank == deck.Ace && sorted[1].Rank == deck.Five && 
-	   sorted[2].Rank == deck.Four && sorted[3].Rank == deck.Three && 
-	   sorted[4].Rank == deck.Two {
+	if sorted[0].Rank == deck.Ace && sorted[1].Rank == deck.Five &&
+		sorted[2].Rank == deck.Four && sorted[3].Rank == deck.Three &&
+		sorted[4].Rank == deck.Two {
 		return true, deck.Five // In wheel straight, 5 is the high card
 	}
-	
+
 	// Check for regular straight
 	for i := 1; i < len(sorted); i++ {
 		if int(sorted[i-1].Rank)-int(sorted[i].Rank) != 1 {
 			return false, 0
 		}
 	}
-	
+
 	return true, sorted[0].Rank
 }
 
@@ -255,18 +255,18 @@ func findKickers(rankCounts map[deck.Rank]int, excludeRank deck.Rank, numKickers
 		}
 	}
 	sort.Sort(ranksByDesc(kickers))
-	
+
 	if len(kickers) > numKickers {
 		kickers = kickers[:numKickers]
 	}
-	
+
 	return kickers
 }
 
 // generateCombinations generates all possible combinations of k cards from the given slice
 func generateCombinations(cards []deck.Card, k int) [][]deck.Card {
 	var result [][]deck.Card
-	
+
 	var generate func(start int, current []deck.Card)
 	generate = func(start int, current []deck.Card) {
 		if len(current) == k {
@@ -275,12 +275,12 @@ func generateCombinations(cards []deck.Card, k int) [][]deck.Card {
 			result = append(result, combo)
 			return
 		}
-		
+
 		for i := start; i < len(cards); i++ {
 			generate(i+1, append(current, cards[i]))
 		}
 	}
-	
+
 	generate(0, []deck.Card{})
 	return result
 }

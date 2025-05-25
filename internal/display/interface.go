@@ -351,11 +351,12 @@ func (ti *TUIInterface) InitializeHand(seats int) {
 	// Show player positions
 	for _, player := range ti.table.Players {
 		position := ""
-		if player.Position == game.Button {
+		switch player.Position {
+		case game.Button:
 			position = " 🔘 BTN"
-		} else if player.Position == game.SmallBlind {
+		case game.SmallBlind:
 			position = " SB"
-		} else if player.Position == game.BigBlind {
+		case game.BigBlind:
 			position = " BB"
 		}
 		ti.AddLogEntry(fmt.Sprintf("Seat %d: %s (%s)%s - $%d",
@@ -550,13 +551,14 @@ func (ti *TUIInterface) ShowHandSummary() {
 		seatInfo := fmt.Sprintf("Seat %d: %s", player.ID, player.Name)
 
 		// Add position info
-		if player.Position == game.Button {
-			seatInfo += " (button)"
-		} else if player.Position == game.SmallBlind {
-			seatInfo += " (small blind)"
-		} else if player.Position == game.BigBlind {
-			seatInfo += " (big blind)"
-		}
+		 switch player.Position {
+		 case game.Button:
+		 seatInfo += " (button)"
+		 case game.SmallBlind:
+		 seatInfo += " (small blind)"
+		 case game.BigBlind:
+		 seatInfo += " (big blind)"
+		 }
 
 		if player.IsFolded {
 			seatInfo += " folded"

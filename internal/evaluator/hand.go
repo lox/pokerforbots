@@ -70,8 +70,9 @@ func (h Hand) String() string {
 
 // Compare compares two hands and returns:
 // -1 if h1 is weaker than h2
-//  0 if h1 equals h2
-//  1 if h1 is stronger than h2
+//
+//	0 if h1 equals h2
+//	1 if h1 is stronger than h2
 func (h1 Hand) Compare(h2 Hand) int {
 	// First compare by hand rank
 	if h1.Rank < h2.Rank {
@@ -80,7 +81,7 @@ func (h1 Hand) Compare(h2 Hand) int {
 	if h1.Rank > h2.Rank {
 		return 1
 	}
-	
+
 	// Same rank, compare kickers
 	for i := 0; i < len(h1.Kickers) && i < len(h2.Kickers); i++ {
 		if h1.Kickers[i] < h2.Kickers[i] {
@@ -90,7 +91,7 @@ func (h1 Hand) Compare(h2 Hand) int {
 			return 1
 		}
 	}
-	
+
 	// If all kickers are equal, hands are tied
 	return 0
 }
@@ -98,14 +99,14 @@ func (h1 Hand) Compare(h2 Hand) int {
 // CompareWithExplanation compares two hands and returns the result with an explanation
 func (h1 Hand) CompareWithExplanation(h2 Hand) (int, string) {
 	result := h1.Compare(h2)
-	
+
 	if result == 0 {
 		return result, "hands tie"
 	}
-	
+
 	var winner, loser Hand
 	var explanation string
-	
+
 	if result > 0 {
 		winner, loser = h1, h2
 		explanation = fmt.Sprintf("%s beats %s", winner.String(), loser.String())
@@ -113,7 +114,7 @@ func (h1 Hand) CompareWithExplanation(h2 Hand) (int, string) {
 		winner, loser = h2, h1
 		explanation = fmt.Sprintf("%s beats %s", winner.String(), loser.String())
 	}
-	
+
 	// Add specific reasoning based on hand types
 	if winner.Rank != loser.Rank {
 		explanation += fmt.Sprintf(" (%s beats %s)", winner.Rank.String(), loser.Rank.String())
@@ -124,70 +125,70 @@ func (h1 Hand) CompareWithExplanation(h2 Hand) (int, string) {
 		case OnePair:
 			if len(winner.Kickers) >= 1 && len(loser.Kickers) >= 1 {
 				if winner.Kickers[0] != loser.Kickers[0] {
-					explanation += fmt.Sprintf("higher pair (%s vs %s)", 
-						deck.Rank(winner.Kickers[0]).String(), 
+					explanation += fmt.Sprintf("higher pair (%s vs %s)",
+						deck.Rank(winner.Kickers[0]).String(),
 						deck.Rank(loser.Kickers[0]).String())
 				} else if len(winner.Kickers) >= 2 && len(loser.Kickers) >= 2 {
-					explanation += fmt.Sprintf("higher kicker (%s vs %s)", 
-						deck.Rank(winner.Kickers[1]).String(), 
+					explanation += fmt.Sprintf("higher kicker (%s vs %s)",
+						deck.Rank(winner.Kickers[1]).String(),
 						deck.Rank(loser.Kickers[1]).String())
 				}
 			}
 		case TwoPair:
 			if len(winner.Kickers) >= 2 && len(loser.Kickers) >= 2 {
 				if winner.Kickers[0] != loser.Kickers[0] {
-					explanation += fmt.Sprintf("higher top pair (%s vs %s)", 
-						deck.Rank(winner.Kickers[0]).String(), 
+					explanation += fmt.Sprintf("higher top pair (%s vs %s)",
+						deck.Rank(winner.Kickers[0]).String(),
 						deck.Rank(loser.Kickers[0]).String())
 				} else if winner.Kickers[1] != loser.Kickers[1] {
-					explanation += fmt.Sprintf("higher bottom pair (%s vs %s)", 
-						deck.Rank(winner.Kickers[1]).String(), 
+					explanation += fmt.Sprintf("higher bottom pair (%s vs %s)",
+						deck.Rank(winner.Kickers[1]).String(),
 						deck.Rank(loser.Kickers[1]).String())
 				} else if len(winner.Kickers) >= 3 && len(loser.Kickers) >= 3 {
-					explanation += fmt.Sprintf("higher kicker (%s vs %s)", 
-						deck.Rank(winner.Kickers[2]).String(), 
+					explanation += fmt.Sprintf("higher kicker (%s vs %s)",
+						deck.Rank(winner.Kickers[2]).String(),
 						deck.Rank(loser.Kickers[2]).String())
 				}
 			}
 		case ThreeOfAKind, FourOfAKind:
 			if len(winner.Kickers) >= 1 && len(loser.Kickers) >= 1 {
-				explanation += fmt.Sprintf("higher trips/quads (%s vs %s)", 
-					deck.Rank(winner.Kickers[0]).String(), 
+				explanation += fmt.Sprintf("higher trips/quads (%s vs %s)",
+					deck.Rank(winner.Kickers[0]).String(),
 					deck.Rank(loser.Kickers[0]).String())
 			}
 		case FullHouse:
 			if len(winner.Kickers) >= 2 && len(loser.Kickers) >= 2 {
 				if winner.Kickers[0] != loser.Kickers[0] {
-					explanation += fmt.Sprintf("higher trips (%s vs %s)", 
-						deck.Rank(winner.Kickers[0]).String(), 
+					explanation += fmt.Sprintf("higher trips (%s vs %s)",
+						deck.Rank(winner.Kickers[0]).String(),
 						deck.Rank(loser.Kickers[0]).String())
 				} else {
-					explanation += fmt.Sprintf("higher pair (%s vs %s)", 
-						deck.Rank(winner.Kickers[1]).String(), 
+					explanation += fmt.Sprintf("higher pair (%s vs %s)",
+						deck.Rank(winner.Kickers[1]).String(),
 						deck.Rank(loser.Kickers[1]).String())
 				}
 			}
 		case Straight, StraightFlush:
 			if len(winner.Kickers) >= 1 && len(loser.Kickers) >= 1 {
-				explanation += fmt.Sprintf("higher straight (%s-high vs %s-high)", 
-					deck.Rank(winner.Kickers[0]).String(), 
+				explanation += fmt.Sprintf("higher straight (%s-high vs %s-high)",
+					deck.Rank(winner.Kickers[0]).String(),
 					deck.Rank(loser.Kickers[0]).String())
 			}
 		case Flush:
 			if len(winner.Kickers) >= 1 && len(loser.Kickers) >= 1 {
-				explanation += fmt.Sprintf("higher flush (%s-high vs %s-high)", 
-					deck.Rank(winner.Kickers[0]).String(), 
+				explanation += fmt.Sprintf("higher flush (%s-high vs %s-high)",
+					deck.Rank(winner.Kickers[0]).String(),
 					deck.Rank(loser.Kickers[0]).String())
 			}
 		default:
 			if len(winner.Kickers) >= 1 && len(loser.Kickers) >= 1 {
-				explanation += fmt.Sprintf("higher kicker (%s vs %s)", 
-					deck.Rank(winner.Kickers[0]).String(), 
+				explanation += fmt.Sprintf("higher kicker (%s vs %s)",
+					deck.Rank(winner.Kickers[0]).String(),
 					deck.Rank(loser.Kickers[0]).String())
 			}
 		}
 	}
-	
+
 	return result, explanation
 }
 
@@ -206,12 +207,6 @@ func (h1 Hand) Equals(h2 Hand) bool {
 	return h1.Compare(h2) == 0
 }
 
-// cardsByRank is a helper type for sorting cards by rank
-type cardsByRank []deck.Card
-
-func (c cardsByRank) Len() int           { return len(c) }
-func (c cardsByRank) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
-func (c cardsByRank) Less(i, j int) bool { return c[i].Rank < c[j].Rank }
 
 // cardsByRankDesc sorts cards by rank in descending order
 type cardsByRankDesc []deck.Card

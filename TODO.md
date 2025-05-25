@@ -1,52 +1,5 @@
 # Texas Hold'em CLI - Development TODO
 
-## Current Progress
-
-The game now includes:
-- **Professional CLI Interface** with dynamic prompts showing hand, position, and chips
-- **Intelligent AI Opponents** with position-aware play and hand evaluation
-- **Complete Poker Experience** from deal to showdown with beautiful styling
-- **Full Hand Progression** through all betting rounds with proper transitions
-- **Authentic Poker Flow** matching real poker client standards
-- **Clean Architecture** with presentation logic separated in display layer
-- **Test Mode** for automated gameplay testing and development
-
-### ✅ Completed Core Features
-- [x] **Project Setup** - Basic Go structure, README, TODO planning
-- [x] **CLI Interface** - Kong argument parsing, Lipgloss styling, table size selection
-- [x] **Card & Deck System** - Complete implementation with tests and visual rendering
-- [x] **Hand Evaluation** - Poker hand ranking and comparison logic
-- [x] **Game State Management** - Players, table, betting rounds
-- [x] **Human Player Interface** - Readline-style command interface with extensible commands
-- [x] **AI Player Logic** - Position-aware decision making with hand evaluation
-- [x] **Complete Hand Narrative** - Full poker hand progression with betting rounds, showdowns, and summaries
-
-### ✅ Recent UX Improvements (COMPLETED)
-- [x] **Board Display Fixes** - Fix weird formatting like `[[Q♠]]` for turn/river cards
-- [x] **Enhanced Showdown Display** - Clear hand descriptions ("Pair of Aces" vs "One Pair")
-- [x] **Action Flow Clarity** - Better action descriptions and pot context
-- [x] **Bet Sizing Context** - Show raise amounts clearly ("raises from $2 to $9 (+$7)")
-- [x] **Position Indicators** - Show button/blinds during seating and play
-- [x] **Simplified Interface** - Dynamic prompt with essential info (hand, position, chips)
-- [x] **Display Architecture** - Moved all presentation logic to internal/game/display.go
-- [x] **Test Mode** - Added --test-mode flag for automated gameplay testing
-- [x] **Code Cleanup** - Removed debug mode and consolidated styling system
-
-### 📋 Next Up (Remaining Features)
-- [ ] **Winner Explanations** - Clear reasoning why one hand beats another
-
-### 📋 Future Enhancements
-- [ ] **Game Loop Enhancement** - Continuous hand-after-hand play with proper game flow
-- [ ] **Statistics Tracking** - Player stats, session history, win rates
-
-### 📅 Future Enhancements (Medium Priority)
-- [ ] **Multiple Sessions** - Save/load game state, persistent bankrolls
-- [ ] **Advanced Features** - Statistics, hand replay, configurable stakes
-- [ ] **Tournament Mode** - Multi-table tournaments with blinds escalation
-- [ ] **Hand History Export** - Save hands to files for analysis
-
----
-
 ## Detailed Task Breakdown
 
 ## Core Game Engine
@@ -113,8 +66,8 @@ The game now includes:
 - [x] Player bankroll initialization ($200 stacks)
 - [x] Test mode for automated gameplay (--test-mode / -t)
 - [x] Simplified command structure
-- [ ] Continuous hand-after-hand play
-- [ ] Quit option between hands
+- [x] Continuous hand-after-hand play
+- [x] Quit option between hands
 
 ## Output & Display ✅ COMPLETED
 
@@ -161,7 +114,6 @@ The game now includes:
 - [ ] Multiple table sizes
 - [ ] Configurable stakes
 - [ ] Player statistics tracking
-- [ ] Hand replay functionality
 
 ### AI Improvements
 - [ ] Advanced betting strategies

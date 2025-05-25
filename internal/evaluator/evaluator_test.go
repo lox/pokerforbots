@@ -14,7 +14,7 @@ func TestEvaluateRoyalFlush(t *testing.T) {
 		{Suit: deck.Spades, Rank: deck.Jack},
 		{Suit: deck.Spades, Rank: deck.Ten},
 	}
-	
+
 	hand := EvaluateHand(cards)
 	if hand.Rank != RoyalFlush {
 		t.Errorf("Expected Royal Flush, got %s", hand.Rank)
@@ -29,7 +29,7 @@ func TestEvaluateStraightFlush(t *testing.T) {
 		{Suit: deck.Hearts, Rank: deck.Six},
 		{Suit: deck.Hearts, Rank: deck.Five},
 	}
-	
+
 	hand := EvaluateHand(cards)
 	if hand.Rank != StraightFlush {
 		t.Errorf("Expected Straight Flush, got %s", hand.Rank)
@@ -47,7 +47,7 @@ func TestEvaluateFourOfAKind(t *testing.T) {
 		{Suit: deck.Clubs, Rank: deck.Ace},
 		{Suit: deck.Spades, Rank: deck.King},
 	}
-	
+
 	hand := EvaluateHand(cards)
 	if hand.Rank != FourOfAKind {
 		t.Errorf("Expected Four of a Kind, got %s", hand.Rank)
@@ -65,7 +65,7 @@ func TestEvaluateFullHouse(t *testing.T) {
 		{Suit: deck.Clubs, Rank: deck.Queen},
 		{Suit: deck.Spades, Rank: deck.Queen},
 	}
-	
+
 	hand := EvaluateHand(cards)
 	if hand.Rank != FullHouse {
 		t.Errorf("Expected Full House, got %s", hand.Rank)
@@ -83,7 +83,7 @@ func TestEvaluateFlush(t *testing.T) {
 		{Suit: deck.Clubs, Rank: deck.Seven},
 		{Suit: deck.Clubs, Rank: deck.Five},
 	}
-	
+
 	hand := EvaluateHand(cards)
 	if hand.Rank != Flush {
 		t.Errorf("Expected Flush, got %s", hand.Rank)
@@ -101,7 +101,7 @@ func TestEvaluateStraight(t *testing.T) {
 		{Suit: deck.Clubs, Rank: deck.Seven},
 		{Suit: deck.Spades, Rank: deck.Six},
 	}
-	
+
 	hand := EvaluateHand(cards)
 	if hand.Rank != Straight {
 		t.Errorf("Expected Straight, got %s", hand.Rank)
@@ -120,7 +120,7 @@ func TestEvaluateWheelStraight(t *testing.T) {
 		{Suit: deck.Clubs, Rank: deck.Three},
 		{Suit: deck.Spades, Rank: deck.Two},
 	}
-	
+
 	hand := EvaluateHand(cards)
 	if hand.Rank != Straight {
 		t.Errorf("Expected Straight, got %s", hand.Rank)
@@ -138,7 +138,7 @@ func TestEvaluateThreeOfAKind(t *testing.T) {
 		{Suit: deck.Clubs, Rank: deck.Nine},
 		{Suit: deck.Spades, Rank: deck.Seven},
 	}
-	
+
 	hand := EvaluateHand(cards)
 	if hand.Rank != ThreeOfAKind {
 		t.Errorf("Expected Three of a Kind, got %s", hand.Rank)
@@ -156,7 +156,7 @@ func TestEvaluateTwoPair(t *testing.T) {
 		{Suit: deck.Clubs, Rank: deck.Eight},
 		{Suit: deck.Spades, Rank: deck.Five},
 	}
-	
+
 	hand := EvaluateHand(cards)
 	if hand.Rank != TwoPair {
 		t.Errorf("Expected Two Pair, got %s", hand.Rank)
@@ -174,7 +174,7 @@ func TestEvaluateOnePair(t *testing.T) {
 		{Suit: deck.Clubs, Rank: deck.Nine},
 		{Suit: deck.Spades, Rank: deck.Seven},
 	}
-	
+
 	hand := EvaluateHand(cards)
 	if hand.Rank != OnePair {
 		t.Errorf("Expected One Pair, got %s", hand.Rank)
@@ -192,7 +192,7 @@ func TestEvaluateHighCard(t *testing.T) {
 		{Suit: deck.Clubs, Rank: deck.Seven},
 		{Suit: deck.Spades, Rank: deck.Five},
 	}
-	
+
 	hand := EvaluateHand(cards)
 	if hand.Rank != HighCard {
 		t.Errorf("Expected High Card, got %s", hand.Rank)
@@ -211,7 +211,7 @@ func TestHandComparison(t *testing.T) {
 		{Suit: deck.Spades, Rank: deck.Jack},
 		{Suit: deck.Spades, Rank: deck.Ten},
 	})
-	
+
 	straightFlush := EvaluateHand([]deck.Card{
 		{Suit: deck.Hearts, Rank: deck.Nine},
 		{Suit: deck.Hearts, Rank: deck.Eight},
@@ -219,11 +219,11 @@ func TestHandComparison(t *testing.T) {
 		{Suit: deck.Hearts, Rank: deck.Six},
 		{Suit: deck.Hearts, Rank: deck.Five},
 	})
-	
+
 	if !royalFlush.IsStrongerThan(straightFlush) {
 		t.Error("Royal flush should beat straight flush")
 	}
-	
+
 	// Ace-high beats King-high
 	aceHigh := EvaluateHand([]deck.Card{
 		{Suit: deck.Spades, Rank: deck.Ace},
@@ -232,7 +232,7 @@ func TestHandComparison(t *testing.T) {
 		{Suit: deck.Clubs, Rank: deck.Seven},
 		{Suit: deck.Spades, Rank: deck.Five},
 	})
-	
+
 	kingHigh := EvaluateHand([]deck.Card{
 		{Suit: deck.Spades, Rank: deck.King},
 		{Suit: deck.Hearts, Rank: deck.Jack},
@@ -240,7 +240,7 @@ func TestHandComparison(t *testing.T) {
 		{Suit: deck.Clubs, Rank: deck.Seven},
 		{Suit: deck.Hearts, Rank: deck.Five},
 	})
-	
+
 	if !aceHigh.IsStrongerThan(kingHigh) {
 		t.Error("Ace high should beat King high")
 	}
@@ -258,7 +258,7 @@ func TestFindBestHandFrom7Cards(t *testing.T) {
 		{Suit: deck.Spades, Rank: deck.Jack},
 		{Suit: deck.Spades, Rank: deck.Ten},
 	}
-	
+
 	hand := FindBestHand(cards)
 	if hand.Rank != RoyalFlush {
 		t.Errorf("Expected Royal Flush from 7 cards, got %s", hand.Rank)

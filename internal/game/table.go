@@ -65,32 +65,32 @@ func (gs GameState) String() string {
 // Table represents a poker table
 type Table struct {
 	// Basic table info
-	MaxSeats       int            // Maximum number of seats (6 or 9)
-	SmallBlind     int            // Small blind amount
-	BigBlind       int            // Big blind amount
-	
+	MaxSeats   int // Maximum number of seats (6 or 9)
+	SmallBlind int // Small blind amount
+	BigBlind   int // Big blind amount
+
 	// Players and positions
-	Players        []*Player      // All players at the table
-	ActivePlayers  []*Player      // Players currently in the hand
-	DealerPosition int            // Current dealer button position (seat number)
-	
+	Players        []*Player // All players at the table
+	ActivePlayers  []*Player // Players currently in the hand
+	DealerPosition int       // Current dealer button position (seat number)
+
 	// Game state
-	CurrentRound   BettingRound   // Current betting round
-	State          GameState      // Overall game state
-	HandNumber     int            // Current hand number
-	
+	CurrentRound BettingRound // Current betting round
+	State        GameState    // Overall game state
+	HandNumber   int          // Current hand number
+
 	// Cards
-	Deck           *deck.Deck     // The deck of cards
-	CommunityCards []deck.Card    // Community cards (flop, turn, river)
-	
+	Deck           *deck.Deck  // The deck of cards
+	CommunityCards []deck.Card // Community cards (flop, turn, river)
+
 	// Betting
-	Pot            int            // Main pot
-	CurrentBet     int            // Current bet to call
-	MinRaise       int            // Minimum raise amount
-	ActionOn       int            // Player index who needs to act
-	
+	Pot        int // Main pot
+	CurrentBet int // Current bet to call
+	MinRaise   int // Minimum raise amount
+	ActionOn   int // Player index who needs to act
+
 	// Hand tracking
-	PlayersActed   map[int]bool   // Track which players have acted this round
+	PlayersActed map[int]bool // Track which players have acted this round
 }
 
 // NewTable creates a new poker table
@@ -120,27 +120,27 @@ func (t *Table) AddPlayer(player *Player) bool {
 	if len(t.Players) >= t.MaxSeats {
 		return false // Table is full
 	}
-	
+
 	// Find first available seat
 	seatTaken := make(map[int]bool)
 	for _, p := range t.Players {
 		seatTaken[p.SeatNumber] = true
 	}
-	
+
 	for seat := 1; seat <= t.MaxSeats; seat++ {
 		if !seatTaken[seat] {
 			player.SeatNumber = seat
 			break
 		}
 	}
-	
+
 	t.Players = append(t.Players, player)
-	
+
 	// Sort players by seat number for consistent ordering
 	sort.Slice(t.Players, func(i, j int) bool {
 		return t.Players[i].SeatNumber < t.Players[j].SeatNumber
 	})
-	
+
 	return true
 }
 
@@ -149,7 +149,7 @@ func (t *Table) StartNewHand() {
 	if len(t.Players) < 2 {
 		return // Need at least 2 players
 	}
-	
+
 	t.HandNumber++
 	t.State = InProgress
 	t.CurrentRound = PreFlop
@@ -158,7 +158,7 @@ func (t *Table) StartNewHand() {
 	t.MinRaise = t.BigBlind
 	t.CommunityCards = t.CommunityCards[:0]
 	t.PlayersActed = make(map[int]bool)
-	
+
 	// Reset all players for new hand
 	t.ActivePlayers = make([]*Player, 0, len(t.Players))
 	for _, player := range t.Players {
@@ -167,17 +167,17 @@ func (t *Table) StartNewHand() {
 			t.ActivePlayers = append(t.ActivePlayers, player)
 		}
 	}
-	
+
 	// Set positions
 	t.setPositions()
-	
+
 	// Shuffle and deal
 	t.Deck.Reset()
 	t.dealHoleCards()
-	
+
 	// Post blinds
 	t.postBlinds()
-	
+
 	// Set action on first player to act (UTG in heads-up, left of BB otherwise)
 	t.setFirstToAct()
 }
@@ -188,7 +188,7 @@ func (t *Table) setPositions() {
 	if numPlayers < 2 {
 		return
 	}
-	
+
 	// Find dealer in active players
 	dealerIndex := -1
 	for i, player := range t.ActivePlayers {
@@ -197,18 +197,18 @@ func (t *Table) setPositions() {
 			break
 		}
 	}
-	
+
 	// If dealer not found or not active, move button
 	if dealerIndex == -1 {
 		dealerIndex = 0
 		t.DealerPosition = t.ActivePlayers[0].SeatNumber
 	}
-	
+
 	// Assign positions
 	for i := 0; i < numPlayers; i++ {
 		playerIndex := (dealerIndex + i) % numPlayers
 		player := t.ActivePlayers[playerIndex]
-		
+
 		if numPlayers == 2 {
 			// Heads-up: dealer is small blind
 			if i == 0 {
@@ -251,23 +251,24 @@ func (t *Table) dealHoleCards() {
 // postBlinds posts the small and big blinds
 func (t *Table) postBlinds() {
 	var smallBlindPlayer, bigBlindPlayer *Player
-	
+
 	// Find blind players
 	for _, player := range t.ActivePlayers {
-		if player.Position == SmallBlind {
+		switch player.Position {
+		case SmallBlind:
 			smallBlindPlayer = player
-		} else if player.Position == BigBlind {
+		case BigBlind:
 			bigBlindPlayer = player
 		}
 	}
-	
+
 	// Post blinds
 	if smallBlindPlayer != nil {
 		amount := min(t.SmallBlind, smallBlindPlayer.Chips)
 		smallBlindPlayer.Call(amount)
 		t.Pot += amount
 	}
-	
+
 	if bigBlindPlayer != nil {
 		amount := min(t.BigBlind, bigBlindPlayer.Chips)
 		bigBlindPlayer.Call(amount)
@@ -282,11 +283,11 @@ func (t *Table) setFirstToAct() {
 	if numPlayers < 2 {
 		return
 	}
-	
+
 	// In heads-up, big blind acts first preflop
 	// In multi-way, first player after big blind acts first
 	var firstToAct *Player
-	
+
 	if numPlayers == 2 {
 		for _, player := range t.ActivePlayers {
 			if player.Position == BigBlind {
@@ -302,7 +303,7 @@ func (t *Table) setFirstToAct() {
 			}
 		}
 	}
-	
+
 	// Find the index of first to act
 	for i, player := range t.ActivePlayers {
 		if player == firstToAct {
@@ -317,7 +318,7 @@ func (t *Table) DealFlop() {
 	if t.CurrentRound != PreFlop {
 		return
 	}
-	
+
 	t.Deck.Deal() // Burn card
 	flop := t.Deck.DealN(3)
 	t.CommunityCards = append(t.CommunityCards, flop...)
@@ -330,7 +331,7 @@ func (t *Table) DealTurn() {
 	if t.CurrentRound != Flop {
 		return
 	}
-	
+
 	t.Deck.Deal() // Burn card
 	turn, _ := t.Deck.Deal()
 	t.CommunityCards = append(t.CommunityCards, turn)
@@ -343,7 +344,7 @@ func (t *Table) DealRiver() {
 	if t.CurrentRound != Turn {
 		return
 	}
-	
+
 	t.Deck.Deal() // Burn card
 	river, _ := t.Deck.Deal()
 	t.CommunityCards = append(t.CommunityCards, river)
@@ -356,14 +357,14 @@ func (t *Table) startNewBettingRound() {
 	t.CurrentBet = 0
 	t.MinRaise = t.BigBlind
 	t.PlayersActed = make(map[int]bool)
-	
+
 	// Reset all players for new round
 	for _, player := range t.ActivePlayers {
 		if player.IsInHand() {
 			player.ResetForNewRound()
 		}
 	}
-	
+
 	// Find first active player after dealer
 	t.ActionOn = t.findNextActivePlayer(t.getDealerIndex())
 }
@@ -402,10 +403,10 @@ func (t *Table) AdvanceAction() {
 	if t.ActionOn == -1 {
 		return
 	}
-	
+
 	currentPlayer := t.ActivePlayers[t.ActionOn]
 	t.PlayersActed[currentPlayer.ID] = true
-	
+
 	t.ActionOn = t.findNextActivePlayer(t.ActionOn)
 }
 
@@ -414,7 +415,7 @@ func (t *Table) IsBettingRoundComplete() bool {
 	playersInHand := 0
 	playersActed := 0
 	playersAllIn := 0
-	
+
 	for _, player := range t.ActivePlayers {
 		if player.IsInHand() {
 			playersInHand++
@@ -426,7 +427,7 @@ func (t *Table) IsBettingRoundComplete() bool {
 			}
 		}
 	}
-	
+
 	// Round is complete if all players have acted and matched the current bet,
 	// or if only one player remains, or if all but one are all-in
 	return playersActed == playersInHand || playersInHand <= 1 || playersInHand-playersAllIn <= 1
@@ -434,8 +435,8 @@ func (t *Table) IsBettingRoundComplete() bool {
 
 // String returns a string representation of the table state
 func (t *Table) String() string {
-	return fmt.Sprintf("Hand #%d - %s - Pot: $%d - Action on: %s", 
-		t.HandNumber, t.CurrentRound, t.Pot, 
+	return fmt.Sprintf("Hand #%d - %s - Pot: $%d - Action on: %s",
+		t.HandNumber, t.CurrentRound, t.Pot,
 		func() string {
 			if player := t.GetCurrentPlayer(); player != nil {
 				return player.Name

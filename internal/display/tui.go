@@ -21,11 +21,10 @@ type TUIModel struct {
 	actionInput textinput.Model
 
 	// State
-	gameLog       []string
-	currentAction string
-	actionResult  chan ActionResult
-	quitting      bool
-	focusedPane   int // 0 = log, 1 = input
+	gameLog      []string
+	actionResult chan ActionResult
+	quitting     bool
+	focusedPane  int // 0 = log, 1 = input
 
 	// Styles
 	styles *TUIStyles
@@ -175,19 +174,19 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "up", "k":
 			if m.focusedPane == 0 { // Log pane focused
-				m.logViewport.LineUp(1)
+				m.logViewport.ScrollUp(1)
 			}
 		case "down", "j":
 			if m.focusedPane == 0 { // Log pane focused
-				m.logViewport.LineDown(1)
+				m.logViewport.ScrollDown(1)
 			}
 		case "pgup", "b":
 			if m.focusedPane == 0 { // Log pane focused
-				m.logViewport.HalfViewUp()
+				m.logViewport.HalfPageUp()
 			}
 		case "pgdown", "f":
 			if m.focusedPane == 0 { // Log pane focused
-				m.logViewport.HalfViewDown()
+				m.logViewport.HalfPageDown()
 			}
 		case "home", "g":
 			if m.focusedPane == 0 { // Log pane focused
@@ -202,7 +201,7 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Update components
 	var cmd tea.Cmd
-	
+
 	// Only update input if it's focused
 	if m.focusedPane == 1 {
 		m.actionInput, cmd = m.actionInput.Update(msg)
@@ -277,10 +276,10 @@ func (m *TUIModel) renderActionPane() string {
 		// During hand
 		m.actionInput.Placeholder = "Enter your action (call, raise 50, fold, check, etc.)"
 	}
-	
+
 	content.WriteString(m.actionInput.View())
 	content.WriteString("\n")
-	
+
 	// Show help text
 	if m.focusedPane == 0 {
 		content.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render(
@@ -371,7 +370,7 @@ func (m *TUIModel) updateDimensions() {
 
 	// Calculate action pane needs:
 	// - Hand info line (1)
-	// - Actions line (1) 
+	// - Actions line (1)
 	// - Input field (1)
 	// - Help text (1)
 	// - Border top/bottom (2)
@@ -383,14 +382,14 @@ func (m *TUIModel) updateDimensions() {
 	// Leave 1 line margin at top to prevent border clipping
 	logHeight := m.height - actionPaneHeight - 1
 	if logHeight < 3 {
-		logHeight = 3 // Minimum log height
-		actionPaneHeight = m.height - logHeight - 1
+		logHeight = 3                // Minimum log height
+		_ = m.height - logHeight - 1 // Recalculate actionPaneHeight but don't store
 	}
-	
+
 	// Account for borders and padding (2 for border, 2 for padding)
 	m.logViewport.Width = m.width - 4
 	m.logViewport.Height = logHeight - 4
-	
+
 	// Input width should fit within action pane
 	m.actionInput.Width = m.width - 8 // Extra margin within the pane
 }
@@ -401,7 +400,7 @@ func (m *TUIModel) AddLogEntry(entry string) {
 	// Update content and auto-scroll to bottom
 	content := strings.Join(m.gameLog, "\n")
 	m.logViewport.SetContent(content)
-	
+
 	// Only call GotoBottom if viewport has valid dimensions
 	if m.logViewport.Height > 0 && m.logViewport.Width > 0 {
 		m.logViewport.GotoBottom()
@@ -417,10 +416,10 @@ func (m *TUIModel) ClearLog() {
 // processAction processes a user action
 func (m *TUIModel) processAction(input string) {
 	parts := strings.Fields(strings.ToLower(input))
-	
+
 	var action string
 	var args []string
-	
+
 	if len(parts) == 0 {
 		// Empty input (Enter pressed with no text)
 		action = ""

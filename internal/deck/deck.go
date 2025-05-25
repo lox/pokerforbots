@@ -17,14 +17,14 @@ func NewDeck() *Deck {
 		cards: make([]Card, 0, 52),
 		rng:   rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
-	
+
 	// Create all 52 cards
 	for suit := Spades; suit <= Clubs; suit++ {
 		for rank := Two; rank <= Ace; rank++ {
 			deck.cards = append(deck.cards, NewCard(suit, rank))
 		}
 	}
-	
+
 	return deck
 }
 
@@ -41,7 +41,7 @@ func (d *Deck) Deal() (Card, bool) {
 	if len(d.cards) == 0 {
 		return Card{}, false
 	}
-	
+
 	card := d.cards[0]
 	d.cards = d.cards[1:]
 	return card, true
@@ -52,14 +52,14 @@ func (d *Deck) DealN(n int) []Card {
 	if n > len(d.cards) {
 		n = len(d.cards)
 	}
-	
+
 	cards := make([]Card, n)
 	for i := 0; i < n; i++ {
 		if card, ok := d.Deal(); ok {
 			cards[i] = card
 		}
 	}
-	
+
 	return cards
 }
 
@@ -76,14 +76,14 @@ func (d *Deck) IsEmpty() bool {
 // Reset restores the deck to a full 52-card deck and shuffles it
 func (d *Deck) Reset() {
 	d.cards = d.cards[:0] // Clear the slice but keep capacity
-	
+
 	// Recreate all 52 cards
 	for suit := Spades; suit <= Clubs; suit++ {
 		for rank := Two; rank <= Ace; rank++ {
 			d.cards = append(d.cards, NewCard(suit, rank))
 		}
 	}
-	
+
 	d.Shuffle()
 }
 
