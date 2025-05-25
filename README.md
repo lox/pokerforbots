@@ -26,13 +26,13 @@ go run cmd/holdem/main.go
 go run cmd/holdem/main.go --test-mode
 
 # Specify table size
-go run cmd/holdem/main.go 9
+go run cmd/holdem/main.go --players 9
 ```
 
 ## Gameplay
 
 - Choose table size (6 or 9 seats)
-- Players start with $200 stacks  
+- Players start with $200 stacks
 - Small blind: $1, Big blind: $2
 - Use commands like `call`, `raise 50`, `fold`, `quit`, `stats`
 - Full command history and tab completion
@@ -64,7 +64,5 @@ See [TODO.md](TODO.md) for planned features and current development status.
 
 ### Commands
 
-- Build: `go build`
 - Test: `go test ./...`
-- Run: `go run cmd/holdem/main.go`
-- Test mode: `go run cmd/holdem/main.go -t`
+- Run: `go run ./cmd/holdem`

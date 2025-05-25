@@ -11,10 +11,8 @@ This is a **Texas Hold'em CLI poker game** with AI opponents, built in Go. The g
 For detailed progress and feature status, see [TODO.md](TODO.md).
 
 ## Project Commands
-- Build: `go build` or `./bin/task build`
 - Run: `go run cmd/holdem/main.go [--players N]` or `./bin/task run`
-- Run test mode: `go run cmd/holdem/main.go --test-mode` or `./bin/task run-test`
-- Test: `go test ./...` or `./bin/task test`
+- Tests: `go test ./...` or `./bin/task test`
 - Test single file: `go test -run TestName ./path/to/package`
 - Lint: `golangci-lint run` or `./bin/task lint`
 - Format: `go fmt ./...` or `./bin/task fmt`
@@ -31,17 +29,18 @@ For detailed progress and feature status, see [TODO.md](TODO.md).
 
 ## Project Structure
 - `cmd/holdem/` - Main application entry point
-- `internal/game/` - Core game logic and display system
+- `internal/game/` - Core game logic and game state
 - `internal/deck/` - Card and deck implementation
 - `internal/evaluator/` - Hand strength evaluation
-- `internal/player/` - Player types (human/AI)
+- `internal/display/` - TUI presentation layer (Bubble Tea interface)
 
 ## Architecture Notes
-- **Display Logic**: All presentation code is in `internal/game/display.go`
+- **Display Logic**: All presentation code is in `internal/display/`
 - **Game Flow**: Main game loop in `internal/game/` with clean separation of concerns
-- **CLI Interface**: Uses Kong for argument parsing, readline for interactive input
-- **Styling**: Lipgloss for terminal styling, consolidated in DisplayStyles struct
-- **Testing**: Use `--test-mode` flag for automated gameplay testing
+- **TUI Interface**: Uses Bubble Tea for two-pane design (game log + action interface)
+- **CLI Interface**: Kong for argument parsing, Bubble Tea for interactive TUI
+- **Styling**: Lipgloss for terminal styling within TUI components
+- **Clean Architecture**: Presentation logic completely separated from game logic
 
 ## Current Status
 The game is **feature-complete** for core poker gameplay. See [TODO.md](TODO.md) for:
