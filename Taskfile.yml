@@ -57,19 +57,9 @@ tasks:
       - GOOS=windows GOARCH=amd64 go build -o {{.DIST_DIR}}/{{.BINARY_NAME}}-windows-amd64.exe ./cmd/holdem
 
   run:
-    desc: Run the application (6-player table, default)
+    desc: Run the application
     cmds:
       - go run ./cmd/holdem
-
-  run-9:
-    desc: Run the application (9-player table)
-    cmds:
-      - go run ./cmd/holdem --players 9
-
-  run-test:
-    desc: Run the application in test mode
-    cmds:
-      - go run ./cmd/holdem --test-mode
 
   clean:
     desc: Clean build artifacts
