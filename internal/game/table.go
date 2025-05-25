@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lox/holdem-cli/internal/deck"
+	"github.com/lox/holdem-cli/internal/evaluator"
 )
 
 // RandSource interface for dependency injection of randomness
@@ -544,8 +545,7 @@ func (t *Table) AwardPot(winner *Player) {
 	}
 }
 
-// FindWinner determines the winner of the hand
-// For now, this is a simple implementation - in a full game it would evaluate hands
+// FindWinner determines the winner of the hand using proper hand evaluation
 func (t *Table) FindWinner() *Player {
 	activePlayers := t.GetActivePlayers()
 	if len(activePlayers) == 0 {
@@ -557,9 +557,45 @@ func (t *Table) FindWinner() *Player {
 		return activePlayers[0]
 	}
 	
-	// For now, just return the first non-folded player
-	// TODO: Implement proper hand evaluation for showdown
-	return activePlayers[0]
+	// Check if we have enough cards for evaluation (need at least 5 total)
+	// This can happen if FindWinner is called before all community cards are dealt
+	if len(t.CommunityCards) < 3 {
+		// Not enough community cards yet, return first player for now
+		// In a real game, this shouldn't happen during showdown
+		return activePlayers[0]
+	}
+	
+	// Evaluate each player's best hand
+	var bestPlayer *Player
+	var bestHand evaluator.Hand
+	
+	for i, player := range activePlayers {
+		// Combine hole cards with community cards
+		allCards := make([]deck.Card, 0, 7)
+		allCards = append(allCards, player.HoleCards...)
+		allCards = append(allCards, t.CommunityCards...)
+		
+		// Need at least 5 cards total
+		if len(allCards) < 5 {
+			continue
+		}
+		
+		// Find the best 5-card hand
+		playerHand := evaluator.FindBestHand(allCards)
+		
+		// Compare with current best
+		if i == 0 || playerHand.IsStrongerThan(bestHand) {
+			bestPlayer = player
+			bestHand = playerHand
+		}
+	}
+	
+	// Fallback if no valid hands found
+	if bestPlayer == nil {
+		return activePlayers[0]
+	}
+	
+	return bestPlayer
 }
 
 // GetActivePlayers returns players who are still in the hand (not folded)

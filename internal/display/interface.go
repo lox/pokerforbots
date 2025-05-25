@@ -475,7 +475,7 @@ func (ti *TUIInterface) ShowCompleteShowdown() {
 
 // ShowHandSummary shows the hand summary
 func (ti *TUIInterface) ShowHandSummary() {
-	// Store pot amount before it gets reset by AwardPot
+	// Store pot amount (will be reset by AwardPot after this method)
 	finalPot := ti.table.Pot
 	
 	// Log final hand state to file

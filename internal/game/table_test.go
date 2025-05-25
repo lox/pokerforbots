@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
+	
+	"github.com/lox/holdem-cli/internal/deck"
 )
 
 // MockRandSource for deterministic testing
@@ -592,5 +594,103 @@ func TestFindWinner(t *testing.T) {
 	winner = table.FindWinner()
 	if winner != player3 {
 		t.Error("Last remaining player should be winner")
+	}
+}
+
+// TestFindWinnerEvaluatesHandStrength tests that FindWinner correctly evaluates hand strength
+func TestFindWinnerEvaluatesHandStrength(t *testing.T) {
+	table := NewTable(6, 1, 2)
+
+	// Add players - player1 will be first in ActivePlayers
+	player1 := NewPlayer(1, "WeakHand", Human, 200)
+	player2 := NewPlayer(2, "StrongHand", AI, 200)
+	table.AddPlayer(player1)
+	table.AddPlayer(player2)
+
+	table.StartNewHand()
+
+	// Manually set hole cards to create a clear hand strength difference
+	// Player1 gets weak cards (Jack high)
+	player1.HoleCards = []deck.Card{
+		deck.NewCard(deck.Spades, deck.Nine),  // 9♠
+		deck.NewCard(deck.Spades, deck.Jack),  // J♠
+	}
+
+	// Player2 gets strong cards (pair of Aces)
+	player2.HoleCards = []deck.Card{
+		deck.NewCard(deck.Hearts, deck.King), // K♥
+		deck.NewCard(deck.Spades, deck.Ace),  // A♠
+	}
+
+	// Set community cards to give player2 top pair
+	table.CommunityCards = []deck.Card{
+		deck.NewCard(deck.Diamonds, deck.Three), // 3♦
+		deck.NewCard(deck.Hearts, deck.Ace),     // A♥ - gives player2 pair of Aces
+		deck.NewCard(deck.Hearts, deck.Six),     // 6♥
+		deck.NewCard(deck.Clubs, deck.Nine),     // 9♣
+		deck.NewCard(deck.Diamonds, deck.Queen), // Q♦
+	}
+
+	// Now with proper hand evaluation: Player2 should win with pair of Aces
+	winner := table.FindWinner()
+
+	// Player2 should win because they have pair of Aces vs player1's Jack high
+	if winner != player2 {
+		t.Error("Player2 should win with pair of Aces vs Jack high")
+	}
+
+	t.Logf("Player1 cards: %s %s (Jack high)", 
+		player1.HoleCards[0], player1.HoleCards[1])
+	t.Logf("Player2 cards: %s %s (pair of Aces)", 
+		player2.HoleCards[0], player2.HoleCards[1])
+	t.Logf("Community: %v", table.CommunityCards)
+	t.Logf("Winner: %s (correct hand evaluation)", winner.Name)
+}
+
+// TestPotAmountPreservedForSummary tests that pot amount is available for summary display
+func TestPotAmountPreservedForSummary(t *testing.T) {
+	table := NewTable(6, 1, 2)
+
+	// Add players
+	player1 := NewPlayer(1, "Alice", Human, 200)
+	player2 := NewPlayer(2, "Bob", AI, 200)
+	table.AddPlayer(player1)
+	table.AddPlayer(player2)
+
+	table.StartNewHand()
+	
+	// Add some betting to increase the pot
+	table.Pot = 50 // Simulate betting that created a 50 chip pot
+	
+	// Verify pot is preserved before awarding
+	potBeforeAward := table.Pot
+	if potBeforeAward != 50 {
+		t.Errorf("Expected pot of 50, got %d", potBeforeAward)
+	}
+	
+	// Find winner
+	winner := table.FindWinner()
+	if winner == nil {
+		t.Fatal("Should have a winner")
+	}
+	
+	// Pot should still be intact for summary display
+	potForSummary := table.Pot
+	if potForSummary != 50 {
+		t.Errorf("Pot should still be 50 for summary display, got %d", potForSummary)
+	}
+	
+	// Award pot (this will reset it to 0)
+	initialChips := winner.Chips
+	table.AwardPot(winner)
+	
+	// Verify pot was awarded correctly
+	if winner.Chips != initialChips+50 {
+		t.Errorf("Winner should have %d chips, got %d", initialChips+50, winner.Chips)
+	}
+	
+	// Verify pot is now empty
+	if table.Pot != 0 {
+		t.Errorf("Pot should be 0 after awarding, got %d", table.Pot)
 	}
 }
