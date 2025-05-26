@@ -31,6 +31,7 @@ This is a **Texas Hold'em CLI poker game** with AI opponents, built in Go. The g
 - `internal/deck/` - Card and deck implementation
 - `internal/evaluator/` - Hand strength evaluation
 - `internal/display/` - TUI presentation layer (Bubble Tea interface)
+- `internal/gameid/` - UUIDv7-based game ID generation with TypeID encoding
 
 ## Architecture Notes
 - **Display Logic**: All presentation code is in `internal/display/`
@@ -41,5 +42,7 @@ This is a **Texas Hold'em CLI poker game** with AI opponents, built in Go. The g
 - **Clean Architecture**: Presentation logic completely separated from game logic
 
 ## Development Notes
-- Use Hermit for dependency management
+- Use Hermit for dependency management  
 - Go module: github.com/lox/holdem-cli
+- **Game IDs**: Random UUIDv7 IDs with base32 encoding (26 chars, TypeID-compatible)
+- **Deterministic Testing**: Use `RandSource` interface for reproducible game ID generation in tests

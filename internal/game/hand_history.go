@@ -22,7 +22,7 @@ type HandAction struct {
 
 // HandHistory tracks all actions and metadata for a single hand
 type HandHistory struct {
-	HandNumber      int
+	HandID          string
 	StartTime       time.Time
 	SmallBlind      int
 	BigBlind        int
@@ -63,7 +63,7 @@ func NewHandHistory(table *Table) *HandHistory {
 	}
 
 	return &HandHistory{
-		HandNumber:     table.HandNumber,
+		HandID:         table.HandID,
 		StartTime:      time.Now(),
 		SmallBlind:     table.SmallBlind,
 		BigBlind:       table.BigBlind,
@@ -116,7 +116,7 @@ func (hh *HandHistory) GenerateHistoryText() string {
 	var history string
 
 	// Header
-	history += fmt.Sprintf("=== HAND #%d ===\n", hh.HandNumber)
+	history += fmt.Sprintf("=== HAND %s ===\n", hh.HandID)
 	history += fmt.Sprintf("Date: %s\n", hh.StartTime.Format("2006-01-02 15:04:05"))
 	history += fmt.Sprintf("Blinds: %d/%d\n", hh.SmallBlind, hh.BigBlind)
 	history += fmt.Sprintf("Players: %d\n", len(hh.Players))
@@ -378,7 +378,7 @@ func (hh *HandHistory) SaveToFile() error {
 	}
 
 	// Generate filename
-	filename := filepath.Join("handhistory", fmt.Sprintf("hand_%d.txt", hh.HandNumber))
+	filename := filepath.Join("handhistory", fmt.Sprintf("hand_%s.txt", hh.HandID))
 
 	// Generate content
 	content := hh.GenerateHistoryText()

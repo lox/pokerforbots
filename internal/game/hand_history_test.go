@@ -11,7 +11,7 @@ import (
 func TestNewHandHistory(t *testing.T) {
 	// Create a test table
 	table := &Table{
-		HandNumber:     5,
+		HandID:         "01h5n0et5q6mt3v7ms1234abcd",
 		SmallBlind:     1,
 		BigBlind:       2,
 		DealerPosition: 3,
@@ -25,8 +25,8 @@ func TestNewHandHistory(t *testing.T) {
 	hh := NewHandHistory(table)
 
 	// Test basic fields
-	if hh.HandNumber != 5 {
-		t.Errorf("Expected HandNumber 5, got %d", hh.HandNumber)
+	if hh.HandID != "01h5n0et5q6mt3v7ms1234abcd" {
+		t.Errorf("Expected HandID 01h5n0et5q6mt3v7ms1234abcd, got %s", hh.HandID)
 	}
 	if hh.SmallBlind != 1 {
 		t.Errorf("Expected SmallBlind 1, got %d", hh.SmallBlind)
@@ -193,7 +193,7 @@ func TestFormatAction(t *testing.T) {
 
 func TestGenerateHistoryText(t *testing.T) {
 	hh := &HandHistory{
-		HandNumber:     1,
+		HandID:         "01h5n0et5q6mt3v7ms1234abcd",
 		StartTime:      time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC),
 		SmallBlind:     1,
 		BigBlind:       2,
@@ -240,7 +240,7 @@ func TestGenerateHistoryText(t *testing.T) {
 
 	// Test that key elements are present
 	expectedElements := []string{
-		"=== HAND #1 ===",
+		"=== HAND 01h5n0et5q6mt3v7ms1234abcd ===",
 		"Date: 2025-01-01 12:00:00",
 		"Blinds: 1/2",
 		"Players: 2",
@@ -329,17 +329,17 @@ func TestGetDisplayActions(t *testing.T) {
 
 func TestEmptyHandHistory(t *testing.T) {
 	hh := &HandHistory{
-		HandNumber: 1,
-		StartTime:  time.Now(),
-		Players:    []PlayerSnapshot{},
-		Actions:    []HandAction{},
-		Winners:    []WinnerInfo{},
+		HandID:    "01h5n0et5q6mt3v7ms1234abcd",
+		StartTime: time.Now(),
+		Players:   []PlayerSnapshot{},
+		Actions:   []HandAction{},
+		Winners:   []WinnerInfo{},
 	}
 
 	text := hh.GenerateHistoryText()
 
 	// Should not crash and should contain basic structure
-	if !strings.Contains(text, "=== HAND #1 ===") {
+	if !strings.Contains(text, "=== HAND 01h5n0et5q6mt3v7ms1234abcd ===") {
 		t.Error("Expected hand header even with empty history")
 	}
 	if !strings.Contains(text, "=== END HAND ===") {

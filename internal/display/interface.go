@@ -357,7 +357,7 @@ func (ti *TUIInterface) ClearLog() {
 func (ti *TUIInterface) InitializeHand(seats int) {
 	// Log game state context to file
 	ti.mainLogger.Info("New hand started",
-		"handNumber", ti.table.HandNumber,
+		"handID", ti.table.HandID,
 		"players", seats,
 		"smallBlind", ti.table.SmallBlind,
 		"bigBlind", ti.table.BigBlind,
@@ -376,7 +376,7 @@ func (ti *TUIInterface) InitializeHand(seats int) {
 	}
 
 	// Show hand header
-	ti.AddLogEntry(fmt.Sprintf("Hand #%d • %d players • $1/$2", ti.table.HandNumber, seats))
+	ti.AddLogEntry(fmt.Sprintf("Hand %s • %d players • $1/$2", ti.table.HandID, seats))
 	ti.AddLogEntry("")
 	ti.AddLogEntry("*** HOLE CARDS ***")
 
@@ -574,7 +574,7 @@ func (ti *TUIInterface) ShowHandSummary() {
 
 	// Log final hand state to file
 	ti.mainLogger.Info("=== HAND COMPLETE ===",
-		"handNumber", ti.table.HandNumber,
+		"handID", ti.table.HandID,
 		"finalPot", finalPot,
 		"finalBet", ti.table.CurrentBet)
 
@@ -651,7 +651,7 @@ func (ti *TUIInterface) ShowHandSummary() {
 
 // handleSave saves the current hand history to a file
 func (ti *TUIInterface) handleSave(args []string) (bool, error) {
-	handNumber := ti.table.HandNumber
+	handID := ti.table.HandID
 
 	// Create handhistory directory if it doesn't exist
 	if err := os.MkdirAll("handhistory", 0755); err != nil {
@@ -660,14 +660,14 @@ func (ti *TUIInterface) handleSave(args []string) (bool, error) {
 	}
 
 	// Generate filename
-	filename := filepath.Join("handhistory", fmt.Sprintf("hand_%d.txt", handNumber))
+	filename := filepath.Join("handhistory", fmt.Sprintf("hand_%s.txt", handID))
 
 	// Generate hand history content from HandHistory service
 	var content string
 	if ti.table.HandHistory != nil {
 		content = ti.table.HandHistory.GenerateHistoryText()
 	} else {
-		content = fmt.Sprintf("=== HAND #%d ===\nNo hand history available\n=== END HAND ===\n", handNumber)
+		content = fmt.Sprintf("=== HAND %s ===\nNo hand history available\n=== END HAND ===\n", handID)
 	}
 
 	// Write to file

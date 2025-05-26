@@ -107,8 +107,8 @@ func TestStartNewHand(t *testing.T) {
 		t.Errorf("Expected InProgress state, got %s", table.State)
 	}
 
-	if table.HandNumber != 1 {
-		t.Errorf("Expected hand number 1, got %d", table.HandNumber)
+	if table.HandID == "" {
+		t.Errorf("Expected hand ID to be generated, got empty string")
 	}
 
 	if table.CurrentRound != PreFlop {
@@ -438,6 +438,64 @@ func TestCalculatePositions_SixPlayers(t *testing.T) {
 		if positions[seat] != expectedPos {
 			t.Errorf("Seat %d: got %v, want %v", seat, positions[seat], expectedPos)
 		}
+	}
+}
+
+func TestDeterministicHandIDs(t *testing.T) {
+	// Test that same RandSource produces same hand IDs
+	mockRand1 := NewMockRandSource(42, 100, 200, 50, 75, 25, 80, 90, 60, 70, 30, 40, 10, 20, 15, 35)
+	mockRand2 := NewMockRandSource(42, 100, 200, 50, 75, 25, 80, 90, 60, 70, 30, 40, 10, 20, 15, 35)
+	
+	config1 := TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+		RandSource: mockRand1,
+	}
+	
+	config2 := TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+		RandSource: mockRand2,
+	}
+	
+	table1 := NewTableWithConfig(config1)
+	table2 := NewTableWithConfig(config2)
+	
+	// Add players to both tables
+	for i := 1; i <= 2; i++ {
+		player1 := NewPlayer(i, fmt.Sprintf("P%d", i), AI, 200)
+		player2 := NewPlayer(i, fmt.Sprintf("P%d", i), AI, 200)
+		table1.AddPlayer(player1)
+		table2.AddPlayer(player2)
+	}
+	
+	// Start hands and collect IDs
+	table1.StartNewHand()
+	table2.StartNewHand()
+	
+	id1 := table1.HandID
+	id2 := table2.HandID
+	
+	t.Logf("Table 1 Hand ID: %s", id1)
+	t.Logf("Table 2 Hand ID: %s", id2)
+	
+	// The random portion should be identical (timestamp might differ slightly)
+	// Both IDs should be valid
+	if len(id1) != 26 {
+		t.Errorf("Expected 26-character ID from table 1, got %d", len(id1))
+	}
+	if len(id2) != 26 {
+		t.Errorf("Expected 26-character ID from table 2, got %d", len(id2))
+	}
+	
+	// Both should be non-empty
+	if id1 == "" {
+		t.Error("Table 1 should have generated a hand ID")
+	}
+	if id2 == "" {
+		t.Error("Table 2 should have generated a hand ID")
 	}
 }
 

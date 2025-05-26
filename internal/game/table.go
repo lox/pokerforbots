@@ -8,6 +8,7 @@ import (
 
 	"github.com/lox/holdem-cli/internal/deck"
 	"github.com/lox/holdem-cli/internal/evaluator"
+	"github.com/lox/holdem-cli/internal/gameid"
 )
 
 // RandSource interface for dependency injection of randomness
@@ -95,7 +96,7 @@ type Table struct {
 	// Game state
 	CurrentRound BettingRound // Current betting round
 	State        GameState    // Overall game state
-	HandNumber   int          // Current hand number
+	HandID       string       // Current hand ID
 
 	// Cards
 	Deck           *deck.Deck  // The deck of cards
@@ -137,7 +138,7 @@ func NewTableWithConfig(config TableConfig) *Table {
 		DealerPosition: -1, // Will be set randomly when first hand starts
 		CurrentRound:   PreFlop,
 		State:          WaitingToStart,
-		HandNumber:     0,
+		HandID:         "",
 		Deck:           deck.NewDeck(),
 		CommunityCards: make([]deck.Card, 0, 5),
 		Pot:            0,
@@ -184,7 +185,7 @@ func (t *Table) StartNewHand() {
 		return // Need at least 2 players
 	}
 
-	t.HandNumber++
+	t.HandID = gameid.GenerateWithRandSource(t.randSource)
 	t.State = InProgress
 	t.CurrentRound = PreFlop
 	t.Pot = 0
@@ -548,8 +549,8 @@ func (t *Table) IsBettingRoundComplete() bool {
 
 // String returns a string representation of the table state
 func (t *Table) String() string {
-	return fmt.Sprintf("Hand #%d - %s - Pot: $%d - Action on: %s",
-		t.HandNumber, t.CurrentRound, t.Pot,
+	return fmt.Sprintf("Hand %s - %s - Pot: $%d - Action on: %s",
+		t.HandID, t.CurrentRound, t.Pot,
 		func() string {
 			if player := t.GetCurrentPlayer(); player != nil {
 				return player.Name
