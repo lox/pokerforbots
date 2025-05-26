@@ -19,12 +19,6 @@ func Generate7CardHands(n int, seed int64) [][]deck.Card {
 	return hands
 }
 
-// generate5CardHand creates a single random 5-card hand
-func generate5CardHand(rng *rand.Rand) []deck.Card {
-	allCards := createFullDeck()
-	shuffleDeck(allCards, rng)
-	return allCards[:5]
-}
 
 // generate7CardHand creates a single random 7-card hand
 func generate7CardHand(rng *rand.Rand) []deck.Card {
