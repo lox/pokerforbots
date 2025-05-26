@@ -219,9 +219,10 @@ func (hh *HandHistory) formatAction(action HandAction) string {
 	case Call:
 		// Check if this is a blind posting (first actions in preflop with specific amounts)
 		if action.Round == PreFlop && hh.isBlindPosting(action) {
-			if action.Amount == hh.SmallBlind {
+			switch action.Amount {
+			case hh.SmallBlind:
 				return fmt.Sprintf("%s: posts small blind $%d", action.PlayerName, action.Amount)
-			} else if action.Amount == hh.BigBlind {
+			case hh.BigBlind:
 				return fmt.Sprintf("%s: posts big blind $%d", action.PlayerName, action.Amount)
 			}
 		}

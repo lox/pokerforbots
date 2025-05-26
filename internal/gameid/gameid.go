@@ -69,7 +69,9 @@ func (g *Generator) generateUUIDv7() [16]byte {
 		}
 	} else {
 		// Use crypto/rand for production
-		rand.Read(uuid[6:])
+		if _, err := rand.Read(uuid[6:]); err != nil {
+			panic("failed to generate random bytes: " + err.Error())
+		}
 	}
 
 	// Set version (4 bits) to 7 (0111)
