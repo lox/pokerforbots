@@ -2,28 +2,29 @@ package evaluator
 
 import (
 	"testing"
+
 	"github.com/lox/holdem-cli/internal/deck"
 )
 
 func TestEstimateEquity(t *testing.T) {
 	tests := []struct {
-		name           string
-		hole           string
-		board          string
-		opponentRange  Range
-		expectedMin    float64 // Minimum expected equity
-		expectedMax    float64 // Maximum expected equity
+		name          string
+		hole          string
+		board         string
+		opponentRange Range
+		expectedMin   float64 // Minimum expected equity
+		expectedMax   float64 // Maximum expected equity
 	}{
 		{
 			name:          "Pocket Aces vs Random",
 			hole:          "AsAd",
 			board:         "",
 			opponentRange: RandomRange{},
-			expectedMin:   0.75, // AA should have very high equity pre-flop (allow for Monte Carlo variance)
+			expectedMin:   0.70, // AA should have very high equity pre-flop (allow for Monte Carlo variance)
 			expectedMax:   1.00,
 		},
 		{
-			name:          "72o vs Random", 
+			name:          "72o vs Random",
 			hole:          "7h2c",
 			board:         "",
 			opponentRange: RandomRange{},
@@ -63,11 +64,11 @@ func TestEstimateEquity(t *testing.T) {
 			if tt.board != "" {
 				board = deck.MustParseCards(tt.board)
 			}
-			
+
 			equity := EstimateEquity(hole, board, tt.opponentRange, 1000)
-			
+
 			if equity < tt.expectedMin || equity > tt.expectedMax {
-				t.Errorf("Equity %.3f outside expected range [%.3f, %.3f]", 
+				t.Errorf("Equity %.3f outside expected range [%.3f, %.3f]",
 					equity, tt.expectedMin, tt.expectedMax)
 			}
 		})
@@ -115,16 +116,16 @@ func TestRangeComparison(t *testing.T) {
 	// Test that pocket aces perform differently against different ranges
 	hole := deck.MustParseCards("AsAh")
 	board := []deck.Card{} // Pre-flop
-	
+
 	randomEquity := EstimateEquity(hole, board, RandomRange{}, 1000)
 	tightEquity := EstimateEquity(hole, board, TightRange{}, 1000)
-	
+
 	// AA should perform worse against tight opponents (who have better hands)
 	if tightEquity >= randomEquity {
-		t.Errorf("AA should perform worse vs tight range (%.3f) than random range (%.3f)", 
+		t.Errorf("AA should perform worse vs tight range (%.3f) than random range (%.3f)",
 			tightEquity, randomEquity)
 	}
-	
+
 	// But both should still be quite high
 	if randomEquity < 0.75 {
 		t.Errorf("AA vs random should have high equity, got %.3f", randomEquity)
@@ -147,11 +148,11 @@ func TestIsTightHand(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "Pocket Deuces", 
+			name:     "Pocket Deuces",
 			cards:    "2h2c",
 			expected: true,
 		},
-		
+
 		// High cards
 		{
 			name:     "AK offsuit",
@@ -163,7 +164,7 @@ func TestIsTightHand(t *testing.T) {
 			cards:    "QsJh",
 			expected: true,
 		},
-		
+
 		// Suited connectors
 		{
 			name:     "Suited connector T9s",
@@ -175,7 +176,7 @@ func TestIsTightHand(t *testing.T) {
 			cards:    "8h7h",
 			expected: true,
 		},
-		
+
 		// Ace with good kicker
 		{
 			name:     "AT offsuit",
@@ -187,7 +188,7 @@ func TestIsTightHand(t *testing.T) {
 			cards:    "As9h",
 			expected: true,
 		},
-		
+
 		// Weak hands
 		{
 			name:     "72 offsuit",
@@ -225,22 +226,22 @@ func TestIsTightHand(t *testing.T) {
 func TestRandomRangeSampleHand(t *testing.T) {
 	availableCards := []deck.Card{
 		{Suit: deck.Spades, Rank: deck.Ace},
-		{Suit: deck.Hearts, Rank: deck.King}, 
+		{Suit: deck.Hearts, Rank: deck.King},
 		{Suit: deck.Diamonds, Rank: deck.Queen},
 		{Suit: deck.Clubs, Rank: deck.Jack},
 	}
-	
+
 	range_ := RandomRange{}
 	hand, ok := range_.SampleHand(availableCards)
-	
+
 	if !ok {
 		t.Fatal("Should be able to sample hand from available cards")
 	}
-	
+
 	if len(hand) != 2 {
 		t.Errorf("Expected 2 cards, got %d", len(hand))
 	}
-	
+
 	// Check that sampled cards are from available cards
 	for _, card := range hand {
 		found := false
@@ -260,24 +261,24 @@ func TestTightRangeSampleHand(t *testing.T) {
 	// Create a deck with mostly tight hands
 	availableCards := []deck.Card{
 		{Suit: deck.Spades, Rank: deck.Ace},
-		{Suit: deck.Hearts, Rank: deck.Ace},   // AA available
+		{Suit: deck.Hearts, Rank: deck.Ace}, // AA available
 		{Suit: deck.Diamonds, Rank: deck.King},
 		{Suit: deck.Clubs, Rank: deck.Queen},
 		{Suit: deck.Spades, Rank: deck.Jack},
 		{Suit: deck.Hearts, Rank: deck.Ten},
 	}
-	
+
 	range_ := TightRange{}
 	hand, ok := range_.SampleHand(availableCards)
-	
+
 	if !ok {
 		t.Fatal("Should be able to sample tight hand")
 	}
-	
+
 	if len(hand) != 2 {
 		t.Errorf("Expected 2 cards, got %d", len(hand))
 	}
-	
+
 	// The sampled hand should be considered tight
 	if !isTightHand(hand) {
 		t.Errorf("TightRange sampled non-tight hand: %v", hand)
@@ -289,10 +290,10 @@ func TestTightRangeInsufficientCards(t *testing.T) {
 	availableCards := []deck.Card{
 		{Suit: deck.Spades, Rank: deck.Ace},
 	}
-	
+
 	range_ := TightRange{}
 	_, ok := range_.SampleHand(availableCards)
-	
+
 	if ok {
 		t.Error("Should not be able to sample hand with insufficient cards")
 	}
@@ -302,14 +303,14 @@ func TestEquityConsistency(t *testing.T) {
 	// Test that the same hand gives consistent results (within reasonable variance)
 	hole := deck.MustParseCards("AsKs")
 	board := deck.MustParseCards("QsJs")
-	
+
 	equity1 := EstimateEquity(hole, board, RandomRange{}, 5000)
 	equity2 := EstimateEquity(hole, board, RandomRange{}, 5000)
-	
+
 	// With 5000 samples, results should be quite consistent
 	variance := abs_float(equity1 - equity2)
 	if variance > 0.05 { // Allow 5% variance
-		t.Errorf("Equity results too inconsistent: %.3f vs %.3f (variance %.3f)", 
+		t.Errorf("Equity results too inconsistent: %.3f vs %.3f (variance %.3f)",
 			equity1, equity2, variance)
 	}
 }
@@ -317,23 +318,23 @@ func TestEquityConsistency(t *testing.T) {
 func TestBoardProgression(t *testing.T) {
 	// Test that equity changes logically as board develops
 	hole := deck.MustParseCards("AsKs")
-	
+
 	preflopEquity := EstimateEquity(hole, []deck.Card{}, RandomRange{}, 100)
-	
+
 	// Flop gives us royal flush draw
 	flop := deck.MustParseCards("QsJs2h")
 	flopEquity := EstimateEquity(hole, flop, RandomRange{}, 1000)
-	
+
 	// Turn completes the royal flush
 	turn := deck.MustParseCards("QsJs2hTs")
 	turnEquity := EstimateEquity(hole, turn, RandomRange{}, 1000)
-	
+
 	// Equity should increase from pre-flop to flop (we picked up draws)
 	if flopEquity <= preflopEquity {
-		t.Errorf("Flop equity (%.3f) should be higher than preflop (%.3f)", 
+		t.Errorf("Flop equity (%.3f) should be higher than preflop (%.3f)",
 			flopEquity, preflopEquity)
 	}
-	
+
 	// Turn equity should be very high (royal flush)
 	if turnEquity < 0.98 {
 		t.Errorf("Turn equity with royal flush should be ~100%%, got %.3f", turnEquity)

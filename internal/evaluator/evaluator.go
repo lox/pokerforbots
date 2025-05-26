@@ -2,77 +2,9 @@ package evaluator
 
 import "github.com/lox/holdem-cli/internal/deck"
 
-// ScoreToHandName converts an integer score to a readable hand name
-func ScoreToHandName(score int) string {
-	handType := score >> 20
-	switch handType {
-	case RoyalFlushType:
-		return "Royal Flush"
-	case StraightFlushType:
-		return "Straight Flush"
-	case FourOfAKindType:
-		return "Four of a Kind"
-	case FullHouseType:
-		return "Full House"
-	case FlushType:
-		return "Flush"
-	case StraightType:
-		return "Straight"
-	case ThreeOfAKindType:
-		return "Three of a Kind"
-	case TwoPairType:
-		return "Two Pair"
-	case OnePairType:
-		return "One Pair"
-	case HighCardType:
-		return "High Card"
-	default:
-		return "Unknown"
-	}
-}
-
-// GetHandType extracts the hand type from a score
-func GetHandType(score int) int {
-	return score >> 20
-}
-
-// GetPairRank extracts the pair rank from a one pair hand score
-func GetPairRank(score int) int {
-	if GetHandType(score) != OnePairType {
-		return 0
-	}
-	tiebreakData := score & 0xFFFFF
-	encodedPairRank := (tiebreakData >> 12) & 0xF
-	return 15 - encodedPairRank
-}
-
-// GetHighCardRank extracts the highest card rank from a high card hand score
-func GetHighCardRank(score int) int {
-	if GetHandType(score) != HighCardType {
-		return 0
-	}
-	tiebreakData := score & 0xFFFFF
-	encodedHighRank := tiebreakData & 0xF
-	return 15 - encodedHighRank
-}
-
-// Hand type constants (lower number = stronger hand)
-const (
-	RoyalFlushType    = 1
-	StraightFlushType = 2
-	FourOfAKindType   = 3
-	FullHouseType     = 4
-	FlushType         = 5
-	StraightType      = 6
-	ThreeOfAKindType  = 7
-	TwoPairType       = 8
-	OnePairType       = 9
-	HighCardType      = 10
-)
-
-// Evaluate7 evaluates 7 cards and returns an integer score where lower = stronger
+// Evaluate7 evaluates 7 cards and returns a HandRank where lower = stronger
 // Encoding: (handType << 20) | tiebreaker_info
-func Evaluate7(cards []deck.Card) int {
+func Evaluate7(cards []deck.Card) HandRank {
 	if len(cards) != 7 {
 		panic("Evaluate7 requires exactly 7 cards")
 	}
@@ -115,15 +47,15 @@ func Evaluate7(cards []deck.Card) int {
 		if straightHigh > 0 {
 			// Royal flush: A-K-Q-J-10
 			if straightHigh == 14 && (flushRankBits&(1<<13)) != 0 {
-				return (RoyalFlushType << 20) | 14
+				return HandRank((RoyalFlushType << 20) | 14)
 			}
 			// Straight flush
-			return (StraightFlushType << 20) | straightHigh
+			return HandRank((StraightFlushType << 20) | straightHigh)
 		}
 
 		// Regular flush - use 5 highest cards
 		flushRanks := getHighestRanks(flushCards, 5)
-		return (FlushType << 20) | encodeMultipleRanks(flushRanks)
+		return HandRank((FlushType << 20) | encodeMultipleRanks(flushRanks))
 	}
 
 	// Find groups (4-of-a-kind, 3-of-a-kind, pairs)
@@ -143,7 +75,7 @@ func Evaluate7(cards []deck.Card) int {
 	// Four of a kind
 	if len(fours) > 0 {
 		kicker := findHighestKicker(rankCounts, fours[0])
-		return (FourOfAKindType << 20) | (fours[0] << 4) | kicker
+		return HandRank((FourOfAKindType << 20) | (fours[0] << 4) | kicker)
 	}
 
 	// Full house
@@ -155,38 +87,38 @@ func Evaluate7(cards []deck.Card) int {
 		} else {
 			pairRank = pairs[0]
 		}
-		return (FullHouseType << 20) | (threeRank << 4) | pairRank
+		return HandRank((FullHouseType << 20) | (threeRank << 4) | pairRank)
 	}
 
 	// Check for straight
 	straightHigh := findStraightInBitmap(rankBits)
 	if straightHigh > 0 {
-		return (StraightType << 20) | straightHigh
+		return HandRank((StraightType << 20) | straightHigh)
 	}
 
 	// Three of a kind
 	if len(threes) > 0 {
 		kickers := findHighestKickers(rankCounts, threes[0], 2)
-		return (ThreeOfAKindType << 20) | (threes[0] << 8) | (kickers[0] << 4) | kickers[1]
+		return HandRank((ThreeOfAKindType << 20) | (threes[0] << 8) | (kickers[0] << 4) | kickers[1])
 	}
 
 	// Two pair
 	if len(pairs) >= 2 {
 		kicker := findHighestKicker(rankCounts, pairs[0], pairs[1])
 		// Use reverse encoding so higher pairs have lower scores
-		return (TwoPairType << 20) | ((15-pairs[0]) << 8) | ((15-pairs[1]) << 4) | (15-kicker)
+		return HandRank((TwoPairType << 20) | ((15 - pairs[0]) << 8) | ((15 - pairs[1]) << 4) | (15 - kicker))
 	}
 
 	// One pair
 	if len(pairs) == 1 {
 		kickers := findHighestKickers(rankCounts, pairs[0], 3)
 		// Use reverse encoding for pair rank so higher pairs have lower scores
-		return (OnePairType << 20) | ((15-pairs[0]) << 12) | ((15-kickers[0]) << 8) | ((15-kickers[1]) << 4) | (15-kickers[2])
+		return HandRank((OnePairType << 20) | ((15 - pairs[0]) << 12) | ((15 - kickers[0]) << 8) | ((15 - kickers[1]) << 4) | (15 - kickers[2]))
 	}
 
 	// High card
 	highCards := findHighestKickers(rankCounts, 0, 5)
-	return (HighCardType << 20) | encodeMultipleRanksReverse(highCards)
+	return HandRank((HighCardType << 20) | encodeMultipleRanksReverse(highCards))
 }
 
 // findStraightInBitmap checks for 5 consecutive bits in rank bitmap

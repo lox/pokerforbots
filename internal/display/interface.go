@@ -550,8 +550,8 @@ func (ti *TUIInterface) ShowHandSummary() {
 				// Use evaluator to get actual hand rank
 				allCards := append(winner.HoleCards, ti.table.CommunityCards...)
 				if len(allCards) >= 5 {
-				handScore := evaluator.Evaluate7(allCards)
-				handRank = evaluator.ScoreToHandName(handScore)
+					handScore := evaluator.Evaluate7(allCards)
+					handRank = handScore.String()
 				}
 			}
 

@@ -1,8 +1,8 @@
 package evaluator
 
 import (
-	"testing"
 	"github.com/lox/holdem-cli/internal/deck"
+	"testing"
 )
 
 func TestEvaluate7(t *testing.T) {
@@ -67,7 +67,7 @@ func TestEvaluate7(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cards := deck.MustParseCards(tt.cards)
 			result := Evaluate7(cards)
-			handType := result >> 20
+			handType := result.Type()
 
 			if handType != tt.expected {
 				t.Errorf("Expected hand type %d, got %d", tt.expected, handType)
@@ -86,52 +86,52 @@ func TestHandComparison(t *testing.T) {
 	fourScore := Evaluate7(fourOfAKind)
 	highScore := Evaluate7(highCard)
 
-	if royalScore >= fourScore {
-		t.Errorf("Royal flush should be stronger than four of a kind: %d vs %d", royalScore, fourScore)
+	if royalScore.Compare(fourScore) <= 0 {
+		t.Errorf("Royal flush should be stronger than four of a kind: %s vs %s", royalScore.String(), fourScore.String())
 	}
-	if fourScore >= highScore {
-		t.Errorf("Four of a kind should be stronger than high card: %d vs %d", fourScore, highScore)
+	if fourScore.Compare(highScore) <= 0 {
+		t.Errorf("Four of a kind should be stronger than high card: %s vs %s", fourScore.String(), highScore.String())
 	}
 }
 
 func TestKickerComparison(t *testing.T) {
 	// Test that higher kickers get lower scores within same hand type
-	aceHigh := deck.MustParseCards("AsKhQd9s7c5h3h") // A high
+	aceHigh := deck.MustParseCards("AsKhQd9s7c5h3h")  // A high
 	kingHigh := deck.MustParseCards("KsQhJd9s7c5h3h") // K high
 
 	aceScore := Evaluate7(aceHigh)
 	kingScore := Evaluate7(kingHigh)
 
-	aceHandType := aceScore >> 20
-	kingHandType := kingScore >> 20
+	aceHandType := aceScore.Type()
+	kingHandType := kingScore.Type()
 
 	if aceHandType != kingHandType {
 		t.Errorf("Both should be same hand type, got %d vs %d", aceHandType, kingHandType)
 	}
 
-	// For high card, lower score should mean stronger hand
-	if aceScore >= kingScore {
-		t.Errorf("Ace high should be stronger than king high: %d vs %d", aceScore, kingScore)
+	// For high card, stronger hand should have positive Compare result
+	if aceScore.Compare(kingScore) <= 0 {
+		t.Errorf("Ace high should be stronger than king high: %s vs %s", aceScore.String(), kingScore.String())
 	}
 }
 
 func TestPairComparison(t *testing.T) {
 	// Test that higher pairs get lower scores
-	acesPair := deck.MustParseCards("AsAhKdQs9c7h5h") // Pair of Aces
+	acesPair := deck.MustParseCards("AsAhKdQs9c7h5h")  // Pair of Aces
 	ninesPair := deck.MustParseCards("9s9hKdQsAc7h5h") // Pair of Nines
 
 	acesScore := Evaluate7(acesPair)
 	ninesScore := Evaluate7(ninesPair)
 
-	acesHandType := acesScore >> 20
-	ninesHandType := ninesScore >> 20
+	acesHandType := acesScore.Type()
+	ninesHandType := ninesScore.Type()
 
 	if acesHandType != OnePairType || ninesHandType != OnePairType {
 		t.Errorf("Both should be one pair, got %d and %d", acesHandType, ninesHandType)
 	}
 
-	// Pair of Aces should be stronger (lower score) than pair of Nines
-	if acesScore >= ninesScore {
-		t.Errorf("Pair of Aces should be stronger than pair of Nines: %d vs %d", acesScore, ninesScore)
+	// Pair of Aces should be stronger than pair of Nines
+	if acesScore.Compare(ninesScore) <= 0 {
+		t.Errorf("Pair of Aces should be stronger than pair of Nines: %s vs %s", acesScore.String(), ninesScore.String())
 	}
 }
