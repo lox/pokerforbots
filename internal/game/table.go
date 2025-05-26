@@ -587,7 +587,7 @@ func (t *Table) FindWinner() *Player {
 
 	// Evaluate each player's best hand
 	var bestPlayer *Player
-	var bestHand evaluator.HandStrength
+	var bestHandScore int
 
 	for i, player := range activePlayers {
 		// Combine hole cards with community cards
@@ -601,12 +601,12 @@ func (t *Table) FindWinner() *Player {
 		}
 
 		// Find the best 5-card hand
-		playerHand := evaluator.Evaluate7(allCards)
+		playerHandScore := evaluator.Evaluate7(allCards)
 
-		// Compare with current best
-		if i == 0 || playerHand.IsStrongerThan(bestHand) {
+		// Compare with current best (lower score = stronger hand)
+		if i == 0 || playerHandScore < bestHandScore {
 			bestPlayer = player
-			bestHand = playerHand
+			bestHandScore = playerHandScore
 		}
 	}
 

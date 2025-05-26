@@ -231,8 +231,8 @@ func (p *Player) ResetForNewRound() {
 	p.ActionAmount = 0
 }
 
-// GetBestHand returns the player's best hand given community cards
-func (p *Player) GetBestHand(communityCards []deck.Card) evaluator.HandStrength {
+// GetBestHand returns the player's best hand score given community cards (lower = stronger)
+func (p *Player) GetBestHand(communityCards []deck.Card) int {
 	if len(p.HoleCards) != 2 {
 		panic("Player must have exactly 2 hole cards")
 	}

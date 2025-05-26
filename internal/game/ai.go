@@ -219,169 +219,70 @@ func (ai *AIEngine) evaluatePreFlopStrength(holeCards []deck.Card) HandStrength 
 	}
 }
 
-// evaluatePostFlopStrength evaluates post-flop hand strength
+// evaluatePostFlopStrength evaluates post-flop hand strength using equity
 func (ai *AIEngine) evaluatePostFlopStrength(player *Player, communityCards []deck.Card) HandStrength {
-	// Combine hole cards with community cards
-	allCards := make([]deck.Card, 0, 7)
-	allCards = append(allCards, player.HoleCards...)
-	allCards = append(allCards, communityCards...)
+	return ai.evaluatePostFlopStrengthEquity(player, communityCards, false)
+}
 
-	// Get best hand - handle different numbers of cards
-	var bestHand evaluator.HandStrength
-	if len(allCards) == 7 {
-		bestHand = evaluator.Evaluate7(allCards)
-	} else if len(allCards) == 5 {
-		hand5 := evaluator.Evaluate5(allCards)
-		bestHand = evaluator.HandToHandStrength(hand5)
+// evaluatePostFlopStrengthEquity evaluates hand strength using equity against position-aware ranges
+func (ai *AIEngine) evaluatePostFlopStrengthEquity(player *Player, communityCards []deck.Card, inPosition bool) HandStrength {
+	// Choose opponent range based on position
+	var opponentRange evaluator.Range
+	if inPosition {
+		// Opponents act before us, likely tighter
+		opponentRange = evaluator.TightRange{}
 	} else {
-		// For other lengths, we can't properly evaluate - default to high card
-		bestHand = evaluator.HandStrength{Category: evaluator.HighCard}
+		// We act first, opponents can be looser
+		opponentRange = evaluator.LooseRange{}
 	}
 
-	// Evaluate draws
-	drawStrength := ai.evaluateDraws(player.HoleCards, communityCards)
+	// Calculate equity
+	equity := evaluator.EstimateEquity(player.HoleCards, communityCards, opponentRange, 500)
 
-	// Base hand strength evaluation
-	var baseStrength HandStrength
-	switch bestHand.Category {
-	case evaluator.RoyalFlush, evaluator.StraightFlush:
-		baseStrength = VeryStrong
-	case evaluator.FourOfAKind, evaluator.FullHouse:
-		baseStrength = VeryStrong
-	case evaluator.Flush, evaluator.Straight:
-		baseStrength = Strong
-	case evaluator.ThreeOfAKind:
-		baseStrength = Strong
-	case evaluator.TwoPair:
-		baseStrength = Medium
-	case evaluator.OnePair:
-		// Evaluate pair strength
-		if len(bestHand.Tiebreak) > 0 {
-			pairRank := deck.Rank(bestHand.Tiebreak[0])
-			if pairRank >= deck.Jack {
-				baseStrength = Medium
-			} else {
-				baseStrength = Weak
-			}
-		} else {
-			baseStrength = Weak
-		}
-	case evaluator.HighCard:
-		// High card hands are generally weak
-		if len(bestHand.Tiebreak) > 0 && deck.Rank(bestHand.Tiebreak[0]) == deck.Ace {
-			baseStrength = Weak
-		} else {
-			baseStrength = VeryWeak
-		}
+	// Convert equity to hand strength
+	return ai.equityToHandStrength(equity)
+}
+
+// equityToHandStrength maps equity percentage to hand strength categories
+func (ai *AIEngine) equityToHandStrength(equity float64) HandStrength {
+	switch {
+	case equity >= 0.80:
+		return VeryStrong
+	case equity >= 0.65:
+		return Strong
+	case equity >= 0.45:
+		return Medium
+	case equity >= 0.25:
+		return Weak
 	default:
-		baseStrength = Medium
+		return VeryWeak
 	}
-
-	// Upgrade based on draw strength
-	if drawStrength >= 2 {
-		switch baseStrength {
-		case VeryWeak:
-			if drawStrength >= 3 {
-				return Weak // Strong draws upgrade very weak hands
-			}
-		case Weak:
-			if drawStrength >= 3 {
-				return Medium // Strong draws upgrade weak hands
-			}
-		}
-	}
-
-	return baseStrength
 }
 
 // evaluatePostFlopStrengthWithThinking evaluates post-flop hand strength with thinking
 func (ai *AIEngine) evaluatePostFlopStrengthWithThinking(player *Player, communityCards []deck.Card, thinking *ThinkingContext) HandStrength {
-	// Combine hole cards with community cards
-	allCards := make([]deck.Card, 0, 7)
-	allCards = append(allCards, player.HoleCards...)
-	allCards = append(allCards, communityCards...)
+	// Determine if we're in position (simplified: Button or Cutoff = in position)
+	inPosition := player.Position == Button || player.Position == Cutoff
 
-	// Get best hand - handle different numbers of cards
-	var bestHand evaluator.HandStrength
-	if len(allCards) == 7 {
-		bestHand = evaluator.Evaluate7(allCards)
-	} else if len(allCards) == 5 {
-		hand5 := evaluator.Evaluate5(allCards)
-		bestHand = evaluator.HandToHandStrength(hand5)
+	// Choose opponent range based on position
+	var opponentRange evaluator.Range
+	if inPosition {
+		opponentRange = evaluator.TightRange{}
+		thinking.AddThought("In position - opponents likely tighter")
 	} else {
-		// For other lengths, we can't properly evaluate - default to high card
-		bestHand = evaluator.HandStrength{Category: evaluator.HighCard}
-	}
-	thinking.AddThought(fmt.Sprintf("Best hand: %s", bestHand.String()))
-
-	// Evaluate draws
-	drawStrength := ai.evaluateDraws(player.HoleCards, communityCards)
-	if drawStrength > 0 {
-		thinking.AddThought(fmt.Sprintf("Draw strength: %d (≈%d outs)", drawStrength, drawStrength*4))
+		opponentRange = evaluator.LooseRange{}
+		thinking.AddThought("Out of position - opponents can be looser")
 	}
 
-	// Base hand strength evaluation
-	var baseStrength HandStrength
-	switch bestHand.Category {
-	case evaluator.RoyalFlush, evaluator.StraightFlush:
-		baseStrength = VeryStrong
-		thinking.AddThought("Premium made hand")
-	case evaluator.FourOfAKind, evaluator.FullHouse:
-		baseStrength = VeryStrong
-		thinking.AddThought("Very strong made hand")
-	case evaluator.Flush, evaluator.Straight:
-		baseStrength = Strong
-		thinking.AddThought("Strong made hand")
-	case evaluator.ThreeOfAKind:
-		baseStrength = Strong
-		thinking.AddThought("Solid made hand (trips)")
-	case evaluator.TwoPair:
-		baseStrength = Medium
-		thinking.AddThought("Decent two pair")
-	case evaluator.OnePair:
-		if len(bestHand.Tiebreak) > 0 {
-			pairRank := deck.Rank(bestHand.Tiebreak[0])
-			if pairRank >= deck.Jack {
-				baseStrength = Medium
-				thinking.AddThought(fmt.Sprintf("Good pair (%s)", ai.rankToString(pairRank)))
-			} else {
-				baseStrength = Weak
-				thinking.AddThought(fmt.Sprintf("Low pair (%s)", ai.rankToString(pairRank)))
-			}
-		} else {
-			baseStrength = Weak
-			thinking.AddThought("Weak pair")
-		}
-	case evaluator.HighCard:
-		if len(bestHand.Tiebreak) > 0 && deck.Rank(bestHand.Tiebreak[0]) == deck.Ace {
-			baseStrength = Weak
-			thinking.AddThought("Ace high only")
-		} else {
-			baseStrength = VeryWeak
-			thinking.AddThought("Just high card")
-		}
-	default:
-		baseStrength = Medium
-		thinking.AddThought("Unknown hand strength")
-	}
+	// Calculate equity
+	equity := evaluator.EstimateEquity(player.HoleCards, communityCards, opponentRange, 500)
+	thinking.AddThought(fmt.Sprintf("Equity: %.1f%%", equity*100))
 
-	// Upgrade based on draw strength
-	if drawStrength >= 2 {
-		switch baseStrength {
-		case VeryWeak:
-			if drawStrength >= 3 {
-				thinking.AddThought("Strong draws upgrade weak hand")
-				return Weak
-			}
-		case Weak:
-			if drawStrength >= 3 {
-				thinking.AddThought("Strong draws upgrade marginal hand")
-				return Medium
-			}
-		}
-	}
+	// Convert equity to hand strength
+	strength := ai.equityToHandStrength(equity)
+	thinking.AddThought(fmt.Sprintf("Hand strength: %s", strength.String()))
 
-	return baseStrength
+	return strength
 }
 
 // getHandKey returns a readable description of hole cards
@@ -442,38 +343,9 @@ func (ai *AIEngine) getBoardDescription(communityCards []deck.Card) string {
 	return strings.Join(cardStrs, "-") + textureDesc
 }
 
-// rankToString converts Rank to string (helper for thinking)
-func (ai *AIEngine) rankToString(rank deck.Rank) string {
-	switch rank {
-	case deck.Two:
-		return "2"
-	case deck.Three:
-		return "3"
-	case deck.Four:
-		return "4"
-	case deck.Five:
-		return "5"
-	case deck.Six:
-		return "6"
-	case deck.Seven:
-		return "7"
-	case deck.Eight:
-		return "8"
-	case deck.Nine:
-		return "9"
-	case deck.Ten:
-		return "T"
-	case deck.Jack:
-		return "J"
-	case deck.Queen:
-		return "Q"
-	case deck.King:
-		return "K"
-	case deck.Ace:
-		return "A"
-	default:
-		return "?"
-	}
+// rankToString converts rank to string (helper for thinking)
+func (ai *AIEngine) rankToString(rank int) string {
+	return deck.RankString(rank)
 }
 
 // evaluateDraws evaluates drawing potential and returns draw strength (0-4)
@@ -504,13 +376,13 @@ func (ai *AIEngine) evaluateDraws(holeCards []deck.Card, communityCards []deck.C
 	allCards = append(allCards, communityCards...)
 
 	// Get unique ranks and sort them
-	ranks := make(map[deck.Rank]bool)
+	ranks := make(map[int]bool)
 	for _, card := range allCards {
 		ranks[card.Rank] = true
 	}
 
 	// Convert to sorted slice
-	var sortedRanks []deck.Rank
+	var sortedRanks []int
 	for rank := deck.Two; rank <= deck.Ace; rank++ {
 		if ranks[rank] {
 			sortedRanks = append(sortedRanks, rank)
@@ -562,7 +434,7 @@ func (ai *AIEngine) evaluateDraws(holeCards []deck.Card, communityCards []deck.C
 }
 
 // countStraightDraws estimates straight draw outs
-func (ai *AIEngine) countStraightDraws(sortedRanks []deck.Rank) int {
+func (ai *AIEngine) countStraightDraws(sortedRanks []int) int {
 	if len(sortedRanks) < 3 {
 		return 0
 	}
@@ -609,7 +481,7 @@ func (ai *AIEngine) analyzeBoardTexture(communityCards []deck.Card) BoardTexture
 	wetness := 0
 
 	// Check for flush possibilities
-	suitCounts := make(map[deck.Suit]int)
+	suitCounts := make(map[int]int)
 	for _, card := range communityCards {
 		suitCounts[card.Suit]++
 	}
@@ -628,7 +500,7 @@ func (ai *AIEngine) analyzeBoardTexture(communityCards []deck.Card) BoardTexture
 	}
 
 	// Check for straight possibilities
-	ranks := make([]deck.Rank, len(communityCards))
+	ranks := make([]int, len(communityCards))
 	for i, card := range communityCards {
 		ranks[i] = card.Rank
 	}
@@ -655,7 +527,7 @@ func (ai *AIEngine) analyzeBoardTexture(communityCards []deck.Card) BoardTexture
 	}
 
 	// Check for pairs
-	rankCounts := make(map[deck.Rank]int)
+	rankCounts := make(map[int]int)
 	for _, card := range communityCards {
 		rankCounts[card.Rank]++
 	}

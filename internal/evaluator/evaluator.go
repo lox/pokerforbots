@@ -1,411 +1,281 @@
 package evaluator
 
-import (
-	"sort"
+import "github.com/lox/holdem-cli/internal/deck"
 
-	"github.com/lox/holdem-cli/internal/deck"
-)
-
-// Evaluate5 evaluates exactly 5 cards and returns the best hand
-func Evaluate5(cards []deck.Card) Hand {
-	if len(cards) != 5 {
-		panic("evaluate5 requires exactly 5 cards")
-	}
-
-	// Sort cards by rank for easier analysis
-	sortedCards := make([]deck.Card, len(cards))
-	copy(sortedCards, cards)
-	sort.Sort(cardsByRankDesc(sortedCards))
-
-	// Check for flush
-	isFlush := isFlush(sortedCards)
-
-	// Check for straight
-	isStraight, straightHigh := isStraight(sortedCards)
-
-	// Count ranks
-	rankCounts := countRanks(sortedCards)
-
-	// Determine hand type
-	if isFlush && isStraight {
-		if straightHigh == deck.Ace && sortedCards[1].Rank == deck.King {
-			// Royal flush (A, K, Q, J, T all same suit)
-			return Hand{
-				Rank:     RoyalFlush,
-				Cards:    sortedCards,
-				Kickers:  []deck.Rank{deck.Ace},
-				HighCard: deck.Ace,
-			}
-		}
-		// Straight flush
-		return Hand{
-			Rank:     StraightFlush,
-			Cards:    sortedCards,
-			Kickers:  []deck.Rank{straightHigh},
-			HighCard: straightHigh,
-		}
-	}
-
-	// Check for four of a kind
-	if fourOfAKindRank := findNOfAKind(rankCounts, 4); fourOfAKindRank != 0 {
-		kicker := findKicker(rankCounts, fourOfAKindRank)
-		return Hand{
-			Rank:     FourOfAKind,
-			Cards:    sortedCards,
-			Kickers:  []deck.Rank{fourOfAKindRank, kicker},
-			HighCard: fourOfAKindRank,
-		}
-	}
-
-	// Check for full house
-	threeOfAKindRank := findNOfAKind(rankCounts, 3)
-	pairRank := findNOfAKind(rankCounts, 2)
-	if threeOfAKindRank != 0 && pairRank != 0 {
-		return Hand{
-			Rank:     FullHouse,
-			Cards:    sortedCards,
-			Kickers:  []deck.Rank{threeOfAKindRank, pairRank},
-			HighCard: threeOfAKindRank,
-		}
-	}
-
-	// Check for flush
-	if isFlush {
-		kickers := make([]deck.Rank, len(sortedCards))
-		for i, card := range sortedCards {
-			kickers[i] = card.Rank
-		}
-		return Hand{
-			Rank:     Flush,
-			Cards:    sortedCards,
-			Kickers:  kickers,
-			HighCard: sortedCards[0].Rank,
-		}
-	}
-
-	// Check for straight
-	if isStraight {
-		return Hand{
-			Rank:     Straight,
-			Cards:    sortedCards,
-			Kickers:  []deck.Rank{straightHigh},
-			HighCard: straightHigh,
-		}
-	}
-
-	// Check for three of a kind
-	if threeOfAKindRank != 0 {
-		kickers := findKickers(rankCounts, threeOfAKindRank, 2)
-		return Hand{
-			Rank:     ThreeOfAKind,
-			Cards:    sortedCards,
-			Kickers:  append([]deck.Rank{threeOfAKindRank}, kickers...),
-			HighCard: threeOfAKindRank,
-		}
-	}
-
-	// Check for pairs
-	pairs := findAllPairs(rankCounts)
-	if len(pairs) >= 2 {
-		// Two pair - sort pairs by rank (highest first)
-		sort.Sort(ranksByDesc(pairs))
-		kicker := findKickers(rankCounts, pairs[0], 1)[0] // Exclude both pairs
-		// Also exclude second pair from kickers
-		if kicker == pairs[1] {
-			for rank, count := range rankCounts {
-				if count == 1 && rank != pairs[0] && rank != pairs[1] {
-					kicker = rank
-					break
-				}
-			}
-		}
-		return Hand{
-			Rank:     TwoPair,
-			Cards:    sortedCards,
-			Kickers:  []deck.Rank{pairs[0], pairs[1], kicker},
-			HighCard: pairs[0],
-		}
-	}
-
-	if len(pairs) == 1 {
-		// One pair
-		kickers := findKickers(rankCounts, pairs[0], 3)
-		return Hand{
-			Rank:     OnePair,
-			Cards:    sortedCards,
-			Kickers:  append([]deck.Rank{pairs[0]}, kickers...),
-			HighCard: pairs[0],
-		}
-	}
-
-	// High card
-	kickers := make([]deck.Rank, len(sortedCards))
-	for i, card := range sortedCards {
-		kickers[i] = card.Rank
-	}
-	return Hand{
-		Rank:     HighCard,
-		Cards:    sortedCards,
-		Kickers:  kickers,
-		HighCard: sortedCards[0].Rank,
+// ScoreToHandName converts an integer score to a readable hand name
+func ScoreToHandName(score int) string {
+	handType := score >> 20
+	switch handType {
+	case RoyalFlushType:
+		return "Royal Flush"
+	case StraightFlushType:
+		return "Straight Flush"
+	case FourOfAKindType:
+		return "Four of a Kind"
+	case FullHouseType:
+		return "Full House"
+	case FlushType:
+		return "Flush"
+	case StraightType:
+		return "Straight"
+	case ThreeOfAKindType:
+		return "Three of a Kind"
+	case TwoPairType:
+		return "Two Pair"
+	case OnePairType:
+		return "One Pair"
+	case HighCardType:
+		return "High Card"
+	default:
+		return "Unknown"
 	}
 }
 
+// GetHandType extracts the hand type from a score
+func GetHandType(score int) int {
+	return score >> 20
+}
 
-// Evaluate7 efficiently evaluates exactly 7 cards and returns the best HandStrength
-func Evaluate7(cards []deck.Card) HandStrength {
+// GetPairRank extracts the pair rank from a one pair hand score
+func GetPairRank(score int) int {
+	if GetHandType(score) != OnePairType {
+		return 0
+	}
+	tiebreakData := score & 0xFFFFF
+	encodedPairRank := (tiebreakData >> 12) & 0xF
+	return 15 - encodedPairRank
+}
+
+// GetHighCardRank extracts the highest card rank from a high card hand score
+func GetHighCardRank(score int) int {
+	if GetHandType(score) != HighCardType {
+		return 0
+	}
+	tiebreakData := score & 0xFFFFF
+	encodedHighRank := tiebreakData & 0xF
+	return 15 - encodedHighRank
+}
+
+// Hand type constants (lower number = stronger hand)
+const (
+	RoyalFlushType    = 1
+	StraightFlushType = 2
+	FourOfAKindType   = 3
+	FullHouseType     = 4
+	FlushType         = 5
+	StraightType      = 6
+	ThreeOfAKindType  = 7
+	TwoPairType       = 8
+	OnePairType       = 9
+	HighCardType      = 10
+)
+
+// Evaluate7 evaluates 7 cards and returns an integer score where lower = stronger
+// Encoding: (handType << 20) | tiebreaker_info
+func Evaluate7(cards []deck.Card) int {
 	if len(cards) != 7 {
 		panic("Evaluate7 requires exactly 7 cards")
 	}
 
-	// Find the best 5-card combination from the 7 cards
-	var bestStrength HandStrength
-	combinations := generateCombinations(cards, 5)
+	// Preprocessing: count ranks, suits, and build rank bitmap
+	var rankCounts [15]int // index 0 unused, 2-14 for card ranks
+	var suitCounts [4]int
+	var rankBits uint32
 
-	for i, combo := range combinations {
-		strength := evaluate5Fast(combo)
-		if i == 0 || strength.IsStrongerThan(bestStrength) {
-			bestStrength = strength
+	for _, card := range cards {
+		rankCounts[card.Rank]++
+		suitCounts[card.Suit]++
+		rankBits |= 1 << uint(card.Rank)
+	}
+
+	// Check for flush
+	flushSuit := -1
+	for suit := 0; suit < 4; suit++ {
+		if suitCounts[suit] >= 5 {
+			flushSuit = suit
+			break
 		}
 	}
 
-	return bestStrength
-}
+	// If flush exists, check for straight flush
+	if flushSuit != -1 {
+		var flushRankBits uint32
+		var flushCards []int
 
-// evaluate5Fast efficiently evaluates exactly 5 cards and returns HandStrength
-func evaluate5Fast(cards []deck.Card) HandStrength {
-	// Sort cards by rank for easier analysis
-	sortedCards := make([]deck.Card, len(cards))
-	copy(sortedCards, cards)
-	sort.Sort(cardsByRankDesc(sortedCards))
-
-	// Check for flush
-	isFlush := isFlush(sortedCards)
-
-	// Check for straight
-	isStraight, straightHigh := isStraight(sortedCards)
-
-	// Count ranks
-	rankCounts := countRanks(sortedCards)
-
-	// Determine hand type and build tiebreakers
-	if isFlush && isStraight {
-		if straightHigh == deck.Ace && sortedCards[1].Rank == deck.King {
-			// Royal flush
-			return HandStrength{
-				Category: RoyalFlush,
-				Tiebreak: []int{int(deck.Ace)},
+		// Collect all cards of flush suit and build flush rank bitmap
+		for _, card := range cards {
+			if card.Suit == flushSuit {
+				flushRankBits |= 1 << uint(card.Rank)
+				flushCards = append(flushCards, card.Rank)
 			}
 		}
-		// Straight flush
-		return HandStrength{
-			Category: StraightFlush,
-			Tiebreak: []int{int(straightHigh)},
+
+		// Check for straight flush
+		straightHigh := findStraightInBitmap(flushRankBits)
+		if straightHigh > 0 {
+			// Royal flush: A-K-Q-J-10
+			if straightHigh == 14 && (flushRankBits&(1<<13)) != 0 {
+				return (RoyalFlushType << 20) | 14
+			}
+			// Straight flush
+			return (StraightFlushType << 20) | straightHigh
+		}
+
+		// Regular flush - use 5 highest cards
+		flushRanks := getHighestRanks(flushCards, 5)
+		return (FlushType << 20) | encodeMultipleRanks(flushRanks)
+	}
+
+	// Find groups (4-of-a-kind, 3-of-a-kind, pairs)
+	var fours, threes, pairs []int
+
+	for rank := 14; rank >= 2; rank-- {
+		count := rankCounts[rank]
+		if count == 4 {
+			fours = append(fours, rank)
+		} else if count == 3 {
+			threes = append(threes, rank)
+		} else if count == 2 {
+			pairs = append(pairs, rank)
 		}
 	}
 
 	// Four of a kind
-	if fourOfAKindRank := findNOfAKind(rankCounts, 4); fourOfAKindRank != 0 {
-		kicker := findKicker(rankCounts, fourOfAKindRank)
-		return HandStrength{
-			Category: FourOfAKind,
-			Tiebreak: []int{int(fourOfAKindRank), int(kicker)},
-		}
+	if len(fours) > 0 {
+		kicker := findHighestKicker(rankCounts, fours[0])
+		return (FourOfAKindType << 20) | (fours[0] << 4) | kicker
 	}
 
 	// Full house
-	threeOfAKindRank := findNOfAKind(rankCounts, 3)
-	pairRank := findNOfAKind(rankCounts, 2)
-	if threeOfAKindRank != 0 && pairRank != 0 {
-		return HandStrength{
-			Category: FullHouse,
-			Tiebreak: []int{int(threeOfAKindRank), int(pairRank)},
+	if len(threes) > 0 && (len(pairs) > 0 || len(threes) > 1) {
+		threeRank := threes[0]
+		var pairRank int
+		if len(threes) > 1 {
+			pairRank = threes[1] // Two three-of-a-kinds, use lower as pair
+		} else {
+			pairRank = pairs[0]
 		}
+		return (FullHouseType << 20) | (threeRank << 4) | pairRank
 	}
 
-	// Flush
-	if isFlush {
-		tiebreak := make([]int, len(sortedCards))
-		for i, card := range sortedCards {
-			tiebreak[i] = int(card.Rank)
-		}
-		return HandStrength{
-			Category: Flush,
-			Tiebreak: tiebreak,
-		}
-	}
-
-	// Straight
-	if isStraight {
-		return HandStrength{
-			Category: Straight,
-			Tiebreak: []int{int(straightHigh)},
-		}
+	// Check for straight
+	straightHigh := findStraightInBitmap(rankBits)
+	if straightHigh > 0 {
+		return (StraightType << 20) | straightHigh
 	}
 
 	// Three of a kind
-	if threeOfAKindRank != 0 {
-		kickers := findKickers(rankCounts, threeOfAKindRank, 2)
-		tiebreak := []int{int(threeOfAKindRank)}
-		for _, k := range kickers {
-			tiebreak = append(tiebreak, int(k))
-		}
-		return HandStrength{
-			Category: ThreeOfAKind,
-			Tiebreak: tiebreak,
-		}
+	if len(threes) > 0 {
+		kickers := findHighestKickers(rankCounts, threes[0], 2)
+		return (ThreeOfAKindType << 20) | (threes[0] << 8) | (kickers[0] << 4) | kickers[1]
 	}
 
 	// Two pair
-	pairs := findAllPairs(rankCounts)
 	if len(pairs) >= 2 {
-		sort.Sort(ranksByDesc(pairs))
-		kicker := findKickers(rankCounts, pairs[0], 1)[0]
-		// Handle case where kicker conflicts with second pair
-		if kicker == pairs[1] {
-			for rank, count := range rankCounts {
-				if count == 1 && rank != pairs[0] && rank != pairs[1] {
-					kicker = rank
-					break
-				}
-			}
-		}
-		return HandStrength{
-			Category: TwoPair,
-			Tiebreak: []int{int(pairs[0]), int(pairs[1]), int(kicker)},
-		}
+		kicker := findHighestKicker(rankCounts, pairs[0], pairs[1])
+		// Use reverse encoding so higher pairs have lower scores
+		return (TwoPairType << 20) | ((15-pairs[0]) << 8) | ((15-pairs[1]) << 4) | (15-kicker)
 	}
 
 	// One pair
 	if len(pairs) == 1 {
-		kickers := findKickers(rankCounts, pairs[0], 3)
-		tiebreak := []int{int(pairs[0])}
-		for _, k := range kickers {
-			tiebreak = append(tiebreak, int(k))
-		}
-		return HandStrength{
-			Category: OnePair,
-			Tiebreak: tiebreak,
-		}
+		kickers := findHighestKickers(rankCounts, pairs[0], 3)
+		// Use reverse encoding for pair rank so higher pairs have lower scores
+		return (OnePairType << 20) | ((15-pairs[0]) << 12) | ((15-kickers[0]) << 8) | ((15-kickers[1]) << 4) | (15-kickers[2])
 	}
 
 	// High card
-	tiebreak := make([]int, len(sortedCards))
-	for i, card := range sortedCards {
-		tiebreak[i] = int(card.Rank)
-	}
-	return HandStrength{
-		Category: HighCard,
-		Tiebreak: tiebreak,
-	}
+	highCards := findHighestKickers(rankCounts, 0, 5)
+	return (HighCardType << 20) | encodeMultipleRanksReverse(highCards)
 }
 
-// Helper functions
-
-func isFlush(cards []deck.Card) bool {
-	suit := cards[0].Suit
-	for _, card := range cards[1:] {
-		if card.Suit != suit {
-			return false
-		}
-	}
-	return true
-}
-
-func isStraight(cards []deck.Card) (bool, deck.Rank) {
-	// Sort cards by rank
-	sorted := make([]deck.Card, len(cards))
-	copy(sorted, cards)
-	sort.Sort(cardsByRankDesc(sorted))
-
-	// Check for A-2-3-4-5 straight (wheel)
-	if sorted[0].Rank == deck.Ace && sorted[1].Rank == deck.Five &&
-		sorted[2].Rank == deck.Four && sorted[3].Rank == deck.Three &&
-		sorted[4].Rank == deck.Two {
-		return true, deck.Five // In wheel straight, 5 is the high card
+// findStraightInBitmap checks for 5 consecutive bits in rank bitmap
+// Returns the high card of the straight, or 0 if no straight
+func findStraightInBitmap(rankBits uint32) int {
+	// Check for wheel straight (A-2-3-4-5)
+	wheel := uint32(1<<14 | 1<<5 | 1<<4 | 1<<3 | 1<<2)
+	if (rankBits & wheel) == wheel {
+		return 5 // In wheel, 5 is high card
 	}
 
-	// Check for regular straight
-	for i := 1; i < len(sorted); i++ {
-		if int(sorted[i-1].Rank)-int(sorted[i].Rank) != 1 {
-			return false, 0
+	// Check for other straights (need 5 consecutive bits)
+	for high := 14; high >= 6; high-- {
+		mask := uint32(0x1F) << uint(high-4) // 5 consecutive bits
+		if (rankBits & mask) == mask {
+			return high
 		}
 	}
 
-	return true, sorted[0].Rank
+	return 0
 }
 
-func countRanks(cards []deck.Card) map[deck.Rank]int {
-	counts := make(map[deck.Rank]int)
-	for _, card := range cards {
-		counts[card.Rank]++
+// findHighestKicker finds the highest single card excluding given ranks
+func findHighestKicker(rankCounts [15]int, excludeRanks ...int) int {
+	excluded := make(map[int]bool)
+	for _, rank := range excludeRanks {
+		excluded[rank] = true
 	}
-	return counts
-}
 
-func findNOfAKind(rankCounts map[deck.Rank]int, n int) deck.Rank {
-	for rank, count := range rankCounts {
-		if count == n {
+	for rank := 14; rank >= 2; rank-- {
+		if rankCounts[rank] == 1 && !excluded[rank] {
 			return rank
 		}
 	}
 	return 0
 }
 
-func findAllPairs(rankCounts map[deck.Rank]int) []deck.Rank {
-	var pairs []deck.Rank
-	for rank, count := range rankCounts {
-		if count == 2 {
-			pairs = append(pairs, rank)
-		}
-	}
-	return pairs
-}
-
-func findKicker(rankCounts map[deck.Rank]int, excludeRank deck.Rank) deck.Rank {
-	var bestKicker deck.Rank
-	for rank, count := range rankCounts {
-		if rank != excludeRank && count == 1 && rank > bestKicker {
-			bestKicker = rank
-		}
-	}
-	return bestKicker
-}
-
-func findKickers(rankCounts map[deck.Rank]int, excludeRank deck.Rank, numKickers int) []deck.Rank {
-	var kickers []deck.Rank
-	for rank, count := range rankCounts {
-		if rank != excludeRank && count == 1 {
+// findHighestKickers finds n highest single cards excluding given rank
+func findHighestKickers(rankCounts [15]int, excludeRank int, n int) []int {
+	var kickers []int
+	for rank := 14; rank >= 2 && len(kickers) < n; rank-- {
+		if rankCounts[rank] == 1 && rank != excludeRank {
 			kickers = append(kickers, rank)
 		}
 	}
-	sort.Sort(ranksByDesc(kickers))
-
-	if len(kickers) > numKickers {
-		kickers = kickers[:numKickers]
-	}
-
 	return kickers
 }
 
-// generateCombinations generates all possible combinations of k cards from the given slice
-func generateCombinations(cards []deck.Card, k int) [][]deck.Card {
-	var result [][]deck.Card
+// getHighestRanks returns n highest ranks from a slice
+func getHighestRanks(ranks []int, n int) []int {
+	// Sort in descending order
+	sorted := make([]int, len(ranks))
+	copy(sorted, ranks)
 
-	var generate func(start int, current []deck.Card)
-	generate = func(start int, current []deck.Card) {
-		if len(current) == k {
-			combo := make([]deck.Card, len(current))
-			copy(combo, current)
-			result = append(result, combo)
-			return
-		}
-
-		for i := start; i < len(cards); i++ {
-			generate(i+1, append(current, cards[i]))
+	for i := 0; i < len(sorted)-1; i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			if sorted[j] > sorted[i] {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
 		}
 	}
 
-	generate(0, []deck.Card{})
+	if len(sorted) > n {
+		sorted = sorted[:n]
+	}
+	return sorted
+}
+
+// encodeMultipleRanks encodes up to 5 ranks into a single integer
+func encodeMultipleRanks(ranks []int) int {
+	result := 0
+	for i, rank := range ranks {
+		if i >= 5 {
+			break
+		}
+		result |= rank << uint(4*i)
+	}
+	return result
+}
+
+// encodeMultipleRanksReverse encodes ranks where higher ranks give lower scores
+func encodeMultipleRanksReverse(ranks []int) int {
+	result := 0
+	for i, rank := range ranks {
+		if i >= 5 {
+			break
+		}
+		// Subtract from 15 to make higher ranks give lower values
+		result |= (15 - rank) << uint(4*i)
+	}
 	return result
 }

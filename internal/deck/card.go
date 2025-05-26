@@ -5,19 +5,40 @@ import (
 	"strings"
 )
 
-// Suit represents a card suit
-type Suit int
+// Card represents a playing card with direct int access for maximum speed
+type Card struct {
+	Rank int // 2-14 (Two=2, Ace=14)
+	Suit int // 0-3 (Spades=0, Hearts=1, Diamonds=2, Clubs=3)
+}
 
+// Suit constants
 const (
-	Spades Suit = iota
-	Hearts
-	Diamonds
-	Clubs
+	Spades = 0
+	Hearts = 1
+	Diamonds = 2
+	Clubs = 3
 )
 
-// String returns the string representation of a suit
-func (s Suit) String() string {
-	switch s {
+// Rank constants
+const (
+	Two = 2
+	Three = 3
+	Four = 4
+	Five = 5
+	Six = 6
+	Seven = 7
+	Eight = 8
+	Nine = 9
+	Ten = 10
+	Jack = 11
+	Queen = 12
+	King = 13
+	Ace = 14
+)
+
+// SuitString returns the string representation of the suit
+func (c Card) SuitString() string {
+	switch c.Suit {
 	case Spades:
 		return "♠"
 	case Hearts:
@@ -31,33 +52,9 @@ func (s Suit) String() string {
 	}
 }
 
-// IsRed returns true if the suit is red (Hearts or Diamonds)
-func (s Suit) IsRed() bool {
-	return s == Hearts || s == Diamonds
-}
-
-// Rank represents a card rank
-type Rank int
-
-const (
-	Two Rank = iota + 2
-	Three
-	Four
-	Five
-	Six
-	Seven
-	Eight
-	Nine
-	Ten
-	Jack
-	Queen
-	King
-	Ace
-)
-
-// String returns the string representation of a rank
-func (r Rank) String() string {
-	switch r {
+// RankString returns the string representation of the rank
+func (c Card) RankString() string {
+	switch c.Rank {
 	case Two:
 		return "2"
 	case Three:
@@ -89,31 +86,59 @@ func (r Rank) String() string {
 	}
 }
 
-// Card represents a playing card
-type Card struct {
-	Suit Suit
-	Rank Rank
-}
-
 // NewCard creates a new card
-func NewCard(suit Suit, rank Rank) Card {
-	return Card{Suit: suit, Rank: rank}
+func NewCard(suit int, rank int) Card {
+	return Card{Rank: rank, Suit: suit}
 }
 
 // String returns the string representation of a card (e.g., "A♠")
 func (c Card) String() string {
-	return fmt.Sprintf("%s%s", c.Rank, c.Suit)
+	return fmt.Sprintf("%s%s", c.RankString(), c.SuitString())
 }
 
 // IsRed returns true if the card is red
 func (c Card) IsRed() bool {
-	return c.Suit.IsRed()
+	return c.Suit == Hearts || c.Suit == Diamonds
 }
 
 // Value returns the numeric value of the card for comparison
 // Aces are high (14), but can be used as low (1) in specific contexts
 func (c Card) Value() int {
-	return int(c.Rank)
+	return c.Rank
+}
+
+// RankString returns the string representation of a rank value
+func RankString(rank int) string {
+	switch rank {
+	case Two:
+		return "2"
+	case Three:
+		return "3"
+	case Four:
+		return "4"
+	case Five:
+		return "5"
+	case Six:
+		return "6"
+	case Seven:
+		return "7"
+	case Eight:
+		return "8"
+	case Nine:
+		return "9"
+	case Ten:
+		return "T"
+	case Jack:
+		return "J"
+	case Queen:
+		return "Q"
+	case King:
+		return "K"
+	case Ace:
+		return "A"
+	default:
+		return "?"
+	}
 }
 
 // IsAce returns true if the card is an Ace
@@ -155,7 +180,7 @@ func ParseCards(s string) ([]Card, error) {
 			return nil, fmt.Errorf("invalid suit '%c' at position %d: %w", suitChar, i+1, err)
 		}
 
-		cards = append(cards, Card{Rank: rank, Suit: suit})
+		cards = append(cards, NewCard(suit, rank))
 	}
 
 	return cards, nil
@@ -170,7 +195,7 @@ func MustParseCards(s string) []Card {
 	return cards
 }
 
-func parseRank(c byte) (Rank, error) {
+func parseRank(c byte) (int, error) {
 	switch c {
 	case 'A', 'a':
 		return Ace, nil
@@ -203,7 +228,7 @@ func parseRank(c byte) (Rank, error) {
 	}
 }
 
-func parseSuit(c byte) (Suit, error) {
+func parseSuit(c byte) (int, error) {
 	switch c {
 	case 's', 'S':
 		return Spades, nil

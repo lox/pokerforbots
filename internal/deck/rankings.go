@@ -83,8 +83,8 @@ func formatHandKey(holeCards []Card) string {
 	return rankStr1 + rankStr2 + suitChar
 }
 
-// rankToString converts Rank to string
-func rankToString(rank Rank) string {
+// rankToString converts rank to string
+func rankToString(rank int) string {
 	switch rank {
 	case Two:
 		return "2"
