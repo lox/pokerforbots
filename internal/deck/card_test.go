@@ -1,58 +1,54 @@
-package evaluator
+package deck
 
-import (
-	"testing"
-
-	"github.com/lox/holdem-cli/internal/deck"
-)
+import "testing"
 
 func TestParseCards(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected []deck.Card
+		expected []Card
 		wantErr  bool
 	}{
 		{
 			name:  "royal flush",
 			input: "AsKsQsJsTs",
-			expected: []deck.Card{
-				{Suit: deck.Spades, Rank: deck.Ace},
-				{Suit: deck.Spades, Rank: deck.King},
-				{Suit: deck.Spades, Rank: deck.Queen},
-				{Suit: deck.Spades, Rank: deck.Jack},
-				{Suit: deck.Spades, Rank: deck.Ten},
+			expected: []Card{
+				{Suit: Spades, Rank: Ace},
+				{Suit: Spades, Rank: King},
+				{Suit: Spades, Rank: Queen},
+				{Suit: Spades, Rank: Jack},
+				{Suit: Spades, Rank: Ten},
 			},
 		},
 		{
 			name:  "mixed suits",
 			input: "AhKdQcJs9s",
-			expected: []deck.Card{
-				{Suit: deck.Hearts, Rank: deck.Ace},
-				{Suit: deck.Diamonds, Rank: deck.King},
-				{Suit: deck.Clubs, Rank: deck.Queen},
-				{Suit: deck.Spades, Rank: deck.Jack},
-				{Suit: deck.Spades, Rank: deck.Nine},
+			expected: []Card{
+				{Suit: Hearts, Rank: Ace},
+				{Suit: Diamonds, Rank: King},
+				{Suit: Clubs, Rank: Queen},
+				{Suit: Spades, Rank: Jack},
+				{Suit: Spades, Rank: Nine},
 			},
 		},
 		{
 			name:  "low cards",
 			input: "5h4d3c2s",
-			expected: []deck.Card{
-				{Suit: deck.Hearts, Rank: deck.Five},
-				{Suit: deck.Diamonds, Rank: deck.Four},
-				{Suit: deck.Clubs, Rank: deck.Three},
-				{Suit: deck.Spades, Rank: deck.Two},
+			expected: []Card{
+				{Suit: Hearts, Rank: Five},
+				{Suit: Diamonds, Rank: Four},
+				{Suit: Clubs, Rank: Three},
+				{Suit: Spades, Rank: Two},
 			},
 		},
 		{
 			name:  "case insensitive",
 			input: "asKHqDjc",
-			expected: []deck.Card{
-				{Suit: deck.Spades, Rank: deck.Ace},
-				{Suit: deck.Hearts, Rank: deck.King},
-				{Suit: deck.Diamonds, Rank: deck.Queen},
-				{Suit: deck.Clubs, Rank: deck.Jack},
+			expected: []Card{
+				{Suit: Spades, Rank: Ace},
+				{Suit: Hearts, Rank: King},
+				{Suit: Diamonds, Rank: Queen},
+				{Suit: Clubs, Rank: Jack},
 			},
 		},
 		{
@@ -73,7 +69,7 @@ func TestParseCards(t *testing.T) {
 		{
 			name:     "empty string",
 			input:    "",
-			expected: []deck.Card{},
+			expected: []Card{},
 		},
 	}
 
@@ -94,9 +90,9 @@ func TestParseCards(t *testing.T) {
 func TestMustParseCards(t *testing.T) {
 	// Test successful parsing
 	cards := MustParseCards("AsKs")
-	expected := []deck.Card{
-		{Suit: deck.Spades, Rank: deck.Ace},
-		{Suit: deck.Spades, Rank: deck.King},
+	expected := []Card{
+		{Suit: Spades, Rank: Ace},
+		{Suit: Spades, Rank: King},
 	}
 	if !cardsEqual(cards, expected) {
 		t.Errorf("MustParseCards() = %v, want %v", cards, expected)
@@ -111,7 +107,7 @@ func TestMustParseCards(t *testing.T) {
 	MustParseCards("invalid")
 }
 
-func cardsEqual(a, b []deck.Card) bool {
+func cardsEqual(a, b []Card) bool {
 	if len(a) != len(b) {
 		return false
 	}

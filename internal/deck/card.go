@@ -1,6 +1,9 @@
 package deck
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Suit represents a card suit
 type Suit int
@@ -121,4 +124,96 @@ func (c Card) IsAce() bool {
 // IsFaceCard returns true if the card is a face card (J, Q, K)
 func (c Card) IsFaceCard() bool {
 	return c.Rank >= Jack && c.Rank <= King
+}
+
+// ParseCards parses a string of card notation into a slice of cards.
+// Format: "AsKsQsJsTs" where each card is [Rank][Suit]
+// Ranks: A, K, Q, J, T, 9, 8, 7, 6, 5, 4, 3, 2
+// Suits: s (spades), h (hearts), d (diamonds), c (clubs)
+func ParseCards(s string) ([]Card, error) {
+	s = strings.ReplaceAll(s, " ", "") // Remove any spaces
+	if len(s)%2 != 0 {
+		return nil, fmt.Errorf("invalid card string length: %d (must be even)", len(s))
+	}
+
+	var cards []Card
+	for i := 0; i < len(s); i += 2 {
+		if i+1 >= len(s) {
+			return nil, fmt.Errorf("incomplete card at position %d", i)
+		}
+
+		rankChar := s[i]
+		suitChar := s[i+1]
+
+		rank, err := parseRank(rankChar)
+		if err != nil {
+			return nil, fmt.Errorf("invalid rank '%c' at position %d: %w", rankChar, i, err)
+		}
+
+		suit, err := parseSuit(suitChar)
+		if err != nil {
+			return nil, fmt.Errorf("invalid suit '%c' at position %d: %w", suitChar, i+1, err)
+		}
+
+		cards = append(cards, Card{Rank: rank, Suit: suit})
+	}
+
+	return cards, nil
+}
+
+// MustParseCards parses cards and panics on error (for tests)
+func MustParseCards(s string) []Card {
+	cards, err := ParseCards(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse cards '%s': %v", s, err))
+	}
+	return cards
+}
+
+func parseRank(c byte) (Rank, error) {
+	switch c {
+	case 'A', 'a':
+		return Ace, nil
+	case 'K', 'k':
+		return King, nil
+	case 'Q', 'q':
+		return Queen, nil
+	case 'J', 'j':
+		return Jack, nil
+	case 'T', 't':
+		return Ten, nil
+	case '9':
+		return Nine, nil
+	case '8':
+		return Eight, nil
+	case '7':
+		return Seven, nil
+	case '6':
+		return Six, nil
+	case '5':
+		return Five, nil
+	case '4':
+		return Four, nil
+	case '3':
+		return Three, nil
+	case '2':
+		return Two, nil
+	default:
+		return 0, fmt.Errorf("unknown rank '%c'", c)
+	}
+}
+
+func parseSuit(c byte) (Suit, error) {
+	switch c {
+	case 's', 'S':
+		return Spades, nil
+	case 'h', 'H':
+		return Hearts, nil
+	case 'd', 'D':
+		return Diamonds, nil
+	case 'c', 'C':
+		return Clubs, nil
+	default:
+		return 0, fmt.Errorf("unknown suit '%c'", c)
+	}
 }

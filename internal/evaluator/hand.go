@@ -220,3 +220,62 @@ type ranksByDesc []deck.Rank
 func (r ranksByDesc) Len() int           { return len(r) }
 func (r ranksByDesc) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
 func (r ranksByDesc) Less(i, j int) bool { return r[i] > r[j] }
+
+// HandStrength represents a poker hand with category and tiebreakers for efficient comparison
+type HandStrength struct {
+	Category HandRank // Use HandRank enum for type safety
+	Tiebreak []int    // Tiebreaker values in descending order of importance
+}
+
+// Compare compares two HandStrengths and returns:
+// -1 if hs1 is weaker than hs2
+//  0 if hs1 equals hs2
+//  1 if hs1 is stronger than hs2
+func (hs1 HandStrength) Compare(hs2 HandStrength) int {
+	// First compare by category
+	if hs1.Category < hs2.Category {
+		return -1
+	}
+	if hs1.Category > hs2.Category {
+		return 1
+	}
+
+	// Same category, compare tiebreakers
+	minLen := len(hs1.Tiebreak)
+	if len(hs2.Tiebreak) < minLen {
+		minLen = len(hs2.Tiebreak)
+	}
+
+	for i := 0; i < minLen; i++ {
+		if hs1.Tiebreak[i] < hs2.Tiebreak[i] {
+			return -1
+		}
+		if hs1.Tiebreak[i] > hs2.Tiebreak[i] {
+			return 1
+		}
+	}
+
+	return 0
+}
+
+// IsStrongerThan returns true if this hand beats the other hand
+func (hs1 HandStrength) IsStrongerThan(hs2 HandStrength) bool {
+	return hs1.Compare(hs2) > 0
+}
+
+// String returns the string representation of a HandStrength category
+func (hs HandStrength) String() string {
+	return hs.Category.String()
+}
+
+// HandToHandStrength converts a Hand to HandStrength
+func HandToHandStrength(h Hand) HandStrength {
+	tiebreak := make([]int, len(h.Kickers))
+	for i, k := range h.Kickers {
+		tiebreak[i] = int(k)
+	}
+	return HandStrength{
+		Category: h.Rank, // Direct conversion - no mapping needed
+		Tiebreak: tiebreak,
+	}
+}

@@ -232,7 +232,7 @@ func (p *Player) ResetForNewRound() {
 }
 
 // GetBestHand returns the player's best hand given community cards
-func (p *Player) GetBestHand(communityCards []deck.Card) evaluator.Hand {
+func (p *Player) GetBestHand(communityCards []deck.Card) evaluator.HandStrength {
 	if len(p.HoleCards) != 2 {
 		panic("Player must have exactly 2 hole cards")
 	}
@@ -242,7 +242,7 @@ func (p *Player) GetBestHand(communityCards []deck.Card) evaluator.Hand {
 	allCards = append(allCards, p.HoleCards...)
 	allCards = append(allCards, communityCards...)
 
-	return evaluator.FindBestHand(allCards)
+	return evaluator.Evaluate7(allCards)
 }
 
 // IsInHand returns true if the player is still in the hand

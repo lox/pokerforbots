@@ -6,10 +6,10 @@ import (
 	"github.com/lox/holdem-cli/internal/deck"
 )
 
-// EvaluateHand evaluates exactly 5 cards and returns the best hand
-func EvaluateHand(cards []deck.Card) Hand {
+// Evaluate5 evaluates exactly 5 cards and returns the best hand
+func Evaluate5(cards []deck.Card) Hand {
 	if len(cards) != 5 {
-		panic("EvaluateHand requires exactly 5 cards")
+		panic("evaluate5 requires exactly 5 cards")
 	}
 
 	// Sort cards by rank for easier analysis
@@ -151,28 +151,153 @@ func EvaluateHand(cards []deck.Card) Hand {
 	}
 }
 
-// FindBestHand finds the best 5-card hand from 7 cards (2 hole + 5 community)
-func FindBestHand(cards []deck.Card) Hand {
-	if len(cards) < 5 {
-		panic("FindBestHand requires at least 5 cards")
+
+// Evaluate7 efficiently evaluates exactly 7 cards and returns the best HandStrength
+func Evaluate7(cards []deck.Card) HandStrength {
+	if len(cards) != 7 {
+		panic("Evaluate7 requires exactly 7 cards")
 	}
 
-	if len(cards) == 5 {
-		return EvaluateHand(cards)
-	}
-
-	// Generate all possible 5-card combinations
-	var bestHand Hand
+	// Find the best 5-card combination from the 7 cards
+	var bestStrength HandStrength
 	combinations := generateCombinations(cards, 5)
 
 	for i, combo := range combinations {
-		hand := EvaluateHand(combo)
-		if i == 0 || hand.IsStrongerThan(bestHand) {
-			bestHand = hand
+		strength := evaluate5Fast(combo)
+		if i == 0 || strength.IsStrongerThan(bestStrength) {
+			bestStrength = strength
 		}
 	}
 
-	return bestHand
+	return bestStrength
+}
+
+// evaluate5Fast efficiently evaluates exactly 5 cards and returns HandStrength
+func evaluate5Fast(cards []deck.Card) HandStrength {
+	// Sort cards by rank for easier analysis
+	sortedCards := make([]deck.Card, len(cards))
+	copy(sortedCards, cards)
+	sort.Sort(cardsByRankDesc(sortedCards))
+
+	// Check for flush
+	isFlush := isFlush(sortedCards)
+
+	// Check for straight
+	isStraight, straightHigh := isStraight(sortedCards)
+
+	// Count ranks
+	rankCounts := countRanks(sortedCards)
+
+	// Determine hand type and build tiebreakers
+	if isFlush && isStraight {
+		if straightHigh == deck.Ace && sortedCards[1].Rank == deck.King {
+			// Royal flush
+			return HandStrength{
+				Category: RoyalFlush,
+				Tiebreak: []int{int(deck.Ace)},
+			}
+		}
+		// Straight flush
+		return HandStrength{
+			Category: StraightFlush,
+			Tiebreak: []int{int(straightHigh)},
+		}
+	}
+
+	// Four of a kind
+	if fourOfAKindRank := findNOfAKind(rankCounts, 4); fourOfAKindRank != 0 {
+		kicker := findKicker(rankCounts, fourOfAKindRank)
+		return HandStrength{
+			Category: FourOfAKind,
+			Tiebreak: []int{int(fourOfAKindRank), int(kicker)},
+		}
+	}
+
+	// Full house
+	threeOfAKindRank := findNOfAKind(rankCounts, 3)
+	pairRank := findNOfAKind(rankCounts, 2)
+	if threeOfAKindRank != 0 && pairRank != 0 {
+		return HandStrength{
+			Category: FullHouse,
+			Tiebreak: []int{int(threeOfAKindRank), int(pairRank)},
+		}
+	}
+
+	// Flush
+	if isFlush {
+		tiebreak := make([]int, len(sortedCards))
+		for i, card := range sortedCards {
+			tiebreak[i] = int(card.Rank)
+		}
+		return HandStrength{
+			Category: Flush,
+			Tiebreak: tiebreak,
+		}
+	}
+
+	// Straight
+	if isStraight {
+		return HandStrength{
+			Category: Straight,
+			Tiebreak: []int{int(straightHigh)},
+		}
+	}
+
+	// Three of a kind
+	if threeOfAKindRank != 0 {
+		kickers := findKickers(rankCounts, threeOfAKindRank, 2)
+		tiebreak := []int{int(threeOfAKindRank)}
+		for _, k := range kickers {
+			tiebreak = append(tiebreak, int(k))
+		}
+		return HandStrength{
+			Category: ThreeOfAKind,
+			Tiebreak: tiebreak,
+		}
+	}
+
+	// Two pair
+	pairs := findAllPairs(rankCounts)
+	if len(pairs) >= 2 {
+		sort.Sort(ranksByDesc(pairs))
+		kicker := findKickers(rankCounts, pairs[0], 1)[0]
+		// Handle case where kicker conflicts with second pair
+		if kicker == pairs[1] {
+			for rank, count := range rankCounts {
+				if count == 1 && rank != pairs[0] && rank != pairs[1] {
+					kicker = rank
+					break
+				}
+			}
+		}
+		return HandStrength{
+			Category: TwoPair,
+			Tiebreak: []int{int(pairs[0]), int(pairs[1]), int(kicker)},
+		}
+	}
+
+	// One pair
+	if len(pairs) == 1 {
+		kickers := findKickers(rankCounts, pairs[0], 3)
+		tiebreak := []int{int(pairs[0])}
+		for _, k := range kickers {
+			tiebreak = append(tiebreak, int(k))
+		}
+		return HandStrength{
+			Category: OnePair,
+			Tiebreak: tiebreak,
+		}
+	}
+
+	// High card
+	tiebreak := make([]int, len(sortedCards))
+	for i, card := range sortedCards {
+		tiebreak[i] = int(card.Rank)
+	}
+	return HandStrength{
+		Category: HighCard,
+		Tiebreak: tiebreak,
+	}
 }
 
 // Helper functions

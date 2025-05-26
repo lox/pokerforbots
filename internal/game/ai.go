@@ -226,15 +226,24 @@ func (ai *AIEngine) evaluatePostFlopStrength(player *Player, communityCards []de
 	allCards = append(allCards, player.HoleCards...)
 	allCards = append(allCards, communityCards...)
 
-	// Get best hand
-	bestHand := evaluator.FindBestHand(allCards)
+	// Get best hand - handle different numbers of cards
+	var bestHand evaluator.HandStrength
+	if len(allCards) == 7 {
+		bestHand = evaluator.Evaluate7(allCards)
+	} else if len(allCards) == 5 {
+		hand5 := evaluator.Evaluate5(allCards)
+		bestHand = evaluator.HandToHandStrength(hand5)
+	} else {
+		// For other lengths, we can't properly evaluate - default to high card
+		bestHand = evaluator.HandStrength{Category: evaluator.HighCard}
+	}
 
 	// Evaluate draws
 	drawStrength := ai.evaluateDraws(player.HoleCards, communityCards)
 
 	// Base hand strength evaluation
 	var baseStrength HandStrength
-	switch bestHand.Rank {
+	switch bestHand.Category {
 	case evaluator.RoyalFlush, evaluator.StraightFlush:
 		baseStrength = VeryStrong
 	case evaluator.FourOfAKind, evaluator.FullHouse:
@@ -247,8 +256,8 @@ func (ai *AIEngine) evaluatePostFlopStrength(player *Player, communityCards []de
 		baseStrength = Medium
 	case evaluator.OnePair:
 		// Evaluate pair strength
-		if len(bestHand.Kickers) > 0 {
-			pairRank := bestHand.Kickers[0]
+		if len(bestHand.Tiebreak) > 0 {
+			pairRank := deck.Rank(bestHand.Tiebreak[0])
 			if pairRank >= deck.Jack {
 				baseStrength = Medium
 			} else {
@@ -259,7 +268,7 @@ func (ai *AIEngine) evaluatePostFlopStrength(player *Player, communityCards []de
 		}
 	case evaluator.HighCard:
 		// High card hands are generally weak
-		if len(bestHand.Kickers) > 0 && bestHand.Kickers[0] == deck.Ace {
+		if len(bestHand.Tiebreak) > 0 && deck.Rank(bestHand.Tiebreak[0]) == deck.Ace {
 			baseStrength = Weak
 		} else {
 			baseStrength = VeryWeak
@@ -292,9 +301,18 @@ func (ai *AIEngine) evaluatePostFlopStrengthWithThinking(player *Player, communi
 	allCards = append(allCards, player.HoleCards...)
 	allCards = append(allCards, communityCards...)
 
-	// Get best hand
-	bestHand := evaluator.FindBestHand(allCards)
-	thinking.AddThought(fmt.Sprintf("Best hand: %s", bestHand.Rank.String()))
+	// Get best hand - handle different numbers of cards
+	var bestHand evaluator.HandStrength
+	if len(allCards) == 7 {
+		bestHand = evaluator.Evaluate7(allCards)
+	} else if len(allCards) == 5 {
+		hand5 := evaluator.Evaluate5(allCards)
+		bestHand = evaluator.HandToHandStrength(hand5)
+	} else {
+		// For other lengths, we can't properly evaluate - default to high card
+		bestHand = evaluator.HandStrength{Category: evaluator.HighCard}
+	}
+	thinking.AddThought(fmt.Sprintf("Best hand: %s", bestHand.String()))
 
 	// Evaluate draws
 	drawStrength := ai.evaluateDraws(player.HoleCards, communityCards)
@@ -304,7 +322,7 @@ func (ai *AIEngine) evaluatePostFlopStrengthWithThinking(player *Player, communi
 
 	// Base hand strength evaluation
 	var baseStrength HandStrength
-	switch bestHand.Rank {
+	switch bestHand.Category {
 	case evaluator.RoyalFlush, evaluator.StraightFlush:
 		baseStrength = VeryStrong
 		thinking.AddThought("Premium made hand")
@@ -321,8 +339,8 @@ func (ai *AIEngine) evaluatePostFlopStrengthWithThinking(player *Player, communi
 		baseStrength = Medium
 		thinking.AddThought("Decent two pair")
 	case evaluator.OnePair:
-		if len(bestHand.Kickers) > 0 {
-			pairRank := bestHand.Kickers[0]
+		if len(bestHand.Tiebreak) > 0 {
+			pairRank := deck.Rank(bestHand.Tiebreak[0])
 			if pairRank >= deck.Jack {
 				baseStrength = Medium
 				thinking.AddThought(fmt.Sprintf("Good pair (%s)", ai.rankToString(pairRank)))
@@ -335,7 +353,7 @@ func (ai *AIEngine) evaluatePostFlopStrengthWithThinking(player *Player, communi
 			thinking.AddThought("Weak pair")
 		}
 	case evaluator.HighCard:
-		if len(bestHand.Kickers) > 0 && bestHand.Kickers[0] == deck.Ace {
+		if len(bestHand.Tiebreak) > 0 && deck.Rank(bestHand.Tiebreak[0]) == deck.Ace {
 			baseStrength = Weak
 			thinking.AddThought("Ace high only")
 		} else {

@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/lox/holdem-cli/internal/evaluator"
+	"github.com/lox/holdem-cli/internal/deck"
 )
 
 // MockRandSource for deterministic testing
@@ -669,13 +669,13 @@ func TestFindWinnerEvaluatesHandStrength(t *testing.T) {
 
 	// Manually set hole cards to create a clear hand strength difference
 	// Player1 gets weak cards (Jack high)
-	player1.HoleCards = evaluator.MustParseCards("9sJs")
+	player1.HoleCards = deck.MustParseCards("9sJs")
 
 	// Player2 gets strong cards (pair of Aces)
-	player2.HoleCards = evaluator.MustParseCards("KhAs")
+	player2.HoleCards = deck.MustParseCards("KhAs")
 
 	// Set community cards to give player2 top pair
-	table.CommunityCards = evaluator.MustParseCards("3dAh6h9cQd")
+	table.CommunityCards = deck.MustParseCards("3dAh6h9cQd")
 
 	// Now with proper hand evaluation: Player2 should win with pair of Aces
 	winner := table.FindWinner()
