@@ -35,8 +35,6 @@ const (
 	Showdown
 )
 
-
-
 // String returns the string representation of a betting round
 func (br BettingRound) String() string {
 	switch br {
@@ -110,8 +108,8 @@ type Table struct {
 
 	// Hand tracking
 	PlayersActed map[int]bool // Track which players have acted this round
-	HandHistory  *HandHistory  // Current hand history
-	
+	HandHistory  *HandHistory // Current hand history
+
 	// Dependencies
 	randSource RandSource // Random number generator
 }
@@ -268,7 +266,7 @@ func (t *Table) moveButtonToNextPlayer() {
 // setPositions assigns positions to active players based on dealer button
 func (t *Table) setPositions() {
 	positions := calculatePositions(t.DealerPosition, t.ActivePlayers)
-	
+
 	// Apply the calculated positions
 	for _, player := range t.ActivePlayers {
 		if pos, exists := positions[player.SeatNumber]; exists {
@@ -282,11 +280,11 @@ func (t *Table) setPositions() {
 func calculatePositions(dealerSeat int, activePlayers []*Player) map[int]Position {
 	positions := make(map[int]Position)
 	numPlayers := len(activePlayers)
-	
+
 	if numPlayers < 2 {
 		return positions
 	}
-	
+
 	// Find dealer index in active players
 	dealerIndex := -1
 	for i, player := range activePlayers {
@@ -295,17 +293,17 @@ func calculatePositions(dealerSeat int, activePlayers []*Player) map[int]Positio
 			break
 		}
 	}
-	
+
 	// If dealer not found, use first player
 	if dealerIndex == -1 {
 		dealerIndex = 0
 	}
-	
+
 	// Assign positions relative to dealer
 	for i := 0; i < numPlayers; i++ {
 		playerIndex := (dealerIndex + i) % numPlayers
 		player := activePlayers[playerIndex]
-		
+
 		if numPlayers == 2 {
 			// Heads-up: dealer is small blind
 			if i == 0 {
@@ -335,7 +333,7 @@ func calculatePositions(dealerSeat int, activePlayers []*Player) map[int]Positio
 			}
 		}
 	}
-	
+
 	return positions
 }
 
@@ -344,7 +342,7 @@ func (t *Table) dealHoleCards() {
 	for _, player := range t.ActivePlayers {
 		holeCards := t.Deck.DealN(2)
 		player.DealHoleCards(holeCards)
-		
+
 		// Add hole cards to hand history
 		if t.HandHistory != nil {
 			t.HandHistory.AddPlayerHoleCards(player.Name, holeCards)
@@ -371,7 +369,7 @@ func (t *Table) postBlinds() {
 		amount := min(t.SmallBlind, smallBlindPlayer.Chips)
 		smallBlindPlayer.Call(amount)
 		t.Pot += amount
-		
+
 		// Record small blind posting in hand history
 		if t.HandHistory != nil {
 			t.HandHistory.AddAction(smallBlindPlayer.Name, Call, amount, t.Pot, PreFlop, "")
@@ -383,7 +381,7 @@ func (t *Table) postBlinds() {
 		bigBlindPlayer.Call(amount)
 		t.Pot += amount
 		t.CurrentBet = amount
-		
+
 		// Record big blind posting in hand history
 		if t.HandHistory != nil {
 			t.HandHistory.AddAction(bigBlindPlayer.Name, Call, amount, t.Pot, PreFlop, "")
@@ -573,12 +571,12 @@ func (t *Table) FindWinner() *Player {
 	if len(activePlayers) == 0 {
 		return nil
 	}
-	
+
 	// If only one player left, they win
 	if len(activePlayers) == 1 {
 		return activePlayers[0]
 	}
-	
+
 	// Check if we have enough cards for evaluation (need at least 5 total)
 	// This can happen if FindWinner is called before all community cards are dealt
 	if len(t.CommunityCards) < 3 {
@@ -586,37 +584,37 @@ func (t *Table) FindWinner() *Player {
 		// In a real game, this shouldn't happen during showdown
 		return activePlayers[0]
 	}
-	
+
 	// Evaluate each player's best hand
 	var bestPlayer *Player
 	var bestHand evaluator.Hand
-	
+
 	for i, player := range activePlayers {
 		// Combine hole cards with community cards
 		allCards := make([]deck.Card, 0, 7)
 		allCards = append(allCards, player.HoleCards...)
 		allCards = append(allCards, t.CommunityCards...)
-		
+
 		// Need at least 5 cards total
 		if len(allCards) < 5 {
 			continue
 		}
-		
+
 		// Find the best 5-card hand
 		playerHand := evaluator.FindBestHand(allCards)
-		
+
 		// Compare with current best
 		if i == 0 || playerHand.IsStrongerThan(bestHand) {
 			bestPlayer = player
 			bestHand = playerHand
 		}
 	}
-	
+
 	// Fallback if no valid hands found
 	if bestPlayer == nil {
 		return activePlayers[0]
 	}
-	
+
 	return bestPlayer
 }
 

@@ -207,7 +207,6 @@ func (h1 Hand) Equals(h2 Hand) bool {
 	return h1.Compare(h2) == 0
 }
 
-
 // cardsByRankDesc sorts cards by rank in descending order
 type cardsByRankDesc []deck.Card
 

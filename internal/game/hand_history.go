@@ -22,16 +22,16 @@ type HandAction struct {
 
 // HandHistory tracks all actions and metadata for a single hand
 type HandHistory struct {
-	HandID          string
-	StartTime       time.Time
-	SmallBlind      int
-	BigBlind        int
-	DealerPosition  int
-	Players         []PlayerSnapshot // Player state at hand start
-	Actions         []HandAction     // All actions taken during the hand
-	CommunityCards  []deck.Card      // Final community cards
-	FinalPot        int
-	Winners         []WinnerInfo
+	HandID         string
+	StartTime      time.Time
+	SmallBlind     int
+	BigBlind       int
+	DealerPosition int
+	Players        []PlayerSnapshot // Player state at hand start
+	Actions        []HandAction     // All actions taken during the hand
+	CommunityCards []deck.Card      // Final community cards
+	FinalPot       int
+	Winners        []WinnerInfo
 }
 
 // PlayerSnapshot captures player state at the start of a hand
@@ -156,28 +156,28 @@ func (hh *HandHistory) GenerateHistoryText() string {
 					case Flop:
 						history += "\n*** FLOP ***\n"
 						if len(hh.CommunityCards) >= 3 {
-							history += fmt.Sprintf("Board: [%s %s %s]\n", 
-								hh.CommunityCards[0].String(), 
-								hh.CommunityCards[1].String(), 
+							history += fmt.Sprintf("Board: [%s %s %s]\n",
+								hh.CommunityCards[0].String(),
+								hh.CommunityCards[1].String(),
 								hh.CommunityCards[2].String())
 						}
 					case Turn:
 						history += "\n*** TURN ***\n"
 						if len(hh.CommunityCards) >= 4 {
-							history += fmt.Sprintf("Board: [%s %s %s %s]\n", 
-								hh.CommunityCards[0].String(), 
-								hh.CommunityCards[1].String(), 
-								hh.CommunityCards[2].String(), 
+							history += fmt.Sprintf("Board: [%s %s %s %s]\n",
+								hh.CommunityCards[0].String(),
+								hh.CommunityCards[1].String(),
+								hh.CommunityCards[2].String(),
 								hh.CommunityCards[3].String())
 						}
 					case River:
 						history += "\n*** RIVER ***\n"
 						if len(hh.CommunityCards) >= 5 {
-							history += fmt.Sprintf("Board: [%s %s %s %s %s]\n", 
-								hh.CommunityCards[0].String(), 
-								hh.CommunityCards[1].String(), 
-								hh.CommunityCards[2].String(), 
-								hh.CommunityCards[3].String(), 
+							history += fmt.Sprintf("Board: [%s %s %s %s %s]\n",
+								hh.CommunityCards[0].String(),
+								hh.CommunityCards[1].String(),
+								hh.CommunityCards[2].String(),
+								hh.CommunityCards[3].String(),
 								hh.CommunityCards[4].String())
 						}
 					case Showdown:
@@ -204,7 +204,7 @@ func (hh *HandHistory) GenerateHistoryText() string {
 	if hh.FinalPot > 0 || len(hh.Winners) > 0 {
 		history += "*** SUMMARY ***\n"
 		history += fmt.Sprintf("Total pot $%d\n", hh.FinalPot)
-		
+
 		// Show final board if available
 		if len(hh.CommunityCards) > 0 {
 			boardStr := ""
@@ -216,11 +216,11 @@ func (hh *HandHistory) GenerateHistoryText() string {
 			}
 			history += fmt.Sprintf("Board [%s]\n", boardStr)
 		}
-		
+
 		// Show each player's result
 		for i, player := range hh.Players {
 			seatInfo := fmt.Sprintf("Seat %d: %s", i+1, player.Name)
-			
+
 			// Add position info
 			switch player.Position {
 			case Button:
@@ -230,7 +230,7 @@ func (hh *HandHistory) GenerateHistoryText() string {
 			case BigBlind:
 				seatInfo += " (big blind)"
 			}
-			
+
 			// Determine if this player won
 			var winner *WinnerInfo
 			for _, w := range hh.Winners {
@@ -239,7 +239,7 @@ func (hh *HandHistory) GenerateHistoryText() string {
 					break
 				}
 			}
-			
+
 			if winner != nil {
 				// Player won
 				if len(player.HoleCards) > 0 {
@@ -260,14 +260,14 @@ func (hh *HandHistory) GenerateHistoryText() string {
 					seatInfo += fmt.Sprintf(" mucked [%s %s]",
 						player.HoleCards[0].String(), player.HoleCards[1].String())
 				}
-				
+
 				// Add loss amount if they contributed to pot
 				lossAmount := hh.getPlayerLoss(player.Name)
 				if lossAmount > 0 {
 					seatInfo += fmt.Sprintf(" and lost $%d", lossAmount)
 				}
 			}
-			
+
 			history += fmt.Sprintf("%s\n", seatInfo)
 		}
 		history += "\n"
@@ -312,7 +312,7 @@ func (hh *HandHistory) isBlindPosting(action HandAction) bool {
 			actionCount++
 		}
 	}
-	
+
 	// First two actions in preflop with amounts matching blinds are blind posts
 	return actionCount < 2 && (action.Amount == hh.SmallBlind || action.Amount == hh.BigBlind)
 }
@@ -323,7 +323,7 @@ func (hh *HandHistory) getPositionString(position Position, seatIndex int) strin
 	if position == Button {
 		return " [D]"
 	}
-	
+
 	// Other special positions
 	switch position {
 	case SmallBlind:

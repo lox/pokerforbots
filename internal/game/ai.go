@@ -21,7 +21,7 @@ type AIEngine struct {
 func NewAIEngine(logger *log.Logger) *AIEngine {
 	return &AIEngine{
 		rng:    rand.New(rand.NewSource(time.Now().UnixNano())),
-		logger: logger,
+		logger: logger.WithPrefix("ai"),
 	}
 }
 
@@ -85,7 +85,7 @@ func (tc *ThinkingContext) GetThoughts() string {
 	if len(tc.thoughts) == 0 {
 		return "No clear reasoning available"
 	}
-	return fmt.Sprintf("%s", strings.Join(tc.thoughts, "... "))
+	return strings.Join(tc.thoughts, ". ")
 }
 
 // MakeDecision makes an AI decision for the given player
@@ -98,7 +98,7 @@ func (ai *AIEngine) MakeDecision(player *Player, table *Table) Action {
 func (ai *AIEngine) MakeDecisionWithReasoning(player *Player, table *Table) AIDecision {
 	// Create thinking context to accumulate thoughts
 	thinking := &ThinkingContext{}
-	
+
 	// Evaluate hand strength with thinking
 	strength := ai.evaluateHandStrengthWithThinking(player, table, thinking)
 
@@ -186,7 +186,7 @@ func (ai *AIEngine) evaluateHandStrengthWithThinking(player *Player, table *Tabl
 		// Add board description
 		boardStr := ai.getBoardDescription(table.CommunityCards)
 		thinking.AddThought(fmt.Sprintf("Board: %s", boardStr))
-		
+
 		strength := ai.evaluatePostFlopStrengthWithThinking(player, table.CommunityCards, thinking)
 		return strength
 	}
@@ -194,8 +194,6 @@ func (ai *AIEngine) evaluateHandStrengthWithThinking(player *Player, table *Tabl
 	thinking.AddThought("Not enough information, assuming medium strength")
 	return Medium
 }
-
-
 
 // EvaluatePreFlopStrength evaluates pre-flop hand strength using percentile rankings (exported for testing)
 func (ai *AIEngine) EvaluatePreFlopStrength(holeCards []deck.Card) HandStrength {
@@ -205,12 +203,12 @@ func (ai *AIEngine) EvaluatePreFlopStrength(holeCards []deck.Card) HandStrength 
 // evaluatePreFlopStrength evaluates pre-flop hand strength using percentile rankings
 func (ai *AIEngine) evaluatePreFlopStrength(holeCards []deck.Card) HandStrength {
 	percentile := deck.GetHandPercentile(holeCards)
-	
+
 	// Convert percentile rank to hand strength categories
 	switch {
 	case percentile >= 0.85: // Top 15% (premium hands)
 		return VeryStrong
-	case percentile >= 0.65: // Top 35% (strong hands)  
+	case percentile >= 0.65: // Top 35% (strong hands)
 		return Strong
 	case percentile >= 0.40: // Top 60% (playable hands)
 		return Medium
@@ -373,29 +371,29 @@ func (ai *AIEngine) getHandKey(holeCards []deck.Card) string {
 	if len(holeCards) != 2 {
 		return "unknown"
 	}
-	
+
 	card1, card2 := holeCards[0], holeCards[1]
 	rank1, rank2 := card1.Rank, card2.Rank
-	
+
 	// Ensure higher rank comes first
 	if rank2 > rank1 {
 		rank1, rank2 = rank2, rank1
 	}
-	
+
 	rankStr1 := ai.rankToString(rank1)
 	rankStr2 := ai.rankToString(rank2)
-	
+
 	// Handle pairs
 	if rank1 == rank2 {
 		return rankStr1 + rankStr2
 	}
-	
+
 	// Determine if suited
 	suitChar := "o"
 	if card1.Suit == card2.Suit {
 		suitChar = "s"
 	}
-	
+
 	return rankStr1 + rankStr2 + suitChar
 }
 
@@ -404,12 +402,12 @@ func (ai *AIEngine) getBoardDescription(communityCards []deck.Card) string {
 	if len(communityCards) == 0 {
 		return "no board"
 	}
-	
+
 	cardStrs := make([]string, len(communityCards))
 	for i, card := range communityCards {
 		cardStrs[i] = card.String()
 	}
-	
+
 	boardTexture := ai.analyzeBoardTexture(communityCards)
 	textureDesc := ""
 	switch boardTexture {
@@ -422,27 +420,41 @@ func (ai *AIEngine) getBoardDescription(communityCards []deck.Card) string {
 	case VeryWetBoard:
 		textureDesc = " (very wet)"
 	}
-	
+
 	return strings.Join(cardStrs, "-") + textureDesc
 }
 
 // rankToString converts Rank to string (helper for thinking)
 func (ai *AIEngine) rankToString(rank deck.Rank) string {
 	switch rank {
-	case deck.Two: return "2"
-	case deck.Three: return "3"
-	case deck.Four: return "4"
-	case deck.Five: return "5"
-	case deck.Six: return "6"
-	case deck.Seven: return "7"
-	case deck.Eight: return "8"
-	case deck.Nine: return "9"
-	case deck.Ten: return "T"
-	case deck.Jack: return "J"
-	case deck.Queen: return "Q"
-	case deck.King: return "K"
-	case deck.Ace: return "A"
-	default: return "?"
+	case deck.Two:
+		return "2"
+	case deck.Three:
+		return "3"
+	case deck.Four:
+		return "4"
+	case deck.Five:
+		return "5"
+	case deck.Six:
+		return "6"
+	case deck.Seven:
+		return "7"
+	case deck.Eight:
+		return "8"
+	case deck.Nine:
+		return "9"
+	case deck.Ten:
+		return "T"
+	case deck.Jack:
+		return "J"
+	case deck.Queen:
+		return "Q"
+	case deck.King:
+		return "K"
+	case deck.Ace:
+		return "A"
+	default:
+		return "?"
 	}
 }
 
@@ -507,13 +519,13 @@ func (ai *AIEngine) evaluateDraws(holeCards []deck.Card, communityCards []deck.C
 				boardHigh = comm.Rank
 			}
 		}
-		
+
 		for _, hole := range holeCards {
 			if hole.Rank > boardHigh {
 				overCards++
 			}
 		}
-		
+
 		if overCards >= 2 {
 			// Only count if both are decent overcards (Jack or higher)
 			highOverCards := 0
@@ -544,7 +556,7 @@ func (ai *AIEngine) countStraightDraws(sortedRanks []deck.Rank) int {
 		// Look for sequences that could make straights
 		consecutive := 1
 		gaps := 0
-		
+
 		for j := i + 1; j < len(sortedRanks) && j < i+5; j++ {
 			diff := int(sortedRanks[j]) - int(sortedRanks[j-1])
 			if diff == 1 {
@@ -583,14 +595,14 @@ func (ai *AIEngine) analyzeBoardTexture(communityCards []deck.Card) BoardTexture
 	for _, card := range communityCards {
 		suitCounts[card.Suit]++
 	}
-	
+
 	maxSuitCount := 0
 	for _, count := range suitCounts {
 		if count > maxSuitCount {
 			maxSuitCount = count
 		}
 	}
-	
+
 	if maxSuitCount >= 3 {
 		wetness += 2 // Flush draw possible
 	} else if maxSuitCount == 2 {
@@ -602,7 +614,7 @@ func (ai *AIEngine) analyzeBoardTexture(communityCards []deck.Card) BoardTexture
 	for i, card := range communityCards {
 		ranks[i] = card.Rank
 	}
-	
+
 	// Sort ranks
 	for i := 0; i < len(ranks); i++ {
 		for j := i + 1; j < len(ranks); j++ {
@@ -619,7 +631,7 @@ func (ai *AIEngine) analyzeBoardTexture(communityCards []deck.Card) BoardTexture
 			connectedCards++
 		}
 	}
-	
+
 	if connectedCards >= 3 {
 		wetness += 2 // Straight draws possible
 	}
@@ -629,14 +641,14 @@ func (ai *AIEngine) analyzeBoardTexture(communityCards []deck.Card) BoardTexture
 	for _, card := range communityCards {
 		rankCounts[card.Rank]++
 	}
-	
+
 	pairs := 0
 	for _, count := range rankCounts {
 		if count >= 2 {
 			pairs++
 		}
 	}
-	
+
 	if pairs >= 1 {
 		wetness += 1 // Paired board
 	}
@@ -675,7 +687,7 @@ func (ai *AIEngine) getPositionFactor(position Position) float64 {
 // getPositionFactorWithThinking returns position factor with thinking
 func (ai *AIEngine) getPositionFactorWithThinking(position Position, thinking *ThinkingContext) float64 {
 	factor := ai.getPositionFactor(position)
-	
+
 	switch position {
 	case SmallBlind, BigBlind:
 		thinking.AddThought("In the blinds, playing tighter")
@@ -690,7 +702,7 @@ func (ai *AIEngine) getPositionFactorWithThinking(position Position, thinking *T
 	default:
 		thinking.AddThought("Standard position")
 	}
-	
+
 	return factor
 }
 
@@ -732,7 +744,7 @@ func (ai *AIEngine) calculatePotOddsWithThinking(player *Player, table *Table, t
 
 	potOdds := float64(table.Pot) / float64(callAmount)
 	thinking.AddThought(fmt.Sprintf("Pot odds: %.1f:1 (risk $%d to win $%d)", potOdds, callAmount, table.Pot))
-	
+
 	return potOdds
 }
 
@@ -990,7 +1002,7 @@ func (ai *AIEngine) shouldContinuationBet(player *Player, table *Table, strength
 	if positionFactor > 1.0 && strength >= VeryWeak {
 		// Analyze board texture
 		boardTexture := ai.analyzeBoardTexture(table.CommunityCards)
-		
+
 		// More likely to c-bet on dry boards
 		switch boardTexture {
 		case DryBoard:
@@ -1035,15 +1047,15 @@ func (ai *AIEngine) GetRaiseAmount(player *Player, table *Table, strength HandSt
 		var pfSizing float64
 		if positionFactor <= 0.8 { // Early position
 			pfSizing = 2.5 + ai.rng.Float64()*0.3 // 2.5-2.8x BB
-		} else { // Late position  
+		} else { // Late position
 			pfSizing = 2.0 + ai.rng.Float64()*0.4 // 2.0-2.4x BB
 		}
-		
+
 		// Adjust for stack depth
 		if stackDepth < 20 {
 			pfSizing *= 0.8 // Smaller sizing with short stacks
 		}
-		
+
 		baseRaise = int(float64(bigBlind) * pfSizing)
 	} else {
 		// Post-flop sizing based on street
@@ -1056,12 +1068,12 @@ func (ai *AIEngine) GetRaiseAmount(player *Player, table *Table, strength HandSt
 		default:
 			potFactor = 0.65
 		}
-		
+
 		// Adjust for stack depth
 		if stackDepth < 15 {
 			potFactor *= 0.8 // Smaller sizing with short stacks
 		}
-		
+
 		baseRaise = int(float64(potSize) * potFactor)
 	}
 
@@ -1071,7 +1083,7 @@ func (ai *AIEngine) GetRaiseAmount(player *Player, table *Table, strength HandSt
 		// Re-raise: current bet + the previous raise amount (proper min-raise)
 		previousRaise := currentBet - bigBlind
 		minRaise = currentBet + previousRaise
-		
+
 		// Cap re-raise at reasonable level to prevent escalation
 		maxReRaise := currentBet + (potSize / 2)
 		if minRaise > maxReRaise {
@@ -1081,7 +1093,7 @@ func (ai *AIEngine) GetRaiseAmount(player *Player, table *Table, strength HandSt
 		// Initial raise: big blind + minimum raise increment
 		minRaise = currentBet + bigBlind
 	}
-	
+
 	if baseRaise < minRaise {
 		baseRaise = minRaise
 	}
@@ -1218,7 +1230,7 @@ func (ai *AIEngine) getDecisionReasoning(player *Player, action Action, strength
 	var handPercentile float64
 	var boardTexture BoardTexture
 	var drawStrength int
-	
+
 	if len(player.HoleCards) == 2 {
 		handPercentile = deck.GetHandPercentile(player.HoleCards)
 		if table.CurrentRound > PreFlop && len(table.CommunityCards) >= 3 {
@@ -1226,7 +1238,7 @@ func (ai *AIEngine) getDecisionReasoning(player *Player, action Action, strength
 			drawStrength = ai.evaluateDraws(player.HoleCards, table.CommunityCards)
 		}
 	}
-	
+
 	switch action {
 	case Fold:
 		if strength == VeryWeak {
@@ -1242,7 +1254,7 @@ func (ai *AIEngine) getDecisionReasoning(player *Player, action Action, strength
 			return "Dangerous board texture, folding marginal hand"
 		}
 		return "Hand not strong enough to continue"
-		
+
 	case Check:
 		if table.CurrentBet == 0 {
 			if table.CurrentRound == River {
@@ -1255,7 +1267,7 @@ func (ai *AIEngine) getDecisionReasoning(player *Player, action Action, strength
 			return "No bet to call, checking to see next card"
 		}
 		return "Checking as safe option"
-		
+
 	case Call:
 		if potOdds > 3.0 {
 			return fmt.Sprintf("Getting %.1f:1 pot odds, good price to call", potOdds)
@@ -1267,7 +1279,7 @@ func (ai *AIEngine) getDecisionReasoning(player *Player, action Action, strength
 			return "Decent hand strength, calling to see more cards"
 		}
 		return "Calling with marginal hand"
-		
+
 	case Raise:
 		if strength >= VeryStrong {
 			if table.CurrentRound == PreFlop {
@@ -1290,7 +1302,7 @@ func (ai *AIEngine) getDecisionReasoning(player *Player, action Action, strength
 			return fmt.Sprintf("Top %.0f%% hand, raising from late position", handPercentile*100)
 		}
 		return "Raising with playable hand"
-		
+
 	case AllIn:
 		if strength >= VeryStrong {
 			return "Premium hand, going all-in for maximum value"
@@ -1298,7 +1310,7 @@ func (ai *AIEngine) getDecisionReasoning(player *Player, action Action, strength
 			return "All-in semi-bluff with strong draws"
 		}
 		return "All-in with strong hand"
-		
+
 	default:
 		return "Unknown decision reason"
 	}

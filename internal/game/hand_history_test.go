@@ -167,7 +167,7 @@ func TestFormatAction(t *testing.T) {
 		},
 		{
 			action:   HandAction{PlayerName: "Bob", Action: Call, Amount: 10, PotAfter: 20},
-			expected: "Bob: calls $10",
+			expected: "Bob: calls $10 (pot now: $20)",
 		},
 		{
 			action:   HandAction{PlayerName: "Charlie", Action: Check, Amount: 0, PotAfter: 20},
@@ -254,11 +254,11 @@ func TestGenerateHistoryText(t *testing.T) {
 		"HAND ACTION:",
 		"*** PRE-FLOP ***",
 		"Alice: thinks \"Strong hand\"",
-		"Alice: raises $10",
+		"Alice: raises $10 (pot now: $20)",
 		"Bob: calls $10",
 		"*** SUMMARY ***",
-		"Total pot: 20",
-		"Alice: won 20 with Ace High [A♠ K♥]",
+		"Total pot $20",
+		"Seat 1: Alice (button) showed [A♠ K♥] and won ($20) with Ace High",
 		"=== END HAND ===",
 	}
 
@@ -300,7 +300,7 @@ func TestGetDisplayActions(t *testing.T) {
 	expected := []string{
 		"*** PRE-FLOP ***",
 		"Alice: raises $10 (pot now: $20)",
-		"Bob: calls $10",
+		"Bob: calls $10 (pot now: $30)",
 		"*** FLOP ***",
 		"Alice: checks",
 	}

@@ -43,11 +43,11 @@ var handRankings = map[string]float64{
 func GetHandPercentile(holeCards []Card) float64 {
 	handKey := formatHandKey(holeCards)
 	percentile, exists := handRankings[handKey]
-	
+
 	if !exists {
 		return 0.0 // Default to worst hand
 	}
-	
+
 	return percentile
 }
 
@@ -59,46 +59,60 @@ func formatHandKey(holeCards []Card) string {
 
 	card1, card2 := holeCards[0], holeCards[1]
 	rank1, rank2 := card1.Rank, card2.Rank
-	
+
 	// Ensure higher rank comes first
 	if rank2 > rank1 {
 		rank1, rank2 = rank2, rank1
 	}
-	
+
 	// Convert ranks to string
 	rankStr1 := rankToString(rank1)
 	rankStr2 := rankToString(rank2)
-	
+
 	// Determine if suited
 	suitChar := "o"
 	if card1.Suit == card2.Suit {
 		suitChar = "s"
 	}
-	
+
 	// Handle pairs (no suit indicator)
 	if rank1 == rank2 {
 		return rankStr1 + rankStr2
 	}
-	
+
 	return rankStr1 + rankStr2 + suitChar
 }
 
 // rankToString converts Rank to string
 func rankToString(rank Rank) string {
 	switch rank {
-	case Two: return "2"
-	case Three: return "3"
-	case Four: return "4"
-	case Five: return "5"
-	case Six: return "6"
-	case Seven: return "7"
-	case Eight: return "8"
-	case Nine: return "9"
-	case Ten: return "T"
-	case Jack: return "J"
-	case Queen: return "Q"
-	case King: return "K"
-	case Ace: return "A"
-	default: return "2"
+	case Two:
+		return "2"
+	case Three:
+		return "3"
+	case Four:
+		return "4"
+	case Five:
+		return "5"
+	case Six:
+		return "6"
+	case Seven:
+		return "7"
+	case Eight:
+		return "8"
+	case Nine:
+		return "9"
+	case Ten:
+		return "T"
+	case Jack:
+		return "J"
+	case Queen:
+		return "Q"
+	case King:
+		return "K"
+	case Ace:
+		return "A"
+	default:
+		return "2"
 	}
 }

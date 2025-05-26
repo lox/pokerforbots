@@ -159,12 +159,12 @@ func (ti *TUIInterface) handleCall(args []string) (bool, error) {
 
 	ti.table.Pot += callAmount
 	ti.model.AddLogEntry(fmt.Sprintf("Called $%d", callAmount))
-	
+
 	// Record action in hand history
 	if ti.table.HandHistory != nil {
 		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Call, callAmount, ti.table.Pot, ti.table.CurrentRound, "")
 	}
-	
+
 	return true, nil
 }
 
@@ -212,12 +212,12 @@ func (ti *TUIInterface) handleRaise(args []string) (bool, error) {
 	ti.table.CurrentBet = amount
 	ti.mainLogger.Info("Raise successful", "amount", amount, "newPot", ti.table.Pot)
 	ti.model.AddLogEntry(fmt.Sprintf("Raised to $%d", amount))
-	
+
 	// Record action in hand history
 	if ti.table.HandHistory != nil {
 		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Raise, amount, ti.table.Pot, ti.table.CurrentRound, "")
 	}
-	
+
 	return true, nil
 }
 
@@ -225,12 +225,12 @@ func (ti *TUIInterface) handleFold(args []string) (bool, error) {
 	currentPlayer := ti.table.GetCurrentPlayer()
 	currentPlayer.Fold()
 	ti.model.AddLogEntry("Folded")
-	
+
 	// Record action in hand history
 	if ti.table.HandHistory != nil {
 		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Fold, 0, ti.table.Pot, ti.table.CurrentRound, "")
 	}
-	
+
 	return true, nil
 }
 
@@ -244,12 +244,12 @@ func (ti *TUIInterface) handleCheck(args []string) (bool, error) {
 
 	currentPlayer.Check()
 	ti.model.AddLogEntry("Checked")
-	
+
 	// Record action in hand history
 	if ti.table.HandHistory != nil {
 		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Check, 0, ti.table.Pot, ti.table.CurrentRound, "")
 	}
-	
+
 	return true, nil
 }
 
@@ -273,12 +273,12 @@ func (ti *TUIInterface) handleAllIn(args []string) (bool, error) {
 	}
 
 	ti.model.AddLogEntry(fmt.Sprintf("ALL-IN for $%d!", allInAmount))
-	
+
 	// Record action in hand history
 	if ti.table.HandHistory != nil {
 		ti.table.HandHistory.AddAction(currentPlayer.Name, game.AllIn, allInAmount, ti.table.Pot, ti.table.CurrentRound, "")
 	}
-	
+
 	return true, nil
 }
 
@@ -544,7 +544,7 @@ func (ti *TUIInterface) ShowHandSummary() {
 	if ti.table.HandHistory != nil {
 		// Set community cards
 		ti.table.HandHistory.SetCommunityCards(ti.table.CommunityCards)
-		
+
 		// Set final pot and winner info
 		winner := ti.table.FindWinner()
 		var winners []game.WinnerInfo
@@ -552,14 +552,14 @@ func (ti *TUIInterface) ShowHandSummary() {
 			// Determine hand rank using evaluator
 			handRank := "High Card" // Default
 			if len(winner.HoleCards) > 0 && len(ti.table.CommunityCards) > 0 {
-			// Use evaluator to get actual hand rank
-			allCards := append(winner.HoleCards, ti.table.CommunityCards...)
-			if len(allCards) >= 5 {
-			  bestHand := evaluator.FindBestHand(allCards)
-				handRank = bestHand.Rank.String()
+				// Use evaluator to get actual hand rank
+				allCards := append(winner.HoleCards, ti.table.CommunityCards...)
+				if len(allCards) >= 5 {
+					bestHand := evaluator.FindBestHand(allCards)
+					handRank = bestHand.Rank.String()
+				}
 			}
-		}
-			
+
 			winners = []game.WinnerInfo{
 				{
 					PlayerName: winner.Name,

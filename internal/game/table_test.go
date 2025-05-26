@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
-	
+
 	"github.com/lox/holdem-cli/internal/evaluator"
 )
 
@@ -333,9 +333,9 @@ func TestRandomStartingPosition(t *testing.T) {
 	// Start first hand
 	table.StartNewHand()
 
-	// Should have selected seat 2 as dealer
-	if table.DealerPosition != 2 {
-		t.Errorf("Expected dealer position 2, got %d", table.DealerPosition)
+	// Should have selected seat 2 as dealer (MockRandSource(1) picks index 1 from ActivePlayers)
+	if table.DealerPosition != 1 {
+		t.Errorf("Expected dealer position 1, got %d", table.DealerPosition)
 	}
 }
 
@@ -400,10 +400,10 @@ func TestCalculatePositions_FourPlayers(t *testing.T) {
 	positions := calculatePositions(3, players) // Seat 3 is dealer
 
 	expected := map[int]Position{
-		3: Button,       // Dealer
-		5: SmallBlind,   // Next
-		7: BigBlind,     // Next
-		1: UnderTheGun,  // Next
+		3: Button,      // Dealer
+		5: SmallBlind,  // Next
+		7: BigBlind,    // Next
+		1: UnderTheGun, // Next
 	}
 
 	for seat, expectedPos := range expected {
@@ -431,8 +431,8 @@ func TestCalculatePositions_SixPlayers(t *testing.T) {
 	}
 
 	// Fix the expected values based on the logic
-	expected[5] = Cutoff        // Position 4 (index from dealer)
-	expected[6] = LatePosition  // Position 5 (index from dealer)
+	expected[5] = Cutoff       // Position 4 (index from dealer)
+	expected[6] = LatePosition // Position 5 (index from dealer)
 
 	for seat, expectedPos := range expected {
 		if positions[seat] != expectedPos {
@@ -445,24 +445,24 @@ func TestDeterministicHandIDs(t *testing.T) {
 	// Test that same RandSource produces same hand IDs
 	mockRand1 := NewMockRandSource(42, 100, 200, 50, 75, 25, 80, 90, 60, 70, 30, 40, 10, 20, 15, 35)
 	mockRand2 := NewMockRandSource(42, 100, 200, 50, 75, 25, 80, 90, 60, 70, 30, 40, 10, 20, 15, 35)
-	
+
 	config1 := TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
 		RandSource: mockRand1,
 	}
-	
+
 	config2 := TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
 		RandSource: mockRand2,
 	}
-	
+
 	table1 := NewTableWithConfig(config1)
 	table2 := NewTableWithConfig(config2)
-	
+
 	// Add players to both tables
 	for i := 1; i <= 2; i++ {
 		player1 := NewPlayer(i, fmt.Sprintf("P%d", i), AI, 200)
@@ -470,17 +470,17 @@ func TestDeterministicHandIDs(t *testing.T) {
 		table1.AddPlayer(player1)
 		table2.AddPlayer(player2)
 	}
-	
+
 	// Start hands and collect IDs
 	table1.StartNewHand()
 	table2.StartNewHand()
-	
+
 	id1 := table1.HandID
 	id2 := table2.HandID
-	
+
 	t.Logf("Table 1 Hand ID: %s", id1)
 	t.Logf("Table 2 Hand ID: %s", id2)
-	
+
 	// The random portion should be identical (timestamp might differ slightly)
 	// Both IDs should be valid
 	if len(id1) != 26 {
@@ -489,7 +489,7 @@ func TestDeterministicHandIDs(t *testing.T) {
 	if len(id2) != 26 {
 		t.Errorf("Expected 26-character ID from table 2, got %d", len(id2))
 	}
-	
+
 	// Both should be non-empty
 	if id1 == "" {
 		t.Error("Table 1 should have generated a hand ID")
@@ -503,7 +503,7 @@ func TestDeterministicHandIDs(t *testing.T) {
 func TestDeterministicButtonRotation(t *testing.T) {
 	// Test that the same seed produces the same results
 	seed := int64(42)
-	
+
 	createTableAndPlayHands := func() []int {
 		config := TableConfig{
 			MaxSeats:   6,
@@ -546,7 +546,7 @@ func TestDeterministicButtonRotation(t *testing.T) {
 			t.Errorf("Hand %d: positions differ %d vs %d", i+1, positions1[i], positions2[i])
 		}
 	}
-	
+
 	// Also test that different seeds produce different results
 	config3 := TableConfig{
 		MaxSeats:   6,
@@ -574,7 +574,7 @@ func TestDeterministicButtonRotation(t *testing.T) {
 			break
 		}
 	}
-	
+
 	if !different {
 		t.Logf("Warning: Different seeds produced same sequence (unlikely but possible): %v vs %v", positions1, positions3)
 	}
@@ -685,9 +685,9 @@ func TestFindWinnerEvaluatesHandStrength(t *testing.T) {
 		t.Error("Player2 should win with pair of Aces vs Jack high")
 	}
 
-	t.Logf("Player1 cards: %s %s (Jack high)", 
+	t.Logf("Player1 cards: %s %s (Jack high)",
 		player1.HoleCards[0], player1.HoleCards[1])
-	t.Logf("Player2 cards: %s %s (pair of Aces)", 
+	t.Logf("Player2 cards: %s %s (pair of Aces)",
 		player2.HoleCards[0], player2.HoleCards[1])
 	t.Logf("Community: %v", table.CommunityCards)
 	t.Logf("Winner: %s (correct hand evaluation)", winner.Name)
@@ -704,37 +704,37 @@ func TestPotAmountPreservedForSummary(t *testing.T) {
 	table.AddPlayer(player2)
 
 	table.StartNewHand()
-	
+
 	// Add some betting to increase the pot
 	table.Pot = 50 // Simulate betting that created a 50 chip pot
-	
+
 	// Verify pot is preserved before awarding
 	potBeforeAward := table.Pot
 	if potBeforeAward != 50 {
 		t.Errorf("Expected pot of 50, got %d", potBeforeAward)
 	}
-	
+
 	// Find winner
 	winner := table.FindWinner()
 	if winner == nil {
 		t.Fatal("Should have a winner")
 	}
-	
+
 	// Pot should still be intact for summary display
 	potForSummary := table.Pot
 	if potForSummary != 50 {
 		t.Errorf("Pot should still be 50 for summary display, got %d", potForSummary)
 	}
-	
+
 	// Award pot (this will reset it to 0)
 	initialChips := winner.Chips
 	table.AwardPot(winner)
-	
+
 	// Verify pot was awarded correctly
 	if winner.Chips != initialChips+50 {
 		t.Errorf("Winner should have %d chips, got %d", initialChips+50, winner.Chips)
 	}
-	
+
 	// Verify pot is now empty
 	if table.Pot != 0 {
 		t.Errorf("Pot should be 0 after awarding, got %d", table.Pot)

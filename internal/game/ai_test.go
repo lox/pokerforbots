@@ -317,7 +317,7 @@ func TestAIPostFlopStrengthWithDraws(t *testing.T) {
 		{Suit: deck.Hearts, Rank: deck.King},
 		{Suit: deck.Hearts, Rank: deck.Queen},
 	}
-	
+
 	communityCards := []deck.Card{
 		{Suit: deck.Spades, Rank: deck.Jack},
 		{Suit: deck.Spades, Rank: deck.Ten},
@@ -334,7 +334,7 @@ func TestAIPostFlopStrengthWithDraws(t *testing.T) {
 		{Suit: deck.Spades, Rank: deck.Ace},
 		{Suit: deck.Spades, Rank: deck.King},
 	}
-	
+
 	flushDrawBoard := []deck.Card{
 		{Suit: deck.Spades, Rank: deck.Queen},
 		{Suit: deck.Spades, Rank: deck.Jack},
@@ -351,7 +351,7 @@ func TestAIPostFlopStrengthWithDraws(t *testing.T) {
 		{Suit: deck.Hearts, Rank: deck.Two},
 		{Suit: deck.Clubs, Rank: deck.Three},
 	}
-	
+
 	dryBoard := []deck.Card{
 		{Suit: deck.Spades, Rank: deck.Ace},
 		{Suit: deck.Diamonds, Rank: deck.King},
@@ -367,7 +367,7 @@ func TestAIPostFlopStrengthWithDraws(t *testing.T) {
 func TestAIContinuationBetting(t *testing.T) {
 	logger := log.NewWithOptions(io.Discard, log.Options{})
 	ai := NewAIEngine(logger)
-	
+
 	table := NewTable(6, 1, 2)
 	table.CurrentRound = Flop
 	table.CurrentBet = 0 // No bet to call
@@ -450,7 +450,7 @@ func TestAIContinuationBetting(t *testing.T) {
 func TestAIEnhancedPositionPlay(t *testing.T) {
 	logger := log.NewWithOptions(io.Discard, log.Options{})
 	ai := NewAIEngine(logger)
-	
+
 	table := NewTable(6, 1, 2)
 	table.CurrentRound = Flop
 	table.CurrentBet = 0
@@ -499,7 +499,7 @@ func TestAIEnhancedPositionPlay(t *testing.T) {
 
 	// Should be more aggressive in position with draws
 	if aggressiveFreq <= oopAggressiveFreq {
-		t.Errorf("Should be more aggressive in position (%.2f) than out of position (%.2f) with draws", 
+		t.Errorf("Should be more aggressive in position (%.2f) than out of position (%.2f) with draws",
 			aggressiveFreq, oopAggressiveFreq)
 	}
 }

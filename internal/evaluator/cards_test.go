@@ -71,8 +71,8 @@ func TestParseCards(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "empty string",
-			input:   "",
+			name:     "empty string",
+			input:    "",
 			expected: []deck.Card{},
 		},
 	}
