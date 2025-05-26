@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -95,11 +96,6 @@ func (ti *TUIInterface) processAction(action string, args []string) (bool, error
 	if action == "" {
 		ti.mainLogger.Info("Empty action (Enter pressed), returning true to continue")
 		return true, nil
-	}
-
-	// Handle save command (can be done anytime, doesn't require current player check)
-	if action == "save" || action == "s" {
-		return ti.handleSave(args)
 	}
 
 	currentPlayer := ti.table.GetCurrentPlayer()
@@ -328,7 +324,6 @@ func (ti *TUIInterface) handleHelp(_ []string) (bool, error) {
 	ti.model.AddLogEntry("  pot        - Show pot information")
 	ti.model.AddLogEntry("  players    - Show all player information")
 	ti.model.AddLogEntry("Utility:")
-	ti.model.AddLogEntry("  save       - Save hand history to file")
 	ti.model.AddLogEntry("  help       - Show this help")
 	ti.model.AddLogEntry("  quit       - Quit the game")
 	return true, nil
@@ -604,59 +599,33 @@ func (ti *TUIInterface) ShowHandSummary() {
 		ti.mainLogger.Info("Final player state", logArgs...)
 	}
 
-	// Clean poker-style summary
+	// Clean poker-style summary using unified implementation
 	ti.AddLogEntry("")
-	ti.AddLogEntry("*** SUMMARY ***")
-	ti.AddLogEntry(fmt.Sprintf("Total pot $%d", finalPot))
-
-	if len(ti.table.CommunityCards) > 0 {
-		ti.AddLogEntry(fmt.Sprintf("Board %s", ti.model.formatCards(ti.table.CommunityCards)))
-	}
-
-	// Show each player's result
-	winner := ti.table.FindWinner()
-
-	for _, player := range ti.table.Players {
-		seatInfo := fmt.Sprintf("Seat %d: %s", player.ID, player.Name)
-
-		// Add position info
-		switch player.Position {
-		case game.Button:
-			seatInfo += " (button)"
-		case game.SmallBlind:
-			seatInfo += " (small blind)"
-		case game.BigBlind:
-			seatInfo += " (big blind)"
-		}
-
-		if player.IsFolded {
-			seatInfo += " folded"
-			if player.TotalBet > 0 {
-				seatInfo += fmt.Sprintf(" and lost $%d", player.TotalBet)
-			}
-		} else if player == winner {
-			cards := ti.model.formatCards(player.HoleCards)
-			seatInfo += fmt.Sprintf(" showed %s and won ($%d)", cards, finalPot)
-		} else {
-			cards := ti.model.formatCards(player.HoleCards)
-			seatInfo += fmt.Sprintf(" mucked %s", cards)
-			if player.TotalBet > 0 {
-				seatInfo += fmt.Sprintf(" and lost $%d", player.TotalBet)
+	if ti.table.HandHistory != nil {
+		// Use unified summary but without showing hole cards in TUI
+		summaryText := ti.table.HandHistory.GenerateSummary(game.SummaryOpts{
+			PlayerPerspective: "You",
+		})
+		lines := strings.Split(strings.TrimSpace(summaryText), "\n")
+		for _, line := range lines {
+			if line != "" {
+				ti.AddLogEntry(line)
 			}
 		}
-
-		ti.AddLogEntry(seatInfo)
 	}
+
+	// Automatically save hand history
+	ti.autoSaveHandHistory()
 }
 
-// handleSave saves the current hand history to a file
-func (ti *TUIInterface) handleSave(args []string) (bool, error) {
+// autoSaveHandHistory automatically saves the current hand history to a file
+func (ti *TUIInterface) autoSaveHandHistory() {
 	handID := ti.table.HandID
 
 	// Create handhistory directory if it doesn't exist
 	if err := os.MkdirAll("handhistory", 0755); err != nil {
-		ti.model.AddLogEntry(fmt.Sprintf("Error creating handhistory directory: %v", err))
-		return true, nil
+		ti.mainLogger.Error("Error creating handhistory directory", "error", err)
+		return
 	}
 
 	// Generate filename
@@ -672,10 +641,9 @@ func (ti *TUIInterface) handleSave(args []string) (bool, error) {
 
 	// Write to file
 	if err := os.WriteFile(filename, []byte(content), 0644); err != nil {
-		ti.model.AddLogEntry(fmt.Sprintf("Error saving hand history: %v", err))
-		return true, nil
+		ti.mainLogger.Error("Error saving hand history", "error", err, "filename", filename)
+		return
 	}
 
-	ti.model.AddLogEntry(fmt.Sprintf("Hand history saved to %s", filename))
-	return true, nil
+	ti.mainLogger.Info("Hand history saved", "filename", filename)
 }

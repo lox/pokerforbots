@@ -202,75 +202,9 @@ func (hh *HandHistory) GenerateHistoryText() string {
 
 	// Final results and summary
 	if hh.FinalPot > 0 || len(hh.Winners) > 0 {
-		history += "*** SUMMARY ***\n"
-		history += fmt.Sprintf("Total pot $%d\n", hh.FinalPot)
-
-		// Show final board if available
-		if len(hh.CommunityCards) > 0 {
-			boardStr := ""
-			for i, card := range hh.CommunityCards {
-				if i > 0 {
-					boardStr += " "
-				}
-				boardStr += card.String()
-			}
-			history += fmt.Sprintf("Board [%s]\n", boardStr)
-		}
-
-		// Show each player's result
-		for i, player := range hh.Players {
-			seatInfo := fmt.Sprintf("Seat %d: %s", i+1, player.Name)
-
-			// Add position info
-			switch player.Position {
-			case Button:
-				seatInfo += " (button)"
-			case SmallBlind:
-				seatInfo += " (small blind)"
-			case BigBlind:
-				seatInfo += " (big blind)"
-			}
-
-			// Determine if this player won
-			var winner *WinnerInfo
-			for _, w := range hh.Winners {
-				if w.PlayerName == player.Name {
-					winner = &w
-					break
-				}
-			}
-
-			if winner != nil {
-				// Player won
-				if len(player.HoleCards) > 0 {
-					seatInfo += fmt.Sprintf(" showed [%s %s] and won ($%d)",
-						player.HoleCards[0].String(), player.HoleCards[1].String(), winner.Amount)
-					if winner.HandRank != "" {
-						seatInfo += fmt.Sprintf(" with %s", winner.HandRank)
-					}
-				} else {
-					seatInfo += fmt.Sprintf(" won ($%d)", winner.Amount)
-				}
-			} else {
-				// Player didn't win - check if they folded or showed cards
-				playerFolded := hh.playerFolded(player.Name)
-				if playerFolded {
-					seatInfo += " folded"
-				} else if len(player.HoleCards) > 0 {
-					seatInfo += fmt.Sprintf(" mucked [%s %s]",
-						player.HoleCards[0].String(), player.HoleCards[1].String())
-				}
-
-				// Add loss amount if they contributed to pot
-				lossAmount := hh.getPlayerLoss(player.Name)
-				if lossAmount > 0 {
-					seatInfo += fmt.Sprintf(" and lost $%d", lossAmount)
-				}
-			}
-
-			history += fmt.Sprintf("%s\n", seatInfo)
-		}
-		history += "\n"
+		history += hh.GenerateSummary(SummaryOpts{
+			ShowHoleCards: true,
+		})
 	}
 
 	history += "=== END HAND ===\n"
@@ -368,6 +302,97 @@ func (hh *HandHistory) getPlayerLoss(playerName string) int {
 		}
 	}
 	return totalBet
+}
+
+// SummaryOpts configures how the hand summary is displayed
+type SummaryOpts struct {
+	ShowHoleCards     bool   // Show all hole cards (for hand history)
+	PlayerPerspective string // Show only this player's cards (for TUI)
+}
+
+// GenerateSummary creates a formatted summary section with configurable options
+func (hh *HandHistory) GenerateSummary(opts SummaryOpts) string {
+	var summary string
+
+	summary += "*** SUMMARY ***\n"
+	summary += fmt.Sprintf("Total pot $%d\n", hh.FinalPot)
+
+	// Show final board if available
+	if len(hh.CommunityCards) > 0 {
+		boardStr := ""
+		for i, card := range hh.CommunityCards {
+			if i > 0 {
+				boardStr += " "
+			}
+			boardStr += card.String()
+		}
+		summary += fmt.Sprintf("Board [%s]\n", boardStr)
+	}
+
+	// Show each player's result
+	for i, player := range hh.Players {
+		seatInfo := fmt.Sprintf("Seat %d: %s", i+1, player.Name)
+
+		// Add position info
+		switch player.Position {
+		case Button:
+			seatInfo += " (button)"
+		case SmallBlind:
+			seatInfo += " (small blind)"
+		case BigBlind:
+			seatInfo += " (big blind)"
+		}
+
+		// Determine if this player won
+		var winner *WinnerInfo
+		for _, w := range hh.Winners {
+			if w.PlayerName == player.Name {
+				winner = &w
+				break
+			}
+		}
+
+		// Determine if we should show this player's hole cards
+		playerFolded := hh.playerFolded(player.Name)
+		showCards := opts.ShowHoleCards ||
+			(opts.PlayerPerspective != "" && player.Name == opts.PlayerPerspective) ||
+			!playerFolded // Show cards for players who reached showdown
+
+		if winner != nil {
+			// Player won
+			if showCards && len(player.HoleCards) > 0 {
+				seatInfo += fmt.Sprintf(" showed [%s %s] and won ($%d)",
+					player.HoleCards[0].String(), player.HoleCards[1].String(), winner.Amount)
+				if winner.HandRank != "" {
+					seatInfo += fmt.Sprintf(" with %s", winner.HandRank)
+				}
+			} else {
+				seatInfo += fmt.Sprintf(" won ($%d)", winner.Amount)
+				if winner.HandRank != "" {
+					seatInfo += fmt.Sprintf(" with %s", winner.HandRank)
+				}
+			}
+		} else {
+			// Player didn't win
+			if playerFolded {
+				seatInfo += " folded"
+			} else if showCards && len(player.HoleCards) > 0 {
+				seatInfo += fmt.Sprintf(" mucked [%s %s]",
+					player.HoleCards[0].String(), player.HoleCards[1].String())
+			}
+
+			// Add loss amount if they contributed to pot
+			lossAmount := hh.getPlayerLoss(player.Name)
+			if lossAmount > 0 {
+				seatInfo += fmt.Sprintf(" and lost $%d", lossAmount)
+			}
+		}
+
+		summary += fmt.Sprintf("%s\n", seatInfo)
+	}
+	summary += "\n"
+
+	return summary
 }
 
 // SaveToFile saves the hand history to a file
