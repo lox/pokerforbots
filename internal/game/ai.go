@@ -1,7 +1,9 @@
 package game
 
 import (
+	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -62,16 +64,49 @@ func (hs HandStrength) String() string {
 	}
 }
 
+// AIDecision represents an AI decision with reasoning
+type AIDecision struct {
+	Action    Action
+	Reasoning string
+}
+
+// ThinkingContext accumulates AI thoughts during decision making
+type ThinkingContext struct {
+	thoughts []string
+}
+
+// AddThought adds a thought to the thinking process
+func (tc *ThinkingContext) AddThought(thought string) {
+	tc.thoughts = append(tc.thoughts, thought)
+}
+
+// GetThoughts returns the complete stream of thoughts
+func (tc *ThinkingContext) GetThoughts() string {
+	if len(tc.thoughts) == 0 {
+		return "No clear reasoning available"
+	}
+	return fmt.Sprintf("%s", strings.Join(tc.thoughts, "... "))
+}
+
 // MakeDecision makes an AI decision for the given player
 func (ai *AIEngine) MakeDecision(player *Player, table *Table) Action {
-	// Evaluate hand strength
-	strength := ai.evaluateHandStrength(player, table)
+	decision := ai.MakeDecisionWithReasoning(player, table)
+	return decision.Action
+}
 
-	// Get position factor (early position plays tighter)
-	positionFactor := ai.getPositionFactor(player.Position)
+// MakeDecisionWithReasoning makes an AI decision and returns both action and reasoning
+func (ai *AIEngine) MakeDecisionWithReasoning(player *Player, table *Table) AIDecision {
+	// Create thinking context to accumulate thoughts
+	thinking := &ThinkingContext{}
+	
+	// Evaluate hand strength with thinking
+	strength := ai.evaluateHandStrengthWithThinking(player, table, thinking)
 
-	// Calculate pot odds if there's a bet to call
-	potOdds := ai.calculatePotOdds(player, table)
+	// Get position factor with thinking
+	positionFactor := ai.getPositionFactorWithThinking(player.Position, thinking)
+
+	// Calculate pot odds with thinking
+	potOdds := ai.calculatePotOddsWithThinking(player, table, thinking)
 
 	// Log decision factors
 	holeCardsStr := ""
@@ -92,15 +127,20 @@ func (ai *AIEngine) MakeDecision(player *Player, table *Table) Action {
 		"pot", table.Pot,
 		"potOdds", potOdds)
 
-	// Make decision based on hand strength, position, and pot odds
-	action := ai.makeDecisionBasedOnFactors(player, table, strength, positionFactor, potOdds)
+	// Make decision based on hand strength, position, and pot odds with thinking
+	action := ai.makeDecisionBasedOnFactorsWithThinking(player, table, strength, positionFactor, potOdds, thinking)
+
+	reasoning := thinking.GetThoughts()
 
 	ai.logger.Info("AI decision made",
 		"player", player.Name,
 		"decision", action.String(),
-		"reasoning", ai.getDecisionReasoning(action, strength, positionFactor, potOdds, table))
+		"reasoning", reasoning)
 
-	return action
+	return AIDecision{
+		Action:    action,
+		Reasoning: reasoning,
+	}
 }
 
 // evaluateHandStrength evaluates the current hand strength
@@ -122,67 +162,63 @@ func (ai *AIEngine) evaluateHandStrength(player *Player, table *Table) HandStren
 	return Medium
 }
 
-// evaluatePreFlopStrength evaluates pre-flop hand strength
+// evaluateHandStrengthWithThinking evaluates hand strength while building thoughts
+func (ai *AIEngine) evaluateHandStrengthWithThinking(player *Player, table *Table, thinking *ThinkingContext) HandStrength {
+	if len(player.HoleCards) != 2 {
+		thinking.AddThought("Missing hole cards, assuming very weak")
+		return VeryWeak
+	}
+
+	// Add initial hand description
+	handPercentile := deck.GetHandPercentile(player.HoleCards)
+	handKey := ai.getHandKey(player.HoleCards)
+	thinking.AddThought(fmt.Sprintf("I have %s (top %.0f%% hand)", handKey, handPercentile*100))
+
+	// Pre-flop hand strength evaluation
+	if table.CurrentRound == PreFlop {
+		strength := ai.evaluatePreFlopStrength(player.HoleCards)
+		thinking.AddThought(fmt.Sprintf("Preflop strength: %s", strength.String()))
+		return strength
+	}
+
+	// Post-flop evaluation with community cards
+	if len(table.CommunityCards) >= 3 {
+		// Add board description
+		boardStr := ai.getBoardDescription(table.CommunityCards)
+		thinking.AddThought(fmt.Sprintf("Board: %s", boardStr))
+		
+		strength := ai.evaluatePostFlopStrengthWithThinking(player, table.CommunityCards, thinking)
+		return strength
+	}
+
+	thinking.AddThought("Not enough information, assuming medium strength")
+	return Medium
+}
+
+
+
+// EvaluatePreFlopStrength evaluates pre-flop hand strength using percentile rankings (exported for testing)
+func (ai *AIEngine) EvaluatePreFlopStrength(holeCards []deck.Card) HandStrength {
+	return ai.evaluatePreFlopStrength(holeCards)
+}
+
+// evaluatePreFlopStrength evaluates pre-flop hand strength using percentile rankings
 func (ai *AIEngine) evaluatePreFlopStrength(holeCards []deck.Card) HandStrength {
-	card1, card2 := holeCards[0], holeCards[1]
-
-	// Pocket pairs
-	if card1.Rank == card2.Rank {
-		switch {
-		case card1.Rank >= deck.Jack: // JJ, QQ, KK, AA
-			return VeryStrong
-		case card1.Rank >= deck.Nine: // 99, TT
-			return Strong
-		case card1.Rank >= deck.Six: // 66, 77, 88
-			return Medium
-		default: // 22-55
-			return Weak
-		}
-	}
-
-	// Suited cards
-	suited := card1.Suit == card2.Suit
-
-	// High cards
-	highCard := card1.Rank
-	lowCard := card2.Rank
-	if lowCard > highCard {
-		highCard, lowCard = lowCard, highCard
-	}
-
-	// Premium hands
-	if (highCard == deck.Ace && lowCard >= deck.King) ||
-		(highCard == deck.King && lowCard == deck.Queen) {
-		if suited {
-			return VeryStrong
-		}
+	percentile := deck.GetHandPercentile(holeCards)
+	
+	// Convert percentile rank to hand strength categories
+	switch {
+	case percentile >= 0.85: // Top 15% (premium hands)
+		return VeryStrong
+	case percentile >= 0.65: // Top 35% (strong hands)  
 		return Strong
-	}
-
-	// Good hands
-	if (highCard == deck.Ace && lowCard >= deck.Ten) ||
-		(highCard == deck.King && lowCard >= deck.Jack) ||
-		(highCard == deck.Queen && lowCard >= deck.Jack) {
-		if suited {
-			return Strong
-		}
+	case percentile >= 0.40: // Top 60% (playable hands)
 		return Medium
-	}
-
-	// Suited connectors and one-gappers
-	if suited {
-		gap := int(highCard) - int(lowCard)
-		if gap <= 2 && highCard >= deck.Seven { // 7-8s, 8-9s, etc.
-			return Medium
-		}
-	}
-
-	// Face cards
-	if highCard >= deck.Jack {
+	case percentile >= 0.20: // Top 80% (marginal hands)
 		return Weak
+	default: // Bottom 20% (trash hands)
+		return VeryWeak
 	}
-
-	return VeryWeak
 }
 
 // evaluatePostFlopStrength evaluates post-flop hand strength
@@ -249,6 +285,165 @@ func (ai *AIEngine) evaluatePostFlopStrength(player *Player, communityCards []de
 	}
 
 	return baseStrength
+}
+
+// evaluatePostFlopStrengthWithThinking evaluates post-flop hand strength with thinking
+func (ai *AIEngine) evaluatePostFlopStrengthWithThinking(player *Player, communityCards []deck.Card, thinking *ThinkingContext) HandStrength {
+	// Combine hole cards with community cards
+	allCards := make([]deck.Card, 0, 7)
+	allCards = append(allCards, player.HoleCards...)
+	allCards = append(allCards, communityCards...)
+
+	// Get best hand
+	bestHand := evaluator.FindBestHand(allCards)
+	thinking.AddThought(fmt.Sprintf("Best hand: %s", bestHand.Rank.String()))
+
+	// Evaluate draws
+	drawStrength := ai.evaluateDraws(player.HoleCards, communityCards)
+	if drawStrength > 0 {
+		thinking.AddThought(fmt.Sprintf("Draw strength: %d (≈%d outs)", drawStrength, drawStrength*4))
+	}
+
+	// Base hand strength evaluation
+	var baseStrength HandStrength
+	switch bestHand.Rank {
+	case evaluator.RoyalFlush, evaluator.StraightFlush:
+		baseStrength = VeryStrong
+		thinking.AddThought("Premium made hand")
+	case evaluator.FourOfAKind, evaluator.FullHouse:
+		baseStrength = VeryStrong
+		thinking.AddThought("Very strong made hand")
+	case evaluator.Flush, evaluator.Straight:
+		baseStrength = Strong
+		thinking.AddThought("Strong made hand")
+	case evaluator.ThreeOfAKind:
+		baseStrength = Strong
+		thinking.AddThought("Solid made hand (trips)")
+	case evaluator.TwoPair:
+		baseStrength = Medium
+		thinking.AddThought("Decent two pair")
+	case evaluator.OnePair:
+		if len(bestHand.Kickers) > 0 {
+			pairRank := bestHand.Kickers[0]
+			if pairRank >= deck.Jack {
+				baseStrength = Medium
+				thinking.AddThought(fmt.Sprintf("Good pair (%s)", ai.rankToString(pairRank)))
+			} else {
+				baseStrength = Weak
+				thinking.AddThought(fmt.Sprintf("Low pair (%s)", ai.rankToString(pairRank)))
+			}
+		} else {
+			baseStrength = Weak
+			thinking.AddThought("Weak pair")
+		}
+	case evaluator.HighCard:
+		if len(bestHand.Kickers) > 0 && bestHand.Kickers[0] == deck.Ace {
+			baseStrength = Weak
+			thinking.AddThought("Ace high only")
+		} else {
+			baseStrength = VeryWeak
+			thinking.AddThought("Just high card")
+		}
+	default:
+		baseStrength = Medium
+		thinking.AddThought("Unknown hand strength")
+	}
+
+	// Upgrade based on draw strength
+	if drawStrength >= 2 {
+		switch baseStrength {
+		case VeryWeak:
+			if drawStrength >= 3 {
+				thinking.AddThought("Strong draws upgrade weak hand")
+				return Weak
+			}
+		case Weak:
+			if drawStrength >= 3 {
+				thinking.AddThought("Strong draws upgrade marginal hand")
+				return Medium
+			}
+		}
+	}
+
+	return baseStrength
+}
+
+// getHandKey returns a readable description of hole cards
+func (ai *AIEngine) getHandKey(holeCards []deck.Card) string {
+	if len(holeCards) != 2 {
+		return "unknown"
+	}
+	
+	card1, card2 := holeCards[0], holeCards[1]
+	rank1, rank2 := card1.Rank, card2.Rank
+	
+	// Ensure higher rank comes first
+	if rank2 > rank1 {
+		rank1, rank2 = rank2, rank1
+	}
+	
+	rankStr1 := ai.rankToString(rank1)
+	rankStr2 := ai.rankToString(rank2)
+	
+	// Handle pairs
+	if rank1 == rank2 {
+		return rankStr1 + rankStr2
+	}
+	
+	// Determine if suited
+	suitChar := "o"
+	if card1.Suit == card2.Suit {
+		suitChar = "s"
+	}
+	
+	return rankStr1 + rankStr2 + suitChar
+}
+
+// getBoardDescription returns a readable description of the board
+func (ai *AIEngine) getBoardDescription(communityCards []deck.Card) string {
+	if len(communityCards) == 0 {
+		return "no board"
+	}
+	
+	cardStrs := make([]string, len(communityCards))
+	for i, card := range communityCards {
+		cardStrs[i] = card.String()
+	}
+	
+	boardTexture := ai.analyzeBoardTexture(communityCards)
+	textureDesc := ""
+	switch boardTexture {
+	case DryBoard:
+		textureDesc = " (dry)"
+	case SemiWetBoard:
+		textureDesc = " (semi-coordinated)"
+	case WetBoard:
+		textureDesc = " (coordinated)"
+	case VeryWetBoard:
+		textureDesc = " (very wet)"
+	}
+	
+	return strings.Join(cardStrs, "-") + textureDesc
+}
+
+// rankToString converts Rank to string (helper for thinking)
+func (ai *AIEngine) rankToString(rank deck.Rank) string {
+	switch rank {
+	case deck.Two: return "2"
+	case deck.Three: return "3"
+	case deck.Four: return "4"
+	case deck.Five: return "5"
+	case deck.Six: return "6"
+	case deck.Seven: return "7"
+	case deck.Eight: return "8"
+	case deck.Nine: return "9"
+	case deck.Ten: return "T"
+	case deck.Jack: return "J"
+	case deck.Queen: return "Q"
+	case deck.King: return "K"
+	case deck.Ace: return "A"
+	default: return "?"
+	}
 }
 
 // evaluateDraws evaluates drawing potential and returns draw strength (0-4)
@@ -477,6 +672,28 @@ func (ai *AIEngine) getPositionFactor(position Position) float64 {
 	}
 }
 
+// getPositionFactorWithThinking returns position factor with thinking
+func (ai *AIEngine) getPositionFactorWithThinking(position Position, thinking *ThinkingContext) float64 {
+	factor := ai.getPositionFactor(position)
+	
+	switch position {
+	case SmallBlind, BigBlind:
+		thinking.AddThought("In the blinds, playing tighter")
+	case UnderTheGun, EarlyPosition:
+		thinking.AddThought("Early position, need strong hands")
+	case MiddlePosition:
+		thinking.AddThought("Middle position, standard play")
+	case LatePosition, Cutoff:
+		thinking.AddThought("Late position, can play looser")
+	case Button:
+		thinking.AddThought("On the button, maximum position advantage")
+	default:
+		thinking.AddThought("Standard position")
+	}
+	
+	return factor
+}
+
 // calculatePotOdds calculates the pot odds for calling
 func (ai *AIEngine) calculatePotOdds(player *Player, table *Table) float64 {
 	if table.CurrentBet <= player.BetThisRound {
@@ -493,6 +710,30 @@ func (ai *AIEngine) calculatePotOdds(player *Player, table *Table) float64 {
 	}
 
 	return float64(table.Pot) / float64(callAmount)
+}
+
+// calculatePotOddsWithThinking calculates pot odds with thinking
+func (ai *AIEngine) calculatePotOddsWithThinking(player *Player, table *Table, thinking *ThinkingContext) float64 {
+	if table.CurrentBet <= player.BetThisRound {
+		thinking.AddThought("No bet to call")
+		return 0
+	}
+
+	callAmount := table.CurrentBet - player.BetThisRound
+	if callAmount >= player.Chips {
+		thinking.AddThought("Would be all-in to call")
+		callAmount = player.Chips
+	}
+
+	if callAmount == 0 {
+		thinking.AddThought("Free to check")
+		return 100
+	}
+
+	potOdds := float64(table.Pot) / float64(callAmount)
+	thinking.AddThought(fmt.Sprintf("Pot odds: %.1f:1 (risk $%d to win $%d)", potOdds, callAmount, table.Pot))
+	
+	return potOdds
 }
 
 // makeDecisionBasedOnFactors makes the final decision
@@ -613,6 +854,125 @@ func (ai *AIEngine) makeDecisionBasedOnFactors(player *Player, table *Table, str
 	}
 }
 
+// makeDecisionBasedOnFactorsWithThinking makes the final decision with thinking
+func (ai *AIEngine) makeDecisionBasedOnFactorsWithThinking(player *Player, table *Table, strength HandStrength, positionFactor, potOdds float64, thinking *ThinkingContext) Action {
+	// Check for continuation betting opportunity
+	shouldCBet := ai.shouldContinuationBet(player, table, strength, positionFactor)
+	if shouldCBet && table.CurrentBet == 0 {
+		thinking.AddThought("Good spot to continuation bet")
+	}
+
+	// Base probabilities for each action based on hand strength
+	var foldProb, callProb, raiseProb float64
+
+	switch strength {
+	case VeryWeak:
+		foldProb, callProb, raiseProb = 0.85, 0.15, 0.0
+		thinking.AddThought("Very weak hand, likely folding")
+	case Weak:
+		foldProb, callProb, raiseProb = 0.60, 0.35, 0.05
+		thinking.AddThought("Weak hand, cautious approach")
+	case Medium:
+		foldProb, callProb, raiseProb = 0.15, 0.70, 0.15
+		thinking.AddThought("Playable hand, looking to see more cards")
+	case Strong:
+		foldProb, callProb, raiseProb = 0.05, 0.40, 0.55
+		thinking.AddThought("Strong hand, want to build pot")
+	case VeryStrong:
+		foldProb, callProb, raiseProb = 0.0, 0.20, 0.80
+		thinking.AddThought("Premium hand, aggressive value betting")
+	}
+
+	// Adjust for position
+	if positionFactor < 1.0 {
+		thinking.AddThought("Tightening up due to position")
+		foldProb = foldProb * (2.0 - positionFactor)
+		callProb = callProb * positionFactor
+		raiseProb = raiseProb * positionFactor
+	} else {
+		thinking.AddThought("Playing looser with position advantage")
+		foldProb = foldProb / positionFactor
+		callProb = callProb * positionFactor
+		raiseProb = raiseProb * positionFactor
+	}
+
+	// Enhanced position-based adjustments for draws and aggression
+	if table.CurrentRound > PreFlop && positionFactor > 1.0 {
+		drawStrength := ai.evaluateDraws(player.HoleCards, table.CommunityCards)
+		if drawStrength >= 2 && strength == VeryWeak {
+			thinking.AddThought("Strong draws make semi-bluffing viable in position")
+			raiseProb += 0.2
+			callProb += 0.1
+			foldProb -= 0.3
+		}
+	}
+
+	// Continuation betting logic
+	if shouldCBet && table.CurrentBet == 0 {
+		thinking.AddThought("Increasing aggression for c-bet")
+		raiseProb += 0.3
+		callProb -= 0.15
+		foldProb -= 0.15
+	}
+
+	// Adjust for pot odds
+	if potOdds > 2.0 && strength >= Weak {
+		thinking.AddThought("Good pot odds make calling more attractive")
+		potOddsBonus := (potOdds - 2.0) * 0.15
+		callProb += potOddsBonus
+		foldProb -= potOddsBonus * 0.8
+		raiseProb += potOddsBonus * 0.2
+	} else if potOdds > 0 && potOdds < 2.0 {
+		thinking.AddThought("Poor pot odds, less inclined to call")
+	}
+
+	// Normalize probabilities
+	total := foldProb + callProb + raiseProb
+	if total > 0 {
+		foldProb /= total
+		callProb /= total
+		raiseProb /= total
+	}
+
+	// Special cases
+	if table.CurrentBet == 0 {
+		if foldProb > 0.5 {
+			thinking.AddThought("Checking instead of folding when possible")
+			return Check
+		}
+		if raiseProb > callProb {
+			thinking.AddThought("Taking the initiative with a bet")
+			return Raise
+		}
+		thinking.AddThought("Checking to see next card")
+		return Check
+	}
+
+	// If can't afford to call, must fold or go all-in
+	callAmount := table.CurrentBet - player.BetThisRound
+	if callAmount >= player.Chips {
+		if strength >= Strong && ai.rng.Float64() < 0.3 {
+			thinking.AddThought("Strong hand, going all-in")
+			return AllIn
+		}
+		thinking.AddThought("Can't afford to call, must fold")
+		return Fold
+	}
+
+	// Make random decision based on probabilities
+	r := ai.rng.Float64()
+	if r < foldProb {
+		thinking.AddThought("Deciding to fold")
+		return Fold
+	} else if r < foldProb+callProb {
+		thinking.AddThought("Deciding to call")
+		return Call
+	} else {
+		thinking.AddThought("Deciding to raise")
+		return Raise
+	}
+}
+
 // shouldContinuationBet determines if player should continuation bet
 func (ai *AIEngine) shouldContinuationBet(player *Player, table *Table, strength HandStrength, positionFactor float64) bool {
 	// Only apply on post-flop streets
@@ -647,38 +1007,89 @@ func (ai *AIEngine) shouldContinuationBet(player *Player, table *Table, strength
 	return false
 }
 
-// GetRaiseAmount determines how much to raise
+// GetRaiseAmount determines how much to raise based on position and stack depth
 func (ai *AIEngine) GetRaiseAmount(player *Player, table *Table, strength HandStrength) int {
 	potSize := table.Pot
 	currentBet := table.CurrentBet
+	bigBlind := table.BigBlind
 
-	// Base raise as a fraction of pot
-	var raiseFactor float64
-	switch strength {
-	case Medium:
-		raiseFactor = 0.5 + ai.rng.Float64()*0.3 // 0.5-0.8x pot
-	case Strong:
-		raiseFactor = 0.7 + ai.rng.Float64()*0.4 // 0.7-1.1x pot
-	case VeryStrong:
-		raiseFactor = 0.8 + ai.rng.Float64()*0.6 // 0.8-1.4x pot
-	default:
-		raiseFactor = 0.5 // Conservative
+	// Calculate effective stack depth
+	maxOpponentStack := 0
+	for _, p := range table.Players {
+		if p != player && p.Chips > maxOpponentStack {
+			maxOpponentStack = p.Chips
+		}
 	}
+	effectiveStack := player.Chips
+	if maxOpponentStack < effectiveStack {
+		effectiveStack = maxOpponentStack
+	}
+	stackDepth := float64(effectiveStack) / float64(bigBlind)
 
-	baseRaise := int(float64(potSize) * raiseFactor)
+	var baseRaise int
 
-	// Minimum raise for re-raises should be more aggressive
-	// If this is a re-raise (currentBet > bigBlind), use larger sizing
-	var minRaise int
-	if currentBet > table.BigBlind {
-		// Re-raise: minimum is currentBet * 3x (proper 3-bet sizing)
-		minRaise = currentBet * 3
+	// Street-specific sizing (position and stack-based only)
+	if table.CurrentRound == PreFlop {
+		// Preflop sizing based on position
+		positionFactor := ai.getPositionFactor(player.Position)
+		var pfSizing float64
+		if positionFactor <= 0.8 { // Early position
+			pfSizing = 2.5 + ai.rng.Float64()*0.3 // 2.5-2.8x BB
+		} else { // Late position  
+			pfSizing = 2.0 + ai.rng.Float64()*0.4 // 2.0-2.4x BB
+		}
+		
+		// Adjust for stack depth
+		if stackDepth < 20 {
+			pfSizing *= 0.8 // Smaller sizing with short stacks
+		}
+		
+		baseRaise = int(float64(bigBlind) * pfSizing)
 	} else {
-		// Initial raise: current bet + big blind
-		minRaise = currentBet + table.BigBlind
+		// Post-flop sizing based on street
+		var potFactor float64
+		switch table.CurrentRound {
+		case Flop:
+			potFactor = 0.6 + ai.rng.Float64()*0.2 // 0.6-0.8x pot
+		case Turn, River:
+			potFactor = 0.5 + ai.rng.Float64()*0.2 // 0.5-0.7x pot
+		default:
+			potFactor = 0.65
+		}
+		
+		// Adjust for stack depth
+		if stackDepth < 15 {
+			potFactor *= 0.8 // Smaller sizing with short stacks
+		}
+		
+		baseRaise = int(float64(potSize) * potFactor)
 	}
+
+	// Handle minimum raise requirements
+	var minRaise int
+	if currentBet > bigBlind {
+		// Re-raise: current bet + the previous raise amount (proper min-raise)
+		previousRaise := currentBet - bigBlind
+		minRaise = currentBet + previousRaise
+		
+		// Cap re-raise at reasonable level to prevent escalation
+		maxReRaise := currentBet + (potSize / 2)
+		if minRaise > maxReRaise {
+			minRaise = maxReRaise
+		}
+	} else {
+		// Initial raise: big blind + minimum raise increment
+		minRaise = currentBet + bigBlind
+	}
+	
 	if baseRaise < minRaise {
 		baseRaise = minRaise
+	}
+
+	// Cap maximum bet at 2.5x pot to prevent oversized bets
+	maxBet := int(float64(potSize)*2.5) + currentBet
+	if baseRaise > maxBet {
+		baseRaise = maxBet
 	}
 
 	// Can't raise more than we have
@@ -696,7 +1107,8 @@ func (ai *AIEngine) ExecuteAIAction(player *Player, table *Table) {
 		return
 	}
 
-	action := ai.MakeDecision(player, table)
+	decision := ai.MakeDecisionWithReasoning(player, table)
+	action := decision.Action
 
 	switch action {
 	case Fold:
@@ -741,42 +1153,152 @@ func (ai *AIEngine) ExecuteAIAction(player *Player, table *Table) {
 	}
 }
 
+// ExecuteAIActionWithReasoning executes an AI player's action and returns the reasoning
+func (ai *AIEngine) ExecuteAIActionWithReasoning(player *Player, table *Table) string {
+	if player.Type != AI || !player.CanAct() {
+		return ""
+	}
+
+	decision := ai.MakeDecisionWithReasoning(player, table)
+	action := decision.Action
+
+	switch action {
+	case Fold:
+		player.Fold()
+	case Call:
+		callAmount := table.CurrentBet - player.BetThisRound
+		if callAmount > 0 && callAmount <= player.Chips {
+			player.Call(callAmount)
+			table.Pot += callAmount
+		} else {
+			player.Check() // Fall back to check if can't call
+		}
+	case Check:
+		player.Check()
+	case Raise:
+		strength := ai.evaluateHandStrength(player, table)
+		raiseAmount := ai.GetRaiseAmount(player, table, strength)
+		totalNeeded := raiseAmount - player.BetThisRound
+
+		if totalNeeded > 0 && totalNeeded <= player.Chips {
+			player.Raise(totalNeeded)
+			table.Pot += totalNeeded
+			table.CurrentBet = raiseAmount
+		} else {
+			// Fall back to call or check
+			callAmount := table.CurrentBet - player.BetThisRound
+			if callAmount > 0 && callAmount <= player.Chips {
+				player.Call(callAmount)
+				table.Pot += callAmount
+			} else {
+				player.Check()
+			}
+		}
+	case AllIn:
+		allInAmount := player.Chips
+		if player.AllIn() {
+			table.Pot += allInAmount
+			if player.TotalBet > table.CurrentBet {
+				table.CurrentBet = player.TotalBet
+			}
+		}
+	}
+
+	// Record the action in hand history
+	if table.HandHistory != nil {
+		table.HandHistory.AddAction(player.Name, action, player.ActionAmount, table.Pot, table.CurrentRound, decision.Reasoning)
+	}
+
+	return decision.Reasoning
+}
+
 // getDecisionReasoning provides a human-readable explanation for the AI's decision
-func (ai *AIEngine) getDecisionReasoning(action Action, strength HandStrength, positionFactor, potOdds float64, table *Table) string {
+func (ai *AIEngine) getDecisionReasoning(player *Player, action Action, strength HandStrength, positionFactor, potOdds float64, table *Table) string {
+	// Get additional context for more detailed reasoning
+	var handPercentile float64
+	var boardTexture BoardTexture
+	var drawStrength int
+	
+	if len(player.HoleCards) == 2 {
+		handPercentile = deck.GetHandPercentile(player.HoleCards)
+		if table.CurrentRound > PreFlop && len(table.CommunityCards) >= 3 {
+			boardTexture = ai.analyzeBoardTexture(table.CommunityCards)
+			drawStrength = ai.evaluateDraws(player.HoleCards, table.CommunityCards)
+		}
+	}
+	
 	switch action {
 	case Fold:
 		if strength == VeryWeak {
-			return "Very weak hand, folding to avoid losses"
+			if table.CurrentRound == PreFlop {
+				return fmt.Sprintf("Bottom %.0f%% hand, folding preflop", (1.0-handPercentile)*100)
+			}
+			return "Very weak holding on this board, folding"
 		} else if positionFactor < 1.0 {
-			return "Tight play in early position"
-		} else if potOdds < 2.0 {
-			return "Poor pot odds, not worth calling"
+			return fmt.Sprintf("%.0f%% hand too weak for early position", handPercentile*100)
+		} else if potOdds < 2.0 && potOdds > 0 {
+			return fmt.Sprintf("Getting %.1f:1 pot odds, not enough to call", potOdds)
+		} else if table.CurrentRound > PreFlop && boardTexture >= WetBoard {
+			return "Dangerous board texture, folding marginal hand"
 		}
 		return "Hand not strong enough to continue"
+		
 	case Check:
 		if table.CurrentBet == 0 {
 			if table.CurrentRound == River {
-				return "No bet to call, checking to showdown"
+				return "No action ahead, checking to showdown"
+			} else if strength == Medium && drawStrength > 0 {
+				return fmt.Sprintf("Checking with draws (%d outs estimated)", drawStrength*4)
+			} else if boardTexture >= WetBoard {
+				return "Cautious check on coordinated board"
 			}
 			return "No bet to call, checking to see next card"
 		}
 		return "Checking as safe option"
+		
 	case Call:
 		if potOdds > 3.0 {
-			return "Good pot odds, worth calling"
+			return fmt.Sprintf("Getting %.1f:1 pot odds, good price to call", potOdds)
+		} else if strength >= Medium && table.CurrentRound == PreFlop {
+			return fmt.Sprintf("Top %.0f%% hand, calling to see flop", handPercentile*100)
+		} else if drawStrength >= 2 && table.CurrentRound > PreFlop {
+			return fmt.Sprintf("Calling with strong draws (%d+ outs)", drawStrength*4)
 		} else if strength >= Medium {
 			return "Decent hand strength, calling to see more cards"
 		}
 		return "Calling with marginal hand"
+		
 	case Raise:
-		if strength >= Strong {
+		if strength >= VeryStrong {
+			if table.CurrentRound == PreFlop {
+				return fmt.Sprintf("Premium hand (top %.0f%%), raising for value", (1.0-handPercentile)*100)
+			}
+			return "Very strong hand, raising for value"
+		} else if strength >= Strong {
+			if boardTexture <= SemiWetBoard {
+				return "Strong hand on dry board, betting for value"
+			}
 			return "Strong hand, raising for value"
-		} else if positionFactor > 1.0 {
-			return "Late position bluff/semi-bluff"
+		} else if positionFactor > 1.0 && table.CurrentRound > PreFlop {
+			if drawStrength >= 2 {
+				return fmt.Sprintf("Semi-bluffing in position with draws (%d+ outs)", drawStrength*4)
+			} else if boardTexture <= DryBoard {
+				return "Position bluff on dry board"
+			}
+			return "Late position aggression"
+		} else if table.CurrentRound == PreFlop && positionFactor > 1.0 {
+			return fmt.Sprintf("Top %.0f%% hand, raising from late position", handPercentile*100)
 		}
-		return "Raising with good hand"
+		return "Raising with playable hand"
+		
 	case AllIn:
-		return "Strong hand, going all-in for maximum value"
+		if strength >= VeryStrong {
+			return "Premium hand, going all-in for maximum value"
+		} else if drawStrength >= 3 {
+			return "All-in semi-bluff with strong draws"
+		}
+		return "All-in with strong hand"
+		
 	default:
 		return "Unknown decision reason"
 	}

@@ -34,6 +34,8 @@ const (
 	Showdown
 )
 
+
+
 // String returns the string representation of a betting round
 func (br BettingRound) String() string {
 	switch br {
@@ -107,6 +109,7 @@ type Table struct {
 
 	// Hand tracking
 	PlayersActed map[int]bool // Track which players have acted this round
+	HandHistory  *HandHistory  // Current hand history
 	
 	// Dependencies
 	randSource RandSource // Random number generator
@@ -204,6 +207,9 @@ func (t *Table) StartNewHand() {
 
 	// Set positions
 	t.setPositions()
+
+	// Initialize hand history for this hand (after dealer position is set)
+	t.HandHistory = NewHandHistory(t)
 
 	// Shuffle and deal
 	t.Deck.Reset()
@@ -337,6 +343,11 @@ func (t *Table) dealHoleCards() {
 	for _, player := range t.ActivePlayers {
 		holeCards := t.Deck.DealN(2)
 		player.DealHoleCards(holeCards)
+		
+		// Add hole cards to hand history
+		if t.HandHistory != nil {
+			t.HandHistory.AddPlayerHoleCards(player.Name, holeCards)
+		}
 	}
 }
 
@@ -359,6 +370,11 @@ func (t *Table) postBlinds() {
 		amount := min(t.SmallBlind, smallBlindPlayer.Chips)
 		smallBlindPlayer.Call(amount)
 		t.Pot += amount
+		
+		// Record small blind posting in hand history
+		if t.HandHistory != nil {
+			t.HandHistory.AddAction(smallBlindPlayer.Name, Call, amount, t.Pot, PreFlop, "")
+		}
 	}
 
 	if bigBlindPlayer != nil {
@@ -366,6 +382,11 @@ func (t *Table) postBlinds() {
 		bigBlindPlayer.Call(amount)
 		t.Pot += amount
 		t.CurrentBet = amount
+		
+		// Record big blind posting in hand history
+		if t.HandHistory != nil {
+			t.HandHistory.AddAction(bigBlindPlayer.Name, Call, amount, t.Pot, PreFlop, "")
+		}
 	}
 }
 

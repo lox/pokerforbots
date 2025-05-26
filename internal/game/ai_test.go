@@ -38,8 +38,8 @@ func TestAIHandStrengthEvaluation(t *testing.T) {
 		{Suit: deck.Hearts, Rank: deck.King},
 	}
 	strength = ai.evaluatePreFlopStrength(offsuitAK)
-	if strength != Strong {
-		t.Errorf("Offsuit AK should be Strong, got %s", strength)
+	if strength != VeryStrong {
+		t.Errorf("Offsuit AK should be VeryStrong, got %s", strength)
 	}
 
 	// Test 7-2 offsuit (very weak)

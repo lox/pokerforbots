@@ -333,7 +333,7 @@ func (m *TUIModel) renderActionPane() string {
 	// Update input placeholder based on game state and show input field
 	if currentPlayer == nil {
 		// Between hands
-		m.actionInput.Placeholder = "Enter to continue, 'quit' to exit"
+		m.actionInput.Placeholder = "Enter to continue, 'save' to save hand, 'quit' to exit"
 	} else {
 		// During hand
 		m.actionInput.Placeholder = "Enter your action (call, raise 50, fold, check, etc.)"

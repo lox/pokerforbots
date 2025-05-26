@@ -151,8 +151,8 @@ func startInteractiveGame(seats int, logger *log.Logger) error {
 				table.AdvanceAction()
 			} else {
 				// AI player takes action
-				ai.ExecuteAIAction(currentPlayer, table)
-				hi.ShowPlayerAction(currentPlayer)
+				reasoning := ai.ExecuteAIActionWithReasoning(currentPlayer, table)
+				hi.ShowPlayerActionWithThinking(currentPlayer, reasoning)
 				table.AdvanceAction()
 			}
 
