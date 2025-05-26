@@ -9,6 +9,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/charmbracelet/log"
 
+	"github.com/lox/holdem-cli/internal/bot"
 	"github.com/lox/holdem-cli/internal/display"
 	"github.com/lox/holdem-cli/internal/game"
 )
@@ -114,7 +115,7 @@ func startInteractiveGame(seats int, logger *log.Logger) error {
 		}
 	}()
 
-	ai := game.NewAIEngine(logger)
+	bot := bot.NewBot(logger)
 
 	// Start first hand
 	table.StartNewHand()
@@ -151,7 +152,7 @@ func startInteractiveGame(seats int, logger *log.Logger) error {
 				table.AdvanceAction()
 			} else {
 				// AI player takes action
-				reasoning := ai.ExecuteAIActionWithReasoning(currentPlayer, table)
+				reasoning := bot.ExecuteAction(currentPlayer, table)
 				hi.ShowPlayerActionWithThinking(currentPlayer, reasoning)
 				table.AdvanceAction()
 			}

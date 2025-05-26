@@ -24,7 +24,7 @@ func (r RandomRange) SampleHand(availableCards []deck.Card) ([]deck.Card, bool) 
 	if idx2 >= idx1 {
 		idx2++
 	}
-	
+
 	return []deck.Card{availableCards[idx1], availableCards[idx2]}, true
 }
 
@@ -38,7 +38,7 @@ func (r TightRange) SampleHand(availableCards []deck.Card) ([]deck.Card, bool) {
 
 	attempts := 0
 	for attempts < 100 {
-		// Pick 2 random cards without creating full permutation  
+		// Pick 2 random cards without creating full permutation
 		idx1 := rand.Intn(len(availableCards))
 		idx2 := rand.Intn(len(availableCards) - 1)
 		if idx2 >= idx1 {
@@ -142,7 +142,7 @@ func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, nu
 	finalBoard := make([]deck.Card, 5)
 	heroHand := make([]deck.Card, 7)
 	oppHand := make([]deck.Card, 7)
-	
+
 	for i := 0; i < numSamples; i++ {
 		// Sample opponent hand directly from available cards
 		oppHole, ok := opponentRange.SampleHand(availableCards)
@@ -166,7 +166,7 @@ func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, nu
 		copy(finalBoard[:len(board)], board)
 		boardNeeded := 5 - len(board)
 		filled := 0
-		
+
 		// Collect available cards for board completion
 		boardCandidates := make([]deck.Card, 0, len(availableCards))
 		for _, card := range availableCards {
@@ -174,13 +174,13 @@ func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, nu
 				boardCandidates = append(boardCandidates, card)
 			}
 		}
-		
+
 		// Randomly sample from candidates
 		for filled < boardNeeded && filled < len(boardCandidates) {
 			idx := rand.Intn(len(boardCandidates) - filled)
 			finalBoard[len(board)+filled] = boardCandidates[idx]
 			// Swap used card to end to avoid reselection
-			boardCandidates[idx], boardCandidates[len(boardCandidates)-1-filled] = 
+			boardCandidates[idx], boardCandidates[len(boardCandidates)-1-filled] =
 				boardCandidates[len(boardCandidates)-1-filled], boardCandidates[idx]
 			filled++
 		}
@@ -192,7 +192,7 @@ func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, nu
 		// Evaluate both hands using pre-allocated slices
 		copy(heroHand[:2], hole)
 		copy(heroHand[2:], finalBoard)
-		
+
 		copy(oppHand[:2], oppHole)
 		copy(oppHand[2:], finalBoard)
 

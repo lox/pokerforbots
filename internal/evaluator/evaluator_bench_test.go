@@ -20,7 +20,6 @@ func Generate7CardHands(n int, seed int64) [][]deck.Card {
 	return hands
 }
 
-
 // generate7CardHand creates a single random 7-card hand
 func generate7CardHand(rng *rand.Rand) []deck.Card {
 	allCards := createFullDeck()
@@ -148,7 +147,7 @@ func BenchmarkEstimateEquity_SampleSizes(b *testing.B) {
 	opponentRange := RandomRange{}
 
 	sampleSizes := []int{100, 500, 1000, 2000, 5000}
-	
+
 	for _, samples := range sampleSizes {
 		b.Run(fmt.Sprintf("samples_%d", samples), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
