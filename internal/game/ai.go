@@ -667,8 +667,16 @@ func (ai *AIEngine) GetRaiseAmount(player *Player, table *Table, strength HandSt
 
 	baseRaise := int(float64(potSize) * raiseFactor)
 
-	// Minimum raise is current bet + big blind
-	minRaise := currentBet + table.BigBlind
+	// Minimum raise for re-raises should be more aggressive
+	// If this is a re-raise (currentBet > bigBlind), use larger sizing
+	var minRaise int
+	if currentBet > table.BigBlind {
+		// Re-raise: minimum is currentBet * 3x (proper 3-bet sizing)
+		minRaise = currentBet * 3
+	} else {
+		// Initial raise: current bet + big blind
+		minRaise = currentBet + table.BigBlind
+	}
 	if baseRaise < minRaise {
 		baseRaise = minRaise
 	}

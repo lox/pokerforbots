@@ -416,7 +416,7 @@ func (ti *TUIInterface) ShowPlayerAction(player *game.Player) {
 		ti.AddLogEntry(fmt.Sprintf("%s: checks", player.Name))
 	case "raise":
 		ti.AddLogEntry(fmt.Sprintf("%s: raises $%d to $%d (pot now: $%d)",
-			player.Name, player.BetThisRound, ti.table.CurrentBet, ti.table.Pot))
+			player.Name, player.ActionAmount, player.BetThisRound, ti.table.Pot))
 	case "allin":
 		ti.AddLogEntry(fmt.Sprintf("%s: goes all-in for $%d", player.Name, player.TotalBet))
 	}
