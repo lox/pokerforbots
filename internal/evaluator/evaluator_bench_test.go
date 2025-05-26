@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"fmt"
 	"math/rand"
 	"testing"
 
@@ -98,5 +99,73 @@ func BenchmarkEvaluate7_TortureCases(b *testing.B) {
 				_ = Evaluate7(extendedCards)
 			}
 		})
+	}
+}
+
+// BenchmarkEstimateEquity_PreFlop benchmarks Monte Carlo equity calculation pre-flop
+func BenchmarkEstimateEquity_PreFlop(b *testing.B) {
+	// Pocket Aces
+	hole := deck.MustParseCards("AsAh")
+	board := []deck.Card{} // Pre-flop
+	opponentRange := RandomRange{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = EstimateEquity(hole, board, opponentRange, 1000)
+	}
+}
+
+// BenchmarkEstimateEquity_Flop benchmarks Monte Carlo equity calculation on the flop
+func BenchmarkEstimateEquity_Flop(b *testing.B) {
+	// Pocket Aces with dry flop
+	hole := deck.MustParseCards("AsAh")
+	board := deck.MustParseCards("2d7cJh")
+	opponentRange := RandomRange{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = EstimateEquity(hole, board, opponentRange, 1000)
+	}
+}
+
+// BenchmarkEstimateEquity_River benchmarks Monte Carlo equity calculation on the river
+func BenchmarkEstimateEquity_River(b *testing.B) {
+	// Completed hand on river
+	hole := deck.MustParseCards("AsAh")
+	board := deck.MustParseCards("2d7cJhKs9c")
+	opponentRange := RandomRange{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = EstimateEquity(hole, board, opponentRange, 1000)
+	}
+}
+
+// BenchmarkEstimateEquity_SampleSizes benchmarks different sample sizes
+func BenchmarkEstimateEquity_SampleSizes(b *testing.B) {
+	hole := deck.MustParseCards("AsAh")
+	board := deck.MustParseCards("2d7cJh")
+	opponentRange := RandomRange{}
+
+	sampleSizes := []int{100, 500, 1000, 2000, 5000}
+	
+	for _, samples := range sampleSizes {
+		b.Run(fmt.Sprintf("samples_%d", samples), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_ = EstimateEquity(hole, board, opponentRange, samples)
+			}
+		})
+	}
+}
+
+// BenchmarkEstimateEquity_TightRange benchmarks equity vs tight opponents
+func BenchmarkEstimateEquity_TightRange(b *testing.B) {
+	hole := deck.MustParseCards("AsAh")
+	board := deck.MustParseCards("2d7cJh")
+	opponentRange := TightRange{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = EstimateEquity(hole, board, opponentRange, 1000)
 	}
 }

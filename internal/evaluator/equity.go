@@ -18,9 +18,14 @@ func (r RandomRange) SampleHand(availableCards []deck.Card) ([]deck.Card, bool) 
 		return nil, false
 	}
 
-	// Pick 2 random cards
-	indices := rand.Perm(len(availableCards))
-	return []deck.Card{availableCards[indices[0]], availableCards[indices[1]]}, true
+	// Pick 2 random cards without creating full permutation
+	idx1 := rand.Intn(len(availableCards))
+	idx2 := rand.Intn(len(availableCards) - 1)
+	if idx2 >= idx1 {
+		idx2++
+	}
+	
+	return []deck.Card{availableCards[idx1], availableCards[idx2]}, true
 }
 
 // TightRange represents a tight opponent (good hands only)
@@ -33,9 +38,13 @@ func (r TightRange) SampleHand(availableCards []deck.Card) ([]deck.Card, bool) {
 
 	attempts := 0
 	for attempts < 100 {
-		// Pick 2 random cards
-		indices := rand.Perm(len(availableCards))
-		hand := []deck.Card{availableCards[indices[0]], availableCards[indices[1]]}
+		// Pick 2 random cards without creating full permutation  
+		idx1 := rand.Intn(len(availableCards))
+		idx2 := rand.Intn(len(availableCards) - 1)
+		if idx2 >= idx1 {
+			idx2++
+		}
+		hand := []deck.Card{availableCards[idx1], availableCards[idx2]}
 
 		// Check if it's a tight range hand (pairs, suited connectors, high cards)
 		if isTightHand(hand) {
@@ -45,8 +54,7 @@ func (r TightRange) SampleHand(availableCards []deck.Card) ([]deck.Card, bool) {
 	}
 
 	// Fallback to random if we can't find a tight hand
-	indices := rand.Perm(len(availableCards))
-	return []deck.Card{availableCards[indices[0]], availableCards[indices[1]]}, true
+	return RandomRange{}.SampleHand(availableCards)
 }
 
 // LooseRange represents a loose opponent (wider range)
@@ -130,49 +138,63 @@ func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, nu
 		}
 	}
 
+	// Pre-allocate reusable slices
+	finalBoard := make([]deck.Card, 5)
+	heroHand := make([]deck.Card, 7)
+	oppHand := make([]deck.Card, 7)
+	
 	for i := 0; i < numSamples; i++ {
-		// Shuffle available cards
-		shuffled := make([]deck.Card, len(availableCards))
-		copy(shuffled, availableCards)
-		for i := len(shuffled) - 1; i > 0; i-- {
-			j := rand.Intn(i + 1)
-			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
-		}
-
-		cardIndex := 0
-
-		// Sample opponent hand
-		oppHole, ok := opponentRange.SampleHand(shuffled[cardIndex:])
+		// Sample opponent hand directly from available cards
+		oppHole, ok := opponentRange.SampleHand(availableCards)
 		if !ok {
 			continue
 		}
-		cardIndex += 2
 
-		// Complete the board (5 - len(board) more cards needed)
-		finalBoard := make([]deck.Card, len(board))
-		copy(finalBoard, board)
+		// Create temporary used cards map for this sample
+		tempUsed := make(map[deck.Card]bool, len(hole)+len(board)+2)
+		for _, card := range hole {
+			tempUsed[card] = true
+		}
+		for _, card := range board {
+			tempUsed[card] = true
+		}
+		for _, card := range oppHole {
+			tempUsed[card] = true
+		}
 
-		cardsNeeded := 5 - len(board)
-		for j := 0; j < cardsNeeded; j++ {
-			if cardIndex >= len(shuffled) {
-				break
+		// Complete the board
+		copy(finalBoard[:len(board)], board)
+		boardNeeded := 5 - len(board)
+		filled := 0
+		
+		// Collect available cards for board completion
+		boardCandidates := make([]deck.Card, 0, len(availableCards))
+		for _, card := range availableCards {
+			if !tempUsed[card] {
+				boardCandidates = append(boardCandidates, card)
 			}
-			finalBoard = append(finalBoard, shuffled[cardIndex])
-			cardIndex++
+		}
+		
+		// Randomly sample from candidates
+		for filled < boardNeeded && filled < len(boardCandidates) {
+			idx := rand.Intn(len(boardCandidates) - filled)
+			finalBoard[len(board)+filled] = boardCandidates[idx]
+			// Swap used card to end to avoid reselection
+			boardCandidates[idx], boardCandidates[len(boardCandidates)-1-filled] = 
+				boardCandidates[len(boardCandidates)-1-filled], boardCandidates[idx]
+			filled++
 		}
 
 		if len(finalBoard) != 5 {
 			continue
 		}
 
-		// Evaluate both hands
-		heroHand := make([]deck.Card, 0, 7)
-		heroHand = append(heroHand, hole...)
-		heroHand = append(heroHand, finalBoard...)
-
-		oppHand := make([]deck.Card, 0, 7)
-		oppHand = append(oppHand, oppHole...)
-		oppHand = append(oppHand, finalBoard...)
+		// Evaluate both hands using pre-allocated slices
+		copy(heroHand[:2], hole)
+		copy(heroHand[2:], finalBoard)
+		
+		copy(oppHand[:2], oppHole)
+		copy(oppHand[2:], finalBoard)
 
 		// Ensure both hands have exactly 7 cards
 		if len(heroHand) != 7 || len(oppHand) != 7 {
