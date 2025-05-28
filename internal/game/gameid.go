@@ -1,37 +1,27 @@
-package gameid
+package game
 
 import (
-	"crypto/rand"
 	"fmt"
+	"math/rand"
 	"time"
 )
 
 // Base32 alphabet used by TypeID (Crockford's base32)
 const alphabet = "0123456789abcdefghjkmnpqrstvwxyz"
 
-// RandSource interface for dependency injection of randomness
-type RandSource interface {
-	Intn(n int) int
-}
-
 // Generator handles game ID generation with configurable randomness
 type Generator struct {
-	randSource RandSource
+	Rand *rand.Rand
 }
 
-// NewGenerator creates a new generator with optional RandSource
-func NewGenerator(randSource RandSource) *Generator {
-	return &Generator{randSource: randSource}
+// NewGameIDGenerator creates a new generator with optional RandSource
+func NewGameIDGenerator(rand *rand.Rand) *Generator {
+	return &Generator{Rand: rand}
 }
 
-// Generate creates a new game ID using UUIDv7 encoded as 26-character base32 string
-func Generate() string {
-	return NewGenerator(nil).Generate()
-}
-
-// GenerateWithRandSource creates a new game ID using the provided RandSource
-func GenerateWithRandSource(randSource RandSource) string {
-	return NewGenerator(randSource).Generate()
+// GenerateGameIDWithRandSource creates a new game ID using the provided RandSource
+func GenerateGameID(randSource *rand.Rand) string {
+	return NewGameIDGenerator(randSource).Generate()
 }
 
 // Generate creates a new game ID using the generator's RandSource
@@ -62,16 +52,8 @@ func (g *Generator) generateUUIDv7() [16]byte {
 	uuid[5] = byte(now)
 
 	// Fill remaining 10 bytes with random data
-	if g.randSource != nil {
-		// Use provided RandSource for deterministic testing
-		for i := 6; i < 16; i++ {
-			uuid[i] = byte(g.randSource.Intn(256))
-		}
-	} else {
-		// Use crypto/rand for production
-		if _, err := rand.Read(uuid[6:]); err != nil {
-			panic("failed to generate random bytes: " + err.Error())
-		}
+	for i := 6; i < 16; i++ {
+		uuid[i] = byte(g.Rand.Intn(256))
 	}
 
 	// Set version (4 bits) to 7 (0111)

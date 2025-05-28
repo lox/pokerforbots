@@ -1,14 +1,15 @@
-package gameid
+package game
 
 import (
+	"math/rand"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestGenerate(t *testing.T) {
+func TestGenerateGameID(t *testing.T) {
 	// Test that Generate produces valid game IDs
-	id := Generate()
+	id := GenerateGameID(rand.New(rand.NewSource(42)))
 
 	if len(id) != 26 {
 		t.Errorf("expected 26 characters, got %d", len(id))
@@ -29,7 +30,8 @@ func TestGenerateUnique(t *testing.T) {
 	ids := make(map[string]bool)
 
 	for i := 0; i < 100; i++ {
-		id := Generate()
+		// Use different seeds for each iteration to ensure uniqueness
+		id := GenerateGameID(rand.New(rand.NewSource(int64(i))))
 		if ids[id] {
 			t.Errorf("duplicate ID generated: %s", id)
 		}
@@ -42,7 +44,7 @@ func TestGenerateTimeSorted(t *testing.T) {
 	var ids []string
 
 	for i := 0; i < 10; i++ {
-		ids = append(ids, Generate())
+		ids = append(ids, GenerateGameID(rand.New(rand.NewSource(42))))
 		time.Sleep(time.Millisecond)
 	}
 
@@ -54,7 +56,7 @@ func TestGenerateTimeSorted(t *testing.T) {
 	}
 }
 
-func TestValidate(t *testing.T) {
+func TestValidateGameID(t *testing.T) {
 	tests := []struct {
 		name    string
 		id      string
@@ -102,7 +104,7 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-func TestAlphabet(t *testing.T) {
+func TestGameIDAlphabet(t *testing.T) {
 	// Ensure alphabet has no duplicate characters and is the correct length
 	if len(alphabet) != 32 {
 		t.Errorf("alphabet should have 32 characters, got %d", len(alphabet))
@@ -125,34 +127,15 @@ func TestAlphabet(t *testing.T) {
 	}
 }
 
-// MockRandSource for deterministic testing
-type MockRandSource struct {
-	values []int
-	index  int
-}
-
-func NewMockRandSource(values ...int) *MockRandSource {
-	return &MockRandSource{values: values, index: 0}
-}
-
-func (m *MockRandSource) Intn(n int) int {
-	if m.index >= len(m.values) {
-		return 0 // Default fallback
-	}
-	val := m.values[m.index] % n // Ensure it's within bounds
-	m.index++
-	return val
-}
-
-func TestGenerateWithRandSource(t *testing.T) {
+func TestGenerateGameIDWithRandSource(t *testing.T) {
 	// Test deterministic generation with fixed values
-	mockRand := NewMockRandSource(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+	mockRand := rand.New(rand.NewSource(42))
 
-	id1 := GenerateWithRandSource(mockRand)
+	id1 := GenerateGameID(mockRand)
 
 	// Reset mock and generate again with same values
-	mockRand2 := NewMockRandSource(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
-	id2 := GenerateWithRandSource(mockRand2)
+	mockRand2 := rand.New(rand.NewSource(42))
+	id2 := GenerateGameID(mockRand2)
 
 	// Should generate identical IDs (except for timestamp which might differ by milliseconds)
 	// The random portion should be identical, so we'll check that the IDs are close
@@ -169,14 +152,8 @@ func TestGenerateWithRandSource(t *testing.T) {
 	}
 }
 
-func TestGeneratorDeterministic(t *testing.T) {
-	// Test that same RandSource produces same results (ignoring timestamp)
-	values := make([]int, 20) // Enough for multiple generations
-	for i := range values {
-		values[i] = i + 100 // Use predictable values
-	}
-
-	gen := NewGenerator(NewMockRandSource(values...))
+func TestGameIDGeneratorDeterministic(t *testing.T) {
+	gen := NewGameIDGenerator(rand.New(rand.NewSource(42)))
 
 	// Generate multiple IDs
 	var ids []string
