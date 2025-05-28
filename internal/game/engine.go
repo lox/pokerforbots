@@ -93,17 +93,18 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) *HandResult {
 			activePlayers := len(ge.table.GetActivePlayers())
 			if activePlayers <= 1 {
 				// Hand over, someone won by everyone else folding
-				winner := ge.table.FindWinner()
-				if winner != nil {
-					ge.table.AwardPot(winner)
-					result.Winner = winner
-					result.PotSize = 0 // Pot is now 0 after awarding
+				potBeforeAwarding := ge.table.Pot
+				ge.table.AwardPot()
+				winners := ge.table.FindWinners()
+				if len(winners) > 0 {
+					result.Winner = winners[0] // For compatibility, return first winner
+					result.PotSize = potBeforeAwarding
 					result.ShowdownType = "fold"
-					ge.logger.Debug("Hand won by fold", "winner", winner.Name)
+					ge.logger.Debug("Hand won by fold", "winner", winners[0].Name, "pot", potBeforeAwarding)
 				} else {
 					ge.logger.Error("No winner found after fold", "activePlayers", activePlayers)
 					result.Winner = nil
-					result.PotSize = ge.table.Pot
+					result.PotSize = potBeforeAwarding
 					result.ShowdownType = "no_winner"
 				}
 				break
@@ -124,13 +125,13 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) *HandResult {
 				// Go to showdown
 				ge.table.CurrentRound = Showdown
 				potBeforeAwarding := ge.table.Pot
-				winner := ge.table.FindWinner()
-				if winner != nil {
-					ge.table.AwardPot(winner)
-					result.Winner = winner
+				ge.table.AwardPot()
+				winners := ge.table.FindWinners()
+				if len(winners) > 0 {
+					result.Winner = winners[0] // For compatibility, return first winner
 					result.PotSize = potBeforeAwarding
 					result.ShowdownType = "showdown"
-					ge.logger.Debug("Hand went to showdown", "winner", winner.Name, "pot", potBeforeAwarding)
+					ge.logger.Debug("Hand went to showdown", "winner", winners[0].Name, "pot", potBeforeAwarding)
 				} else {
 					ge.logger.Error("No winner found at showdown")
 					result.Winner = nil

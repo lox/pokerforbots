@@ -348,6 +348,7 @@ func (t *Table) postBlinds() {
 	// Post blinds
 	if smallBlindPlayer != nil {
 		amount := min(t.SmallBlind, smallBlindPlayer.Chips)
+		// Small blind posting
 		smallBlindPlayer.Call(amount)
 		t.Pot += amount
 
@@ -359,6 +360,7 @@ func (t *Table) postBlinds() {
 
 	if bigBlindPlayer != nil {
 		amount := min(t.BigBlind, bigBlindPlayer.Chips)
+		// Big blind posting
 		bigBlindPlayer.Call(amount)
 		t.Pot += amount
 		t.CurrentBet = amount
@@ -538,16 +540,120 @@ func (t *Table) String() string {
 		}())
 }
 
-// AwardPot awards the entire pot to the specified winner
-func (t *Table) AwardPot(winner *Player) {
-	if winner != nil && t.Pot > 0 {
-		winner.Chips += t.Pot
-		t.Pot = 0
+// splitPot splits a pot amount among multiple winners, with remainder going to first winner
+func splitPot(potAmount int, winners []*Player) {
+	if len(winners) == 0 || potAmount <= 0 {
+		return
+	}
+
+	// Integer division for each player
+	sharePerPlayer := potAmount / len(winners)
+	remainder := potAmount % len(winners)
+
+	// Give each player their share
+	for i, winner := range winners {
+		winner.Chips += sharePerPlayer
+		// First winner gets any remainder chip
+		if i == 0 {
+			winner.Chips += remainder
+		}
 	}
 }
 
-// FindWinner determines the winner of the hand using proper hand evaluation
-func (t *Table) FindWinner() *Player {
+// AwardPot awards the pot to winner(s), splitting in case of ties
+func (t *Table) AwardPot() {
+	// Enhanced pot award handling with side pots and ties.
+	// Build a list of all players that contributed chips to the pot (TotalBet > 0).
+	if t.Pot <= 0 {
+		return
+	}
+
+	// Gather contributors with their total contribution this hand.
+	type contributor struct {
+		player *Player
+		bet    int
+	}
+
+	var contributors []contributor
+	for _, p := range t.Players {
+		if p.TotalBet > 0 {
+			contributors = append(contributors, contributor{player: p, bet: p.TotalBet})
+		}
+	}
+
+	if len(contributors) == 0 {
+		// Fallback to old behaviour if we somehow lost tracking information.
+		winners := t.FindWinners()
+		splitPot(t.Pot, winners)
+		t.Pot = 0
+		return
+	}
+
+	// Sort contributors by amount committed (ascending) – this lets us peel off side pots.
+	sort.Slice(contributors, func(i, j int) bool {
+		return contributors[i].bet < contributors[j].bet
+	})
+
+	// Pre-compute the overall hand winners once so that we don't re-evaluate multiple times.
+	allWinners := t.FindWinners()
+	winnerSet := make(map[*Player]struct{}, len(allWinners))
+	for _, w := range allWinners {
+		winnerSet[w] = struct{}{}
+	}
+
+	remainingPot := t.Pot
+	prevLevel := 0
+
+	for idx := 0; idx < len(contributors); idx++ {
+		// Determine current side-pot bet level (contributors[idx].bet)
+		levelBet := contributors[idx].bet
+
+		// Players that have contributed at least this much are eligible for this pot slice.
+		eligible := contributors[idx:]
+		numEligible := len(eligible)
+		if numEligible == 0 {
+			continue
+		}
+
+		// Amount in this side pot is (levelBet - prevLevel) * numEligible
+		sidePot := (levelBet - prevLevel) * numEligible
+		if sidePot > remainingPot {
+			sidePot = remainingPot // safety – shouldn't really happen
+		}
+
+		// Determine winners among eligible players (could be single or multiple).
+		var sideWinners []*Player
+		for _, c := range eligible {
+			if _, ok := winnerSet[c.player]; ok {
+				sideWinners = append(sideWinners, c.player)
+			}
+		}
+
+		if len(sideWinners) == 0 {
+			// This should never happen, but fall back to all winners to avoid locking up.
+			sideWinners = allWinners
+		}
+
+		splitPot(sidePot, sideWinners)
+		remainingPot -= sidePot
+		prevLevel = levelBet
+
+		if remainingPot == 0 {
+			break
+		}
+	}
+
+	// Any chips that weren't allocated (edge cases) go to overall winners.
+	if remainingPot > 0 {
+		splitPot(remainingPot, allWinners)
+		remainingPot = 0
+	}
+
+	t.Pot = 0 // Pot has been fully awarded.
+}
+
+// FindWinners determines all winners of the hand (handles ties)
+func (t *Table) FindWinners() []*Player {
 	activePlayers := t.GetActivePlayers()
 	if len(activePlayers) == 0 {
 		return nil
@@ -555,22 +661,23 @@ func (t *Table) FindWinner() *Player {
 
 	// If only one player left, they win
 	if len(activePlayers) == 1 {
-		return activePlayers[0]
+		return activePlayers
 	}
 
 	// Check if we have enough cards for evaluation (need at least 5 total)
-	// This can happen if FindWinner is called before all community cards are dealt
 	if len(t.CommunityCards) < 3 {
 		// Not enough community cards yet, return first player for now
-		// In a real game, this shouldn't happen during showdown
-		return activePlayers[0]
+		return []*Player{activePlayers[0]}
 	}
 
 	// Evaluate each player's best hand
-	var bestPlayer *Player
-	var bestHandScore evaluator.HandRank
+	type playerHand struct {
+		player *Player
+		hand   evaluator.HandRank
+	}
 
-	for i, player := range activePlayers {
+	var playerHands []playerHand
+	for _, player := range activePlayers {
 		// Combine hole cards with community cards
 		allCards := make([]deck.Card, 0, 7)
 		allCards = append(allCards, player.HoleCards...)
@@ -583,20 +690,40 @@ func (t *Table) FindWinner() *Player {
 
 		// Find the best 5-card hand
 		playerHandScore := evaluator.Evaluate7(allCards)
-
-		// Compare with current best using HandRank.Compare
-		if i == 0 || playerHandScore.Compare(bestHandScore) > 0 {
-			bestPlayer = player
-			bestHandScore = playerHandScore
-		}
+		playerHands = append(playerHands, playerHand{player, playerHandScore})
 	}
 
 	// Fallback if no valid hands found
-	if bestPlayer == nil {
-		return activePlayers[0]
+	if len(playerHands) == 0 {
+		return []*Player{activePlayers[0]}
 	}
 
-	return bestPlayer
+	// Find all players with the best hand
+	var winners []*Player
+	bestHandScore := playerHands[0].hand
+
+	for _, ph := range playerHands {
+		comparison := ph.hand.Compare(bestHandScore)
+		if comparison > 0 {
+			// Found a better hand, start new winners list
+			winners = []*Player{ph.player}
+			bestHandScore = ph.hand
+		} else if comparison == 0 {
+			// Tie - add to winners list
+			winners = append(winners, ph.player)
+		}
+	}
+
+	return winners
+}
+
+// FindWinner returns a single winner for backwards compatibility
+func (t *Table) FindWinner() *Player {
+	winners := t.FindWinners()
+	if len(winners) > 0 {
+		return winners[0]
+	}
+	return nil
 }
 
 // GetActivePlayers returns players who are still in the hand (not folded)

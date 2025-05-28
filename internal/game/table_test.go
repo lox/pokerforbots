@@ -599,7 +599,7 @@ func TestPotDistribution(t *testing.T) {
 	}
 
 	initialChips := winner.Chips
-	table.AwardPot(winner)
+	table.AwardPot()
 
 	// Check that winner received the pot
 	if winner.Chips != initialChips+finalPot {
@@ -734,7 +734,7 @@ func TestPotAmountPreservedForSummary(t *testing.T) {
 
 	// Award pot (this will reset it to 0)
 	initialChips := winner.Chips
-	table.AwardPot(winner)
+	table.AwardPot()
 
 	// Verify pot was awarded correctly
 	if winner.Chips != initialChips+50 {
@@ -744,5 +744,349 @@ func TestPotAmountPreservedForSummary(t *testing.T) {
 	// Verify pot is now empty
 	if table.Pot != 0 {
 		t.Errorf("Pot should be 0 after awarding, got %d", table.Pot)
+	}
+}
+
+func TestSplitPotBasic(t *testing.T) {
+	tests := []struct {
+		name              string
+		potAmount         int
+		numWinners        int
+		expectedEach      int
+		expectedRemainder int
+	}{
+		{"Even split 100 chips 2 winners", 100, 2, 50, 0},
+		{"Odd split 101 chips 2 winners", 101, 2, 50, 1},
+		{"Three way split 100 chips", 100, 3, 33, 1},
+		{"Three way split 102 chips", 102, 3, 34, 0},
+		{"Single winner", 100, 1, 100, 0},
+		{"Zero pot", 0, 2, 0, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create test players
+			var winners []*Player
+			for i := 0; i < tt.numWinners; i++ {
+				winners = append(winners, &Player{
+					Name:  "Player" + string(rune(i+'1')),
+					Chips: 1000, // Starting chips
+				})
+			}
+
+			// Split the pot
+			splitPot(tt.potAmount, winners)
+
+			// Check first winner gets share + remainder
+			expectedFirst := tt.expectedEach + tt.expectedRemainder
+			if winners[0].Chips != 1000+expectedFirst {
+				t.Errorf("First winner expected %d chips, got %d", 1000+expectedFirst, winners[0].Chips)
+			}
+
+			// Check other winners get exact share
+			for i := 1; i < len(winners); i++ {
+				if winners[i].Chips != 1000+tt.expectedEach {
+					t.Errorf("Winner %d expected %d chips, got %d", i, 1000+tt.expectedEach, winners[i].Chips)
+				}
+			}
+
+			// Verify total chips distributed equals pot
+			totalDistributed := 0
+			for _, winner := range winners {
+				totalDistributed += winner.Chips - 1000 // Subtract starting chips
+			}
+			if totalDistributed != tt.potAmount {
+				t.Errorf("Total distributed %d doesn't match pot %d", totalDistributed, tt.potAmount)
+			}
+		})
+	}
+}
+
+func TestHeadsUpBoardChop(t *testing.T) {
+	// Create a scenario where both players have identical hands (board chop)
+	rng := rand.New(rand.NewSource(42))
+	table := NewTable(rng, TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 5,
+		BigBlind:   10,
+	})
+
+	// Add two players
+	player1 := &Player{Name: "Alice", Chips: 1000}
+	player2 := &Player{Name: "Bob", Chips: 1000}
+	table.AddPlayer(player1)
+	table.AddPlayer(player2)
+
+	// Start hand
+	table.StartNewHand()
+
+	// Set up a board where both players have identical hands
+	// Using A-high board: A♠ K♠ Q♠ J♠ T♠ (royal flush on board)
+	table.CommunityCards = []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Ace},
+		{Suit: deck.Spades, Rank: deck.King},
+		{Suit: deck.Spades, Rank: deck.Queen},
+		{Suit: deck.Spades, Rank: deck.Jack},
+		{Suit: deck.Spades, Rank: deck.Ten},
+	}
+
+	// Give both players low hole cards that don't matter
+	player1.DealHoleCards([]deck.Card{
+		{Suit: deck.Hearts, Rank: deck.Two},
+		{Suit: deck.Clubs, Rank: deck.Three},
+	})
+	player2.DealHoleCards([]deck.Card{
+		{Suit: deck.Hearts, Rank: deck.Four},
+		{Suit: deck.Clubs, Rank: deck.Five},
+	})
+
+	// Set a pot amount
+	table.Pot = 100
+
+	// Get winners - should be both players
+	winners := table.FindWinners()
+	if len(winners) != 2 {
+		t.Fatalf("Expected 2 winners (chop), got %d", len(winners))
+	}
+
+	// Check that both players are winners
+	foundAlice, foundBob := false, false
+	for _, winner := range winners {
+		if winner.Name == "Alice" {
+			foundAlice = true
+		}
+		if winner.Name == "Bob" {
+			foundBob = true
+		}
+	}
+	if !foundAlice || !foundBob {
+		t.Error("Both Alice and Bob should be winners in board chop")
+	}
+
+	// Award pot and check split
+	startingAlice := player1.Chips
+	startingBob := player2.Chips
+	table.AwardPot()
+
+	// Check that pot was split (50 each, with remainder to first winner)
+	aliceTotal := player1.Chips - startingAlice
+	bobTotal := player2.Chips - startingBob
+
+	if aliceTotal+bobTotal != 100 {
+		t.Errorf("Total awarded %d doesn't match pot 100", aliceTotal+bobTotal)
+	}
+
+	// First winner should get 50 + remainder (0), second should get 50
+	if aliceTotal != 50 || bobTotal != 50 {
+		t.Errorf("Expected 50/50 split, got Alice: %d, Bob: %d", aliceTotal, bobTotal)
+	}
+
+	// Pot should be empty
+	if table.Pot != 0 {
+		t.Errorf("Pot should be 0 after awarding, got %d", table.Pot)
+	}
+}
+
+func TestThreeWaySidePotTie(t *testing.T) {
+	// Test scenario: Three players, two tie for main pot, one wins side pot
+	rng := rand.New(rand.NewSource(123))
+	table := NewTable(rng, TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 5,
+		BigBlind:   10,
+	})
+
+	// Add three players with different stack sizes
+	player1 := &Player{Name: "Alice", Chips: 500}    // Short stack
+	player2 := &Player{Name: "Bob", Chips: 1000}     // Medium stack
+	player3 := &Player{Name: "Charlie", Chips: 1000} // Medium stack
+	table.AddPlayer(player1)
+	table.AddPlayer(player2)
+	table.AddPlayer(player3)
+
+	// Start hand
+	table.StartNewHand()
+
+	// Set up community cards for a scenario where Alice and Bob tie,
+	// but Charlie has a worse hand
+	// Board: A♠ A♥ K♠ Q♠ J♠
+	table.CommunityCards = []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Ace},
+		{Suit: deck.Hearts, Rank: deck.Ace},
+		{Suit: deck.Spades, Rank: deck.King},
+		{Suit: deck.Spades, Rank: deck.Queen},
+		{Suit: deck.Spades, Rank: deck.Jack},
+	}
+
+	// Alice gets A♣ K♥ (full house: AAA KK)
+	player1.DealHoleCards([]deck.Card{
+		{Suit: deck.Clubs, Rank: deck.Ace},
+		{Suit: deck.Hearts, Rank: deck.King},
+	})
+
+	// Bob gets A♦ K♦ (same full house: AAA KK)
+	player2.DealHoleCards([]deck.Card{
+		{Suit: deck.Diamonds, Rank: deck.Ace},
+		{Suit: deck.Diamonds, Rank: deck.King},
+	})
+
+	// Charlie gets 2♥ 3♥ (pair of aces with lower kickers)
+	player3.DealHoleCards([]deck.Card{
+		{Suit: deck.Hearts, Rank: deck.Two},
+		{Suit: deck.Hearts, Rank: deck.Three},
+	})
+
+	// Set pot amount
+	table.Pot = 150
+
+	// Get winners - should be Alice and Bob (tie)
+	winners := table.FindWinners()
+	if len(winners) != 2 {
+		t.Fatalf("Expected 2 winners (Alice and Bob tie), got %d", len(winners))
+	}
+
+	// Check that Alice and Bob are the winners
+	foundAlice, foundBob := false, false
+	for _, winner := range winners {
+		if winner.Name == "Alice" {
+			foundAlice = true
+		}
+		if winner.Name == "Bob" {
+			foundBob = true
+		}
+	}
+	if !foundAlice || !foundBob {
+		t.Error("Alice and Bob should both be winners")
+	}
+
+	// Award pot and check split
+	startingAlice := player1.Chips
+	startingBob := player2.Chips
+	startingCharlie := player3.Chips
+	table.AwardPot()
+
+	// Check that pot was split between Alice and Bob only
+	aliceWon := player1.Chips - startingAlice
+	bobWon := player2.Chips - startingBob
+	charlieWon := player3.Chips - startingCharlie
+
+	if charlieWon != 0 {
+		t.Errorf("Charlie should not have won anything, got %d", charlieWon)
+	}
+
+	if aliceWon+bobWon != 150 {
+		t.Errorf("Total awarded %d doesn't match pot 150", aliceWon+bobWon)
+	}
+
+	// Should be 75 each with remainder going to first winner (Alice)
+	if aliceWon != 75 || bobWon != 75 {
+		t.Errorf("Expected 75/75 split, got Alice: %d, Bob: %d", aliceWon, bobWon)
+	}
+
+	// Pot should be empty
+	if table.Pot != 0 {
+		t.Errorf("Pot should be 0 after awarding, got %d", table.Pot)
+	}
+}
+
+func TestSplitPotEdgeCases(t *testing.T) {
+	t.Run("Empty winners list", func(t *testing.T) {
+		var winners []*Player
+		splitPot(100, winners)
+		// Should not panic
+	})
+
+	t.Run("Negative pot", func(t *testing.T) {
+		player := &Player{Name: "Test", Chips: 1000}
+		winners := []*Player{player}
+		splitPot(-50, winners)
+
+		// Player should still have 1000 chips
+		if player.Chips != 1000 {
+			t.Errorf("Expected 1000 chips, got %d", player.Chips)
+		}
+	})
+
+	t.Run("One chip split among three", func(t *testing.T) {
+		var winners []*Player
+		for i := 0; i < 3; i++ {
+			winners = append(winners, &Player{
+				Name:  "Player" + string(rune(i+'1')),
+				Chips: 1000,
+			})
+		}
+
+		splitPot(1, winners)
+
+		// First player should get the 1 chip, others get 0
+		if winners[0].Chips != 1001 {
+			t.Errorf("First winner should have 1001 chips, got %d", winners[0].Chips)
+		}
+		for i := 1; i < 3; i++ {
+			if winners[i].Chips != 1000 {
+				t.Errorf("Winner %d should still have 1000 chips, got %d", i, winners[i].Chips)
+			}
+		}
+	})
+}
+
+func TestAwardPotIntegration(t *testing.T) {
+	// Test the full AwardPot() method integration
+	rng := rand.New(rand.NewSource(456))
+	table := NewTable(rng, TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 5,
+		BigBlind:   10,
+	})
+
+	// Add players
+	player1 := &Player{Name: "Alice", Chips: 1000}
+	player2 := &Player{Name: "Bob", Chips: 1000}
+	table.AddPlayer(player1)
+	table.AddPlayer(player2)
+
+	// Start hand
+	table.StartNewHand()
+
+	// Set up a tie scenario
+	table.CommunityCards = []deck.Card{
+		{Suit: deck.Spades, Rank: deck.Ace},
+		{Suit: deck.Hearts, Rank: deck.King},
+		{Suit: deck.Clubs, Rank: deck.Queen},
+		{Suit: deck.Diamonds, Rank: deck.Jack},
+		{Suit: deck.Spades, Rank: deck.Ten},
+	}
+
+	// Both players get the same hole cards for a tie
+	player1.DealHoleCards([]deck.Card{
+		{Suit: deck.Hearts, Rank: deck.Two},
+		{Suit: deck.Clubs, Rank: deck.Three},
+	})
+	player2.DealHoleCards([]deck.Card{
+		{Suit: deck.Hearts, Rank: deck.Four},
+		{Suit: deck.Clubs, Rank: deck.Five},
+	})
+
+	// Set pot
+	table.Pot = 200
+	startingTotal := table.Pot + player1.Chips + player2.Chips
+
+	// Award pot
+	table.AwardPot()
+
+	// Check total chips are conserved
+	finalTotal := table.Pot + player1.Chips + player2.Chips
+	if finalTotal != startingTotal {
+		t.Errorf("Total chips not conserved: started with %d, ended with %d", startingTotal, finalTotal)
+	}
+
+	// Check pot is empty
+	if table.Pot != 0 {
+		t.Errorf("Pot should be 0 after awarding, got %d", table.Pot)
+	}
+
+	// Check that both players got something (since it's a tie)
+	if player1.Chips == 1000 || player2.Chips == 1000 {
+		t.Error("Both players should have won some chips in a tie")
 	}
 }

@@ -234,7 +234,7 @@ func playHandWithTUI(engine *game.GameEngine, agents map[string]game.Agent, tui 
 			if activePlayers <= 1 {
 				// Hand over, someone won by everyone else folding
 				winner := table.FindWinner()
-				table.AwardPot(winner)
+				table.AwardPot()
 				return &game.HandResult{
 					HandID:       table.HandID,
 					Winner:       winner,
@@ -262,7 +262,7 @@ func playHandWithTUI(engine *game.GameEngine, agents map[string]game.Agent, tui 
 				table.CurrentRound = game.Showdown
 				potBeforeAwarding := table.Pot
 				winner := table.FindWinner()
-				table.AwardPot(winner)
+				table.AwardPot()
 				return &game.HandResult{
 					HandID:       table.HandID,
 					Winner:       winner,
@@ -284,7 +284,7 @@ func playHandWithTUI(engine *game.GameEngine, agents map[string]game.Agent, tui 
 	// Fallback - this shouldn't be reached
 	winner := table.FindWinner()
 	if winner != nil {
-		table.AwardPot(winner)
+		table.AwardPot()
 	}
 	return &game.HandResult{
 		HandID:  table.HandID,
