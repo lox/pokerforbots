@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/lox/holdem-cli/internal/deck"
@@ -62,10 +63,12 @@ func TestEstimateEquity(t *testing.T) {
 			hole := deck.MustParseCards(tt.hole)
 			var board []deck.Card
 			if tt.board != "" {
-				board = deck.MustParseCards(tt.board)
+			board = deck.MustParseCards(tt.board)
 			}
 
-			equity := EstimateEquity(hole, board, tt.opponentRange, 1000)
+			// Use fixed seed for deterministic tests
+		rng := rand.New(rand.NewSource(12345))
+		equity := EstimateEquity(hole, board, tt.opponentRange, 1000, rng)
 
 			if equity < tt.expectedMin || equity > tt.expectedMax {
 				t.Errorf("Equity %.3f outside expected range [%.3f, %.3f]",
@@ -104,7 +107,8 @@ func TestEstimateEquityInvalidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			equity := EstimateEquity(tt.hole, tt.board, RandomRange{}, 100)
+			rng := rand.New(rand.NewSource(12345))
+			equity := EstimateEquity(tt.hole, tt.board, RandomRange{}, 100, rng)
 			if equity != tt.expected {
 				t.Errorf("Expected equity %.3f, got %.3f", tt.expected, equity)
 			}
@@ -117,8 +121,9 @@ func TestRangeComparison(t *testing.T) {
 	hole := deck.MustParseCards("AsAh")
 	board := []deck.Card{} // Pre-flop
 
-	randomEquity := EstimateEquity(hole, board, RandomRange{}, 1000)
-	tightEquity := EstimateEquity(hole, board, TightRange{}, 1000)
+	rng := rand.New(rand.NewSource(12345))
+	randomEquity := EstimateEquity(hole, board, RandomRange{}, 1000, rng)
+	tightEquity := EstimateEquity(hole, board, TightRange{}, 1000, rng)
 
 	// AA should perform worse against tight opponents (who have better hands)
 	if tightEquity >= randomEquity {
@@ -231,8 +236,9 @@ func TestRandomRangeSampleHand(t *testing.T) {
 		{Suit: deck.Clubs, Rank: deck.Jack},
 	}
 
+	rng := rand.New(rand.NewSource(12345))
 	range_ := RandomRange{}
-	hand, ok := range_.SampleHand(availableCards)
+	hand, ok := range_.SampleHand(availableCards, rng)
 
 	if !ok {
 		t.Fatal("Should be able to sample hand from available cards")
@@ -268,8 +274,9 @@ func TestTightRangeSampleHand(t *testing.T) {
 		{Suit: deck.Hearts, Rank: deck.Ten},
 	}
 
+	rng := rand.New(rand.NewSource(12345))
 	range_ := TightRange{}
-	hand, ok := range_.SampleHand(availableCards)
+	hand, ok := range_.SampleHand(availableCards, rng)
 
 	if !ok {
 		t.Fatal("Should be able to sample tight hand")
@@ -291,8 +298,9 @@ func TestTightRangeInsufficientCards(t *testing.T) {
 		{Suit: deck.Spades, Rank: deck.Ace},
 	}
 
+	rng := rand.New(rand.NewSource(12345))
 	range_ := TightRange{}
-	_, ok := range_.SampleHand(availableCards)
+	_, ok := range_.SampleHand(availableCards, rng)
 
 	if ok {
 		t.Error("Should not be able to sample hand with insufficient cards")
@@ -304,8 +312,10 @@ func TestEquityConsistency(t *testing.T) {
 	hole := deck.MustParseCards("AsKs")
 	board := deck.MustParseCards("QsJs")
 
-	equity1 := EstimateEquity(hole, board, RandomRange{}, 5000)
-	equity2 := EstimateEquity(hole, board, RandomRange{}, 5000)
+	rng1 := rand.New(rand.NewSource(12345))
+	rng2 := rand.New(rand.NewSource(12345))
+	equity1 := EstimateEquity(hole, board, RandomRange{}, 5000, rng1)
+	equity2 := EstimateEquity(hole, board, RandomRange{}, 5000, rng2)
 
 	// With 5000 samples, results should be quite consistent
 	variance := abs_float(equity1 - equity2)
@@ -319,15 +329,16 @@ func TestBoardProgression(t *testing.T) {
 	// Test that equity changes logically as board develops
 	hole := deck.MustParseCards("AsKs")
 
-	preflopEquity := EstimateEquity(hole, []deck.Card{}, RandomRange{}, 100)
+	rng := rand.New(rand.NewSource(12345))
+	preflopEquity := EstimateEquity(hole, []deck.Card{}, RandomRange{}, 100, rng)
 
 	// Flop gives us royal flush draw
 	flop := deck.MustParseCards("QsJs2h")
-	flopEquity := EstimateEquity(hole, flop, RandomRange{}, 1000)
+	flopEquity := EstimateEquity(hole, flop, RandomRange{}, 1000, rng)
 
 	// Turn completes the royal flush
 	turn := deck.MustParseCards("QsJs2hTs")
-	turnEquity := EstimateEquity(hole, turn, RandomRange{}, 1000)
+	turnEquity := EstimateEquity(hole, turn, RandomRange{}, 1000, rng)
 
 	// Equity should increase from pre-flop to flop (we picked up draws)
 	if flopEquity <= preflopEquity {

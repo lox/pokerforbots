@@ -1,11 +1,12 @@
 package deck
 
 import (
+	"math/rand"
 	"testing"
 )
 
 func TestNewDeck(t *testing.T) {
-	deck := NewDeck()
+	deck := NewDeck(rand.New(rand.NewSource(42)))
 
 	if deck.CardsRemaining() != 52 {
 		t.Errorf("Expected 52 cards, got %d", deck.CardsRemaining())
@@ -17,7 +18,7 @@ func TestNewDeck(t *testing.T) {
 }
 
 func TestDeckDeal(t *testing.T) {
-	deck := NewDeck()
+	deck := NewDeck(rand.New(rand.NewSource(42)))
 	initialCount := deck.CardsRemaining()
 
 	card, ok := deck.Deal()
@@ -39,7 +40,7 @@ func TestDeckDeal(t *testing.T) {
 }
 
 func TestDeckDealAll(t *testing.T) {
-	deck := NewDeck()
+	deck := NewDeck(rand.New(rand.NewSource(42)))
 
 	// Deal all cards
 	for i := 0; i < 52; i++ {
@@ -61,8 +62,8 @@ func TestDeckDealAll(t *testing.T) {
 }
 
 func TestDeckShuffle(t *testing.T) {
-	deck1 := NewDeck()
-	deck2 := NewDeck()
+	deck1 := NewDeck(rand.New(rand.NewSource(42)))
+	deck2 := NewDeck(rand.New(rand.NewSource(43)))
 
 	// Get first few cards from unshuffled deck
 	cards1 := make([]Card, 5)
@@ -93,7 +94,7 @@ func TestDeckShuffle(t *testing.T) {
 }
 
 func TestDeckReset(t *testing.T) {
-	deck := NewDeck()
+	deck := NewDeck(rand.New(rand.NewSource(42)))
 
 	// Deal some cards
 	for i := 0; i < 10; i++ {
@@ -113,7 +114,7 @@ func TestDeckReset(t *testing.T) {
 }
 
 func TestDeckDealN(t *testing.T) {
-	deck := NewDeck()
+	deck := NewDeck(rand.New(rand.NewSource(42)))
 
 	cards := deck.DealN(5)
 	if len(cards) != 5 {

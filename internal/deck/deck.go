@@ -2,7 +2,6 @@ package deck
 
 import (
 	"math/rand"
-	"time"
 )
 
 // Deck represents a deck of playing cards
@@ -12,10 +11,10 @@ type Deck struct {
 }
 
 // NewDeck creates a new standard 52-card deck
-func NewDeck() *Deck {
+func NewDeck(rng *rand.Rand) *Deck {
 	deck := &Deck{
 		cards: make([]Card, 0, 52),
-		rng:   rand.New(rand.NewSource(time.Now().UnixNano())),
+		rng:   rng,
 	}
 
 	// Create all 52 cards

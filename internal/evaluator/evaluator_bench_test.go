@@ -9,8 +9,8 @@ import (
 )
 
 // Generate7CardHands creates N random 7-card hands using a fixed seed
-func Generate7CardHands(n int, seed int64) [][]deck.Card {
-	rng := rand.New(rand.NewSource(seed))
+func Generate7CardHands(source rand.Source, n int) [][]deck.Card {
+	rng := rand.New(source)
 	hands := make([][]deck.Card, n)
 
 	for i := 0; i < n; i++ {
@@ -71,7 +71,7 @@ func GenerateTortureCases() []struct {
 
 // BenchmarkEvaluate7_RandomHands benchmarks 7-card evaluation with random hands
 func BenchmarkEvaluate7_RandomHands(b *testing.B) {
-	hands := Generate7CardHands(10000, 42) // Fixed seed for repeatability
+	hands := Generate7CardHands(rand.New(rand.NewSource(42)), 10000) // Fixed seed for repeatability
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -108,9 +108,10 @@ func BenchmarkEstimateEquity_PreFlop(b *testing.B) {
 	board := []deck.Card{} // Pre-flop
 	opponentRange := RandomRange{}
 
+	rng := rand.New(rand.NewSource(12345))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = EstimateEquity(hole, board, opponentRange, 1000)
+		_ = EstimateEquity(hole, board, opponentRange, 1000, rng)
 	}
 }
 
@@ -121,9 +122,10 @@ func BenchmarkEstimateEquity_Flop(b *testing.B) {
 	board := deck.MustParseCards("2d7cJh")
 	opponentRange := RandomRange{}
 
+	rng := rand.New(rand.NewSource(12345))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = EstimateEquity(hole, board, opponentRange, 1000)
+		_ = EstimateEquity(hole, board, opponentRange, 1000, rng)
 	}
 }
 
@@ -134,9 +136,10 @@ func BenchmarkEstimateEquity_River(b *testing.B) {
 	board := deck.MustParseCards("2d7cJhKs9c")
 	opponentRange := RandomRange{}
 
+	rng := rand.New(rand.NewSource(12345))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = EstimateEquity(hole, board, opponentRange, 1000)
+		_ = EstimateEquity(hole, board, opponentRange, 1000, rng)
 	}
 }
 
@@ -150,8 +153,9 @@ func BenchmarkEstimateEquity_SampleSizes(b *testing.B) {
 
 	for _, samples := range sampleSizes {
 		b.Run(fmt.Sprintf("samples_%d", samples), func(b *testing.B) {
+			rng := rand.New(rand.NewSource(12345))
 			for i := 0; i < b.N; i++ {
-				_ = EstimateEquity(hole, board, opponentRange, samples)
+				_ = EstimateEquity(hole, board, opponentRange, samples, rng)
 			}
 		})
 	}
@@ -163,8 +167,9 @@ func BenchmarkEstimateEquity_TightRange(b *testing.B) {
 	board := deck.MustParseCards("2d7cJh")
 	opponentRange := TightRange{}
 
+	rng := rand.New(rand.NewSource(12345))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = EstimateEquity(hole, board, opponentRange, 1000)
+		_ = EstimateEquity(hole, board, opponentRange, 1000, rng)
 	}
 }

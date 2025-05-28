@@ -1,26 +1,27 @@
 package evaluator
 
 import (
-	"github.com/lox/holdem-cli/internal/deck"
 	"math/rand"
+
+	"github.com/lox/holdem-cli/internal/deck"
 )
 
 // Range represents a range of possible opponent hands
 type Range interface {
-	SampleHand(availableCards []deck.Card) ([]deck.Card, bool)
+	SampleHand(availableCards []deck.Card, rng *rand.Rand) ([]deck.Card, bool)
 }
 
 // RandomRange represents any random two cards
 type RandomRange struct{}
 
-func (r RandomRange) SampleHand(availableCards []deck.Card) ([]deck.Card, bool) {
+func (r RandomRange) SampleHand(availableCards []deck.Card, rng *rand.Rand) ([]deck.Card, bool) {
 	if len(availableCards) < 2 {
 		return nil, false
 	}
 
 	// Pick 2 random cards without creating full permutation
-	idx1 := rand.Intn(len(availableCards))
-	idx2 := rand.Intn(len(availableCards) - 1)
+	idx1 := rng.Intn(len(availableCards))
+	idx2 := rng.Intn(len(availableCards) - 1)
 	if idx2 >= idx1 {
 		idx2++
 	}
@@ -31,7 +32,7 @@ func (r RandomRange) SampleHand(availableCards []deck.Card) ([]deck.Card, bool) 
 // TightRange represents a tight opponent (good hands only)
 type TightRange struct{}
 
-func (r TightRange) SampleHand(availableCards []deck.Card) ([]deck.Card, bool) {
+func (r TightRange) SampleHand(availableCards []deck.Card, rng *rand.Rand) ([]deck.Card, bool) {
 	if len(availableCards) < 2 {
 		return nil, false
 	}
@@ -39,8 +40,8 @@ func (r TightRange) SampleHand(availableCards []deck.Card) ([]deck.Card, bool) {
 	attempts := 0
 	for attempts < 100 {
 		// Pick 2 random cards without creating full permutation
-		idx1 := rand.Intn(len(availableCards))
-		idx2 := rand.Intn(len(availableCards) - 1)
+		idx1 := rng.Intn(len(availableCards))
+		idx2 := rng.Intn(len(availableCards) - 1)
 		if idx2 >= idx1 {
 			idx2++
 		}
@@ -54,15 +55,15 @@ func (r TightRange) SampleHand(availableCards []deck.Card) ([]deck.Card, bool) {
 	}
 
 	// Fallback to random if we can't find a tight hand
-	return RandomRange{}.SampleHand(availableCards)
+	return RandomRange{}.SampleHand(availableCards, rng)
 }
 
 // LooseRange represents a loose opponent (wider range)
 type LooseRange struct{}
 
-func (r LooseRange) SampleHand(availableCards []deck.Card) ([]deck.Card, bool) {
+func (r LooseRange) SampleHand(availableCards []deck.Card, rng *rand.Rand) ([]deck.Card, bool) {
 	// For now, same as random - could be more sophisticated
-	return RandomRange{}.SampleHand(availableCards)
+	return RandomRange{}.SampleHand(availableCards, rng)
 }
 
 func isTightHand(hand []deck.Card) bool {
@@ -107,7 +108,7 @@ func abs(x int) int {
 }
 
 // EstimateEquity calculates win percentage using Monte Carlo simulation
-func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, numSamples int) float64 {
+func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, numSamples int, rng *rand.Rand) float64 {
 	if len(hole) != 2 {
 		return 0.0
 	}
@@ -145,7 +146,7 @@ func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, nu
 
 	for i := 0; i < numSamples; i++ {
 		// Sample opponent hand directly from available cards
-		oppHole, ok := opponentRange.SampleHand(availableCards)
+		oppHole, ok := opponentRange.SampleHand(availableCards, rng)
 		if !ok {
 			continue
 		}
@@ -177,7 +178,7 @@ func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, nu
 
 		// Randomly sample from candidates
 		for filled < boardNeeded && filled < len(boardCandidates) {
-			idx := rand.Intn(len(boardCandidates) - filled)
+			idx := rng.Intn(len(boardCandidates) - filled)
 			finalBoard[len(board)+filled] = boardCandidates[idx]
 			// Swap used card to end to avoid reselection
 			boardCandidates[idx], boardCandidates[len(boardCandidates)-1-filled] =
@@ -223,10 +224,10 @@ func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, nu
 }
 
 // EvaluateHandStrength converts equity to a score for AI decision making
-func EvaluateHandStrength(hole []deck.Card, board []deck.Card) int {
+func EvaluateHandStrength(hole []deck.Card, board []deck.Card, rng *rand.Rand) int {
 	if len(hole) == 2 && len(board) >= 0 && len(board) <= 5 {
 		// Calculate equity against random opponent
-		equity := EstimateEquity(hole, board, RandomRange{}, 1000)
+		equity := EstimateEquity(hole, board, RandomRange{}, 1000, rng)
 
 		// Convert equity to a score where lower = better
 		// 100% equity = score 1,000,000 (very strong)
