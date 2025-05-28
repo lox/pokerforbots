@@ -16,23 +16,39 @@ import (
 type Bot struct {
 	rng    *rand.Rand
 	logger *log.Logger
+	config BotConfig
 }
 
-// NewBot creates a new bot
+// NewBot creates a new bot with default configuration and time-based RNG
 func NewBot(logger *log.Logger) *Bot {
+	return NewBotWithConfig(logger, DefaultBotConfig())
+}
+
+// NewBotWithConfig creates a new bot with the specified configuration and time-based RNG
+func NewBotWithConfig(logger *log.Logger, config BotConfig) *Bot {
 	return &Bot{
 		rng:    rand.New(rand.NewSource(time.Now().UnixNano())),
-		logger: logger.WithPrefix("bot"),
+		logger: logger.WithPrefix("bot").With("botType", config.Name),
+		config: config,
+	}
+}
+
+// NewBotWithRNG creates a new bot with controlled RNG for deterministic testing
+func NewBotWithRNG(logger *log.Logger, config BotConfig, rng *rand.Rand) *Bot {
+	return &Bot{
+		rng:    rng,
+		logger: logger.WithPrefix("bot").With("botType", config.Name),
+		config: config,
 	}
 }
 
 // MakeDecision analyzes the game state and returns a decision with reasoning
-func (b *Bot) MakeDecision(player *game.Player, table *game.Table) game.BotDecision {
+func (b *Bot) MakeDecision(player *game.Player, table *game.Table) game.Decision {
 	// Create thinking context to accumulate thoughts
 	thinking := &ThinkingContext{}
 
 	// Evaluate hand strength with thinking
-	strength := b.evaluateHandStrengthWithThinking(player, table, thinking)
+	equityCtx := b.evaluateHandStrengthWithThinking(player, table, thinking)
 
 	// Get position factor with thinking
 	positionFactor := b.getPositionFactorWithThinking(player.Position, thinking)
@@ -50,7 +66,8 @@ func (b *Bot) MakeDecision(player *game.Player, table *game.Table) game.BotDecis
 		"player", player.Name,
 		"round", table.CurrentRound.String(),
 		"holeCards", holeCardsStr,
-		"handStrength", strength.String(),
+		"handStrength", equityCtx.Strength.String(),
+		"equity", equityCtx.Equity,
 		"position", player.Position.String(),
 		"positionFactor", positionFactor,
 		"currentBet", table.CurrentBet,
@@ -60,12 +77,12 @@ func (b *Bot) MakeDecision(player *game.Player, table *game.Table) game.BotDecis
 		"potOdds", potOdds)
 
 	// Make decision based on hand strength, position, and pot odds with thinking
-	action := b.makeDecisionBasedOnFactorsWithThinking(player, table, strength, positionFactor, potOdds, thinking)
+	action := b.makeDecisionBasedOnFactorsWithThinking(player, table, equityCtx, positionFactor, potOdds, thinking)
 
 	// Calculate bet amount if raising
 	var amount int
 	if action == game.Raise {
-		amount = b.calculateRaiseAmount(player, table, strength)
+		amount = b.calculateRaiseAmount(player, table, equityCtx.Strength)
 	}
 
 	reasoning := thinking.GetThoughts()
@@ -76,7 +93,7 @@ func (b *Bot) MakeDecision(player *game.Player, table *game.Table) game.BotDecis
 		"amount", amount,
 		"reasoning", reasoning)
 
-	return game.BotDecision{
+	return game.Decision{
 		Action:    action,
 		Amount:    amount,
 		Reasoning: reasoning,
@@ -149,6 +166,104 @@ const (
 	VeryStrong
 )
 
+// EquityContext contains both hand strength category and raw equity value
+type EquityContext struct {
+	Strength HandStrength
+	Equity   float64
+}
+
+// BotConfig contains configuration flags for different bot strategies
+type BotConfig struct {
+	Name              string  // Bot identifier for logging/stats
+	AggressionFactor  float64 // 0.5-2.0, multiplier for raise probabilities
+	TightnessFactor   float64 // 0.5-2.0, multiplier for fold thresholds
+	BluffFrequency    float64 // 0.0-1.0, how often to semi-bluff with draws
+	CBetFrequency     float64 // 0.0-1.0, continuation bet frequency
+	EquityThreshold   float64 // Minimum equity edge needed for aggressive plays
+	OpponentModel     string  // "random", "tight", "loose" for equity calculations
+	PositionAwareness float64 // 0.0-2.0, how much position affects decisions
+	PotOddsWeight     float64 // 0.0-2.0, how heavily to weight pot odds
+}
+
+// DefaultBotConfig returns a balanced configuration similar to current bot behavior
+func DefaultBotConfig() BotConfig {
+	return BotConfig{
+		Name:              "Default",
+		AggressionFactor:  1.0,
+		TightnessFactor:   1.0,
+		BluffFrequency:    0.3,
+		CBetFrequency:     0.6,
+		EquityThreshold:   0.05,
+		OpponentModel:     "random",
+		PositionAwareness: 1.0,
+		PotOddsWeight:     1.0,
+	}
+}
+
+// Preset bot configurations for testing
+var (
+	TightBotConfig = BotConfig{
+		Name:              "Tight",
+		AggressionFactor:  0.7,
+		TightnessFactor:   1.5,
+		BluffFrequency:    0.1,
+		CBetFrequency:     0.4,
+		EquityThreshold:   0.10,
+		OpponentModel:     "random",
+		PositionAwareness: 0.8,
+		PotOddsWeight:     1.2,
+	}
+
+	LooseBotConfig = BotConfig{
+		Name:              "Loose",
+		AggressionFactor:  1.3,
+		TightnessFactor:   0.7,
+		BluffFrequency:    0.5,
+		CBetFrequency:     0.8,
+		EquityThreshold:   0.0,
+		OpponentModel:     "loose",
+		PositionAwareness: 1.2,
+		PotOddsWeight:     0.8,
+	}
+
+	AggressiveBotConfig = BotConfig{
+		Name:              "Aggressive",
+		AggressionFactor:  1.8,
+		TightnessFactor:   0.8,
+		BluffFrequency:    0.7,
+		CBetFrequency:     0.9,
+		EquityThreshold:   0.0,
+		OpponentModel:     "tight",
+		PositionAwareness: 1.5,
+		PotOddsWeight:     0.6,
+	}
+
+	NitBotConfig = BotConfig{
+		Name:              "Nit",
+		AggressionFactor:  0.5,
+		TightnessFactor:   2.0,
+		BluffFrequency:    0.05,
+		CBetFrequency:     0.3,
+		EquityThreshold:   0.15,
+		OpponentModel:     "random",
+		PositionAwareness: 0.6,
+		PotOddsWeight:     1.5,
+	}
+
+	// ExploitBotConfig designed to exploit extremely passive opponents (like fold-bots)
+	ExploitBotConfig = BotConfig{
+		Name:              "Exploit",
+		AggressionFactor:  3.0,  // Maximum aggression
+		TightnessFactor:   0.3,  // Very loose - bet with any hand
+		BluffFrequency:    1.0,  // Always bluff when possible
+		CBetFrequency:     1.0,  // Always continuation bet
+		EquityThreshold:   0.0,  // No equity requirement for aggression
+		OpponentModel:     "tight", // Assume opponents fold a lot
+		PositionAwareness: 0.5,  // Position less important vs folders
+		PotOddsWeight:     0.1,  // Ignore pot odds vs folders
+	}
+)
+
 // BoardTexture represents how coordinated the board is
 type BoardTexture int
 
@@ -196,22 +311,21 @@ func (tc *ThinkingContext) GetThoughts() string {
 }
 
 // evaluateHandStrengthWithThinking evaluates hand strength while building thoughts
-func (b *Bot) evaluateHandStrengthWithThinking(player *game.Player, table *game.Table, thinking *ThinkingContext) HandStrength {
+func (b *Bot) evaluateHandStrengthWithThinking(player *game.Player, table *game.Table, thinking *ThinkingContext) EquityContext {
 	if len(player.HoleCards) != 2 {
 		thinking.AddThought("Missing hole cards, assuming very weak")
-		return VeryWeak
+		return EquityContext{Strength: VeryWeak, Equity: 0.1}
 	}
 
-	// Add initial hand description
-	handPercentile := deck.GetHandPercentile(player.HoleCards)
-	handKey := b.getHandKey(player.HoleCards)
-	thinking.AddThought(fmt.Sprintf("I have %s (top %.0f%% hand)", handKey, handPercentile*100))
-
-	// Pre-flop hand strength evaluation
+	// Pre-flop hand strength evaluation using equity
 	if table.CurrentRound == game.PreFlop {
-		strength := b.evaluatePreFlopStrength(player.HoleCards)
+		// Calculate equity against random opponent for pre-flop evaluation
+		equity := evaluator.EstimateEquity(player.HoleCards, []deck.Card{}, evaluator.RandomRange{}, 1000, b.rng)
+		thinking.AddThought(fmt.Sprintf("Pre-flop equity vs random: %.1f%%", equity*100))
+
+		strength := b.equityToHandStrength(equity)
 		thinking.AddThought(fmt.Sprintf("Preflop strength: %s", strength.String()))
-		return strength
+		return EquityContext{Strength: strength, Equity: equity}
 	}
 
 	// Post-flop evaluation with community cards
@@ -220,57 +334,57 @@ func (b *Bot) evaluateHandStrengthWithThinking(player *game.Player, table *game.
 		boardStr := b.getBoardDescription(table.CommunityCards)
 		thinking.AddThought(fmt.Sprintf("Board: %s", boardStr))
 
-		strength := b.evaluatePostFlopStrengthWithThinking(player, table.CommunityCards, thinking)
-		return strength
+		equityCtx := b.evaluatePostFlopStrengthWithThinking(player, table.CommunityCards, thinking)
+		return equityCtx
 	}
 
 	thinking.AddThought("Not enough information, assuming medium strength")
-	return Medium
-}
-
-// evaluatePreFlopStrength evaluates pre-flop hand strength using percentile rankings
-func (b *Bot) evaluatePreFlopStrength(holeCards []deck.Card) HandStrength {
-	percentile := deck.GetHandPercentile(holeCards)
-
-	// Convert percentile rank to hand strength categories
-	switch {
-	case percentile >= 0.85: // Top 15% (premium hands)
-		return VeryStrong
-	case percentile >= 0.65: // Top 35% (strong hands)
-		return Strong
-	case percentile >= 0.40: // Top 60% (playable hands)
-		return Medium
-	case percentile >= 0.20: // Top 80% (marginal hands)
-		return Weak
-	default: // Bottom 20% (trash hands)
-		return VeryWeak
-	}
+	return EquityContext{Strength: Medium, Equity: 0.5}
 }
 
 // evaluatePostFlopStrengthWithThinking evaluates post-flop hand strength with thinking
-func (b *Bot) evaluatePostFlopStrengthWithThinking(player *game.Player, communityCards []deck.Card, thinking *ThinkingContext) HandStrength {
+func (b *Bot) evaluatePostFlopStrengthWithThinking(player *game.Player, communityCards []deck.Card, thinking *ThinkingContext) EquityContext {
 	// Determine if we're in position (simplified: Button or Cutoff = in position)
 	inPosition := player.Position == game.Button || player.Position == game.Cutoff
 
-	// Choose opponent range based on position
+	// Choose opponent range based on config and position
 	var opponentRange evaluator.Range
-	if inPosition {
+	switch b.config.OpponentModel {
+	case "tight":
 		opponentRange = evaluator.TightRange{}
-		thinking.AddThought("In position - opponents likely tighter")
-	} else {
+		thinking.AddThought("Using tight opponent model")
+	case "loose":
 		opponentRange = evaluator.LooseRange{}
-		thinking.AddThought("Out of position - opponents can be looser")
+		thinking.AddThought("Using loose opponent model")
+	default: // "random"
+		opponentRange = evaluator.RandomRange{}
+		thinking.AddThought("Using random opponent model")
+	}
+
+	// Adjust based on position if position awareness is enabled
+	if b.config.PositionAwareness > 0.5 {
+		if inPosition {
+			thinking.AddThought("In position - adjusting opponent model tighter")
+			switch b.config.OpponentModel {
+			case "loose":
+				opponentRange = evaluator.RandomRange{}
+			case "random":
+				opponentRange = evaluator.TightRange{}
+			}
+		} else {
+			thinking.AddThought("Out of position - opponents can be looser")
+		}
 	}
 
 	// Calculate equity
-	equity := evaluator.EstimateEquity(player.HoleCards, communityCards, opponentRange, 500)
+	equity := evaluator.EstimateEquity(player.HoleCards, communityCards, opponentRange, 500, b.rng)
 	thinking.AddThought(fmt.Sprintf("Equity: %.1f%%", equity*100))
 
 	// Convert equity to hand strength
 	strength := b.equityToHandStrength(equity)
 	thinking.AddThought(fmt.Sprintf("Hand strength: %s", strength.String()))
 
-	return strength
+	return EquityContext{Strength: strength, Equity: equity}
 }
 
 // equityToHandStrength maps equity percentage to hand strength categories
@@ -287,37 +401,6 @@ func (b *Bot) equityToHandStrength(equity float64) HandStrength {
 	default:
 		return VeryWeak
 	}
-}
-
-// getHandKey returns a readable description of hole cards
-func (b *Bot) getHandKey(holeCards []deck.Card) string {
-	if len(holeCards) != 2 {
-		return "unknown"
-	}
-
-	card1, card2 := holeCards[0], holeCards[1]
-	rank1, rank2 := card1.Rank, card2.Rank
-
-	// Ensure higher rank comes first
-	if rank2 > rank1 {
-		rank1, rank2 = rank2, rank1
-	}
-
-	rankStr1 := deck.RankString(rank1)
-	rankStr2 := deck.RankString(rank2)
-
-	// Handle pairs
-	if rank1 == rank2 {
-		return rankStr1 + rankStr2
-	}
-
-	// Determine if suited
-	suitChar := "o"
-	if card1.Suit == card2.Suit {
-		suitChar = "s"
-	}
-
-	return rankStr1 + rankStr2 + suitChar
 }
 
 // getBoardDescription returns a readable description of the board
@@ -557,7 +640,16 @@ func (b *Bot) analyzeBoardTexture(communityCards []deck.Card) BoardTexture {
 
 // getPositionFactorWithThinking returns position factor with thinking
 func (b *Bot) getPositionFactorWithThinking(position game.Position, thinking *ThinkingContext) float64 {
-	factor := b.getPositionFactor(position)
+	baseFactor := b.getPositionFactor(position)
+
+	// Apply position awareness configuration
+	adjustedFactor := 1.0 + (baseFactor-1.0)*b.config.PositionAwareness
+
+	if b.config.PositionAwareness < 0.5 {
+		thinking.AddThought("Low position awareness - similar play all positions")
+	} else if b.config.PositionAwareness > 1.5 {
+		thinking.AddThought("High position awareness - extreme positional adjustments")
+	}
 
 	switch position {
 	case game.SmallBlind, game.BigBlind:
@@ -574,7 +666,7 @@ func (b *Bot) getPositionFactorWithThinking(position game.Position, thinking *Th
 		thinking.AddThought("Standard position")
 	}
 
-	return factor
+	return adjustedFactor
 }
 
 // getPositionFactor returns a factor based on position (lower = tighter play)
@@ -620,9 +712,9 @@ func (b *Bot) calculatePotOddsWithThinking(player *game.Player, table *game.Tabl
 }
 
 // makeDecisionBasedOnFactorsWithThinking makes the final decision with thinking
-func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player *game.Player, table *game.Table, strength HandStrength, positionFactor, potOdds float64, thinking *ThinkingContext) game.Action {
+func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player *game.Player, table *game.Table, equityCtx EquityContext, positionFactor, potOdds float64, thinking *ThinkingContext) game.Action {
 	// Check for continuation betting opportunity
-	shouldCBet := b.shouldContinuationBet(player, table, strength, positionFactor)
+	shouldCBet := b.shouldContinuationBet(player, table, equityCtx.Strength, positionFactor)
 	if shouldCBet && table.CurrentBet == 0 {
 		thinking.AddThought("Good spot to continuation bet")
 	}
@@ -630,7 +722,7 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player *game.Player, table 
 	// Base probabilities for each action based on hand strength
 	var foldProb, callProb, raiseProb float64
 
-	switch strength {
+	switch equityCtx.Strength {
 	case VeryWeak:
 		foldProb, callProb, raiseProb = 0.85, 0.15, 0.0
 		thinking.AddThought("Very weak hand, likely folding")
@@ -646,6 +738,24 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player *game.Player, table 
 	case VeryStrong:
 		foldProb, callProb, raiseProb = 0.0, 0.20, 0.80
 		thinking.AddThought("Premium hand, aggressive value betting")
+	}
+
+	// Apply aggression factor - increases raise probability, decreases call probability
+	if b.config.AggressionFactor != 1.0 {
+		thinking.AddThought(fmt.Sprintf("Applying aggression factor %.1f", b.config.AggressionFactor))
+		aggressionBoost := (b.config.AggressionFactor - 1.0) * 0.3
+		raiseProb += aggressionBoost
+		callProb -= aggressionBoost * 0.6
+		foldProb -= aggressionBoost * 0.4
+	}
+
+	// Apply tightness factor - increases fold probability
+	if b.config.TightnessFactor != 1.0 {
+		thinking.AddThought(fmt.Sprintf("Applying tightness factor %.1f", b.config.TightnessFactor))
+		tightnessBoost := (b.config.TightnessFactor - 1.0) * 0.25
+		foldProb += tightnessBoost
+		callProb -= tightnessBoost * 0.7
+		raiseProb -= tightnessBoost * 0.3
 	}
 
 	// Adjust for position
@@ -664,26 +774,62 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player *game.Player, table 
 	// Enhanced position-based adjustments for draws and aggression
 	if table.CurrentRound > game.PreFlop && positionFactor > 1.0 {
 		drawStrength := b.evaluateDraws(player.HoleCards, table.CommunityCards)
-		if drawStrength >= 2 && strength == VeryWeak {
-			thinking.AddThought("Strong draws make semi-bluffing viable in position")
-			raiseProb += 0.2
-			callProb += 0.1
-			foldProb -= 0.3
+		if drawStrength >= 2 && equityCtx.Strength == VeryWeak {
+			// Apply bluff frequency configuration
+			bluffChance := b.config.BluffFrequency
+			if b.rng.Float64() < bluffChance {
+				thinking.AddThought(fmt.Sprintf("Strong draws make semi-bluffing viable (%.0f%% frequency)", bluffChance*100))
+				raiseProb += 0.2 * bluffChance
+				callProb += 0.1
+				foldProb -= 0.3 * bluffChance
+			} else {
+				thinking.AddThought("Strong draws but low bluff frequency - more passive")
+			}
+		}
+	}
+
+	// Use raw equity for precise pot odds comparison
+	if potOdds > 0 && table.CurrentBet > player.BetThisRound {
+		// Calculate required equity for profitable call
+		requiredEquity := 1.0 / (1.0 + potOdds)
+		equityDiff := equityCtx.Equity - requiredEquity
+
+		// Apply pot odds weight configuration
+		potOddsInfluence := b.config.PotOddsWeight * 0.25
+
+		if equityDiff > b.config.EquityThreshold { // Equity significantly exceeds pot odds
+			thinking.AddThought(fmt.Sprintf("Equity (%.1f%%) exceeds pot odds (%.1f%%) - profitable call (weight %.1f)",
+				equityCtx.Equity*100, requiredEquity*100, b.config.PotOddsWeight))
+			callProb += potOddsInfluence
+			foldProb -= potOddsInfluence * 0.8
+			raiseProb += potOddsInfluence * 0.2
+		} else if equityDiff > 0 { // Marginal equity advantage
+			thinking.AddThought(fmt.Sprintf("Marginal equity edge (%.1f%% vs %.1f%% required)",
+				equityCtx.Equity*100, requiredEquity*100))
+			callProb += potOddsInfluence * 0.6
+			foldProb -= potOddsInfluence * 0.6
+		} else if equityDiff < -0.10 { // Significant equity disadvantage
+			thinking.AddThought(fmt.Sprintf("Poor equity (%.1f%% vs %.1f%% required) - favoring fold",
+				equityCtx.Equity*100, requiredEquity*100))
+			foldProb += potOddsInfluence * 0.8
+			callProb -= potOddsInfluence * 0.6
+			raiseProb -= potOddsInfluence * 0.2
 		}
 	}
 
 	// Continuation betting logic
 	if shouldCBet && table.CurrentBet == 0 {
-		thinking.AddThought("Increasing aggression for c-bet")
-		raiseProb += 0.3
-		callProb -= 0.15
-		foldProb -= 0.15
+		cBetBoost := b.config.CBetFrequency * 0.4
+		thinking.AddThought(fmt.Sprintf("C-bet opportunity (%.0f%% frequency)", b.config.CBetFrequency*100))
+		raiseProb += cBetBoost
+		callProb -= cBetBoost * 0.5
+		foldProb -= cBetBoost * 0.5
 	}
 
-	// Adjust for pot odds
-	if potOdds > 2.0 && strength >= Weak {
+	// Legacy pot odds adjustment (now supplemented by precise equity calculation above)
+	if potOdds > 2.0 && equityCtx.Strength >= Weak {
 		thinking.AddThought("Good pot odds make calling more attractive")
-		potOddsBonus := (potOdds - 2.0) * 0.15
+		potOddsBonus := (potOdds - 2.0) * 0.1 // Reduced since we have precise equity calc
 		callProb += potOddsBonus
 		foldProb -= potOddsBonus * 0.8
 		raiseProb += potOddsBonus * 0.2
@@ -716,7 +862,7 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player *game.Player, table 
 	// If can't afford to call, must fold or go all-in
 	callAmount := table.CurrentBet - player.BetThisRound
 	if callAmount >= player.Chips {
-		if strength >= Strong && b.rng.Float64() < 0.3 {
+		if equityCtx.Strength >= Strong && b.rng.Float64() < 0.3 {
 			thinking.AddThought("Strong hand, going all-in")
 			return game.AllIn
 		}
@@ -756,16 +902,17 @@ func (b *Bot) shouldContinuationBet(_ *game.Player, table *game.Table, strength 
 		// Analyze board texture
 		boardTexture := b.analyzeBoardTexture(table.CommunityCards)
 
-		// More likely to c-bet on dry boards
+		// More likely to c-bet on dry boards, scaled by configuration
+		baseCBetFreq := b.config.CBetFrequency
 		switch boardTexture {
 		case DryBoard:
-			return b.rng.Float64() < 0.7 // High c-bet frequency on dry boards
+			return b.rng.Float64() < baseCBetFreq*1.2 // High c-bet frequency on dry boards
 		case SemiWetBoard:
-			return b.rng.Float64() < 0.5 // Medium frequency
+			return b.rng.Float64() < baseCBetFreq // Base frequency
 		case WetBoard:
-			return b.rng.Float64() < 0.3 // Lower frequency on wet boards
+			return b.rng.Float64() < baseCBetFreq*0.6 // Lower frequency on wet boards
 		case VeryWetBoard:
-			return b.rng.Float64() < 0.2 // Very low frequency
+			return b.rng.Float64() < baseCBetFreq*0.3 // Very low frequency
 		}
 	}
 

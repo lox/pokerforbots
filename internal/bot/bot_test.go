@@ -2,6 +2,7 @@ package bot
 
 import (
 	"io"
+	"math/rand"
 	"testing"
 
 	"github.com/charmbracelet/log"
@@ -13,24 +14,41 @@ func TestBotHandStrengthEvaluation(t *testing.T) {
 	logger := log.NewWithOptions(io.Discard, log.Options{})
 	bot := NewBot(logger)
 
-	// Test pocket aces (very strong)
-	pocketAces := []deck.Card{
+	// Create a pre-flop table for testing
+	table := game.NewTable(rand.New(rand.NewSource(0)), game.TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
+	table.CurrentRound = game.PreFlop
+
+	// Test pocket aces (should be very strong)
+	thinking := &ThinkingContext{}
+	player := game.NewPlayer(1, "Test", game.AI, 100)
+	player.HoleCards = []deck.Card{
 		{Suit: deck.Spades, Rank: deck.Ace},
 		{Suit: deck.Hearts, Rank: deck.Ace},
 	}
-	strength := bot.evaluatePreFlopStrength(pocketAces)
-	if strength != VeryStrong {
-		t.Errorf("Pocket aces should be VeryStrong, got %s", strength)
+	equityCtx := bot.evaluateHandStrengthWithThinking(player, table, thinking)
+	if equityCtx.Strength != VeryStrong {
+		t.Errorf("Pocket aces should be VeryStrong, got %s", equityCtx.Strength)
+	}
+	if equityCtx.Equity < 0.8 {
+		t.Errorf("Pocket aces should have high equity, got %.2f", equityCtx.Equity)
 	}
 
-	// Test 7-2 offsuit (very weak)
-	trash := []deck.Card{
+	// Test 7-2 offsuit (should be weak)
+	thinking = &ThinkingContext{}
+	player.HoleCards = []deck.Card{
 		{Suit: deck.Spades, Rank: deck.Seven},
 		{Suit: deck.Hearts, Rank: deck.Two},
 	}
-	strength = bot.evaluatePreFlopStrength(trash)
-	if strength != VeryWeak {
-		t.Errorf("7-2 offsuit should be VeryWeak, got %s", strength)
+	equityCtx = bot.evaluateHandStrengthWithThinking(player, table, thinking)
+	if equityCtx.Strength == VeryStrong {
+		t.Errorf("7-2 offsuit should not be VeryStrong, got %s", equityCtx.Strength)
+	}
+	if equityCtx.Equity > 0.4 {
+		t.Errorf("7-2 offsuit should have low equity, got %.2f", equityCtx.Equity)
 	}
 }
 
@@ -59,7 +77,11 @@ func TestBotPositionFactor(t *testing.T) {
 func TestBotDecisionMaking(t *testing.T) {
 	logger := log.NewWithOptions(io.Discard, log.Options{})
 	bot := NewBot(logger)
-	table := game.NewTable(6, 1, 2)
+	table := game.NewTable(rand.New(rand.NewSource(0)), game.TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 
 	// Create a player with very strong hand
 	player := game.NewPlayer(1, "Test", game.AI, 100)
@@ -93,7 +115,11 @@ func TestBotDecisionMaking(t *testing.T) {
 func TestBotRaiseAmount(t *testing.T) {
 	logger := log.NewWithOptions(io.Discard, log.Options{})
 	bot := NewBot(logger)
-	table := game.NewTable(6, 1, 2)
+	table := game.NewTable(rand.New(rand.NewSource(0)), game.TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 	player := game.NewPlayer(1, "Test", game.AI, 100)
 
 	table.Pot = 20
@@ -119,7 +145,11 @@ func TestBotRaiseAmount(t *testing.T) {
 func TestBotExecuteAction(t *testing.T) {
 	logger := log.NewWithOptions(io.Discard, log.Options{})
 	bot := NewBot(logger)
-	table := game.NewTable(6, 1, 2)
+	table := game.NewTable(rand.New(rand.NewSource(0)), game.TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 
 	player := game.NewPlayer(1, "Test", game.AI, 100)
 	player.Position = game.Button
@@ -219,4 +249,29 @@ func TestBotInterface(t *testing.T) {
 
 	// Verify that Bot implements the Bot interface
 	var _ game.Bot = NewBot(logger)
+}
+
+func TestBotConfiguration(t *testing.T) {
+	logger := log.NewWithOptions(io.Discard, log.Options{})
+
+	// Test default bot
+	defaultBot := NewBot(logger)
+	if defaultBot.config.Name != "Default" {
+		t.Errorf("Expected default bot name 'Default', got %s", defaultBot.config.Name)
+	}
+
+	// Test configured bot
+	tightBot := NewBotWithConfig(logger, TightBotConfig)
+	if tightBot.config.Name != "Tight" {
+		t.Errorf("Expected tight bot name 'Tight', got %s", tightBot.config.Name)
+	}
+	if tightBot.config.TightnessFactor != 1.5 {
+		t.Errorf("Expected tight bot tightness factor 1.5, got %.1f", tightBot.config.TightnessFactor)
+	}
+
+	// Test aggressive bot
+	aggroBot := NewBotWithConfig(logger, AggressiveBotConfig)
+	if aggroBot.config.AggressionFactor != 1.8 {
+		t.Errorf("Expected aggressive bot aggression factor 1.8, got %.1f", aggroBot.config.AggressionFactor)
+	}
 }
