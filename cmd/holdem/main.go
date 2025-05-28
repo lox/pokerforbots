@@ -2,22 +2,25 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/charmbracelet/log"
 
 	"github.com/lox/holdem-cli/internal/bot"
-	"github.com/lox/holdem-cli/internal/display"
 	"github.com/lox/holdem-cli/internal/game"
+	"github.com/lox/holdem-cli/internal/tui"
 )
 
 type CLI struct {
 	Players  int    `short:"p" help:"Number of players at the table (6 or 9)" default:"6"`
 	LogLevel string `help:"Set the log-level" enum:"debug,info,warn,error" default:"info"`
 	LogFile  string `help:"The logfile to write logs to" default:"holdem.log"`
+	Seed     *int64 `help:"The seed for the random number generator"`
 }
 
 func main() {
@@ -40,8 +43,13 @@ func main() {
 		log.Fatal("Invalid number of players. Must be 6 or 9.")
 	}
 
+	randSource := rand.NewSource(time.Now().UnixNano())
+	if cli.Seed != nil {
+		randSource = rand.NewSource(*cli.Seed)
+	}
+
 	// Start interactive game
-	err = startInteractiveGame(cli.Players, logger)
+	err = startInteractiveGame(rand.New(randSource), cli.Players, logger)
 	if err != nil {
 		log.Fatal("Failed to start game", "error", err)
 	}
@@ -74,9 +82,14 @@ func createLogger(logFile string, level string) (*log.Logger, func() error, erro
 	return logger, debugFile.Close, nil
 }
 
-func startInteractiveGame(seats int, logger *log.Logger) error {
+func startInteractiveGame(rng *rand.Rand, seats int, logger *log.Logger) error {
 	// Create table
-	table := game.NewTable(seats, 1, 2)
+	table := game.NewTable(rng, game.TableConfig{
+		MaxSeats:   seats,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
+	agents := make(map[string]game.Agent)
 
 	// Add human player
 	human := game.NewPlayer(1, "You", game.Human, 200)
@@ -86,10 +99,12 @@ func startInteractiveGame(seats int, logger *log.Logger) error {
 	for i := 2; i <= seats; i++ {
 		aiPlayer := game.NewPlayer(i, fmt.Sprintf("AI-%d", i), game.AI, 200)
 		table.AddPlayer(aiPlayer)
+		// Create AI agents
+		agents[aiPlayer.Name] = bot.NewBot(logger)
 	}
 
-	// Create human interface and AI engine
-	hi, err := display.NewTUIInterface(table, logger)
+	// Create human interface
+	hi, err := tui.NewTUIAgent(table, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create interface: %w", err)
 	}
@@ -115,114 +130,165 @@ func startInteractiveGame(seats int, logger *log.Logger) error {
 		}
 	}()
 
-	bot := bot.NewBot(logger)
+	// Use TUI interface directly as the human agent
+	agents["You"] = hi
 
-	// Start first hand
-	table.StartNewHand()
+	// Create game engine
+	defaultAgent := bot.NewBot(logger)
+	engine := game.NewGameEngine(table, defaultAgent, logger)
 
-	// Initialize TUI with game state
-	hi.InitializeHand(seats)
-
-	// Main game loop
+	// Main game loop - much simpler!
 	for {
 		logger.Info("Starting new hand")
 
-		// Hand loop
-		for {
-			currentPlayer := table.GetCurrentPlayer()
-			if currentPlayer == nil {
-				break
-			}
+		// Start a new hand first
+		engine.StartNewHand()
 
-			if currentPlayer.Type == game.Human {
-				logger.Info("Prompting human player for action")
-				shouldContinue, err := hi.PromptForAction()
-				logger.Info("Received human action result", "continue", shouldContinue, "error", err)
-				if err != nil {
-					logger.Error("Error from PromptForAction", "error", err)
-					return err
-				}
-				if !shouldContinue {
-					logger.Info("Player quit, exiting game")
-					return nil // Player quit
-				}
+		// Initialize TUI after hand is started (cards dealt, blinds posted)
+		hi.InitializeHand(len(table.ActivePlayers))
 
-				// Advance to next player after human acts
-				logger.Info("Advancing to next player")
-				table.AdvanceAction()
-			} else {
-				// AI player takes action
-				reasoning := bot.ExecuteAction(currentPlayer, table)
-				hi.ShowPlayerActionWithThinking(currentPlayer, reasoning)
-				table.AdvanceAction()
-			}
+		// Use the unified game engine with TUI integration
+		handResult := playHandWithTUI(engine, agents, hi)
 
-			// Check if betting round is complete
-			if table.IsBettingRoundComplete() {
-				hi.ShowBettingRoundComplete()
-
-				activePlayers := len(table.GetActivePlayers())
-				if activePlayers <= 1 {
-					// Hand over, someone won by everyone else folding
-					winner := table.FindWinner()
-					hi.ShowCompleteShowdown()
-					hi.ShowHandSummary()
-					table.AwardPot(winner)
-					break // Break out of hand loop
-				}
-
-				// Move to next betting round
-				switch table.CurrentRound {
-				case game.PreFlop:
-					table.DealFlop()
-					hi.ShowBettingRoundTransition()
-				case game.Flop:
-					table.DealTurn()
-					hi.ShowBettingRoundTransition()
-				case game.Turn:
-					table.DealRiver()
-					hi.ShowBettingRoundTransition()
-				case game.River:
-					// Go to showdown
-					table.CurrentRound = game.Showdown
-					winner := table.FindWinner()
-					hi.ShowCompleteShowdown()
-					hi.ShowHandSummary()
-					table.AwardPot(winner)
-				case game.Showdown:
-					// Showdown is complete, end the hand
-					break
-				}
-			}
-
-			// If we're in showdown phase, don't continue the action loop
-			if table.CurrentRound == game.Showdown {
-				break // Break out of hand loop
-			}
+		// Check if player quit during hand
+		if handResult.ShowdownType == "quit" {
+			logger.Info("Player quit during hand")
+			break
 		}
 
-		// Hand is complete, clear current player and ask if player wants to continue
-		logger.Info("Hand complete, asking if player wants to continue")
-		table.ActionOn = -1 // Clear current player so TUI shows continuation prompt
+		// Show hand results
+		hi.ShowCompleteShowdown()
+		hi.ShowHandSummary()
 
+		if handResult.Winner != nil {
+			logger.Info("Hand complete", "winner", handResult.Winner.Name, "pot", handResult.PotSize)
+		} else {
+			logger.Error("Hand completed but no winner found")
+		}
+
+		// Ask if player wants to continue
+		table.ActionOn = -1 // Clear current player for continuation prompt
 		shouldContinue, err := hi.PromptForAction()
 		if err != nil {
 			logger.Error("Error prompting for continuation", "error", err)
 			return err
 		}
-		if shouldContinue {
-			logger.Info("Player chose to continue to next hand")
-		} else {
+		if !shouldContinue {
 			logger.Info("Player chose to quit after hand completion")
 			break
 		}
 
-		// Start new hand
-		logger.Info("Starting new hand")
-		hi.ClearLog() // Clear the display for fresh start
-		table.StartNewHand()
+		// Prepare for next hand
+		logger.Info("Player chose to continue to next hand")
+		hi.ClearLog()
 		hi.InitializeHand(len(table.ActivePlayers))
 	}
 
 	return nil
+}
+
+// playHandWithTUI wraps the game engine to provide TUI integration
+func playHandWithTUI(engine *game.GameEngine, agents map[string]game.Agent, tui *tui.TUIAgent) *game.HandResult {
+	table := engine.GetTable()
+
+	// Hand loop - continue until hand is complete
+	for {
+		currentPlayer := table.GetCurrentPlayer()
+		if currentPlayer == nil {
+			break
+		}
+
+		var reasoning string
+
+		// Handle any player type using the unified Agent interface
+		var selectedAgent game.Agent
+		if agents != nil && agents[currentPlayer.Name] != nil {
+			selectedAgent = agents[currentPlayer.Name]
+		} else {
+			// This shouldn't happen in our setup, but fallback to a basic bot
+			return engine.PlayHand(agents)
+		}
+
+		reasoning = selectedAgent.ExecuteAction(currentPlayer, table)
+
+		// Check if human player quit
+		if currentPlayer.Type == game.Human && reasoning == "Player quit" {
+			return &game.HandResult{
+				HandID:       table.HandID,
+				Winner:       nil, // Special case for quit
+				PotSize:      table.Pot,
+				ShowdownType: "quit",
+			}
+		}
+
+		// Show the player action in TUI (except for human player who already showed it)
+		if currentPlayer.Type == game.AI {
+			tui.ShowPlayerActionWithThinking(currentPlayer, reasoning)
+		}
+
+		table.AdvanceAction()
+
+		// Check if betting round is complete
+		if table.IsBettingRoundComplete() {
+			activePlayers := len(table.GetActivePlayers())
+			if activePlayers <= 1 {
+				// Hand over, someone won by everyone else folding
+				winner := table.FindWinner()
+				table.AwardPot(winner)
+				return &game.HandResult{
+					HandID:       table.HandID,
+					Winner:       winner,
+					PotSize:      0, // Pot is now 0 after awarding
+					ShowdownType: "fold",
+				}
+			}
+
+			// Show betting round completion
+			tui.ShowBettingRoundComplete()
+
+			// Move to next betting round and show transition
+			switch table.CurrentRound {
+			case game.PreFlop:
+				table.DealFlop()
+				tui.ShowBettingRoundTransition()
+			case game.Flop:
+				table.DealTurn()
+				tui.ShowBettingRoundTransition()
+			case game.Turn:
+				table.DealRiver()
+				tui.ShowBettingRoundTransition()
+			case game.River:
+				// Go to showdown
+				table.CurrentRound = game.Showdown
+				potBeforeAwarding := table.Pot
+				winner := table.FindWinner()
+				table.AwardPot(winner)
+				return &game.HandResult{
+					HandID:       table.HandID,
+					Winner:       winner,
+					PotSize:      potBeforeAwarding,
+					ShowdownType: "showdown",
+				}
+			case game.Showdown:
+				// Showdown is complete, end the hand
+				break
+			}
+		}
+
+		// If we're in showdown phase, don't continue the action loop
+		if table.CurrentRound == game.Showdown {
+			break
+		}
+	}
+
+	// Fallback - this shouldn't be reached
+	winner := table.FindWinner()
+	if winner != nil {
+		table.AwardPot(winner)
+	}
+	return &game.HandResult{
+		HandID:  table.HandID,
+		Winner:  winner,
+		PotSize: 0,
+	}
 }
