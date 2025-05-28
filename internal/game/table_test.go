@@ -8,27 +8,12 @@ import (
 	"github.com/lox/holdem-cli/internal/deck"
 )
 
-// MockRandSource for deterministic testing
-type MockRandSource struct {
-	values []int
-	index  int
-}
-
-func NewMockRandSource(values ...int) *MockRandSource {
-	return &MockRandSource{values: values, index: 0}
-}
-
-func (m *MockRandSource) Intn(n int) int {
-	if m.index >= len(m.values) {
-		return 0 // Default fallback
-	}
-	val := m.values[m.index] % n // Ensure it's within bounds
-	m.index++
-	return val
-}
-
 func TestNewTable(t *testing.T) {
-	table := NewTable(6, 1, 2)
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 
 	if table.MaxSeats != 6 {
 		t.Errorf("Expected 6 seats, got %d", table.MaxSeats)
@@ -48,7 +33,11 @@ func TestNewTable(t *testing.T) {
 }
 
 func TestAddPlayer(t *testing.T) {
-	table := NewTable(6, 1, 2)
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 
 	player1 := NewPlayer(1, "Alice", Human, 200)
 	player2 := NewPlayer(2, "Bob", AI, 200)
@@ -76,7 +65,11 @@ func TestAddPlayer(t *testing.T) {
 }
 
 func TestTableFull(t *testing.T) {
-	table := NewTable(2, 1, 2) // Small table for testing
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+		MaxSeats:   2, // Set to 2 seats so it's full after 2 players
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 
 	player1 := NewPlayer(1, "Alice", Human, 200)
 	player2 := NewPlayer(2, "Bob", AI, 200)
@@ -92,7 +85,11 @@ func TestTableFull(t *testing.T) {
 }
 
 func TestStartNewHand(t *testing.T) {
-	table := NewTable(6, 1, 2)
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 
 	// Add players
 	player1 := NewPlayer(1, "Alice", Human, 200)
@@ -129,7 +126,11 @@ func TestStartNewHand(t *testing.T) {
 }
 
 func TestPositionsHeadsUp(t *testing.T) {
-	table := NewTable(6, 1, 2)
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 
 	player1 := NewPlayer(1, "Alice", Human, 200)
 	player2 := NewPlayer(2, "Bob", AI, 200)
@@ -163,7 +164,11 @@ func TestPositionsHeadsUp(t *testing.T) {
 }
 
 func TestPositionsMultiWay(t *testing.T) {
-	table := NewTable(6, 1, 2)
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 
 	// Add 4 players
 	for i := 1; i <= 4; i++ {
@@ -246,7 +251,11 @@ func TestPlayerActions(t *testing.T) {
 }
 
 func TestBettingRounds(t *testing.T) {
-	table := NewTable(6, 1, 2)
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 
 	player1 := NewPlayer(1, "Alice", Human, 200)
 	player2 := NewPlayer(2, "Bob", AI, 200)
@@ -294,14 +303,11 @@ func TestBettingRounds(t *testing.T) {
 // Position and button rotation tests
 
 func TestTableConfig(t *testing.T) {
-	// Test custom configuration
-	config := TableConfig{
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
 		MaxSeats:   9,
 		SmallBlind: 5,
 		BigBlind:   10,
-		RandSource: NewMockRandSource(2), // Fixed seed for testing
-	}
-	table := NewTableWithConfig(config)
+	})
 
 	if table.MaxSeats != 9 {
 		t.Errorf("Expected 9 seats, got %d", table.MaxSeats)
@@ -315,14 +321,11 @@ func TestTableConfig(t *testing.T) {
 }
 
 func TestRandomStartingPosition(t *testing.T) {
-	// Create table with mock random source
-	config := TableConfig{
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-		RandSource: NewMockRandSource(1), // Should select index 1 (seat 2)
-	}
-	table := NewTableWithConfig(config)
+	})
 
 	// Add players
 	for i := 1; i <= 3; i++ {
@@ -340,14 +343,11 @@ func TestRandomStartingPosition(t *testing.T) {
 }
 
 func TestButtonRotation(t *testing.T) {
-	// Create table with mock random source
-	config := TableConfig{
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-		RandSource: NewMockRandSource(0), // Always choose first player (seat 1)
-	}
-	table := NewTableWithConfig(config)
+	})
 
 	// Add 3 players - AddPlayer will assign seats 1, 2, 3 automatically
 	for i := 1; i <= 3; i++ {
@@ -442,26 +442,23 @@ func TestCalculatePositions_SixPlayers(t *testing.T) {
 }
 
 func TestDeterministicHandIDs(t *testing.T) {
-	// Test that same RandSource produces same hand IDs
-	mockRand1 := NewMockRandSource(42, 100, 200, 50, 75, 25, 80, 90, 60, 70, 30, 40, 10, 20, 15, 35)
-	mockRand2 := NewMockRandSource(42, 100, 200, 50, 75, 25, 80, 90, 60, 70, 30, 40, 10, 20, 15, 35)
+	mockRand1 := rand.New(rand.NewSource(42))
+	mockRand2 := rand.New(rand.NewSource(42))
 
 	config1 := TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-		RandSource: mockRand1,
 	}
 
 	config2 := TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-		RandSource: mockRand2,
 	}
 
-	table1 := NewTableWithConfig(config1)
-	table2 := NewTableWithConfig(config2)
+	table1 := NewTable(mockRand1, config1)
+	table2 := NewTable(mockRand2, config2)
 
 	// Add players to both tables
 	for i := 1; i <= 2; i++ {
@@ -501,17 +498,12 @@ func TestDeterministicHandIDs(t *testing.T) {
 
 // Integration test showing deterministic behavior with fixed seed
 func TestDeterministicButtonRotation(t *testing.T) {
-	// Test that the same seed produces the same results
-	seed := int64(42)
-
 	createTableAndPlayHands := func() []int {
-		config := TableConfig{
+		table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
 			MaxSeats:   6,
 			SmallBlind: 1,
 			BigBlind:   2,
-			RandSource: rand.New(rand.NewSource(seed)), // Fresh random source with same seed
-		}
-		table := NewTableWithConfig(config)
+		})
 
 		// Add 4 players
 		for i := 1; i <= 4; i++ {
@@ -548,13 +540,11 @@ func TestDeterministicButtonRotation(t *testing.T) {
 	}
 
 	// Also test that different seeds produce different results
-	config3 := TableConfig{
+	table3 := NewTable(rand.New(rand.NewSource(123)), TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-		RandSource: rand.New(rand.NewSource(123)), // Different seed
-	}
-	table3 := NewTableWithConfig(config3)
+	})
 	for i := 1; i <= 4; i++ {
 		player := NewPlayer(i, fmt.Sprintf("Player%d", i), AI, 1000)
 		table3.AddPlayer(player)
@@ -582,7 +572,11 @@ func TestDeterministicButtonRotation(t *testing.T) {
 
 // Test pot distribution functionality
 func TestPotDistribution(t *testing.T) {
-	table := NewTable(6, 1, 2)
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 
 	// Add players
 	player1 := NewPlayer(1, "Alice", Human, 200)
@@ -619,7 +613,11 @@ func TestPotDistribution(t *testing.T) {
 }
 
 func TestFindWinner(t *testing.T) {
-	table := NewTable(6, 1, 2)
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 
 	// Add players
 	player1 := NewPlayer(1, "Alice", Human, 200)
@@ -657,7 +655,11 @@ func TestFindWinner(t *testing.T) {
 
 // TestFindWinnerEvaluatesHandStrength tests that FindWinner correctly evaluates hand strength
 func TestFindWinnerEvaluatesHandStrength(t *testing.T) {
-	table := NewTable(6, 1, 2)
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 
 	// Add players - player1 will be first in ActivePlayers
 	player1 := NewPlayer(1, "WeakHand", Human, 200)
@@ -695,7 +697,11 @@ func TestFindWinnerEvaluatesHandStrength(t *testing.T) {
 
 // TestPotAmountPreservedForSummary tests that pot amount is available for summary display
 func TestPotAmountPreservedForSummary(t *testing.T) {
-	table := NewTable(6, 1, 2)
+	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
 
 	// Add players
 	player1 := NewPlayer(1, "Alice", Human, 200)

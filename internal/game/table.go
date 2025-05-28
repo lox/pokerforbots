@@ -4,24 +4,16 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
-	"time"
 
 	"github.com/lox/holdem-cli/internal/deck"
 	"github.com/lox/holdem-cli/internal/evaluator"
-	"github.com/lox/holdem-cli/internal/gameid"
 )
-
-// RandSource interface for dependency injection of randomness
-type RandSource interface {
-	Intn(n int) int
-}
 
 // TableConfig holds configuration for creating a table
 type TableConfig struct {
 	MaxSeats   int
 	SmallBlind int
 	BigBlind   int
-	RandSource RandSource
 }
 
 // BettingRound represents the current betting round
@@ -111,22 +103,11 @@ type Table struct {
 	HandHistory  *HandHistory // Current hand history
 
 	// Dependencies
-	randSource RandSource // Random number generator
+	rng *rand.Rand // Random number generator
 }
 
-// NewTable creates a new poker table with default configuration
-func NewTable(maxSeats int, smallBlind, bigBlind int) *Table {
-	config := TableConfig{
-		MaxSeats:   maxSeats,
-		SmallBlind: smallBlind,
-		BigBlind:   bigBlind,
-		RandSource: rand.New(rand.NewSource(time.Now().UnixNano())),
-	}
-	return NewTableWithConfig(config)
-}
-
-// NewTableWithConfig creates a new poker table with custom configuration
-func NewTableWithConfig(config TableConfig) *Table {
+// NewTable creates a new poker table with custom configuration
+func NewTable(rng *rand.Rand, config TableConfig) *Table {
 	return &Table{
 		MaxSeats:       config.MaxSeats,
 		SmallBlind:     config.SmallBlind,
@@ -137,14 +118,14 @@ func NewTableWithConfig(config TableConfig) *Table {
 		CurrentRound:   PreFlop,
 		State:          WaitingToStart,
 		HandID:         "",
-		Deck:           deck.NewDeck(),
+		Deck:           deck.NewDeck(rng),
 		CommunityCards: make([]deck.Card, 0, 5),
 		Pot:            0,
 		CurrentBet:     0,
 		MinRaise:       config.BigBlind,
 		ActionOn:       -1,
 		PlayersActed:   make(map[int]bool),
-		randSource:     config.RandSource,
+		rng:            rng,
 	}
 }
 
@@ -183,7 +164,7 @@ func (t *Table) StartNewHand() {
 		return // Need at least 2 players
 	}
 
-	t.HandID = gameid.GenerateWithRandSource(t.randSource)
+	t.HandID = GenerateGameID(t.rng)
 	t.State = InProgress
 	t.CurrentRound = PreFlop
 	t.Pot = 0
@@ -229,7 +210,7 @@ func (t *Table) setDealerPosition() {
 
 	if t.DealerPosition == -1 {
 		// First hand - set random starting position
-		randomIndex := t.randSource.Intn(len(t.ActivePlayers))
+		randomIndex := t.rng.Intn(len(t.ActivePlayers))
 		t.DealerPosition = t.ActivePlayers[randomIndex].SeatNumber
 	} else {
 		// Move button to next active player
