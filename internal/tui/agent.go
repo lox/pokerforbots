@@ -62,30 +62,35 @@ func (ti *TUIAgent) Close() error {
 
 // MakeDecision implements the Agent interface for human players via TUI
 func (ti *TUIAgent) MakeDecision(player *game.Player, table *game.Table) game.Decision {
-	ti.mainLogger.Info("Waiting for user action")
-	action, args, shouldContinue, err := ti.model.WaitForAction()
-	if err != nil {
-		ti.mainLogger.Error("Error in WaitForAction", "error", err)
-		ti.model.AddLogEntry(fmt.Sprintf("Error: %s", err.Error()))
-		return game.Decision{
-			Action:    game.Check,
-			Amount:    0,
-			Reasoning: fmt.Sprintf("Error occurred: %v", err),
+	for {
+		ti.mainLogger.Info("Waiting for user action")
+		action, args, shouldContinue, err := ti.model.WaitForAction()
+		if err != nil {
+			ti.mainLogger.Error("Error in WaitForAction", "error", err)
+			ti.model.AddLogEntry(fmt.Sprintf("Error: %s", err.Error()))
+			continue // Ask for input again
 		}
-	}
 
-	ti.mainLogger.Info("Received user action", "action", action, "args", args, "continue", shouldContinue)
-	if !shouldContinue {
-		ti.mainLogger.Info("User chose to quit")
-		return game.Decision{
-			Action:    game.Fold,
-			Amount:    0,
-			Reasoning: "Player quit",
+		ti.mainLogger.Info("Received user action", "action", action, "args", args, "continue", shouldContinue)
+		if !shouldContinue {
+			ti.mainLogger.Info("User chose to quit")
+			return game.Decision{
+				Action:    game.Fold,
+				Amount:    0,
+				Reasoning: "Player quit",
+			}
 		}
-	}
 
-	// Process the action and return a decision
-	return ti.processActionForDecision(action, args, player, table)
+		// Process the action and return a decision
+		decision := ti.processActionForDecision(action, args, player, table)
+		
+		// If we get an invalid action indicator, loop back for another try
+		if decision.Reasoning == "Invalid input - try again" {
+			continue
+		}
+		
+		return decision
+	}
 }
 
 // processActionForDecision processes a user action and returns a Decision
@@ -166,7 +171,7 @@ func (ti *TUIAgent) processActionForDecision(action string, args []string, playe
 		return game.Decision{
 			Action:    game.Check,
 			Amount:    0,
-			Reasoning: fmt.Sprintf("Unknown command: %s", action),
+			Reasoning: "Invalid input - try again",
 		}
 	}
 }
@@ -518,7 +523,7 @@ func (ti *TUIAgent) handleRaiseForDecision(args []string) game.Decision {
 		return game.Decision{
 			Action:    game.Check,
 			Amount:    0,
-			Reasoning: "No raise amount specified",
+			Reasoning: "Invalid input - try again",
 		}
 	}
 
@@ -528,7 +533,7 @@ func (ti *TUIAgent) handleRaiseForDecision(args []string) game.Decision {
 		return game.Decision{
 			Action:    game.Check,
 			Amount:    0,
-			Reasoning: fmt.Sprintf("Invalid amount: %s", args[0]),
+			Reasoning: "Invalid input - try again",
 		}
 	}
 
@@ -537,7 +542,7 @@ func (ti *TUIAgent) handleRaiseForDecision(args []string) game.Decision {
 		return game.Decision{
 			Action:    game.Check,
 			Amount:    0,
-			Reasoning: "Raise amount too low",
+			Reasoning: "Invalid input - try again",
 		}
 	}
 
@@ -545,9 +550,9 @@ func (ti *TUIAgent) handleRaiseForDecision(args []string) game.Decision {
 	if totalNeeded > currentPlayer.Chips {
 		ti.model.AddLogEntry(fmt.Sprintf("Error: Insufficient chips, you have $%d", currentPlayer.Chips))
 		return game.Decision{
-			Action:    game.Fold,
+			Action:    game.Check,
 			Amount:    0,
-			Reasoning: "Insufficient chips to raise",
+			Reasoning: "Invalid input - try again",
 		}
 	}
 
@@ -556,7 +561,7 @@ func (ti *TUIAgent) handleRaiseForDecision(args []string) game.Decision {
 		return game.Decision{
 			Action:    game.Check,
 			Amount:    0,
-			Reasoning: "Raise failed",
+			Reasoning: "Invalid input - try again",
 		}
 	}
 
