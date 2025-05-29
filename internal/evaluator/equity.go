@@ -1,11 +1,21 @@
 package evaluator
 
 import (
+	"context"
 	"math/rand"
+	"runtime"
 	"sync"
 
 	"github.com/lox/holdem-cli/internal/deck"
+	"golang.org/x/sync/errgroup"
 )
+
+// workerResult holds the results from a Monte Carlo worker
+type workerResult struct {
+	wins         int
+	ties         int
+	validSamples int
+}
 
 // CardSet represents a set of cards using a bitset for fast operations
 // Each card maps to a bit: index = (rank-2)*4 + suit
@@ -143,8 +153,18 @@ func abs(x int) int {
 	return x
 }
 
-// EstimateEquity calculates win percentage using Monte Carlo simulation
+// EstimateEquity calculates win percentage using parallel Monte Carlo simulation
 func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, numSamples int, rng *rand.Rand) float64 {
+	// Use parallel version for larger sample sizes where overhead is worth it
+	if numSamples >= 500 {
+		return EstimateEquityParallel(hole, board, opponentRange, numSamples, rng)
+	}
+	// Use sequential version for small sample sizes
+	return EstimateEquitySequential(hole, board, opponentRange, numSamples, rng)
+}
+
+// EstimateEquitySequential is the original sequential implementation
+func EstimateEquitySequential(hole []deck.Card, board []deck.Card, opponentRange Range, numSamples int, rng *rand.Rand) float64 {
 	if len(hole) != 2 {
 		return 0.0
 	}
@@ -258,6 +278,190 @@ func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, nu
 	}
 
 	return (float64(wins) + float64(ties)/2.0) / float64(validSamples)
+}
+
+// EstimateEquityParallel calculates win percentage using parallel Monte Carlo simulation
+func EstimateEquityParallel(hole []deck.Card, board []deck.Card, opponentRange Range, numSamples int, rng *rand.Rand) float64 {
+	if len(hole) != 2 {
+		return 0.0
+	}
+	if len(board) > 5 {
+		return 0.0
+	}
+
+	// Determine optimal worker count (don't exceed CPU cores)
+	workers := runtime.NumCPU()
+	if workers > 8 {
+		workers = 8 // Cap at 8 for diminishing returns
+	}
+
+	// Divide samples among workers
+	samplesPerWorker := numSamples / workers
+	remainder := numSamples % workers
+
+	// Pre-build available cards once (shared by all workers)
+	var usedCards CardSet
+	for _, card := range hole {
+		usedCards.Add(card)
+	}
+	for _, card := range board {
+		usedCards.Add(card)
+	}
+
+	var availableCards []deck.Card
+	for suit := deck.Spades; suit <= deck.Clubs; suit++ {
+		for rank := deck.Two; rank <= deck.Ace; rank++ {
+			card := deck.Card{Suit: suit, Rank: rank}
+			if !usedCards.Contains(card) {
+				availableCards = append(availableCards, card)
+			}
+		}
+	}
+
+	// Use errgroup to manage workers
+	g, ctx := errgroup.WithContext(context.Background())
+	results := make(chan workerResult, workers)
+
+	// Launch workers
+	for w := 0; w < workers; w++ {
+		workerSamples := samplesPerWorker
+		if w < remainder {
+			workerSamples++ // Distribute remainder samples
+		}
+
+		// Create independent RNG for each worker to avoid contention
+		workerSeed := rng.Int63()
+
+		g.Go(func() error {
+			workerRng := rand.New(rand.NewSource(workerSeed))
+			result := runEquityWorker(hole, board, availableCards, opponentRange, workerSamples, workerRng)
+			
+			select {
+			case results <- result:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+	}
+
+	// Collect results
+	totalWins := 0
+	totalTies := 0
+	totalValidSamples := 0
+
+	go func() {
+		g.Wait()
+		close(results)
+	}()
+
+	for result := range results {
+		totalWins += result.wins
+		totalTies += result.ties
+		totalValidSamples += result.validSamples
+	}
+
+	if err := g.Wait(); err != nil {
+		// Fallback to sequential if parallel fails
+		return EstimateEquitySequential(hole, board, opponentRange, numSamples, rng)
+	}
+
+	if totalValidSamples == 0 {
+		return 0.0
+	}
+
+	return (float64(totalWins) + float64(totalTies)/2.0) / float64(totalValidSamples)
+}
+
+// runEquityWorker runs Monte Carlo simulation for a worker
+func runEquityWorker(hole []deck.Card, board []deck.Card, availableCards []deck.Card, 
+	opponentRange Range, numSamples int, rng *rand.Rand) workerResult {
+	
+	wins := 0
+	ties := 0
+	validSamples := 0
+
+	// Pre-allocate reusable slices for this worker
+	finalBoard := make([]deck.Card, 5)
+	heroHand := make([]deck.Card, 7)
+	oppHand := make([]deck.Card, 7)
+
+	// Create base used cards for this worker
+	var baseUsedCards CardSet
+	for _, card := range hole {
+		baseUsedCards.Add(card)
+	}
+	for _, card := range board {
+		baseUsedCards.Add(card)
+	}
+
+	for i := 0; i < numSamples; i++ {
+		// Sample opponent hand
+		oppHole, ok := opponentRange.SampleHand(availableCards, rng)
+		if !ok {
+			continue
+		}
+
+		// Create temporary used cards bitset for this sample
+		tempUsed := baseUsedCards
+		for _, card := range oppHole {
+			tempUsed.Add(card)
+		}
+
+		// Complete the board
+		copy(finalBoard[:len(board)], board)
+		boardNeeded := 5 - len(board)
+		filled := 0
+
+		// Get reusable boardCandidates slice from pool
+		boardCandidates := boardCandidatesPool.Get().([]deck.Card)
+		boardCandidates = boardCandidates[:0]
+
+		for _, card := range availableCards {
+			if !tempUsed.Contains(card) {
+				boardCandidates = append(boardCandidates, card)
+			}
+		}
+
+		// Randomly sample from candidates
+		for filled < boardNeeded && filled < len(boardCandidates) {
+			idx := rng.Intn(len(boardCandidates) - filled)
+			finalBoard[len(board)+filled] = boardCandidates[idx]
+			boardCandidates[idx], boardCandidates[len(boardCandidates)-1-filled] =
+				boardCandidates[len(boardCandidates)-1-filled], boardCandidates[idx]
+			filled++
+		}
+
+		boardCandidatesPool.Put(boardCandidates)
+
+		if len(finalBoard) != 5 {
+			continue
+		}
+
+		// Evaluate both hands
+		copy(heroHand[:2], hole)
+		copy(heroHand[2:], finalBoard)
+		copy(oppHand[:2], oppHole)
+		copy(oppHand[2:], finalBoard)
+
+		if len(heroHand) != 7 || len(oppHand) != 7 {
+			continue
+		}
+
+		heroScore := Evaluate7(heroHand)
+		oppScore := Evaluate7(oppHand)
+
+		comparison := heroScore.Compare(oppScore)
+		if comparison > 0 {
+			wins++
+		} else if comparison == 0 {
+			ties++
+		}
+
+		validSamples++
+	}
+
+	return workerResult{wins: wins, ties: ties, validSamples: validSamples}
 }
 
 // EvaluateHandStrength converts equity to a score for AI decision making

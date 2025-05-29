@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -191,7 +190,7 @@ func main() {
 			os.Exit(1)
 		}
 		cpuFile = f
-		
+
 		if err := pprof.StartCPUProfile(f); err != nil {
 			fmt.Fprintf(os.Stderr, "Error starting CPU profile: %v\n", err)
 			f.Close()
@@ -235,7 +234,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error creating memory profile: %v\n", err)
 			os.Exit(1)
 		}
-		
+
 		runtime.GC()
 		if err := pprof.WriteHeapProfile(f); err != nil {
 			fmt.Fprintf(os.Stderr, "Error writing memory profile: %v\n", err)
@@ -300,33 +299,6 @@ func runSimulation(numHands int, opponentType string, seed int64, logger *log.Lo
 	}
 
 	return stats
-}
-
-func runDebugSimulation(opponentType string, seed int64, logger *log.Logger) {
-	fmt.Printf("=== DEBUG MODE: 20 Hand Analysis ===\n")
-	fmt.Printf("Opponent: %s, Seed: %d\n\n", opponentType, seed)
-
-	masterRng := rand.New(rand.NewSource(seed))
-
-	for hand := 0; hand < 20; hand++ {
-		handSeed := masterRng.Int63()
-		ourPosition := (hand % 6) + 1
-
-		result := playHandWithDebug(opponentType, handSeed, ourPosition, logger)
-
-		fmt.Printf("=== HAND %d RESULT ===\n", hand+1)
-		fmt.Printf("Net BB for OurBot: %.4f\n", result.NetBB)
-
-		// Flag suspicious results
-		if result.NetBB > 30 {
-			fmt.Printf("🚨 SUSPICIOUS: >30bb win detected!\n")
-		}
-		if result.NetBB < -10 {
-			fmt.Printf("🚨 SUSPICIOUS: >10bb loss detected!\n")
-		}
-
-		fmt.Printf("\n" + strings.Repeat("=", 50) + "\n")
-	}
 }
 
 func playHandWithDebug(opponentType string, handSeed int64, ourPosition int, logger *log.Logger) HandResult {

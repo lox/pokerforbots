@@ -863,9 +863,7 @@ func (ti *TUIAgent) ShowCompleteShowdown() {
 }
 
 // ShowHandSummary shows the hand summary
-func (ti *TUIAgent) ShowHandSummary() {
-	// Store pot amount (will be reset by AwardPot after this method)
-	finalPot := ti.table.Pot
+func (ti *TUIAgent) ShowHandSummary(finalPot int) {
 
 	// Populate HandHistory with final results
 	if ti.table.HandHistory != nil {

@@ -158,7 +158,7 @@ func startInteractiveGame(rng *rand.Rand, seats int, logger *log.Logger) error {
 
 		// Show hand results
 		hi.ShowCompleteShowdown()
-		hi.ShowHandSummary()
+		hi.ShowHandSummary(handResult.PotSize)
 
 		if handResult.Winner != nil {
 			logger.Info("Hand complete", "winner", handResult.Winner.Name, "pot", handResult.PotSize)
@@ -233,12 +233,13 @@ func playHandWithTUI(engine *game.GameEngine, agents map[string]game.Agent, tui 
 			activePlayers := len(table.GetActivePlayers())
 			if activePlayers <= 1 {
 				// Hand over, someone won by everyone else folding
+				potBeforeAwarding := table.Pot
 				winner := table.FindWinner()
 				table.AwardPot()
 				return &game.HandResult{
 					HandID:       table.HandID,
 					Winner:       winner,
-					PotSize:      0, // Pot is now 0 after awarding
+					PotSize:      potBeforeAwarding,
 					ShowdownType: "fold",
 				}
 			}
