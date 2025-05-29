@@ -5,6 +5,8 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"runtime"
+	"runtime/pprof"
 	"sort"
 	"strings"
 	"time"
@@ -16,10 +18,12 @@ import (
 )
 
 type CLI struct {
-	Hands    int    `default:"50000" help:"Number of hands to simulate"`
-	Opponent string `default:"fold" help:"Opponent type: fold, call, rand, chart"`
-	Seed     int64  `default:"0" help:"RNG seed (0 for random)"`
-	Verbose  bool   `short:"v" help:"Verbose logging"`
+	Hands      int    `default:"50000" help:"Number of hands to simulate"`
+	Opponent   string `default:"fold" help:"Opponent type: fold, call, rand, chart"`
+	Seed       int64  `default:"0" help:"RNG seed (0 for random)"`
+	Verbose    bool   `short:"v" help:"Verbose logging"`
+	CPUProfile string `help:"Write CPU profile to file"`
+	MemProfile string `help:"Write memory profile to file"`
 }
 
 type HandResult struct {
@@ -178,6 +182,24 @@ func main() {
 	var cli CLI
 	ctx := kong.Parse(&cli)
 
+	// Setup CPU profiling if requested
+	var cpuFile *os.File
+	if cli.CPUProfile != "" {
+		f, err := os.Create(cli.CPUProfile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating CPU profile: %v\n", err)
+			os.Exit(1)
+		}
+		cpuFile = f
+		
+		if err := pprof.StartCPUProfile(f); err != nil {
+			fmt.Fprintf(os.Stderr, "Error starting CPU profile: %v\n", err)
+			f.Close()
+			os.Exit(1)
+		}
+		fmt.Printf("CPU profiling enabled, writing to %s\n", cli.CPUProfile)
+	}
+
 	// Setup RNG seed
 	if cli.Seed == 0 {
 		cli.Seed = time.Now().UnixNano()
@@ -198,6 +220,31 @@ func main() {
 	stats := runSimulation(cli.Hands, cli.Opponent, cli.Seed, logger)
 	duration := time.Since(startTime)
 	printResults(stats, cli.Opponent, duration)
+
+	// Stop CPU profiling before exit
+	if cpuFile != nil {
+		pprof.StopCPUProfile()
+		cpuFile.Close()
+		fmt.Printf("CPU profile written to %s\n", cli.CPUProfile)
+	}
+
+	// Write memory profile if requested
+	if cli.MemProfile != "" {
+		f, err := os.Create(cli.MemProfile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating memory profile: %v\n", err)
+			os.Exit(1)
+		}
+		
+		runtime.GC()
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing memory profile: %v\n", err)
+			f.Close()
+			os.Exit(1)
+		}
+		f.Close()
+		fmt.Printf("Memory profile written to %s\n", cli.MemProfile)
+	}
 
 	ctx.Exit(0)
 }

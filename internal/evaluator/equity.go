@@ -2,9 +2,45 @@ package evaluator
 
 import (
 	"math/rand"
+	"sync"
 
 	"github.com/lox/holdem-cli/internal/deck"
 )
+
+// CardSet represents a set of cards using a bitset for fast operations
+// Each card maps to a bit: index = (rank-2)*4 + suit
+type CardSet uint64
+
+// cardIndex converts a card to its bit index (0-51)
+func cardIndex(card deck.Card) int {
+	return (card.Rank-deck.Two)*4 + card.Suit
+}
+
+// Add adds a card to the set
+func (cs *CardSet) Add(card deck.Card) {
+	*cs |= 1 << cardIndex(card)
+}
+
+// Contains checks if a card is in the set
+func (cs CardSet) Contains(card deck.Card) bool {
+	return cs&(1<<cardIndex(card)) != 0
+}
+
+// NewCardSet creates a CardSet from a slice of cards
+func NewCardSet(cards []deck.Card) CardSet {
+	var cs CardSet
+	for _, card := range cards {
+		cs.Add(card)
+	}
+	return cs
+}
+
+// Slice pool for reusable boardCandidates allocation
+var boardCandidatesPool = sync.Pool{
+	New: func() interface{} {
+		return make([]deck.Card, 0, 52)
+	},
+}
 
 // Range represents a range of possible opponent hands
 type Range interface {
@@ -120,20 +156,21 @@ func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, nu
 	ties := 0
 	validSamples := 0
 
-	// Create deck of remaining cards
-	usedCards := make(map[deck.Card]bool)
+	// Create bitset of used cards (much faster than map)
+	var usedCards CardSet
 	for _, card := range hole {
-		usedCards[card] = true
+		usedCards.Add(card)
 	}
 	for _, card := range board {
-		usedCards[card] = true
+		usedCards.Add(card)
 	}
 
+	// Pre-build available cards slice once
 	var availableCards []deck.Card
 	for suit := deck.Spades; suit <= deck.Clubs; suit++ {
 		for rank := deck.Two; rank <= deck.Ace; rank++ {
 			card := deck.Card{Suit: suit, Rank: rank}
-			if !usedCards[card] {
+			if !usedCards.Contains(card) {
 				availableCards = append(availableCards, card)
 			}
 		}
@@ -151,16 +188,10 @@ func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, nu
 			continue
 		}
 
-		// Create temporary used cards map for this sample
-		tempUsed := make(map[deck.Card]bool, len(hole)+len(board)+2)
-		for _, card := range hole {
-			tempUsed[card] = true
-		}
-		for _, card := range board {
-			tempUsed[card] = true
-		}
+		// Create temporary used cards bitset for this sample (much faster than map)
+		tempUsed := usedCards // Copy the base set
 		for _, card := range oppHole {
-			tempUsed[card] = true
+			tempUsed.Add(card)
 		}
 
 		// Complete the board
@@ -168,10 +199,13 @@ func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, nu
 		boardNeeded := 5 - len(board)
 		filled := 0
 
-		// Collect available cards for board completion
-		boardCandidates := make([]deck.Card, 0, len(availableCards))
+		// Get reusable boardCandidates slice from pool
+		boardCandidates := boardCandidatesPool.Get().([]deck.Card)
+		boardCandidates = boardCandidates[:0] // Reset length but keep capacity
+
+		// Collect available cards for board completion (fast bitset lookup)
 		for _, card := range availableCards {
-			if !tempUsed[card] {
+			if !tempUsed.Contains(card) {
 				boardCandidates = append(boardCandidates, card)
 			}
 		}
@@ -185,6 +219,9 @@ func EstimateEquity(hole []deck.Card, board []deck.Card, opponentRange Range, nu
 				boardCandidates[len(boardCandidates)-1-filled], boardCandidates[idx]
 			filled++
 		}
+
+		// Return slice to pool for reuse
+		boardCandidatesPool.Put(boardCandidates)
 
 		if len(finalBoard) != 5 {
 			continue

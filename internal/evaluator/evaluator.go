@@ -35,6 +35,8 @@
 // Perfect for Monte Carlo simulations and real-time equity calculations.
 package evaluator
 
+//go:generate go run gen_luts.go
+
 import "github.com/lox/holdem-cli/internal/deck"
 
 // Evaluate7 evaluates 7 cards and returns a HandRank where lower = stronger
@@ -66,18 +68,20 @@ func Evaluate7(cards []deck.Card) HandRank {
 	// If flush exists, check for straight flush
 	if flushSuit != -1 {
 		var flushRankBits uint32
-		flushCards := make([]int, 0, 7) // Pre-allocate with capacity
+		var flushCards [7]int // Fixed array instead of slice allocation
+		flushCount := 0
 
 		// Collect all cards of flush suit and build flush rank bitmap
 		for _, card := range cards {
 			if card.Suit == flushSuit {
 				flushRankBits |= 1 << uint(card.Rank)
-				flushCards = append(flushCards, card.Rank)
+				flushCards[flushCount] = card.Rank
+				flushCount++
 			}
 		}
 
-		// Check for straight flush
-		straightHigh := findStraightInBitmap(flushRankBits)
+		// Check for straight flush using LUT
+		straightHigh := int(straightLUT[flushRankBits>>2])
 		if straightHigh > 0 {
 			// Royal flush: A-K-Q-J-10
 			if straightHigh == 14 && (flushRankBits&(1<<13)) != 0 {
@@ -88,7 +92,7 @@ func Evaluate7(cards []deck.Card) HandRank {
 		}
 
 		// Regular flush - use 5 highest cards
-		flushRanks := getHighestRanks(flushCards, 5)
+		flushRanks := getHighestRanks(flushCards[:flushCount], 5)
 		return HandRank((FlushType << 20) | encodeMultipleRanks(flushRanks))
 	}
 
@@ -128,8 +132,8 @@ func Evaluate7(cards []deck.Card) HandRank {
 		return HandRank((FullHouseType << 20) | (threeRank << 4) | pairRank)
 	}
 
-	// Check for straight
-	straightHigh := findStraightInBitmap(rankBits)
+	// Check for straight using LUT
+	straightHigh := int(straightLUT[rankBits>>2])
 	if straightHigh > 0 {
 		return HandRank((StraightType << 20) | straightHigh)
 	}
@@ -185,6 +189,8 @@ func Evaluate7(cards []deck.Card) HandRank {
 
 // findStraightInBitmap checks for 5 consecutive bits in rank bitmap
 // Returns the high card of the straight, or 0 if no straight
+// REPLACED BY LUT for performance - kept for reference
+/*
 func findStraightInBitmap(rankBits uint32) int {
 	// Check for wheel straight (A-2-3-4-5)
 	wheel := uint32(1<<14 | 1<<5 | 1<<4 | 1<<3 | 1<<2)
@@ -202,20 +208,26 @@ func findStraightInBitmap(rankBits uint32) int {
 
 	return 0
 }
+*/
 
 // findHighestKicker finds the highest single card excluding given ranks
+// Optimized with LUT to eliminate map allocation
 func findHighestKicker(rankCounts [15]int, excludeRanks ...int) int {
-	excluded := make(map[int]bool)
-	for _, rank := range excludeRanks {
-		excluded[rank] = true
-	}
-
-	for rank := 14; rank >= 2; rank-- {
-		if rankCounts[rank] == 1 && !excluded[rank] {
-			return rank
+	// Build bitmask of available kickers (ranks with count=1)
+	var availableMask int
+	for rank := 2; rank <= 14; rank++ {
+		if rankCounts[rank] == 1 {
+			availableMask |= 1 << rank
 		}
 	}
-	return 0
+	
+	// Remove excluded ranks from available mask
+	for _, rank := range excludeRanks {
+		availableMask &^= 1 << rank // Clear bit for excluded rank
+	}
+	
+	// Use LUT for O(1) lookup instead of loop
+	return int(kickerLUT[availableMask])
 }
 
 // We inlined this function for a 35% speedup
