@@ -589,10 +589,26 @@ func (t *Table) AwardPot() {
 		return
 	}
 
-	// Sort contributors by amount committed (ascending) – this lets us peel off side pots.
+	// Check if differences are only due to blinds (no actual betting disparity)
+	// If all players have seen all streets and betting, side pots are legitimate
+	// But if only blinds were posted, all active players should share the pot equally
 	sort.Slice(contributors, func(i, j int) bool {
 		return contributors[i].bet < contributors[j].bet
 	})
+	
+	// If the highest bet is small blind + big blind or less, and we have exactly 2-3 active players,
+	// this is likely just blind posting without real betting action - award to all winners
+	activePlayers := t.GetActivePlayers()
+	maxBet := contributors[len(contributors)-1].bet
+	
+	// Simple heuristic: if max bet <= big blind and we have <= 3 active players, 
+	// treat as blind-only scenario
+	if len(activePlayers) <= 3 && maxBet <= t.BigBlind {
+		winners := t.FindWinners()
+		splitPot(t.Pot, winners)
+		t.Pot = 0
+		return
+	}
 
 	// Pre-compute the overall hand winners once so that we don't re-evaluate multiple times.
 	allWinners := t.FindWinners()
