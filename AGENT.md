@@ -16,6 +16,7 @@ This is a **Texas Hold'em CLI poker game** with AI opponents, built in Go. The g
 - Format: `go fmt ./...` or `./bin/task fmt`
 - Clean: `./bin/task clean`
 - All checks: `./bin/task check` (test + lint + build)
+- Demo: `vhs demo.tape` to generate animated GIF demo of the TUI in demo.gif
 
 ## Code Style Guidelines
 - Language: Go (1.24.3)
