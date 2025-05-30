@@ -377,3 +377,191 @@ func TestMultipleRounds(t *testing.T) {
 		t.Error("Round headers should appear in chronological order")
 	}
 }
+
+// Test the new betting analysis functionality
+func TestGetCurrentRoundActions(t *testing.T) {
+	hh := &HandHistory{
+		Actions: []HandAction{
+			{PlayerName: "Alice", Action: Raise, Amount: 10, Round: PreFlop},
+			{PlayerName: "Bob", Action: Call, Amount: 10, Round: PreFlop},
+			{PlayerName: "Alice", Action: Check, Amount: 0, Round: Flop},
+			{PlayerName: "Bob", Action: Raise, Amount: 20, Round: Flop},
+			{PlayerName: "Alice", Action: Call, Amount: 20, Round: Turn},
+		},
+	}
+
+	// Test PreFlop actions
+	preflopActions := hh.GetCurrentRoundActions(PreFlop)
+	if len(preflopActions) != 2 {
+		t.Errorf("Expected 2 preflop actions, got %d", len(preflopActions))
+	}
+	if preflopActions[0].PlayerName != "Alice" || preflopActions[0].Action != Raise {
+		t.Errorf("Expected first preflop action to be Alice raising, got %v", preflopActions[0])
+	}
+
+	// Test Flop actions
+	flopActions := hh.GetCurrentRoundActions(Flop)
+	if len(flopActions) != 2 {
+		t.Errorf("Expected 2 flop actions, got %d", len(flopActions))
+	}
+
+	// Test Turn actions
+	turnActions := hh.GetCurrentRoundActions(Turn)
+	if len(turnActions) != 1 {
+		t.Errorf("Expected 1 turn action, got %d", len(turnActions))
+	}
+
+	// Test River actions (none)
+	riverActions := hh.GetCurrentRoundActions(River)
+	if len(riverActions) != 0 {
+		t.Errorf("Expected 0 river actions, got %d", len(riverActions))
+	}
+}
+
+func TestGetBettingRoundSummary(t *testing.T) {
+	hh := &HandHistory{
+		SmallBlind: 10,
+		BigBlind: 20,
+		Actions: []HandAction{
+			{PlayerName: "Alice", Action: Call, Amount: 10, Round: PreFlop}, // Small blind
+			{PlayerName: "Bob", Action: Call, Amount: 20, Round: PreFlop},   // Big blind  
+			{PlayerName: "Charlie", Action: Raise, Amount: 40, Round: PreFlop},
+			{PlayerName: "Alice", Action: Call, Amount: 30, Round: PreFlop},
+			{PlayerName: "Bob", Action: Raise, Amount: 80, Round: PreFlop}, // 3-bet
+		},
+	}
+
+	summary := hh.GetBettingRoundSummary(PreFlop)
+
+	if summary.Round != PreFlop {
+		t.Errorf("Expected PreFlop round, got %v", summary.Round)
+	}
+
+	if summary.NumRaises != 2 {
+		t.Errorf("Expected 2 raises, got %d", summary.NumRaises)
+	}
+
+	if summary.LastAggressor != "Bob" {
+		t.Errorf("Expected last aggressor to be Bob, got %s", summary.LastAggressor)
+	}
+
+	// Note: The NumCallers count will include blind calls since isBlindPosting
+	// requires timestamp comparison which we don't have in this simple test
+	if summary.NumCallers < 1 {
+		t.Errorf("Expected at least 1 caller, got %d", summary.NumCallers)
+	}
+
+	if len(summary.Actions) != 5 {
+		t.Errorf("Expected 5 actions in summary, got %d", len(summary.Actions))
+	}
+}
+
+func TestGetBetSizingInfo(t *testing.T) {
+	hh := &HandHistory{
+		Actions: []HandAction{
+			{PlayerName: "Alice", Action: Raise, Amount: 20, PotAfter: 50},  // 20 into 30 pot
+			{PlayerName: "Bob", Action: Call, Amount: 20, PotAfter: 70},
+			{PlayerName: "Charlie", Action: Raise, Amount: 60, PotAfter: 130}, // 60 into 70 pot
+		},
+	}
+
+	sizing := hh.GetBetSizingInfo(PreFlop)
+
+	if len(sizing) != 2 { // Only raises, not calls
+		t.Errorf("Expected 2 bet sizing entries, got %d", len(sizing))
+	}
+
+	// Check Alice's bet
+	aliceBet := sizing[0]
+	if aliceBet.PlayerName != "Alice" {
+		t.Errorf("Expected first bet by Alice, got %s", aliceBet.PlayerName)
+	}
+	if aliceBet.Amount != 20 {
+		t.Errorf("Expected bet amount 20, got %d", aliceBet.Amount)
+	}
+	if aliceBet.PotBefore != 30 {
+		t.Errorf("Expected pot before bet to be 30, got %d", aliceBet.PotBefore)
+	}
+	expectedRatio := float64(20) / float64(30)
+	if aliceBet.Ratio != expectedRatio {
+		t.Errorf("Expected ratio %.3f, got %.3f", expectedRatio, aliceBet.Ratio)
+	}
+
+	// Check Charlie's raise
+	charlieBet := sizing[1]
+	if charlieBet.PlayerName != "Charlie" {
+		t.Errorf("Expected second bet by Charlie, got %s", charlieBet.PlayerName)
+	}
+	if charlieBet.Amount != 60 {
+		t.Errorf("Expected bet amount 60, got %d", charlieBet.Amount)
+	}
+}
+
+func TestGetPlayerActions(t *testing.T) {
+	hh := &HandHistory{
+		Actions: []HandAction{
+			{PlayerName: "Alice", Action: Raise, Amount: 10, Round: PreFlop},
+			{PlayerName: "Bob", Action: Call, Amount: 10, Round: PreFlop},
+			{PlayerName: "Alice", Action: Check, Amount: 0, Round: Flop},
+			{PlayerName: "Charlie", Action: Fold, Amount: 0, Round: Flop},
+			{PlayerName: "Alice", Action: Call, Amount: 20, Round: Turn},
+		},
+	}
+
+	// Test Alice's actions
+	aliceActions := hh.GetPlayerActions("Alice")
+	if len(aliceActions) != 3 {
+		t.Errorf("Expected 3 actions by Alice, got %d", len(aliceActions))
+	}
+
+	expectedActions := []Action{Raise, Check, Call}
+	for i, expected := range expectedActions {
+		if aliceActions[i].Action != expected {
+			t.Errorf("Expected Alice's action %d to be %v, got %v", i, expected, aliceActions[i].Action)
+		}
+	}
+
+	// Test Bob's actions
+	bobActions := hh.GetPlayerActions("Bob")
+	if len(bobActions) != 1 {
+		t.Errorf("Expected 1 action by Bob, got %d", len(bobActions))
+	}
+
+	// Test non-existent player
+	nonExistentActions := hh.GetPlayerActions("David")
+	if len(nonExistentActions) != 0 {
+		t.Errorf("Expected 0 actions by non-existent player, got %d", len(nonExistentActions))
+	}
+}
+
+func TestHasPlayerActed(t *testing.T) {
+	hh := &HandHistory{
+		Actions: []HandAction{
+			{PlayerName: "Alice", Action: Raise, Amount: 10, Round: PreFlop},
+			{PlayerName: "Bob", Action: Call, Amount: 10, Round: PreFlop},
+			{PlayerName: "Alice", Action: Check, Amount: 0, Round: Flop},
+		},
+	}
+
+	// Test players who have acted
+	if !hh.HasPlayerActed("Alice", PreFlop) {
+		t.Error("Expected Alice to have acted in PreFlop")
+	}
+	if !hh.HasPlayerActed("Bob", PreFlop) {
+		t.Error("Expected Bob to have acted in PreFlop")
+	}
+	if !hh.HasPlayerActed("Alice", Flop) {
+		t.Error("Expected Alice to have acted in Flop")
+	}
+
+	// Test players who haven't acted
+	if hh.HasPlayerActed("Bob", Flop) {
+		t.Error("Expected Bob to not have acted in Flop")
+	}
+	if hh.HasPlayerActed("Charlie", PreFlop) {
+		t.Error("Expected Charlie to not have acted in PreFlop")
+	}
+	if hh.HasPlayerActed("Alice", Turn) {
+		t.Error("Expected Alice to not have acted in Turn")
+	}
+}

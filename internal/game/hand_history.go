@@ -451,3 +451,108 @@ func (hh *HandHistory) GetDisplayActions() []string {
 
 	return actions
 }
+
+// BettingRoundSummary provides analysis of betting action for a round
+type BettingRoundSummary struct {
+	Round         BettingRound
+	Actions       []HandAction
+	NumRaises     int
+	NumCallers    int
+	LastAggressor string
+	InitialBet    int
+	CurrentBet    int
+}
+
+// BetSizingInfo provides analysis of individual bets
+type BetSizingInfo struct {
+	PlayerName string
+	Amount     int
+	PotBefore  int
+	Ratio      float64 // bet size / pot size
+}
+
+// GetCurrentRoundActions returns all actions for the specified betting round
+func (hh *HandHistory) GetCurrentRoundActions(currentRound BettingRound) []HandAction {
+	var actions []HandAction
+	for _, action := range hh.Actions {
+		if action.Round == currentRound {
+			actions = append(actions, action)
+		}
+	}
+	return actions
+}
+
+// GetBettingRoundSummary analyzes the betting action for a specific round
+func (hh *HandHistory) GetBettingRoundSummary(currentRound BettingRound) BettingRoundSummary {
+	actions := hh.GetCurrentRoundActions(currentRound)
+	
+	summary := BettingRoundSummary{
+		Round:    currentRound,
+		Actions:  actions,
+	}
+	
+	// Count raises and find aggressor
+	for _, action := range actions {
+		switch action.Action {
+		case Raise:
+			summary.NumRaises++
+			summary.LastAggressor = action.PlayerName
+			summary.CurrentBet = action.PotAfter - (action.PotAfter - action.Amount) // This is the new bet level
+		case Call:
+			// Skip blind posts for counting callers
+			if !(currentRound == PreFlop && hh.isBlindPosting(action)) {
+				summary.NumCallers++
+			}
+		}
+	}
+	
+	// Set initial bet (big blind for preflop, 0 for other rounds)
+	if currentRound == PreFlop {
+		summary.InitialBet = hh.BigBlind
+	}
+	
+	return summary
+}
+
+// GetBetSizingInfo analyzes bet sizing patterns for a round
+func (hh *HandHistory) GetBetSizingInfo(currentRound BettingRound) []BetSizingInfo {
+	actions := hh.GetCurrentRoundActions(currentRound)
+	var sizing []BetSizingInfo
+	
+	for _, action := range actions {
+		if action.Action == Raise {
+			// Calculate pot size before this bet
+			potBefore := action.PotAfter - action.Amount
+			
+			sizing = append(sizing, BetSizingInfo{
+				PlayerName: action.PlayerName,
+				Amount:     action.Amount,
+				PotBefore:  potBefore,
+				Ratio:      float64(action.Amount) / float64(potBefore),
+			})
+		}
+	}
+	
+	return sizing
+}
+
+// GetPlayerActions returns all actions by a specific player in this hand
+func (hh *HandHistory) GetPlayerActions(playerName string) []HandAction {
+	var actions []HandAction
+	for _, action := range hh.Actions {
+		if action.PlayerName == playerName {
+			actions = append(actions, action)
+		}
+	}
+	return actions
+}
+
+// HasPlayerActed checks if a player has taken any action in the specified round
+func (hh *HandHistory) HasPlayerActed(playerName string, round BettingRound) bool {
+	for _, action := range hh.Actions {
+		if action.PlayerName == playerName && action.Round == round {
+			return true
+		}
+	}
+	return false
+}
