@@ -498,7 +498,11 @@ func (t *Table) getDealerIndex() int {
 func (t *Table) findNextActivePlayer(startIndex int) int {
 	for i := 1; i <= len(t.ActivePlayers); i++ {
 		index := (startIndex + i) % len(t.ActivePlayers)
-		if t.ActivePlayers[index].CanAct() {
+		player := t.ActivePlayers[index]
+		
+		// Player can act if they're active, not folded, not all-in, AND
+		// either they haven't acted yet OR they haven't matched the current bet
+		if player.CanAct() && (!t.PlayersActed[player.ID] || player.BetThisRound < t.CurrentBet) {
 			return index
 		}
 	}

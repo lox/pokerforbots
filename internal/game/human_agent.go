@@ -17,7 +17,7 @@ func NewHumanAgent(promptFunc func() (Decision, error)) *HumanAgent {
 }
 
 // MakeDecision prompts the human for a decision
-func (h *HumanAgent) MakeDecision(player *Player, table *Table) Decision {
+func (h *HumanAgent) MakeDecision(tableState TableState, validActions []ValidAction) Decision {
 	if h.promptFunc == nil {
 		// Fallback if no prompt function provided
 		return Decision{
@@ -40,52 +40,3 @@ func (h *HumanAgent) MakeDecision(player *Player, table *Table) Decision {
 	return decision
 }
 
-// ExecuteAction executes the human's decision and updates game state
-func (h *HumanAgent) ExecuteAction(player *Player, table *Table) string {
-	if !player.CanAct() {
-		return "Player cannot act"
-	}
-
-	decision := h.MakeDecision(player, table)
-
-	switch decision.Action {
-	case Fold:
-		player.Fold()
-	case Call:
-		callAmount := table.CurrentBet - player.BetThisRound
-		if callAmount > 0 && callAmount <= player.Chips {
-			player.Call(callAmount)
-			table.Pot += callAmount
-		} else {
-			player.Check() // Fall back to check if can't call
-		}
-	case Check:
-		player.Check()
-	case Raise:
-		totalNeeded := decision.Amount - player.BetThisRound
-		if totalNeeded > 0 && totalNeeded <= player.Chips {
-			player.Raise(totalNeeded)
-			table.Pot += totalNeeded
-			table.CurrentBet = decision.Amount
-		} else {
-			// Fall back to call or check
-			callAmount := table.CurrentBet - player.BetThisRound
-			if callAmount > 0 && callAmount <= player.Chips {
-				player.Call(callAmount)
-				table.Pot += callAmount
-			} else {
-				player.Check()
-			}
-		}
-	case AllIn:
-		allInAmount := player.Chips
-		if player.AllIn() {
-			table.Pot += allInAmount
-			if player.TotalBet > table.CurrentBet {
-				table.CurrentBet = player.TotalBet
-			}
-		}
-	}
-
-	return decision.Reasoning
-}

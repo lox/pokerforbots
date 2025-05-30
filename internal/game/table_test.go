@@ -1403,3 +1403,181 @@ func TestPostFlopCheckingRoundBug(t *testing.T) {
 		t.Error("Betting round should be complete after all players check in post-flop")
 	}
 }
+
+func TestBettingRoundPlayerActionOrder(t *testing.T) {
+	// Test that prevents players from acting twice in same round unless responding to raise
+	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
+
+	// Add 4 players to test the scenario from the bug report
+	player1 := NewPlayer(1, "Player1", AI, 200)
+	player2 := NewPlayer(2, "Player2", AI, 200)
+	player3 := NewPlayer(3, "Player3", AI, 200)
+	player4 := NewPlayer(4, "Player4", AI, 200)
+
+	table.AddPlayer(player1)
+	table.AddPlayer(player2)
+	table.AddPlayer(player3)
+	table.AddPlayer(player4)
+
+	// Start hand
+	table.StartNewHand()
+
+	// Track who has acted to verify proper order
+	actedPlayers := []string{}
+
+	// Simulate the betting sequence that caused the bug:
+	// 1. Player4 calls $2
+	// 2. Player1 raises to $4
+	// 3. Player4 should NOT be able to act again until other players respond
+
+	// Find the order of players (UTG acts first preflop)
+	currentPlayer := table.GetCurrentPlayer()
+	if currentPlayer == nil {
+		t.Fatal("No current player after starting hand")
+	}
+
+	// First action: current player calls
+	actedPlayers = append(actedPlayers, currentPlayer.Name)
+	decision := Decision{Action: Call, Amount: 2, Reasoning: "Call BB"}
+	_, err := table.ApplyDecision(decision)
+	if err != nil {
+		t.Fatalf("Failed to apply call decision: %v", err)
+	}
+	table.AdvanceAction()
+
+	// Second action: next player raises
+	currentPlayer = table.GetCurrentPlayer()
+	if currentPlayer == nil {
+		t.Fatal("No current player after first action")
+	}
+	
+	actedPlayers = append(actedPlayers, currentPlayer.Name)
+	decision = Decision{Action: Raise, Amount: 4, Reasoning: "Raise to $4"}
+	_, err = table.ApplyDecision(decision)
+	if err != nil {
+		t.Fatalf("Failed to apply raise decision: %v", err)
+	}
+	table.AdvanceAction()
+
+	// Third action: should be next player in order, NOT the first caller
+	currentPlayer = table.GetCurrentPlayer()
+	if currentPlayer == nil {
+		t.Fatal("No current player after raise")
+	}
+
+	// Verify the first caller is not acting again immediately
+	if len(actedPlayers) >= 1 && currentPlayer.Name == actedPlayers[0] {
+		t.Errorf("Player %s is acting again immediately after their action, before other players have responded to the raise", currentPlayer.Name)
+	}
+
+	// Continue until we get back to the original caller (who should act again to respond to raise)
+	actionCount := 0
+	originalCaller := actedPlayers[0]
+	
+	for currentPlayer != nil && actionCount < 10 { // Safety limit
+		actionCount++
+		
+		if currentPlayer.Name == originalCaller {
+			// Original caller should only act again after others have had chance to respond
+			if actionCount <= 2 {
+				t.Errorf("Original caller %s is acting too early (action #%d). Should only act again after other players respond to raise", originalCaller, actionCount)
+			}
+			break
+		}
+		
+		// Have current player call or fold
+		if table.CurrentBet > currentPlayer.BetThisRound {
+			decision = Decision{Action: Call, Amount: table.CurrentBet, Reasoning: "Call raise"}
+		} else {
+			decision = Decision{Action: Check, Amount: 0, Reasoning: "Check"}
+		}
+		
+		_, err = table.ApplyDecision(decision)
+		if err != nil {
+			t.Fatalf("Failed to apply decision for %s: %v", currentPlayer.Name, err)
+		}
+		
+		table.AdvanceAction()
+		currentPlayer = table.GetCurrentPlayer()
+	}
+
+	if actionCount >= 10 {
+		t.Error("Too many actions - possible infinite loop in betting round")
+	}
+}
+
+func TestBettingRoundRaiseResponse(t *testing.T) {
+	// Test that players who have acted CAN act again when facing a raise
+	table := NewTable(rand.New(rand.NewSource(123)), TableConfig{
+		MaxSeats:   3,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
+
+	// Add 3 players for simpler scenario
+	player1 := NewPlayer(1, "SB", AI, 200)   // Small blind
+	player2 := NewPlayer(2, "BB", AI, 200)   // Big blind  
+	player3 := NewPlayer(3, "BTN", AI, 200)  // Button/Dealer
+
+	table.AddPlayer(player1)
+	table.AddPlayer(player2)
+	table.AddPlayer(player3)
+
+	table.StartNewHand()
+
+	// Button should act first preflop in 3-handed
+	currentPlayer := table.GetCurrentPlayer()
+	if currentPlayer.Position != Button {
+		t.Errorf("Expected button to act first, got %s", currentPlayer.Position)
+	}
+
+	// Button calls
+	decision := Decision{Action: Call, Amount: 2, Reasoning: "Call"}
+	table.ApplyDecision(decision)
+	table.AdvanceAction()
+
+	// Small blind raises
+	currentPlayer = table.GetCurrentPlayer()
+	if currentPlayer.Position != SmallBlind {
+		t.Errorf("Expected small blind to act second, got %s", currentPlayer.Position)
+	}
+	
+	decision = Decision{Action: Raise, Amount: 6, Reasoning: "Raise to $6"}
+	table.ApplyDecision(decision)
+	table.AdvanceAction()
+
+	// Big blind should act next
+	currentPlayer = table.GetCurrentPlayer()
+	if currentPlayer.Position != BigBlind {
+		t.Errorf("Expected big blind to act after SB raise, got %s", currentPlayer.Position)
+	}
+
+	// Big blind calls
+	decision = Decision{Action: Call, Amount: 6, Reasoning: "Call raise"}
+	table.ApplyDecision(decision)
+	table.AdvanceAction()
+
+	// Now button should get chance to respond to the raise
+	currentPlayer = table.GetCurrentPlayer()
+	if currentPlayer.Position != Button {
+		t.Errorf("Expected button to get chance to respond to raise, got %s", currentPlayer.Position)
+	}
+
+	// Verify they can call the raise
+	validActions := table.GetValidActions()
+	canCall := false
+	for _, action := range validActions {
+		if action.Action == Call {
+			canCall = true
+			break
+		}
+	}
+	
+	if !canCall {
+		t.Error("Button should be able to call the raise")
+	}
+}

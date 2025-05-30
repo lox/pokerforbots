@@ -826,6 +826,17 @@ func (ti *TUIAgent) ShowPlayerActionWithThinking(player *game.Player, thinking s
 	// to preserve the poker experience
 }
 
+// OnPlayerAction implements the ActionObserver interface
+func (ti *TUIAgent) OnPlayerAction(player *game.Player, reasoning string) {
+	// Don't show the human player's action here - they already see it from their own input
+	if player.Type == game.Human {
+		return
+	}
+	
+	// Show AI player actions with thinking
+	ti.ShowPlayerActionWithThinking(player, reasoning)
+}
+
 // ShowBettingRoundComplete shows when a betting round completes
 func (ti *TUIAgent) ShowBettingRoundComplete() {
 	activePlayers := 0

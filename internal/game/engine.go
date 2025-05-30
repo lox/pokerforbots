@@ -6,12 +6,18 @@ import (
 	"github.com/charmbracelet/log"
 )
 
+// ActionObserver is notified when players take actions
+type ActionObserver interface {
+	OnPlayerAction(player *Player, reasoning string)
+}
+
 // GameEngine handles the core game loop logic that can be shared between
 // interactive play and simulation
 type GameEngine struct {
 	table        *Table
 	defaultAgent Agent
 	logger       *log.Logger
+	observers    []ActionObserver
 }
 
 // NewGameEngine creates a new game engine with a default agent
@@ -20,6 +26,19 @@ func NewGameEngine(table *Table, defaultAgent Agent, logger *log.Logger) *GameEn
 		table:        table,
 		defaultAgent: defaultAgent,
 		logger:       logger,
+		observers:    []ActionObserver{},
+	}
+}
+
+// AddObserver adds an action observer
+func (ge *GameEngine) AddObserver(observer ActionObserver) {
+	ge.observers = append(ge.observers, observer)
+}
+
+// notifyObservers notifies all observers of a player action
+func (ge *GameEngine) notifyObservers(player *Player, reasoning string) {
+	for _, observer := range ge.observers {
+		observer.OnPlayerAction(player, reasoning)
 	}
 }
 
@@ -111,6 +130,9 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) (*HandResult, error) {
 				"action", playerAction,
 				"amount", currentPlayer.ActionAmount,
 				"reasoning", reasoning)
+
+			// Notify observers of the action
+			ge.notifyObservers(currentPlayer, reasoning)
 
 			ge.table.AdvanceAction()
 		}

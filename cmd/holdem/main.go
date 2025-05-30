@@ -136,6 +136,9 @@ func startInteractiveGame(rng *rand.Rand, seats int, logger *log.Logger) error {
 	// Create game engine
 	defaultAgent := bot.NewBotWithRNG(logger, bot.DefaultBotConfig(), rng)
 	engine := game.NewGameEngine(table, defaultAgent, logger)
+	
+	// Register TUI as action observer to see AI player actions
+	engine.AddObserver(hi)
 
 	// Main game loop - much simpler!
 	for {
@@ -193,111 +196,6 @@ func startInteractiveGame(rng *rand.Rand, seats int, logger *log.Logger) error {
 
 // playHandWithTUI wraps the game engine to provide TUI integration
 func playHandWithTUI(engine *game.GameEngine, agents map[string]game.Agent, tui *tui.TUIAgent) (*game.HandResult, error) {
-	table := engine.GetTable()
-
-	// Hand loop - continue until hand is complete
-	for {
-		currentPlayer := table.GetCurrentPlayer()
-		if currentPlayer == nil {
-			break
-		}
-
-		var reasoning string
-
-		// Handle any player type using the unified Agent interface
-		if agents == nil || agents[currentPlayer.Name] == nil {
-			// This shouldn't happen in our setup, but fallback to a basic bot
-			return engine.PlayHand(agents)
-		}
-
-		// TODO: Fix this to work with new interface
-		// For now, just use a simple fallback
-		return &game.HandResult{
-			HandID:       table.HandID,
-			Winner:       nil,
-			PotSize:      table.Pot,
-			ShowdownType: "incomplete",
-		}, nil
-
-		// Check if human player quit
-		if currentPlayer.Type == game.Human && reasoning == "Player quit" {
-			return &game.HandResult{
-				HandID:       table.HandID,
-				Winner:       nil, // Special case for quit
-				PotSize:      table.Pot,
-				ShowdownType: "quit",
-			}, nil
-		}
-
-		// Show the player action in TUI (except for human player who already showed it)
-		if currentPlayer.Type == game.AI {
-			tui.ShowPlayerActionWithThinking(currentPlayer, reasoning)
-		}
-
-		table.AdvanceAction()
-
-		// Check if betting round is complete
-		if table.IsBettingRoundComplete() {
-			activePlayers := len(table.GetActivePlayers())
-			if activePlayers <= 1 {
-				// Hand over, someone won by everyone else folding
-				potBeforeAwarding := table.Pot
-				winner := table.FindWinner()
-				table.AwardPot()
-				return &game.HandResult{
-					HandID:       table.HandID,
-					Winner:       winner,
-					PotSize:      potBeforeAwarding,
-					ShowdownType: "fold",
-				}, nil
-			}
-
-			// Show betting round completion
-			tui.ShowBettingRoundComplete()
-
-			// Move to next betting round and show transition
-			switch table.CurrentRound {
-			case game.PreFlop:
-				table.DealFlop()
-				tui.ShowBettingRoundTransition()
-			case game.Flop:
-				table.DealTurn()
-				tui.ShowBettingRoundTransition()
-			case game.Turn:
-				table.DealRiver()
-				tui.ShowBettingRoundTransition()
-			case game.River:
-				// Go to showdown
-				table.CurrentRound = game.Showdown
-				potBeforeAwarding := table.Pot
-				winner := table.FindWinner()
-				table.AwardPot()
-				return &game.HandResult{
-					HandID:       table.HandID,
-					Winner:       winner,
-					PotSize:      potBeforeAwarding,
-					ShowdownType: "showdown",
-				}, nil
-			case game.Showdown:
-				// Showdown is complete, end the hand
-				break
-			}
-		}
-
-		// If we're in showdown phase, don't continue the action loop
-		if table.CurrentRound == game.Showdown {
-			break
-		}
-	}
-
-	// Fallback - this shouldn't be reached
-	winner := table.FindWinner()
-	if winner != nil {
-		table.AwardPot()
-	}
-	return &game.HandResult{
-		HandID:  table.HandID,
-		Winner:  winner,
-		PotSize: 0,
-	}, nil
+	// Simply delegate to the engine - it handles all agent types including TUI
+	return engine.PlayHand(agents)
 }
