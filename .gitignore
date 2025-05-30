@@ -1,5 +1,9 @@
-dist/
-*.log
-/holdem
-/handhistory
+/dist/
+/*.log
 /*.prof
+/handhistory
+
+# Binaries
+/main
+/simulate
+/holdem
