@@ -337,7 +337,7 @@ func playHand(opponentType string, handSeed int64, ourPosition int, logger *log.
 
 	// Create agents with controlled RNG
 	agents := make(map[string]game.Agent)
-	agents["OurBot"] = bot.NewBotWithRNG(logger, bot.DefaultBotConfig(), handRng)
+	agents["OurBot"] = bot.NewBot(handRng, logger)
 
 	// Create opponent agents based on type
 	for i := 1; i <= 6; i++ {
@@ -359,7 +359,19 @@ func playHand(opponentType string, handSeed int64, ourPosition int, logger *log.
 
 	// Play the hand
 	engine.StartNewHand()
-	engine.PlayHand(agents)
+	handResult, err := engine.PlayHand(agents)
+	if err != nil {
+		logger.Error("Failed to play hand", "error", err, "seed", handSeed)
+		// Return a losing result to continue simulation
+		return HandResult{
+			NetBB:          -1.0, // Fold/error = lose 1BB
+			Seed:           handSeed,
+			Position:       ourPosition,
+			WentToShowdown: false,
+			FinalPotSize:   2, // Just the blinds
+			StreetReached:  "Pre-flop",
+		}
+	}
 
 	// Calculate net BB for our bot
 	finalChips := ourBot.Chips
@@ -375,13 +387,28 @@ func playHand(opponentType string, handSeed int64, ourPosition int, logger *log.
 		}
 	}
 
+	// Extract information from engine result if available
+	wentToShowdown := false
+	streetReached := "Pre-flop"
+	if handResult != nil {
+		wentToShowdown = (handResult.ShowdownType == "showdown")
+		// Street reached can be inferred from the current round when hand ended
+		if table.CurrentRound == game.Flop {
+			streetReached = "Flop"
+		} else if table.CurrentRound == game.Turn {
+			streetReached = "Turn"
+		} else if table.CurrentRound == game.River {
+			streetReached = "River"
+		}
+	}
+
 	return HandResult{
 		NetBB:          netBB,
 		Seed:           handSeed,
 		Position:       ourPosition,
-		WentToShowdown: false,    // TODO: Get from engine result
+		WentToShowdown: wentToShowdown,
 		FinalPotSize:   maxDelta, // Winner's chip gain = pot size
-		StreetReached:  "",       // TODO: Get from engine result
+		StreetReached:  streetReached,
 	}
 }
 
