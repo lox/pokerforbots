@@ -330,27 +330,53 @@ func (ti *TUIAgent) handleRaise(args []string) (bool, error) {
 
 	if len(args) == 0 {
 		ti.mainLogger.Warn("No raise amount specified")
-		ti.model.AddLogEntry("Error: Specify raise amount: 'raise <amount>'")
+		ti.model.AddLogEntry("Error: Specify raise amount: 'raise <amount>' or 'raise to <amount>'")
 		return true, nil
 	}
 
-	ti.mainLogger.Info("Parsing raise amount", "input", args[0])
-	amount, err := strconv.Atoi(args[0])
-	if err != nil {
-		ti.mainLogger.Error("Invalid amount format", "input", args[0], "error", err)
-		ti.model.AddLogEntry(fmt.Sprintf("Error: Invalid amount: %s", args[0]))
+	var totalBetAmount int
+	var raiseByAmount int
+
+	// Check if it's "raise to X" (explicit total) or "raise X" (default: raise by X)
+	if len(args) >= 2 && args[0] == "to" {
+		// "raise to X" - explicit total bet amount
+		ti.mainLogger.Info("Parsing 'raise to' amount", "input", args[1])
+		amount, err := strconv.Atoi(args[1])
+		if err != nil {
+			ti.mainLogger.Error("Invalid amount format for 'raise to'", "input", args[1], "error", err)
+			ti.model.AddLogEntry(fmt.Sprintf("Error: Invalid amount: %s", args[1]))
+			return true, nil
+		}
+		totalBetAmount = amount
+		raiseByAmount = amount - ti.table.CurrentBet
+	} else {
+		// "raise X" - default behavior: raise by X
+		ti.mainLogger.Info("Parsing 'raise by' amount", "input", args[0])
+		amount, err := strconv.Atoi(args[0])
+		if err != nil {
+			ti.mainLogger.Error("Invalid amount format for raise", "input", args[0], "error", err)
+			ti.model.AddLogEntry(fmt.Sprintf("Error: Invalid amount: %s", args[0]))
+			return true, nil
+		}
+		raiseByAmount = amount
+		totalBetAmount = ti.table.CurrentBet + amount
+	}
+
+	ti.mainLogger.Info("Validating raise", "totalBetAmount", totalBetAmount, "raiseByAmount", raiseByAmount, "currentBet", ti.table.CurrentBet, "playerChips", currentPlayer.Chips)
+
+	if raiseByAmount <= 0 {
+		ti.mainLogger.Warn("Raise amount must be positive", "raiseByAmount", raiseByAmount)
+		ti.model.AddLogEntry("Error: Raise amount must be positive")
 		return true, nil
 	}
 
-	ti.mainLogger.Info("Validating raise", "amount", amount, "currentBet", ti.table.CurrentBet, "playerChips", currentPlayer.Chips)
-
-	if amount <= ti.table.CurrentBet {
-		ti.mainLogger.Warn("Raise amount too low", "amount", amount, "currentBet", ti.table.CurrentBet)
-		ti.model.AddLogEntry(fmt.Sprintf("Error: Raise must be more than current bet of $%d", ti.table.CurrentBet))
+	if totalBetAmount <= ti.table.CurrentBet {
+		ti.mainLogger.Warn("Total bet too low", "totalBetAmount", totalBetAmount, "currentBet", ti.table.CurrentBet)
+		ti.model.AddLogEntry(fmt.Sprintf("Error: Total bet must be more than current bet of $%d", ti.table.CurrentBet))
 		return true, nil
 	}
 
-	totalNeeded := amount - currentPlayer.BetThisRound
+	totalNeeded := totalBetAmount - currentPlayer.BetThisRound
 	if totalNeeded > currentPlayer.Chips {
 		ti.mainLogger.Warn("Insufficient chips", "totalNeeded", totalNeeded, "playerChips", currentPlayer.Chips)
 		ti.model.AddLogEntry(fmt.Sprintf("Error: Insufficient chips, you have $%d", currentPlayer.Chips))
@@ -365,13 +391,13 @@ func (ti *TUIAgent) handleRaise(args []string) (bool, error) {
 	}
 
 	ti.table.Pot += totalNeeded
-	ti.table.CurrentBet = amount
-	ti.mainLogger.Info("Raise successful", "amount", amount, "newPot", ti.table.Pot)
-	ti.model.AddLogEntry(fmt.Sprintf("Raised to $%d", amount))
+	ti.table.CurrentBet = totalBetAmount
+	ti.mainLogger.Info("Raise successful", "totalBetAmount", totalBetAmount, "raiseByAmount", raiseByAmount, "newPot", ti.table.Pot)
+	ti.model.AddLogEntry(fmt.Sprintf("Raised by $%d (to $%d)", raiseByAmount, totalBetAmount))
 
 	// Record action in hand history
 	if ti.table.HandHistory != nil {
-		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Raise, amount, ti.table.Pot, ti.table.CurrentRound, "")
+		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Raise, totalBetAmount, ti.table.Pot, ti.table.CurrentRound, "")
 	}
 
 	return true, nil
@@ -828,13 +854,14 @@ func (ti *TUIAgent) ShowPlayerActionWithThinking(player *game.Player, thinking s
 
 // OnPlayerAction implements the ActionObserver interface
 func (ti *TUIAgent) OnPlayerAction(player *game.Player, reasoning string) {
-	// Don't show the human player's action here - they already see it from their own input
+	// Show all player actions in the log for complete game history
+	// For human players, don't show AI thinking reasoning
 	if player.Type == game.Human {
-		return
+		ti.ShowPlayerActionWithThinking(player, "")
+	} else {
+		// Show AI player actions with thinking
+		ti.ShowPlayerActionWithThinking(player, reasoning)
 	}
-	
-	// Show AI player actions with thinking
-	ti.ShowPlayerActionWithThinking(player, reasoning)
 }
 
 // ShowBettingRoundComplete shows when a betting round completes

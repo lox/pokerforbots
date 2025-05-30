@@ -50,7 +50,7 @@ func NewTUIModel(table *game.Table, logger *log.Logger) *TUIModel {
 
 	// Create textinput for action input
 	ti := textinput.New()
-	ti.Placeholder = "Enter your action (call, raise 50, fold, check, etc.)"
+	ti.Placeholder = "Enter your action (call, raise 10, raise to 15, fold, check, etc.)"
 	ti.Focus()
 	ti.CharLimit = 100
 	ti.Width = 100
@@ -336,7 +336,7 @@ func (m *TUIModel) renderActionPane() string {
 		m.actionInput.Placeholder = "Enter to continue, 'quit' to exit"
 	} else {
 		// During hand
-		m.actionInput.Placeholder = "Enter your action (call, raise 50, fold, check, etc.)"
+		m.actionInput.Placeholder = "Enter your action (call, raise 10, raise to 15, fold, check, etc.)"
 	}
 
 	content.WriteString(m.actionInput.View())

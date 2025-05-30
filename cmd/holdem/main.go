@@ -147,7 +147,8 @@ func startInteractiveGame(rng *rand.Rand, seats int, logger *log.Logger) error {
 		// Start a new hand first
 		engine.StartNewHand()
 
-		// Initialize TUI after hand is started (cards dealt, blinds posted)
+		// Clear log and initialize TUI after hand is started (cards dealt, blinds posted)
+		hi.ClearLog()
 		hi.InitializeHand(len(table.ActivePlayers))
 
 		// Use the unified game engine with TUI integration
@@ -187,8 +188,6 @@ func startInteractiveGame(rng *rand.Rand, seats int, logger *log.Logger) error {
 
 		// Prepare for next hand
 		logger.Info("Player chose to continue to next hand")
-		hi.ClearLog()
-		hi.InitializeHand(len(table.ActivePlayers))
 	}
 
 	return nil
