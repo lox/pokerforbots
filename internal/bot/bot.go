@@ -68,14 +68,14 @@ type BotConfig struct {
 func DefaultBotConfig() BotConfig {
 	return BotConfig{
 		Name:              "Default",
-		AggressionFactor:  1.0,
-		TightnessFactor:   1.0,
-		BluffFrequency:    0.3,
-		CBetFrequency:     0.6,
-		EquityThreshold:   0.05,
+		AggressionFactor:  1.2,  // Slightly more aggressive
+		TightnessFactor:   0.9,  // Slightly looser
+		BluffFrequency:    0.35, // More bluffing
+		CBetFrequency:     0.7,  // More continuation betting
+		EquityThreshold:   0.03, // Lower threshold for aggression
 		OpponentModel:     "random",
-		PositionAwareness: 1.0,
-		PotOddsWeight:     1.0,
+		PositionAwareness: 1.1,  // More position awareness
+		PotOddsWeight:     1.2,  // More weight on pot odds
 	}
 }
 
@@ -157,7 +157,7 @@ func NewBotWithConfig(rng *rand.Rand, logger *log.Logger, config BotConfig) *Bot
 		config:            config,
 		opponentStats:     make(map[string]*OpponentProfile),
 		handHistory:       make([]HandHistory, 0),
-		exploitationLevel: 0.3, // Start with some exploitation
+		exploitationLevel: 0.5, // Higher exploitation against weak opponents
 	}
 }
 
@@ -323,12 +323,40 @@ func (b *Bot) trackOpponentAction(playerName string, action game.Action, handHis
 		}
 	}
 
-	// Track fold to bet tendencies
-	// Note: We need betting context to properly track this
-	if action == game.Fold {
-		profile.BetsFaced++
-		profile.FoldsToBet++
-		profile.FoldToBet = float64(profile.FoldsToBet) / float64(profile.BetsFaced)
+	// Track fold to bet tendencies only when player actually faced a bet
+	// This requires checking if there was betting action before this fold
+	if action == game.Fold && handHistory != nil {
+		// Check if there was aggressive action (bet/raise) before this fold in the current round
+		facedBet := false
+		for i := len(handHistory.Actions) - 1; i >= 0; i-- {
+			prevAction := handHistory.Actions[i]
+			if prevAction.Round != currentRound {
+				break // Different round
+			}
+			if prevAction.PlayerName == playerName {
+				break // This player's previous action in same round
+			}
+			if prevAction.Action == game.Raise {
+				facedBet = true
+				break
+			}
+		}
+		
+		if facedBet {
+			profile.BetsFaced++
+			profile.FoldsToBet++
+			if profile.BetsFaced > 0 {
+				// Apply recency bias - recent folds matter more
+				// Use exponential moving average for faster adaptation
+				if profile.BetsFaced == 1 {
+					profile.FoldToBet = 1.0 // First fold to bet = 100% fold rate
+				} else {
+					// Weighted average: 70% new data, 30% old data for fast adaptation
+					newFoldRate := float64(profile.FoldsToBet) / float64(profile.BetsFaced)
+					profile.FoldToBet = 0.7*newFoldRate + 0.3*profile.FoldToBet
+				}
+			}
+		}
 	}
 }
 
@@ -734,6 +762,37 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player game.PlayerState, ta
 
 	// Special cases
 	if tableState.CurrentBet == 0 {
+		// Check if we're against very passive opponents and increase aggression
+		totalFoldToBet := 0.0
+		activeOpponents := 0
+		for _, p := range tableState.Players {
+			if !p.IsFolded && p.IsActive && p.Name != tableState.Players[tableState.ActingPlayerIdx].Name {
+				if stats, exists := b.opponentStats[p.Name]; exists && stats.BetsFaced > 0 {
+					totalFoldToBet += stats.FoldToBet
+					activeOpponents++
+				} else {
+					// Default assumption for unknown opponents: moderately passive
+					totalFoldToBet += 0.7
+					activeOpponents++
+				}
+			}
+		}
+		
+		// Against very passive opponents, be much more aggressive in unopened pots
+		if activeOpponents > 0 {
+			avgFoldToBet := totalFoldToBet / float64(activeOpponents)
+			if avgFoldToBet > 0.85 {
+				thinking.AddThought("Extremely passive opponents detected - betting with any two cards")
+				return game.Raise
+			} else if avgFoldToBet > 0.75 && raiseProb > 0.05 {
+				thinking.AddThought("Very passive opponents - increased aggression")
+				return game.Raise
+			} else if avgFoldToBet > 0.65 && raiseProb > 0.15 {
+				thinking.AddThought("Moderately passive opponents - selective aggression")
+				return game.Raise
+			}
+		}
+		
 		if foldProb > 0.5 {
 			thinking.AddThought("Checking instead of folding when possible")
 			return game.Check
@@ -786,6 +845,12 @@ func (b *Bot) adaptEquityToOpponents(baseEquity float64, tableState game.TableSt
 				totalVPIP += stats.VPIP
 				totalAggression += stats.Aggression
 				activeOpponents++
+			} else {
+				// Default stats for unknown players (assume random-like)
+				totalFoldToBet += 0.5
+				totalVPIP += 0.5
+				totalAggression += 0.5
+				activeOpponents++
 			}
 		}
 	}
@@ -805,12 +870,16 @@ func (b *Bot) adaptEquityToOpponents(baseEquity float64, tableState game.TableSt
 	switch playerType {
 	case "tight-passive":
 		if avgFoldToBet > 0.9 {
-			// Against fold bots - any hand becomes profitable to bet
-			thinking.AddThought("Fold bots detected - massive bluff equity boost")
-			return math.Max(baseEquity, 0.8)
+			// Against extreme fold bots - any hand becomes profitable to bet
+			thinking.AddThought("Extreme fold bots detected - maximum bluff equity")
+			return math.Max(baseEquity, 0.9)
+		} else if avgFoldToBet > 0.75 {
+			// Against very tight players - significant bluff boost
+			thinking.AddThought("Very tight players - large bluff equity boost")
+			return math.Max(baseEquity, 0.75)
 		}
-		// Against tight players: increase bluff equity
-		bluffBonus := (avgFoldToBet - 0.5) * 0.3
+		// Against moderately tight players: increase bluff equity with faster learning
+		bluffBonus := (avgFoldToBet - 0.5) * 0.6 // Increased from 0.5 to 0.6
 		return baseEquity + bluffBonus*b.exploitationLevel
 
 	case "tight-aggressive":
@@ -819,9 +888,12 @@ func (b *Bot) adaptEquityToOpponents(baseEquity float64, tableState game.TableSt
 		return baseEquity * 0.95 // Slightly more conservative
 
 	case "loose-passive":
-		// Against calling stations: need stronger hands for value
-		thinking.AddThought("Calling stations - need stronger hands")
-		return baseEquity * 0.9
+		// Against calling stations: need stronger hands for value but can extract more
+		thinking.AddThought("Calling stations - value betting aggressively")
+		if baseEquity > 0.55 {
+			return baseEquity * 1.15 // Increase value betting equity
+		}
+		return baseEquity * 0.85 // Reduce bluff equity
 
 	case "loose-aggressive":
 		// Against maniacs: tighten up significantly
@@ -829,7 +901,14 @@ func (b *Bot) adaptEquityToOpponents(baseEquity float64, tableState game.TableSt
 		return baseEquity * 0.8
 
 	default:
-		return baseEquity
+		// Unknown/balanced opponents: assume some exploitability  
+		thinking.AddThought("Unknown opponents - assuming moderate passivity")
+		if baseEquity > 0.55 {
+			return baseEquity * 1.25 // Aggressive value betting against unknowns
+		} else if baseEquity < 0.4 {
+			return baseEquity + 0.15 // Decent bluff equity boost
+		}
+		return baseEquity * 1.15
 	}
 }
 

@@ -882,7 +882,7 @@ func TestHeadsUpBoardChop(t *testing.T) {
 	if aliceTotal+bobTotal != expectedTotal {
 		t.Errorf("Expected total %d to match pot, got Alice: %d, Bob: %d (total: %d)", expectedTotal, aliceTotal, bobTotal, aliceTotal+bobTotal)
 	}
-	
+
 	// The split should be close to 50/50, allowing for small differences due to blind positions and rounding
 	diff := aliceTotal - bobTotal
 	if diff < 0 {
@@ -994,7 +994,7 @@ func TestThreeWaySidePotTie(t *testing.T) {
 	if aliceWon+bobWon != expectedTotal {
 		t.Errorf("Expected total %d, got Alice: %d, Bob: %d (total: %d)", expectedTotal, aliceWon, bobWon, aliceWon+bobWon)
 	}
-	
+
 	// The split should be close to 75/75, allowing for small differences due to blind positions
 	diff := aliceWon - bobWon
 	if diff < 0 {
@@ -1139,7 +1139,7 @@ func TestBettingRoundCompleteWhenAllCheck(t *testing.T) {
 		if currentPlayer == nil {
 			break
 		}
-		
+
 		// Call to match big blind or check if already matched
 		if currentPlayer.BetThisRound < table.CurrentBet {
 			decision := Decision{Action: Call, Amount: 0, Reasoning: "call to see flop"}
@@ -1148,9 +1148,9 @@ func TestBettingRoundCompleteWhenAllCheck(t *testing.T) {
 			decision := Decision{Action: Check, Amount: 0, Reasoning: "check"}
 			table.ApplyDecision(decision)
 		}
-		
+
 		table.AdvanceAction()
-		
+
 		if table.IsBettingRoundComplete() {
 			break
 		}
@@ -1190,11 +1190,11 @@ func TestBettingRoundCompleteWhenAllCheck(t *testing.T) {
 	// Verify the betting round completed
 	if !table.IsBettingRoundComplete() {
 		t.Errorf("Betting round should be complete after all players check, but it's not. Actions taken: %d", actionCount)
-		
+
 		// Debug info
 		t.Logf("CurrentBet: %d", table.CurrentBet)
 		for i, player := range table.ActivePlayers {
-			t.Logf("Player %d (%s): BetThisRound=%d, PlayersActed[%d]=%v", 
+			t.Logf("Player %d (%s): BetThisRound=%d, PlayersActed[%d]=%v",
 				i, player.Name, player.BetThisRound, player.ID, table.PlayersActed[player.ID])
 		}
 	}
@@ -1238,11 +1238,11 @@ func TestInfiniteCheckingBugReproduction(t *testing.T) {
 
 		// Try to check (this might be invalid if facing a bet)
 		validActions := table.GetValidActions()
-		
+
 		// Log the situation for debugging
-		t.Logf("Iteration %d: Player %s, BetThisRound=%d, CurrentBet=%d", 
+		t.Logf("Iteration %d: Player %s, BetThisRound=%d, CurrentBet=%d",
 			iteration, currentPlayer.Name, currentPlayer.BetThisRound, table.CurrentBet)
-		
+
 		var hasCheck bool
 		for _, action := range validActions {
 			if action.Action == Check {
@@ -1272,14 +1272,14 @@ func TestInfiniteCheckingBugReproduction(t *testing.T) {
 		// Check if betting round completed
 		if table.IsBettingRoundComplete() {
 			t.Logf("Betting round completed after %d iterations", iteration)
-			
+
 			// Check if hand is over (only one player left)
 			activePlayers := table.GetActivePlayers()
 			if len(activePlayers) <= 1 {
 				t.Log("Hand over - only one player left")
 				break
 			}
-			
+
 			// Advance to next round
 			switch table.CurrentRound {
 			case PreFlop:
@@ -1293,12 +1293,10 @@ func TestInfiniteCheckingBugReproduction(t *testing.T) {
 				t.Log("Advanced to River")
 			case River:
 				t.Log("Advanced to Showdown")
-				break
 			default:
 				t.Log("Hand should be complete")
-				break
 			}
-			
+
 			// Reset iteration counter for new round
 			iteration = 0
 		}
@@ -1306,18 +1304,16 @@ func TestInfiniteCheckingBugReproduction(t *testing.T) {
 
 	if iteration >= maxIterations {
 		t.Errorf("Infinite loop detected: hit %d iterations in a single betting round", maxIterations)
-		
+
 		// Debug the stuck state
 		t.Logf("CurrentBet: %d", table.CurrentBet)
 		t.Logf("CurrentRound: %s", table.CurrentRound)
 		for i, player := range table.ActivePlayers {
-			t.Logf("Player %d (%s): BetThisRound=%d, PlayersActed[%d]=%v, IsActive=%v, IsFolded=%v", 
+			t.Logf("Player %d (%s): BetThisRound=%d, PlayersActed[%d]=%v, IsActive=%v, IsFolded=%v",
 				i, player.Name, player.BetThisRound, player.ID, table.PlayersActed[player.ID], player.IsActive, player.IsFolded)
 		}
 	}
 }
-
-
 
 func TestPostFlopCheckingRoundBug(t *testing.T) {
 	// Test the post-flop scenario where CurrentBet = 0 and everyone checks
@@ -1337,24 +1333,24 @@ func TestPostFlopCheckingRoundBug(t *testing.T) {
 
 	// Start hand and move to flop (this should reset CurrentBet to 0)
 	table.StartNewHand()
-	
+
 	// Simulate getting to flop
 	table.startNewBettingRound() // This simulates moving to flop
 	table.CurrentRound = Flop
-	
+
 	t.Logf("Post-flop state:")
 	t.Logf("CurrentBet: %d", table.CurrentBet)
 	t.Logf("CurrentRound: %s", table.CurrentRound)
 	for _, player := range table.ActivePlayers {
 		t.Logf("Player %s: BetThisRound=%d", player.Name, player.BetThisRound)
 	}
-	
+
 	// Now simulate everyone checking
 	for i, player := range table.ActivePlayers {
 		// Check that check is a valid action
 		validActions := table.GetValidActions()
 		t.Logf("Player %s valid actions: %+v", player.Name, validActions)
-		
+
 		var canCheck bool
 		for _, action := range validActions {
 			if action.Action == Check {
@@ -1362,23 +1358,23 @@ func TestPostFlopCheckingRoundBug(t *testing.T) {
 				break
 			}
 		}
-		
+
 		if !canCheck {
 			t.Errorf("Player %s should be able to check in post-flop with CurrentBet=0", player.Name)
 		}
-		
+
 		// Apply check
 		decision := Decision{Action: Check, Amount: 0, Reasoning: "checking"}
 		_, err := table.ApplyDecision(decision)
 		if err != nil {
 			t.Fatalf("Player %s failed to check: %v", player.Name, err)
 		}
-		
+
 		table.AdvanceAction()
-		
+
 		t.Logf("After player %d (%s) checked:", i+1, player.Name)
 		t.Logf("  IsBettingRoundComplete: %v", table.IsBettingRoundComplete())
-		
+
 		// Debug the completion logic
 		playersInHand := 0
 		playersActed := 0
@@ -1389,19 +1385,19 @@ func TestPostFlopCheckingRoundBug(t *testing.T) {
 					playersActed++
 					t.Logf("  Player %s counted as acted", p.Name)
 				} else {
-					t.Logf("  Player %s NOT counted as acted (acted=%v, BetThisRound=%d, CurrentBet=%d)", 
+					t.Logf("  Player %s NOT counted as acted (acted=%v, BetThisRound=%d, CurrentBet=%d)",
 						p.Name, table.PlayersActed[p.ID], p.BetThisRound, table.CurrentBet)
 				}
 			}
 		}
 		t.Logf("  PlayersInHand: %d, PlayersActed: %d", playersInHand, playersActed)
-		
+
 		if table.IsBettingRoundComplete() {
 			t.Logf("Betting round completed after %d players checked", i+1)
 			break
 		}
 	}
-	
+
 	// The round should be complete after all 3 players check
 	if !table.IsBettingRoundComplete() {
 		t.Error("Betting round should be complete after all players check in post-flop")

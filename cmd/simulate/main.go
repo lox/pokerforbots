@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -19,7 +20,7 @@ import (
 
 type CLI struct {
 	Hands      int           `default:"50000" help:"Number of hands to simulate"`
-	Opponent   string        `default:"fold" help:"Opponent type: fold, call, rand, chart, maniac, tag"`
+	Opponent   string        `default:"fold" help:"Opponent type: fold, call, rand, chart, maniac, tag, mixed"`
 	Seed       int64         `default:"0" help:"RNG seed (0 for random)"`
 	Timeout    time.Duration `default:"5s" help:"Timeout per hand to detect hangs"`
 	Verbose    bool          `short:"v" help:"Verbose logging"`
@@ -218,9 +219,9 @@ func main() {
 		cli.Hands, cli.Opponent, cli.Seed)
 
 	startTime := time.Now()
-	stats := runSimulation(cli.Hands, cli.Opponent, cli.Seed, cli.Timeout, logger)
+	stats, opponentInfo := runSimulation(cli.Hands, cli.Opponent, cli.Seed, cli.Timeout, logger)
 	duration := time.Since(startTime)
-	printResults(stats, cli.Opponent, duration)
+	printResults(stats, opponentInfo, duration)
 
 	// Stop CPU profiling before exit
 	if cpuFile != nil {
@@ -250,23 +251,28 @@ func main() {
 	ctx.Exit(0)
 }
 
-func runSimulation(numHands int, opponentType string, seed int64, timeout time.Duration, logger *log.Logger) *Statistics {
+func runSimulation(numHands int, opponentType string, seed int64, timeout time.Duration, logger *log.Logger) (*Statistics, string) {
 	stats := &Statistics{}
 	startTime := time.Now()
 
-	// Create master RNG for generating independent seeds
-	masterRng := rand.New(rand.NewSource(seed))
+	// Determine opponent info string
+	opponentInfo := opponentType
+	var opponentMix []string
+	if opponentType == "mixed" {
+		opponentMix = createMixedOpponentTypes()
+		opponentInfo = fmt.Sprintf("mixed(%s)", strings.Join(opponentMix, ","))
+	}
 
 	fmt.Printf("Target: <2ms per hand for optimal performance\n\n")
 
 	for hand := 0; hand < numHands; hand++ {
 		// Generate independent seed for this hand
-		handSeed := masterRng.Int63()
+		handSeed := seed + int64(hand)
 
 		// Rotate OurBot's position (1-6) to eliminate positional bias
 		ourPosition := (hand % 6) + 1
 
-		result, err := playHandWithTimeout(opponentType, handSeed, ourPosition, timeout, logger)
+		result, err := playHandWithTimeout(opponentType, opponentMix, handSeed, ourPosition, timeout, logger)
 		if err != nil {
 			fmt.Printf("\n❌ HANG DETECTED on hand %d!\n", hand+1)
 			fmt.Printf("Reproduction command: go run ./cmd/simulate --hands=1 --seed=%d --opponent=%s --timeout=10s\n", handSeed, opponentType)
@@ -307,10 +313,10 @@ func runSimulation(numHands int, opponentType string, seed int64, timeout time.D
 		}
 	}
 
-	return stats
+	return stats, opponentInfo
 }
 
-func playHand(opponentType string, handSeed int64, ourPosition int, logger *log.Logger) HandResult {
+func playHand(opponentType string, opponentMix []string, handSeed int64, ourPosition int, logger *log.Logger) HandResult {
 	handRng := rand.New(rand.NewSource(handSeed))
 
 	// Setup 6-max table with controlled RNG
@@ -340,10 +346,16 @@ func playHand(opponentType string, handSeed int64, ourPosition int, logger *log.
 	agents["OurBot"] = bot.NewBot(handRng, logger)
 
 	// Create opponent agents based on type
+	typeIndex := 0
 	for i := 1; i <= 6; i++ {
 		if i != ourPosition {
 			oppName := fmt.Sprintf("Opp%d", i)
-			agents[oppName] = createOpponent(opponentType, handRng, logger)
+			if opponentType == "mixed" {
+				agents[oppName] = createOpponent(opponentMix[typeIndex], handRng, logger)
+				typeIndex++
+			} else {
+				agents[oppName] = createOpponent(opponentType, handRng, logger)
+			}
 		}
 	}
 
@@ -412,7 +424,7 @@ func playHand(opponentType string, handSeed int64, ourPosition int, logger *log.
 	}
 }
 
-func playHandWithTimeout(opponentType string, handSeed int64, ourPosition int, timeout time.Duration, logger *log.Logger) (HandResult, error) {
+func playHandWithTimeout(opponentType string, opponentMix []string, handSeed int64, ourPosition int, timeout time.Duration, logger *log.Logger) (HandResult, error) {
 	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -428,8 +440,8 @@ func playHandWithTimeout(opponentType string, handSeed int64, ourPosition int, t
 				errorCh <- fmt.Errorf("panic in playHand: %v", r)
 			}
 		}()
-		
-		result := playHand(opponentType, handSeed, ourPosition, logger)
+
+		result := playHand(opponentType, opponentMix, handSeed, ourPosition, logger)
 		resultCh <- result
 	}()
 
@@ -442,6 +454,11 @@ func playHandWithTimeout(opponentType string, handSeed int64, ourPosition int, t
 	case <-ctx.Done():
 		return HandResult{}, fmt.Errorf("hand timed out after %v (seed: %d, position: %d)", timeout, handSeed, ourPosition)
 	}
+}
+
+func createMixedOpponentTypes() []string {
+	// Fixed realistic opponent mix for consistent testing
+	return []string{"tag", "rand", "tag", "maniac", "call"}
 }
 
 func createOpponent(opponentType string, rng *rand.Rand, logger *log.Logger) game.Agent {
