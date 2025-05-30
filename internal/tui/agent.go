@@ -61,7 +61,7 @@ func (ti *TUIAgent) Close() error {
 }
 
 // MakeDecision implements the Agent interface for human players via TUI
-func (ti *TUIAgent) MakeDecision(player *game.Player, table *game.Table) game.Decision {
+func (ti *TUIAgent) MakeDecision(tableState game.TableState, validActions []game.ValidAction) game.Decision {
 	for {
 		ti.mainLogger.Info("Waiting for user action")
 		action, args, shouldContinue, err := ti.model.WaitForAction()
@@ -82,7 +82,9 @@ func (ti *TUIAgent) MakeDecision(player *game.Player, table *game.Table) game.De
 		}
 
 		// Process the action and return a decision
-		decision := ti.processActionForDecision(action, args, player, table)
+		// TODO: Update processActionForDecision to work with new interface
+		// For now, provide a simple decision based on action
+		decision := ti.processSimpleActionForDecision(action, args, validActions)
 		
 		// If we get an invalid action indicator, loop back for another try
 		if decision.Reasoning == "Invalid input - try again" {
@@ -91,6 +93,46 @@ func (ti *TUIAgent) MakeDecision(player *game.Player, table *game.Table) game.De
 		
 		return decision
 	}
+}
+
+// processSimpleActionForDecision provides a simple decision based on user action and validActions
+func (ti *TUIAgent) processSimpleActionForDecision(action string, args []string, validActions []game.ValidAction) game.Decision {
+	// Handle quit commands first
+	if action == "quit" || action == "q" || action == "exit" {
+		return game.Decision{
+			Action:    game.Fold,
+			Amount:    0,
+			Reasoning: "Player quit",
+		}
+	}
+
+	// Simple action mapping based on first letter
+	switch action {
+	case "f", "fold":
+		return game.Decision{Action: game.Fold, Amount: 0, Reasoning: "Player folded"}
+	case "c", "call":
+		for _, validAction := range validActions {
+			if validAction.Action == game.Call {
+				return game.Decision{Action: game.Call, Amount: 0, Reasoning: "Player called"}
+			}
+		}
+	case "k", "check":
+		for _, validAction := range validActions {
+			if validAction.Action == game.Check {
+				return game.Decision{Action: game.Check, Amount: 0, Reasoning: "Player checked"}
+			}
+		}
+	case "r", "raise":
+		for _, validAction := range validActions {
+			if validAction.Action == game.Raise {
+				// Use minimum raise for now
+				return game.Decision{Action: game.Raise, Amount: validAction.MinAmount, Reasoning: "Player raised"}
+			}
+		}
+	}
+
+	// If action not recognized or not valid, ask again
+	return game.Decision{Action: game.Fold, Amount: 0, Reasoning: "Invalid input - try again"}
 }
 
 // processActionForDecision processes a user action and returns a Decision
@@ -176,18 +218,7 @@ func (ti *TUIAgent) processActionForDecision(action string, args []string, playe
 	}
 }
 
-// ExecuteAction implements the Agent interface for human players via TUI
-func (ti *TUIAgent) ExecuteAction(player *game.Player, table *game.Table) string {
-	if !player.CanAct() {
-		return "Player cannot act"
-	}
 
-	decision := ti.MakeDecision(player, table)
-	
-	// The TUI has already handled the action through processActionForDecision
-	// Just return the reasoning
-	return decision.Reasoning
-}
 
 // PromptForAction prompts the human player for their action (legacy method)
 func (ti *TUIAgent) PromptForAction() (bool, error) {

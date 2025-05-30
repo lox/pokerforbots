@@ -1,6 +1,8 @@
 package game
 
 import (
+	"errors"
+
 	"github.com/charmbracelet/log"
 )
 
@@ -40,7 +42,7 @@ type PlayerAction struct {
 }
 
 // PlayHand runs a complete hand from start to finish and returns the result
-func (ge *GameEngine) PlayHand(agents map[string]Agent) *HandResult {
+func (ge *GameEngine) PlayHand(agents map[string]Agent) (*HandResult, error) {
 	result := &HandResult{
 		HandID:  ge.table.HandID,
 		Actions: make([]PlayerAction, 0),
@@ -66,7 +68,36 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) *HandResult {
 			selectedAgent = ge.defaultAgent
 		}
 
-		reasoning = selectedAgent.ExecuteAction(currentPlayer, ge.table)
+		// Use new clean architecture: agents only make decisions, engine handles state
+		tableState := ge.table.CreateTableState(currentPlayer)
+		validActions := ge.table.GetValidActions()
+		decision := selectedAgent.MakeDecision(tableState, validActions)
+
+		// Engine applies the decision and handles state mutation
+		reasoning, err := ge.table.ApplyDecision(decision)
+		if err != nil {
+			// Log error and use first valid action as fallback
+			ge.logger.Error("Failed to apply agent decision", "error", err, "player", currentPlayer.Name)
+			validActions := ge.table.GetValidActions()
+			if len(validActions) > 0 {
+				fallbackDecision := Decision{
+					Action:    validActions[0].Action,
+					Amount:    validActions[0].MinAmount,
+					Reasoning: "fallback due to invalid decision",
+				}
+				reasoning, err = ge.table.ApplyDecision(fallbackDecision)
+				if err != nil {
+					ge.logger.Error("Fallback decision also failed", "error", err, "player", currentPlayer.Name)
+					// This should not happen, but if it does, break to prevent infinite loop
+					break
+				}
+			} else {
+				ge.logger.Error("No valid actions available", "player", currentPlayer.Name)
+				// This should not happen, but if it does, break to prevent infinite loop
+				break
+			}
+		}
+
 		playerAction = currentPlayer.LastAction
 
 		// Record the action
@@ -78,7 +109,7 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) *HandResult {
 			Reasoning:  reasoning,
 		})
 
-		ge.logger.Debug("Player action", 
+		ge.logger.Debug("Player action",
 			"player", currentPlayer.Name,
 			"action", playerAction,
 			"amount", currentPlayer.ActionAmount,
@@ -94,13 +125,13 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) *HandResult {
 			if activePlayers <= 1 {
 				// Hand over, someone won by everyone else folding
 				potBeforeAwarding := ge.table.Pot
-				ge.table.AwardPot()
 				winners := ge.table.FindWinners()
 				if len(winners) > 0 {
 					result.Winner = winners[0] // For compatibility, return first winner
 					result.PotSize = potBeforeAwarding
 					result.ShowdownType = "fold"
 					ge.logger.Debug("Hand won by fold", "winner", winners[0].Name, "pot", potBeforeAwarding)
+					ge.table.AwardPot()
 				} else {
 					ge.logger.Error("No winner found after fold", "activePlayers", activePlayers)
 					result.Winner = nil
@@ -125,13 +156,13 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) *HandResult {
 				// Go to showdown
 				ge.table.CurrentRound = Showdown
 				potBeforeAwarding := ge.table.Pot
-				ge.table.AwardPot()
 				winners := ge.table.FindWinners()
 				if len(winners) > 0 {
 					result.Winner = winners[0] // For compatibility, return first winner
 					result.PotSize = potBeforeAwarding
 					result.ShowdownType = "showdown"
 					ge.logger.Debug("Hand went to showdown", "winner", winners[0].Name, "pot", potBeforeAwarding)
+					ge.table.AwardPot()
 				} else {
 					ge.logger.Error("No winner found at showdown")
 					result.Winner = nil
@@ -153,9 +184,9 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) *HandResult {
 	if result.Winner != nil {
 		ge.logger.Debug("Hand complete", "winner", result.Winner.Name, "pot", result.PotSize)
 	} else {
-		ge.logger.Error("Hand completed but no winner found")
+		return nil, errors.New("hand completed but no winner found")
 	}
-	return result
+	return result, nil
 }
 
 // StartNewHand initializes a new hand on the table
