@@ -1,0 +1,711 @@
+package game
+
+import (
+	"fmt"
+	"io"
+	"math/rand"
+	"strings"
+	"testing"
+
+	"github.com/charmbracelet/log"
+)
+
+// MockAgent is a simple test agent that follows a predetermined script
+type MockAgent struct {
+	actions []Decision
+	index   int
+}
+
+func NewMockAgent(actions []Decision) *MockAgent {
+	return &MockAgent{
+		actions: actions,
+		index:   0,
+	}
+}
+
+func (m *MockAgent) MakeDecision(tableState TableState, validActions []ValidAction) Decision {
+	if m.index >= len(m.actions) {
+		// Default to fold if we run out of scripted actions
+		return Decision{Action: Fold, Amount: 0, Reasoning: "script exhausted"}
+	}
+
+	decision := m.actions[m.index]
+	m.index++
+	return decision
+}
+
+// AlwaysFoldAgent always folds
+type AlwaysFoldAgent struct{}
+
+func (a *AlwaysFoldAgent) MakeDecision(tableState TableState, validActions []ValidAction) Decision {
+	// Check if we can check instead of folding
+	for _, action := range validActions {
+		if action.Action == Check {
+			return Decision{Action: Check, Amount: 0, Reasoning: "always fold (checking when possible)"}
+		}
+	}
+	return Decision{Action: Fold, Amount: 0, Reasoning: "always fold"}
+}
+
+// AlwaysCallAgent always calls or checks
+type AlwaysCallAgent struct{}
+
+func (a *AlwaysCallAgent) MakeDecision(tableState TableState, validActions []ValidAction) Decision {
+	// Try to call, otherwise check
+	for _, action := range validActions {
+		if action.Action == Call {
+			return Decision{Action: Call, Amount: action.MinAmount, Reasoning: "always call"}
+		}
+	}
+	for _, action := range validActions {
+		if action.Action == Check {
+			return Decision{Action: Check, Amount: 0, Reasoning: "always check"}
+		}
+	}
+	// Fallback to fold if neither call nor check available
+	return Decision{Action: Fold, Amount: 0, Reasoning: "forced fold"}
+}
+
+// TrackingAgent wraps another agent and tracks which rounds it sees
+type TrackingAgent struct {
+	wrapped Agent
+	rounds  *[]BettingRound
+}
+
+func NewTrackingAgent(wrapped Agent, rounds *[]BettingRound) *TrackingAgent {
+	return &TrackingAgent{
+		wrapped: wrapped,
+		rounds:  rounds,
+	}
+}
+
+func (t *TrackingAgent) MakeDecision(tableState TableState, validActions []ValidAction) Decision {
+	*t.rounds = append(*t.rounds, tableState.CurrentRound)
+	return t.wrapped.MakeDecision(tableState, validActions)
+}
+
+func createTestTable() *Table {
+	rng := rand.New(rand.NewSource(42)) // Fixed seed for deterministic tests
+	config := TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 10,
+		BigBlind:   20,
+	}
+	return NewTable(rng, config)
+}
+
+func createTestPlayers() []*Player {
+	return []*Player{
+		NewPlayer(1, "Alice", AI, 1000),
+		NewPlayer(2, "Bob", AI, 1000),
+		NewPlayer(3, "Charlie", AI, 1000),
+	}
+}
+
+func TestGameEngine_Creation(t *testing.T) {
+	table := createTestTable()
+	defaultAgent := &AlwaysFoldAgent{}
+	logger := log.New(io.Discard)
+
+	engine := NewGameEngine(table, defaultAgent, logger)
+
+	if engine.table != table {
+		t.Error("Engine table not set correctly")
+	}
+	if engine.defaultAgent != defaultAgent {
+		t.Error("Engine default agent not set correctly")
+	}
+	if engine.logger != logger {
+		t.Error("Engine logger not set correctly")
+	}
+}
+
+func TestGameEngine_PlayHandWithFolds(t *testing.T) {
+	table := createTestTable()
+	players := createTestPlayers()
+
+	// Add players to table
+	for _, player := range players {
+		table.AddPlayer(player)
+	}
+
+	// Set up agents - first player calls, others fold
+	agents := map[string]Agent{
+		"Alice":   NewMockAgent([]Decision{{Action: Call, Amount: 20, Reasoning: "call bb"}}),
+		"Bob":     &AlwaysFoldAgent{},
+		"Charlie": &AlwaysFoldAgent{},
+	}
+
+	defaultAgent := &AlwaysFoldAgent{}
+	logger := log.New(io.Discard)
+	engine := NewGameEngine(table, defaultAgent, logger)
+
+	// Start a new hand
+	engine.StartNewHand()
+
+	// Play the hand
+	result, err := engine.PlayHand(agents)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Verify result
+	if result == nil {
+		t.Fatal("Expected hand result, got nil")
+	}
+
+	if result.ShowdownType != "fold" {
+		t.Errorf("Expected showdown type 'fold', got '%s'", result.ShowdownType)
+	}
+
+	if result.Winner == nil {
+		t.Error("Expected a winner")
+	}
+
+	if len(result.Actions) == 0 {
+		t.Error("Expected some actions to be recorded")
+	}
+}
+
+func TestGameEngine_PlayHandToShowdown(t *testing.T) {
+	table := createTestTable()
+	players := createTestPlayers()
+
+	// Add players to table
+	for _, player := range players {
+		table.AddPlayer(player)
+	}
+
+	// All players call through to showdown
+	defaultAgent := &AlwaysCallAgent{}
+	logger := log.New(io.Discard)
+	engine := NewGameEngine(table, defaultAgent, logger)
+
+	// Start a new hand
+	engine.StartNewHand()
+
+	// Play the hand
+	result, err := engine.PlayHand(nil) // Use default agent for all players
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Verify result
+	if result == nil {
+		t.Fatal("Expected hand result, got nil")
+	}
+
+	if result.ShowdownType != "showdown" {
+		t.Errorf("Expected showdown type 'showdown', got '%s'", result.ShowdownType)
+	}
+
+	if result.Winner == nil {
+		t.Error("Expected a winner")
+	}
+
+	if table.CurrentRound != Showdown {
+		t.Errorf("Expected game to end in showdown, got %s", table.CurrentRound)
+	}
+}
+
+func TestGameEngine_HandProgression(t *testing.T) {
+	table := createTestTable()
+	players := createTestPlayers()
+
+	// Add players to table
+	for _, player := range players {
+		table.AddPlayer(player)
+	}
+
+	// Track the betting rounds we see
+	var roundsSeen []BettingRound
+
+	// Create agent that tracks rounds and always calls
+	trackingAgent := NewTrackingAgent(&AlwaysCallAgent{}, &roundsSeen)
+
+	defaultAgent := trackingAgent
+	logger := log.New(io.Discard)
+	engine := NewGameEngine(table, defaultAgent, logger)
+
+	// Start a new hand
+	engine.StartNewHand()
+
+	// Play the hand
+	result, err := engine.PlayHand(nil)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Verify we went through all betting rounds
+	if result == nil {
+		t.Fatal("Expected hand result, got nil")
+	}
+
+	// Should see actions in PreFlop, Flop, Turn, and River
+	hasPreFlop := false
+	hasFlop := false
+	hasTurn := false
+	hasRiver := false
+
+	for _, round := range roundsSeen {
+		switch round {
+		case PreFlop:
+			hasPreFlop = true
+		case Flop:
+			hasFlop = true
+		case Turn:
+			hasTurn = true
+		case River:
+			hasRiver = true
+		}
+	}
+
+	if !hasPreFlop {
+		t.Error("Expected to see PreFlop actions")
+	}
+	if !hasFlop {
+		t.Error("Expected to see Flop actions")
+	}
+	if !hasTurn {
+		t.Error("Expected to see Turn actions")
+	}
+	if !hasRiver {
+		t.Error("Expected to see River actions")
+	}
+}
+
+func TestGameEngine_ActionRecording(t *testing.T) {
+	table := createTestTable()
+	players := createTestPlayers()
+
+	// Add players to table
+	for _, player := range players {
+		table.AddPlayer(player)
+	}
+
+	// Create agents with specific actions
+	agents := map[string]Agent{
+		"Alice":   NewMockAgent([]Decision{{Action: Raise, Amount: 40, Reasoning: "raise to 40"}}),
+		"Bob":     NewMockAgent([]Decision{{Action: Call, Amount: 40, Reasoning: "call the raise"}}),
+		"Charlie": NewMockAgent([]Decision{{Action: Fold, Amount: 0, Reasoning: "fold to raise"}}),
+	}
+
+	defaultAgent := &AlwaysFoldAgent{}
+	logger := log.New(io.Discard)
+	engine := NewGameEngine(table, defaultAgent, logger)
+
+	// Start a new hand
+	engine.StartNewHand()
+
+	// Play the hand
+	result, err := engine.PlayHand(agents)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Verify actions were recorded
+	if result == nil {
+		t.Fatal("Expected hand result, got nil")
+	}
+
+	if len(result.Actions) == 0 {
+		t.Fatal("Expected actions to be recorded")
+	}
+
+	// Find the raise action
+	var raiseAction *PlayerAction
+	for i := range result.Actions {
+		if result.Actions[i].Action == Raise {
+			raiseAction = &result.Actions[i]
+			break
+		}
+	}
+
+	if raiseAction == nil {
+		t.Error("Expected to find a raise action")
+	} else {
+		if raiseAction.PlayerName != "Alice" {
+			t.Errorf("Expected raise by Alice, got %s", raiseAction.PlayerName)
+		}
+		if raiseAction.Amount != 20 { // Amount actually bet (raise total - current bet)
+			t.Errorf("Expected raise amount 20, got %d", raiseAction.Amount)
+		}
+		if raiseAction.Reasoning != "raise to 40" {
+			t.Errorf("Expected reasoning 'raise to 40', got '%s'", raiseAction.Reasoning)
+		}
+	}
+}
+
+func TestGameEngine_AllInScenario(t *testing.T) {
+	table := createTestTable()
+
+	// Create players with different stack sizes
+	players := []*Player{
+		NewPlayer(1, "Alice", AI, 50), // Short stack
+		NewPlayer(2, "Bob", AI, 1000), // Big stack
+	}
+
+	// Add players to table
+	for _, player := range players {
+		table.AddPlayer(player)
+	}
+
+	// Alice goes all-in, Bob calls
+	agents := map[string]Agent{
+		"Alice": NewMockAgent([]Decision{{Action: AllIn, Amount: 50, Reasoning: "all-in"}}),
+		"Bob":   &AlwaysCallAgent{},
+	}
+
+	defaultAgent := &AlwaysFoldAgent{}
+	logger := log.New(io.Discard)
+	engine := NewGameEngine(table, defaultAgent, logger)
+
+	// Start a new hand
+	engine.StartNewHand()
+
+	// Play the hand
+	result, err := engine.PlayHand(agents)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Verify result
+	if result == nil {
+		t.Fatal("Expected hand result, got nil")
+	}
+
+	// Find Alice and verify she's all-in
+	var alice *Player
+	for _, player := range table.ActivePlayers {
+		if player.Name == "Alice" {
+			alice = player
+			break
+		}
+	}
+
+	if alice == nil {
+		t.Fatal("Could not find Alice")
+	}
+
+	if !alice.IsAllIn {
+		t.Error("Expected Alice to be all-in")
+	}
+
+	if alice.Chips != 0 {
+		t.Errorf("Expected Alice to have 0 chips, got %d", alice.Chips)
+	}
+}
+
+func TestGameEngine_NoAgentsUsesDefault(t *testing.T) {
+	table := createTestTable()
+	players := createTestPlayers()
+
+	// Add players to table
+	for _, player := range players {
+		table.AddPlayer(player)
+	}
+
+	defaultAgent := &AlwaysFoldAgent{}
+	logger := log.New(io.Discard)
+	engine := NewGameEngine(table, defaultAgent, logger)
+
+	// Start a new hand
+	engine.StartNewHand()
+
+	// Play the hand with no specific agents (should use default)
+	result, err := engine.PlayHand(nil)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Verify result
+	if result == nil {
+		t.Fatal("Expected hand result, got nil")
+	}
+
+	// With always fold agent, hand should end quickly with folds
+	if result.ShowdownType != "fold" {
+		t.Errorf("Expected showdown type 'fold', got '%s'", result.ShowdownType)
+	}
+}
+
+func TestGameEngine_GetTable(t *testing.T) {
+	table := createTestTable()
+	defaultAgent := &AlwaysFoldAgent{}
+	logger := log.New(io.Discard)
+	engine := NewGameEngine(table, defaultAgent, logger)
+
+	if engine.GetTable() != table {
+		t.Error("GetTable() should return the same table instance")
+	}
+}
+
+func TestGameEngine_StartNewHand(t *testing.T) {
+	table := createTestTable()
+	players := createTestPlayers()
+
+	// Add players to table
+	for _, player := range players {
+		table.AddPlayer(player)
+	}
+
+	defaultAgent := &AlwaysFoldAgent{}
+	logger := log.New(io.Discard)
+	engine := NewGameEngine(table, defaultAgent, logger)
+
+	// Start a new hand
+	engine.StartNewHand()
+
+	// Verify hand was started
+	if table.State != InProgress {
+		t.Errorf("Expected table state InProgress, got %s", table.State)
+	}
+
+	if table.HandID == "" {
+		t.Error("Expected hand ID to be set")
+	}
+
+	if table.CurrentRound != PreFlop {
+		t.Errorf("Expected current round PreFlop, got %s", table.CurrentRound)
+	}
+}
+
+// Test the new TableState architecture
+func TestTableState_CreateAndValidActions(t *testing.T) {
+	table := createTestTable()
+	players := createTestPlayers()
+
+	// Add players to table
+	for _, player := range players {
+		table.AddPlayer(player)
+	}
+
+	// Start a new hand
+	table.StartNewHand()
+
+	currentPlayer := table.GetCurrentPlayer()
+	if currentPlayer == nil {
+		t.Fatal("No current player")
+	}
+
+	// Create table state
+	tableState := table.CreateTableState(currentPlayer)
+
+	// Verify table state
+	if tableState.CurrentRound != PreFlop {
+		t.Errorf("Expected PreFlop, got %s", tableState.CurrentRound)
+	}
+
+	if len(tableState.Players) != 3 {
+		t.Errorf("Expected 3 players, got %d", len(tableState.Players))
+	}
+
+	// Verify acting player has hole cards, others don't
+	actingPlayer := tableState.Players[tableState.ActingPlayerIdx]
+	if len(actingPlayer.HoleCards) == 0 {
+		t.Error("Acting player should have hole cards")
+	}
+
+	for i, player := range tableState.Players {
+		if i != tableState.ActingPlayerIdx && len(player.HoleCards) > 0 {
+			t.Errorf("Non-acting player %s should not have hole cards", player.Name)
+		}
+	}
+
+	// Test valid actions
+	validActions := table.GetValidActions()
+	if len(validActions) == 0 {
+		t.Error("Should have valid actions")
+	}
+
+	// Should have call and fold available (facing big blind)
+	hasCall := false
+	hasFold := false
+	for _, action := range validActions {
+		if action.Action == Call {
+			hasCall = true
+		}
+		if action.Action == Fold {
+			hasFold = true
+		}
+	}
+
+	if !hasCall {
+		t.Error("Should have call action available")
+	}
+	if !hasFold {
+		t.Error("Should have fold action available")
+	}
+}
+
+// Test new agent interface
+func TestNewAgentInterface(t *testing.T) {
+	table := createTestTable()
+	players := createTestPlayers()
+
+	// Add players to table
+	for _, player := range players {
+		table.AddPlayer(player)
+	}
+
+	// Start a new hand
+	table.StartNewHand()
+
+	currentPlayer := table.GetCurrentPlayer()
+	if currentPlayer == nil {
+		t.Fatal("No current player")
+	}
+
+	// Create table state and get valid actions
+	tableState := table.CreateTableState(currentPlayer)
+	validActions := table.GetValidActions()
+
+	// Test new agent interface
+	agent := &AlwaysCallAgent{}
+	decision := agent.MakeDecision(tableState, validActions)
+
+	// Should return a call decision
+	if decision.Action != Call {
+		t.Errorf("Expected Call, got %s", decision.Action)
+	}
+
+	// Apply the decision
+	reasoning, err := table.ApplyDecision(decision)
+	if err != nil {
+		t.Errorf("Failed to apply decision: %v", err)
+	}
+
+	if reasoning != decision.Reasoning {
+		t.Errorf("Expected reasoning '%s', got '%s'", decision.Reasoning, reasoning)
+	}
+}
+
+// AnalyticalAgent demonstrates the rich analysis capabilities of the new architecture
+type AnalyticalAgent struct{}
+
+func (a *AnalyticalAgent) MakeDecision(tableState TableState, validActions []ValidAction) Decision {
+	actingPlayer := tableState.Players[tableState.ActingPlayerIdx]
+
+	// Analyze betting action using hand history
+	roundSummary := tableState.HandHistory.GetBettingRoundSummary(tableState.CurrentRound)
+
+	// Position-aware decision making
+	reasoning := "analytical decision: "
+
+	// Check for aggressive action
+	if roundSummary.NumRaises >= 2 {
+		reasoning += "facing 3-bet+ (aggressive action), "
+
+		// Fold from early position to heavy action
+		if actingPlayer.Position == UnderTheGun || actingPlayer.Position == EarlyPosition {
+			reasoning += "folding from early position"
+			for _, action := range validActions {
+				if action.Action == Fold {
+					return Decision{Action: Fold, Amount: 0, Reasoning: reasoning}
+				}
+			}
+		}
+	}
+
+	// Analyze bet sizing if available
+	betSizing := tableState.HandHistory.GetBetSizingInfo(tableState.CurrentRound)
+	if len(betSizing) > 0 {
+		lastBet := betSizing[len(betSizing)-1]
+		reasoning += fmt.Sprintf("last bet ratio %.2f, ", lastBet.Ratio)
+
+		// Large bet on river = fold
+		if tableState.CurrentRound == River && lastBet.Ratio > 0.8 {
+			reasoning += "folding to large river bet"
+			for _, action := range validActions {
+				if action.Action == Fold {
+					return Decision{Action: Fold, Amount: 0, Reasoning: reasoning}
+				}
+			}
+		}
+	}
+
+	// Stack consideration
+	stackToBBRatio := float64(actingPlayer.Chips) / float64(tableState.BigBlind)
+	reasoning += fmt.Sprintf("stack %.1fBB, ", stackToBBRatio)
+
+	// Short stack shove
+	if stackToBBRatio < 10 && roundSummary.NumRaises == 0 {
+		reasoning += "shoving short stack"
+		for _, action := range validActions {
+			if action.Action == AllIn {
+				return Decision{Action: AllIn, Amount: action.MinAmount, Reasoning: reasoning}
+			}
+		}
+	}
+
+	// Default: call or check
+	reasoning += "default action"
+	for _, action := range validActions {
+		if action.Action == Call {
+			return Decision{Action: Call, Amount: action.MinAmount, Reasoning: reasoning}
+		}
+	}
+	for _, action := range validActions {
+		if action.Action == Check {
+			return Decision{Action: Check, Amount: 0, Reasoning: reasoning}
+		}
+	}
+
+	// Fallback fold
+	return Decision{Action: Fold, Amount: 0, Reasoning: reasoning + " (forced fold)"}
+}
+
+// Test the analytical capabilities
+func TestAnalyticalAgent_BettingAnalysis(t *testing.T) {
+	table := createTestTable()
+	players := createTestPlayers()
+
+	// Add players to table
+	for _, player := range players {
+		table.AddPlayer(player)
+	}
+
+	// Start a new hand
+	table.StartNewHand()
+
+	// Simulate some betting action to test analysis
+	currentPlayer := table.GetCurrentPlayer()
+	if currentPlayer == nil {
+		t.Fatal("No current player")
+	}
+
+	// First player raises (create betting action)
+	raiseDecision := Decision{Action: Raise, Amount: 40, Reasoning: "test raise"}
+	_, err := table.ApplyDecision(raiseDecision)
+	if err != nil {
+		t.Fatalf("Failed to apply raise: %v", err)
+	}
+
+	// Advance to next player
+	table.AdvanceAction()
+	currentPlayer = table.GetCurrentPlayer()
+	if currentPlayer == nil {
+		t.Fatal("No next player")
+	}
+
+	// Now test analytical agent
+	agent := &AnalyticalAgent{}
+	tableState := table.CreateTableState(currentPlayer)
+	validActions := table.GetValidActions()
+	decision := agent.MakeDecision(tableState, validActions)
+
+	// Verify the decision includes analysis
+	if decision.Reasoning == "" {
+		t.Error("Expected reasoning from analytical agent")
+	}
+
+	if !strings.Contains(decision.Reasoning, "analytical decision") {
+		t.Errorf("Expected analytical reasoning, got: %s", decision.Reasoning)
+	}
+
+	// Verify agent can access betting history
+	roundSummary := tableState.HandHistory.GetBettingRoundSummary(tableState.CurrentRound)
+	if roundSummary.NumRaises == 0 {
+		t.Error("Expected to detect the raise in betting summary")
+	}
+}
