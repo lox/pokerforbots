@@ -53,69 +53,67 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) (*HandResult, error) {
 	// Hand loop - continue until hand is complete
 	for {
 		currentPlayer := ge.table.GetCurrentPlayer()
-		if currentPlayer == nil {
-			break
-		}
+		if currentPlayer != nil {
+			var reasoning string
+			var playerAction Action
 
-		var reasoning string
-		var playerAction Action
+			// Handle any player type using the unified Agent interface
+			var selectedAgent Agent
+			if agents != nil && agents[currentPlayer.Name] != nil {
+				selectedAgent = agents[currentPlayer.Name]
+			} else {
+				selectedAgent = ge.defaultAgent
+			}
 
-		// Handle any player type using the unified Agent interface
-		var selectedAgent Agent
-		if agents != nil && agents[currentPlayer.Name] != nil {
-			selectedAgent = agents[currentPlayer.Name]
-		} else {
-			selectedAgent = ge.defaultAgent
-		}
-
-		// Use new clean architecture: agents only make decisions, engine handles state
-		tableState := ge.table.CreateTableState(currentPlayer)
-		validActions := ge.table.GetValidActions()
-		decision := selectedAgent.MakeDecision(tableState, validActions)
-
-		// Engine applies the decision and handles state mutation
-		reasoning, err := ge.table.ApplyDecision(decision)
-		if err != nil {
-			// Log error and use first valid action as fallback
-			ge.logger.Error("Failed to apply agent decision", "error", err, "player", currentPlayer.Name)
+			// Use new clean architecture: agents only make decisions, engine handles state
+			tableState := ge.table.CreateTableState(currentPlayer)
 			validActions := ge.table.GetValidActions()
-			if len(validActions) > 0 {
-				fallbackDecision := Decision{
-					Action:    validActions[0].Action,
-					Amount:    validActions[0].MinAmount,
-					Reasoning: "fallback due to invalid decision",
-				}
-				reasoning, err = ge.table.ApplyDecision(fallbackDecision)
-				if err != nil {
-					ge.logger.Error("Fallback decision also failed", "error", err, "player", currentPlayer.Name)
+			decision := selectedAgent.MakeDecision(tableState, validActions)
+
+			// Engine applies the decision and handles state mutation
+			reasoning, err := ge.table.ApplyDecision(decision)
+			if err != nil {
+				// Log error and use first valid action as fallback
+				ge.logger.Error("Failed to apply agent decision", "error", err, "player", currentPlayer.Name)
+				validActions := ge.table.GetValidActions()
+				if len(validActions) > 0 {
+					fallbackDecision := Decision{
+						Action:    validActions[0].Action,
+						Amount:    validActions[0].MinAmount,
+						Reasoning: "fallback due to invalid decision",
+					}
+					reasoning, err = ge.table.ApplyDecision(fallbackDecision)
+					if err != nil {
+						ge.logger.Error("Fallback decision also failed", "error", err, "player", currentPlayer.Name)
+						// This should not happen, but if it does, break to prevent infinite loop
+						break
+					}
+				} else {
+					ge.logger.Error("No valid actions available", "player", currentPlayer.Name)
 					// This should not happen, but if it does, break to prevent infinite loop
 					break
 				}
-			} else {
-				ge.logger.Error("No valid actions available", "player", currentPlayer.Name)
-				// This should not happen, but if it does, break to prevent infinite loop
-				break
 			}
+
+			playerAction = currentPlayer.LastAction
+
+			// Record the action
+			result.Actions = append(result.Actions, PlayerAction{
+				PlayerName: currentPlayer.Name,
+				Round:      ge.table.CurrentRound,
+				Action:     playerAction,
+				Amount:     currentPlayer.ActionAmount,
+				Reasoning:  reasoning,
+			})
+
+			ge.logger.Debug("Player action",
+				"player", currentPlayer.Name,
+				"action", playerAction,
+				"amount", currentPlayer.ActionAmount,
+				"reasoning", reasoning)
+
+			ge.table.AdvanceAction()
 		}
-
-		playerAction = currentPlayer.LastAction
-
-		// Record the action
-		result.Actions = append(result.Actions, PlayerAction{
-			PlayerName: currentPlayer.Name,
-			Round:      ge.table.CurrentRound,
-			Action:     playerAction,
-			Amount:     currentPlayer.ActionAmount,
-			Reasoning:  reasoning,
-		})
-
-		ge.logger.Debug("Player action",
-			"player", currentPlayer.Name,
-			"action", playerAction,
-			"amount", currentPlayer.ActionAmount,
-			"reasoning", reasoning)
-
-		ge.table.AdvanceAction()
 
 		// Check if betting round is complete
 		if ge.table.IsBettingRoundComplete() {
