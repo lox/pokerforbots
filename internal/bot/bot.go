@@ -43,117 +43,78 @@ func NewBotWithRNG(logger *log.Logger, config BotConfig, rng *rand.Rand) *Bot {
 }
 
 // MakeDecision analyzes the game state and returns a decision with reasoning
-func (b *Bot) MakeDecision(player *game.Player, table *game.Table) game.Decision {
+func (b *Bot) MakeDecision(tableState game.TableState, validActions []game.ValidAction) game.Decision {
+	// Extract acting player from table state
+	if tableState.ActingPlayerIdx < 0 || tableState.ActingPlayerIdx >= len(tableState.Players) {
+		return game.Decision{
+			Action:    game.Fold,
+			Amount:    0,
+			Reasoning: "Invalid acting player index",
+		}
+	}
+	
+	actingPlayer := tableState.Players[tableState.ActingPlayerIdx]
+	
 	// Create thinking context to accumulate thoughts
 	thinking := &ThinkingContext{}
 
 	// Evaluate hand strength with thinking
-	equityCtx := b.evaluateHandStrengthWithThinking(player, table, thinking)
+	equityCtx := b.evaluateHandStrengthWithThinking(actingPlayer, tableState, thinking)
 
 	// Get position factor with thinking
-	positionFactor := b.getPositionFactorWithThinking(player.Position, thinking)
+	positionFactor := b.getPositionFactorWithThinking(actingPlayer.Position, thinking)
 
 	// Calculate pot odds with thinking
-	potOdds := b.calculatePotOddsWithThinking(player, table, thinking)
+	potOdds := b.calculatePotOddsWithThinking(actingPlayer, tableState, thinking)
 
 	// Log decision factors
 	holeCardsStr := ""
-	if len(player.HoleCards) >= 2 {
-		holeCardsStr = player.HoleCards[0].String() + " " + player.HoleCards[1].String()
+	if len(actingPlayer.HoleCards) >= 2 {
+		holeCardsStr = actingPlayer.HoleCards[0].String() + " " + actingPlayer.HoleCards[1].String()
 	}
 
 	b.logger.Info("Bot decision analysis",
-		"player", player.Name,
-		"round", table.CurrentRound.String(),
+		"player", actingPlayer.Name,
+		"round", tableState.CurrentRound.String(),
 		"holeCards", holeCardsStr,
 		"handStrength", equityCtx.Strength.String(),
 		"equity", equityCtx.Equity,
-		"position", player.Position.String(),
+		"position", actingPlayer.Position.String(),
 		"positionFactor", positionFactor,
-		"currentBet", table.CurrentBet,
-		"playerBetThisRound", player.BetThisRound,
-		"playerChips", player.Chips,
-		"pot", table.Pot,
+		"currentBet", tableState.CurrentBet,
+		"playerBetThisRound", actingPlayer.BetThisRound,
+		"playerChips", actingPlayer.Chips,
+		"pot", tableState.Pot,
 		"potOdds", potOdds)
 
 	// Make decision based on hand strength, position, and pot odds with thinking
-	action := b.makeDecisionBasedOnFactorsWithThinking(player, table, equityCtx, positionFactor, potOdds, thinking)
+	action := b.makeDecisionBasedOnFactorsWithThinking(actingPlayer, tableState, equityCtx, positionFactor, potOdds, thinking, validActions)
 
 	// Calculate bet amount if raising
 	var amount int
 	if action == game.Raise {
-		amount = b.calculateRaiseAmount(player, table, equityCtx.Strength)
+		amount = b.calculateRaiseAmount(actingPlayer, tableState, equityCtx.Strength)
 	}
 
-	reasoning := thinking.GetThoughts()
-
-	b.logger.Info("Bot decision made",
-		"player", player.Name,
-		"decision", action.String(),
-		"amount", amount,
-		"reasoning", reasoning)
-
-	return game.Decision{
+	// Validate decision against valid actions and apply fallback if needed
+	decision := game.Decision{
 		Action:    action,
 		Amount:    amount,
-		Reasoning: reasoning,
+		Reasoning: thinking.GetThoughts(),
 	}
+	
+	decision = b.validateAndAdjustDecision(decision, validActions, thinking)
+
+	b.logger.Info("Bot decision made",
+		"player", actingPlayer.Name,
+		"decision", decision.Action.String(),
+		"amount", decision.Amount,
+		"reasoning", decision.Reasoning)
+
+	return decision
 }
 
-// ExecuteAction executes the bot's decision and updates game state
-func (b *Bot) ExecuteAction(player *game.Player, table *game.Table) string {
-	if player.Type != game.AI || !player.CanAct() {
-		return ""
-	}
 
-	decision := b.MakeDecision(player, table)
-
-	switch decision.Action {
-	case game.Fold:
-		player.Fold()
-	case game.Call:
-		callAmount := table.CurrentBet - player.BetThisRound
-		if callAmount > 0 && callAmount <= player.Chips {
-			player.Call(callAmount)
-			table.Pot += callAmount
-		} else {
-			player.Check() // Fall back to check if can't call
-		}
-	case game.Check:
-		player.Check()
-	case game.Raise:
-		totalNeeded := decision.Amount - player.BetThisRound
-		if totalNeeded > 0 && totalNeeded <= player.Chips {
-			player.Raise(totalNeeded)
-			table.Pot += totalNeeded
-			table.CurrentBet = decision.Amount
-		} else {
-			// Fall back to call or check
-			callAmount := table.CurrentBet - player.BetThisRound
-			if callAmount > 0 && callAmount <= player.Chips {
-				player.Call(callAmount)
-				table.Pot += callAmount
-			} else {
-				player.Check()
-			}
-		}
-	case game.AllIn:
-		allInAmount := player.Chips
-		if player.AllIn() {
-			table.Pot += allInAmount
-			if player.TotalBet > table.CurrentBet {
-				table.CurrentBet = player.TotalBet
-			}
-		}
-	}
-
-	// Record the action in hand history
-	if table.HandHistory != nil {
-		table.HandHistory.AddAction(player.Name, decision.Action, player.ActionAmount, table.Pot, table.CurrentRound, decision.Reasoning)
-	}
-
-	return decision.Reasoning
-}
 
 // HandStrength represents the relative strength of a hand
 type HandStrength int
@@ -311,14 +272,14 @@ func (tc *ThinkingContext) GetThoughts() string {
 }
 
 // evaluateHandStrengthWithThinking evaluates hand strength while building thoughts
-func (b *Bot) evaluateHandStrengthWithThinking(player *game.Player, table *game.Table, thinking *ThinkingContext) EquityContext {
+func (b *Bot) evaluateHandStrengthWithThinking(player game.PlayerState, tableState game.TableState, thinking *ThinkingContext) EquityContext {
 	if len(player.HoleCards) != 2 {
 		thinking.AddThought("Missing hole cards, assuming very weak")
 		return EquityContext{Strength: VeryWeak, Equity: 0.1}
 	}
 
 	// Pre-flop hand strength evaluation using equity
-	if table.CurrentRound == game.PreFlop {
+	if tableState.CurrentRound == game.PreFlop {
 		// Calculate equity against random opponent for pre-flop evaluation
 		equity := evaluator.EstimateEquity(player.HoleCards, []deck.Card{}, evaluator.RandomRange{}, 1000, b.rng)
 		thinking.AddThought(fmt.Sprintf("Pre-flop equity vs random: %.1f%%", equity*100))
@@ -329,12 +290,12 @@ func (b *Bot) evaluateHandStrengthWithThinking(player *game.Player, table *game.
 	}
 
 	// Post-flop evaluation with community cards
-	if len(table.CommunityCards) >= 3 {
+	if len(tableState.CommunityCards) >= 3 {
 		// Add board description
-		boardStr := b.getBoardDescription(table.CommunityCards)
+		boardStr := b.getBoardDescription(tableState.CommunityCards)
 		thinking.AddThought(fmt.Sprintf("Board: %s", boardStr))
 
-		equityCtx := b.evaluatePostFlopStrengthWithThinking(player, table.CommunityCards, thinking)
+		equityCtx := b.evaluatePostFlopStrengthWithThinking(player, tableState.CommunityCards, thinking)
 		return equityCtx
 	}
 
@@ -343,7 +304,7 @@ func (b *Bot) evaluateHandStrengthWithThinking(player *game.Player, table *game.
 }
 
 // evaluatePostFlopStrengthWithThinking evaluates post-flop hand strength with thinking
-func (b *Bot) evaluatePostFlopStrengthWithThinking(player *game.Player, communityCards []deck.Card, thinking *ThinkingContext) EquityContext {
+func (b *Bot) evaluatePostFlopStrengthWithThinking(player game.PlayerState, communityCards []deck.Card, thinking *ThinkingContext) EquityContext {
 	// Determine if we're in position (simplified: Button or Cutoff = in position)
 	inPosition := player.Position == game.Button || player.Position == game.Cutoff
 
@@ -688,13 +649,13 @@ func (b *Bot) getPositionFactor(position game.Position) float64 {
 }
 
 // calculatePotOddsWithThinking calculates pot odds with thinking
-func (b *Bot) calculatePotOddsWithThinking(player *game.Player, table *game.Table, thinking *ThinkingContext) float64 {
-	if table.CurrentBet <= player.BetThisRound {
+func (b *Bot) calculatePotOddsWithThinking(player game.PlayerState, tableState game.TableState, thinking *ThinkingContext) float64 {
+	if tableState.CurrentBet <= player.BetThisRound {
 		thinking.AddThought("No bet to call")
 		return 0
 	}
 
-	callAmount := table.CurrentBet - player.BetThisRound
+	callAmount := tableState.CurrentBet - player.BetThisRound
 	if callAmount >= player.Chips {
 		thinking.AddThought("Would be all-in to call")
 		callAmount = player.Chips
@@ -705,17 +666,17 @@ func (b *Bot) calculatePotOddsWithThinking(player *game.Player, table *game.Tabl
 		return 100
 	}
 
-	potOdds := float64(table.Pot) / float64(callAmount)
-	thinking.AddThought(fmt.Sprintf("Pot odds: %.1f:1 (risk $%d to win $%d)", potOdds, callAmount, table.Pot))
+	potOdds := float64(tableState.Pot) / float64(callAmount)
+	thinking.AddThought(fmt.Sprintf("Pot odds: %.1f:1 (risk $%d to win $%d)", potOdds, callAmount, tableState.Pot))
 
 	return potOdds
 }
 
 // makeDecisionBasedOnFactorsWithThinking makes the final decision with thinking
-func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player *game.Player, table *game.Table, equityCtx EquityContext, positionFactor, potOdds float64, thinking *ThinkingContext) game.Action {
+func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player game.PlayerState, tableState game.TableState, equityCtx EquityContext, positionFactor, potOdds float64, thinking *ThinkingContext, validActions []game.ValidAction) game.Action {
 	// Check for continuation betting opportunity
-	shouldCBet := b.shouldContinuationBet(player, table, equityCtx.Strength, positionFactor)
-	if shouldCBet && table.CurrentBet == 0 {
+	shouldCBet := b.shouldContinuationBet(player, tableState, equityCtx.Strength, positionFactor)
+	if shouldCBet && tableState.CurrentBet == 0 {
 		thinking.AddThought("Good spot to continuation bet")
 	}
 
@@ -772,8 +733,8 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player *game.Player, table 
 	}
 
 	// Enhanced position-based adjustments for draws and aggression
-	if table.CurrentRound > game.PreFlop && positionFactor > 1.0 {
-		drawStrength := b.evaluateDraws(player.HoleCards, table.CommunityCards)
+	if tableState.CurrentRound > game.PreFlop && positionFactor > 1.0 {
+		drawStrength := b.evaluateDraws(player.HoleCards, tableState.CommunityCards)
 		if drawStrength >= 2 && equityCtx.Strength == VeryWeak {
 			// Apply bluff frequency configuration
 			bluffChance := b.config.BluffFrequency
@@ -789,7 +750,7 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player *game.Player, table 
 	}
 
 	// Use raw equity for precise pot odds comparison
-	if potOdds > 0 && table.CurrentBet > player.BetThisRound {
+	if potOdds > 0 && tableState.CurrentBet > player.BetThisRound {
 		// Calculate required equity for profitable call
 		requiredEquity := 1.0 / (1.0 + potOdds)
 		equityDiff := equityCtx.Equity - requiredEquity
@@ -818,7 +779,7 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player *game.Player, table 
 	}
 
 	// Continuation betting logic
-	if shouldCBet && table.CurrentBet == 0 {
+	if shouldCBet && tableState.CurrentBet == 0 {
 		cBetBoost := b.config.CBetFrequency * 0.4
 		thinking.AddThought(fmt.Sprintf("C-bet opportunity (%.0f%% frequency)", b.config.CBetFrequency*100))
 		raiseProb += cBetBoost
@@ -846,7 +807,7 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player *game.Player, table 
 	}
 
 	// Special cases
-	if table.CurrentBet == 0 {
+	if tableState.CurrentBet == 0 {
 		if foldProb > 0.5 {
 			thinking.AddThought("Checking instead of folding when possible")
 			return game.Check
@@ -860,7 +821,7 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player *game.Player, table 
 	}
 
 	// If can't afford to call, must fold or go all-in
-	callAmount := table.CurrentBet - player.BetThisRound
+	callAmount := tableState.CurrentBet - player.BetThisRound
 	if callAmount >= player.Chips {
 		if equityCtx.Strength >= Strong && b.rng.Float64() < 0.3 {
 			thinking.AddThought("Strong hand, going all-in")
@@ -885,14 +846,14 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player *game.Player, table 
 }
 
 // shouldContinuationBet determines if player should continuation bet
-func (b *Bot) shouldContinuationBet(_ *game.Player, table *game.Table, strength HandStrength, positionFactor float64) bool {
+func (b *Bot) shouldContinuationBet(_ game.PlayerState, tableState game.TableState, strength HandStrength, positionFactor float64) bool {
 	// Only apply on post-flop streets
-	if table.CurrentRound == game.PreFlop {
+	if tableState.CurrentRound == game.PreFlop {
 		return false
 	}
 
 	// Only if there's no bet to call (we can bet)
-	if table.CurrentBet > 0 {
+	if tableState.CurrentBet > 0 {
 		return false
 	}
 
@@ -900,7 +861,7 @@ func (b *Bot) shouldContinuationBet(_ *game.Player, table *game.Table, strength 
 	// This should be enhanced with proper pre-flop aggressor tracking
 	if positionFactor > 1.0 && strength >= VeryWeak {
 		// Analyze board texture
-		boardTexture := b.analyzeBoardTexture(table.CommunityCards)
+		boardTexture := b.analyzeBoardTexture(tableState.CommunityCards)
 
 		// More likely to c-bet on dry boards, scaled by configuration
 		baseCBetFreq := b.config.CBetFrequency
@@ -920,15 +881,15 @@ func (b *Bot) shouldContinuationBet(_ *game.Player, table *game.Table, strength 
 }
 
 // calculateRaiseAmount determines how much to raise based on position and stack depth
-func (b *Bot) calculateRaiseAmount(player *game.Player, table *game.Table, strength HandStrength) int {
-	potSize := table.Pot
-	currentBet := table.CurrentBet
-	bigBlind := table.BigBlind
+func (b *Bot) calculateRaiseAmount(player game.PlayerState, tableState game.TableState, strength HandStrength) int {
+	potSize := tableState.Pot
+	currentBet := tableState.CurrentBet
+	bigBlind := tableState.BigBlind
 
 	// Calculate effective stack depth
 	maxOpponentStack := 0
-	for _, p := range table.Players {
-		if p != player && p.Chips > maxOpponentStack {
+	for _, p := range tableState.Players {
+		if p.Name != player.Name && p.Chips > maxOpponentStack {
 			maxOpponentStack = p.Chips
 		}
 	}
@@ -941,7 +902,7 @@ func (b *Bot) calculateRaiseAmount(player *game.Player, table *game.Table, stren
 	var baseRaise int
 
 	// Street-specific sizing (position and stack-based only)
-	if table.CurrentRound == game.PreFlop {
+	if tableState.CurrentRound == game.PreFlop {
 		// Preflop sizing based on position
 		positionFactor := b.getPositionFactor(player.Position)
 		var pfSizing float64
@@ -960,7 +921,7 @@ func (b *Bot) calculateRaiseAmount(player *game.Player, table *game.Table, stren
 	} else {
 		// Post-flop sizing based on street
 		var potFactor float64
-		switch table.CurrentRound {
+		switch tableState.CurrentRound {
 		case game.Flop:
 			potFactor = 0.6 + b.rng.Float64()*0.2 // 0.6-0.8x pot
 		case game.Turn, game.River:
@@ -1011,6 +972,70 @@ func (b *Bot) calculateRaiseAmount(player *game.Player, table *game.Table, stren
 	}
 
 	return baseRaise
+}
+
+// validateAndAdjustDecision ensures the decision is valid and falls back if needed
+func (b *Bot) validateAndAdjustDecision(decision game.Decision, validActions []game.ValidAction, thinking *ThinkingContext) game.Decision {
+	// Check if the action is valid
+	for _, validAction := range validActions {
+		if validAction.Action == decision.Action {
+			// For raises, check if amount is in valid range
+			if decision.Action == game.Raise {
+				if decision.Amount >= validAction.MinAmount && decision.Amount <= validAction.MaxAmount {
+					return decision // Valid raise
+				}
+				// Adjust raise amount to be within valid range
+				if decision.Amount < validAction.MinAmount {
+					decision.Amount = validAction.MinAmount
+					thinking.AddThought(fmt.Sprintf("Adjusted raise to minimum: %d", decision.Amount))
+				} else if decision.Amount > validAction.MaxAmount {
+					decision.Amount = validAction.MaxAmount
+					thinking.AddThought(fmt.Sprintf("Adjusted raise to maximum (all-in): %d", decision.Amount))
+				}
+				decision.Reasoning = thinking.GetThoughts()
+				return decision
+			}
+			return decision // Valid non-raise action
+		}
+	}
+	
+	// Action not valid, need fallback
+	thinking.AddThought(fmt.Sprintf("Invalid action %s, falling back", decision.Action.String()))
+	
+	// Fallback priority: Call > Check > Fold
+	for _, validAction := range validActions {
+		if validAction.Action == game.Call {
+			decision.Action = game.Call
+			decision.Amount = validAction.MinAmount
+			decision.Reasoning = thinking.GetThoughts()
+			return decision
+		}
+	}
+	
+	for _, validAction := range validActions {
+		if validAction.Action == game.Check {
+			decision.Action = game.Check
+			decision.Amount = 0
+			decision.Reasoning = thinking.GetThoughts()
+			return decision
+		}
+	}
+	
+	for _, validAction := range validActions {
+		if validAction.Action == game.Fold {
+			decision.Action = game.Fold
+			decision.Amount = 0
+			decision.Reasoning = thinking.GetThoughts()
+			return decision
+		}
+	}
+	
+	// Should never reach here, but if no valid actions, fold
+	decision.Action = game.Fold
+	decision.Amount = 0
+	thinking.AddThought("No valid actions found, defaulting to fold")
+	decision.Reasoning = thinking.GetThoughts()
+	return decision
 }
 
 func max(a, b int) int {

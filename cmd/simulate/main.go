@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
@@ -17,12 +18,13 @@ import (
 )
 
 type CLI struct {
-	Hands      int    `default:"50000" help:"Number of hands to simulate"`
-	Opponent   string `default:"fold" help:"Opponent type: fold, call, rand, chart"`
-	Seed       int64  `default:"0" help:"RNG seed (0 for random)"`
-	Verbose    bool   `short:"v" help:"Verbose logging"`
-	CPUProfile string `help:"Write CPU profile to file"`
-	MemProfile string `help:"Write memory profile to file"`
+	Hands      int           `default:"50000" help:"Number of hands to simulate"`
+	Opponent   string        `default:"fold" help:"Opponent type: fold, call, rand, chart, maniac, tag"`
+	Seed       int64         `default:"0" help:"RNG seed (0 for random)"`
+	Timeout    time.Duration `default:"5s" help:"Timeout per hand to detect hangs"`
+	Verbose    bool          `short:"v" help:"Verbose logging"`
+	CPUProfile string        `help:"Write CPU profile to file"`
+	MemProfile string        `help:"Write memory profile to file"`
 }
 
 type HandResult struct {
@@ -216,7 +218,7 @@ func main() {
 		cli.Hands, cli.Opponent, cli.Seed)
 
 	startTime := time.Now()
-	stats := runSimulation(cli.Hands, cli.Opponent, cli.Seed, logger)
+	stats := runSimulation(cli.Hands, cli.Opponent, cli.Seed, cli.Timeout, logger)
 	duration := time.Since(startTime)
 	printResults(stats, cli.Opponent, duration)
 
@@ -248,7 +250,7 @@ func main() {
 	ctx.Exit(0)
 }
 
-func runSimulation(numHands int, opponentType string, seed int64, logger *log.Logger) *Statistics {
+func runSimulation(numHands int, opponentType string, seed int64, timeout time.Duration, logger *log.Logger) *Statistics {
 	stats := &Statistics{}
 	startTime := time.Now()
 
@@ -264,7 +266,14 @@ func runSimulation(numHands int, opponentType string, seed int64, logger *log.Lo
 		// Rotate OurBot's position (1-6) to eliminate positional bias
 		ourPosition := (hand % 6) + 1
 
-		result := playHand(opponentType, handSeed, ourPosition, logger)
+		result, err := playHandWithTimeout(opponentType, handSeed, ourPosition, timeout, logger)
+		if err != nil {
+			fmt.Printf("\n❌ HANG DETECTED on hand %d!\n", hand+1)
+			fmt.Printf("Reproduction command: go run ./cmd/simulate --hands=1 --seed=%d --opponent=%s --timeout=10s\n", handSeed, opponentType)
+			fmt.Printf("Hand seed: %d, Position: %d\n", handSeed, ourPosition)
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
 		stats.Add(result)
 
 		// Progress updates every 50k hands (Phase 2 requirement)
@@ -301,140 +310,6 @@ func runSimulation(numHands int, opponentType string, seed int64, logger *log.Lo
 	return stats
 }
 
-func playHandWithDebug(opponentType string, handSeed int64, ourPosition int, logger *log.Logger) HandResult {
-	handRng := rand.New(rand.NewSource(handSeed))
-
-	// Setup 6-max table with controlled RNG
-	const STARTING_CHIPS = 200 // 100bb at $1/$2
-	table := game.NewTable(handRng, game.TableConfig{
-		MaxSeats:   6,
-		SmallBlind: 1,
-		BigBlind:   2,
-	})
-
-	fmt.Printf("=== INITIAL SETUP ===\n")
-	fmt.Printf("Starting chips per player: %d\n", STARTING_CHIPS)
-	fmt.Printf("Small blind: %d, Big blind: %d\n", table.SmallBlind, table.BigBlind)
-
-	// Add our bot at specified position
-	ourBot := game.NewPlayer(ourPosition, "OurBot", game.AI, STARTING_CHIPS)
-	table.AddPlayer(ourBot)
-
-	// Add opponent bots to remaining positions
-	for i := 1; i <= 6; i++ {
-		if i != ourPosition {
-			opponent := game.NewPlayer(i, fmt.Sprintf("Opp%d", i), game.AI, STARTING_CHIPS)
-			table.AddPlayer(opponent)
-		}
-	}
-
-	// Verify total chips
-	totalChips := 0
-	for _, player := range table.Players {
-		totalChips += player.Chips
-		fmt.Printf("Player %s: %d chips\n", player.Name, player.Chips)
-	}
-	fmt.Printf("Total chips in play: %d\n", totalChips)
-	fmt.Printf("Expected total: %d\n", 6*STARTING_CHIPS)
-
-	// Create agents with controlled RNG
-	agents := make(map[string]game.Agent)
-	agents["OurBot"] = createControlledBot(handRng, logger, opponentType)
-
-	// Create opponent agents based on type
-	for i := 1; i <= 6; i++ {
-		if i != ourPosition {
-			oppName := fmt.Sprintf("Opp%d", i)
-			agents[oppName] = createOpponent(opponentType, handRng, logger)
-		}
-	}
-
-	// Create game engine and play hand (defaultAgent used as fallback only)
-	engine := game.NewGameEngine(table, agents["OurBot"], logger)
-
-	// Record initial chips for all players
-	startChips := make(map[string]int)
-	for _, player := range table.Players {
-		startChips[player.Name] = player.Chips
-	}
-
-	fmt.Printf("\n=== PRE-HAND ===\n")
-	fmt.Printf("HAND %d  OurPos=%d\n", handSeed%1000, ourPosition)
-	for _, p := range table.Players {
-		fmt.Printf("  %-6s start %3d chips\n", p.Name, startChips[p.Name])
-	}
-	fmt.Printf("  pot %d chips (start)\n", table.Pot)
-
-	// Play the hand
-	engine.StartNewHand()
-
-	fmt.Printf("\n=== HAND PLAY ===\n")
-	engine.PlayHand(agents)
-
-	// Detailed chip tracking after hand
-	fmt.Printf("\n=== POST-HAND CHIP ANALYSIS ===\n")
-	totalDelta := 0
-	for _, p := range table.Players {
-		delta := p.Chips - startChips[p.Name]
-		totalDelta += delta
-		fmt.Printf("  %-6s start %3d  end %3d  Δ %+3d chips\n",
-			p.Name, startChips[p.Name], p.Chips, delta)
-	}
-	fmt.Printf("  pot %d chips (final)\n", table.Pot)
-	fmt.Printf("  Sum(Δ) + pot = %d + %d = %d (should be 0)\n", totalDelta, table.Pot, totalDelta+table.Pot)
-
-	if totalDelta+table.Pot != 0 {
-		fmt.Printf("❌ CHIP LEAK! Money created/destroyed: %d chips\n", totalDelta+table.Pot)
-	}
-
-	// Calculate net BB for our bot
-	finalChips := ourBot.Chips
-	netChips := finalChips - startChips["OurBot"]
-	netBB := float64(netChips) / float64(table.BigBlind)
-
-	// Calculate final pot size from the largest chip delta (winner's gain)
-	maxDelta := 0
-	for _, player := range table.Players {
-		delta := player.Chips - startChips[player.Name]
-		if delta > maxDelta {
-			maxDelta = delta
-		}
-	}
-
-	fmt.Printf("\n=== POST-HAND ===\n")
-	fmt.Printf("OurBot final chips: %d\n", finalChips)
-	fmt.Printf("Net chips: %d\n", netChips)
-	fmt.Printf("Net BB: %.4f\n", netBB)
-	fmt.Printf("Pot size: %d chips (%.1f bb)\n", maxDelta, float64(maxDelta)/2.0)
-
-	// Verify total chips conservation
-	finalTotalChips := table.Pot
-	for _, player := range table.Players {
-		finalTotalChips += player.Chips
-		fmt.Printf("Player %s final: %d chips\n", player.Name, player.Chips)
-	}
-	fmt.Printf("Final total chips: %d (pot: %d)\n", finalTotalChips, table.Pot)
-	if finalTotalChips != 6*STARTING_CHIPS {
-		fmt.Printf("❌ CHIP CONSERVATION VIOLATION! Expected %d, got %d\n", 6*STARTING_CHIPS, finalTotalChips)
-	} else {
-		fmt.Printf("✅ Chip conservation verified\n")
-	}
-
-	// Assert pot doesn't exceed stack cap (6 players * 200 chips = 1200 max)
-	if maxDelta > 6*STARTING_CHIPS {
-		fmt.Printf("❌ POT EXCEEDS STACK CAP! Pot: %d, Max possible: %d\n", maxDelta, 6*STARTING_CHIPS)
-	}
-
-	return HandResult{
-		NetBB:          netBB,
-		Seed:           handSeed,
-		Position:       ourPosition,
-		WentToShowdown: false,    // TODO: Get from engine result
-		FinalPotSize:   maxDelta, // Winner's chip gain = pot size
-		StreetReached:  "",       // TODO: Get from engine result
-	}
-}
-
 func playHand(opponentType string, handSeed int64, ourPosition int, logger *log.Logger) HandResult {
 	handRng := rand.New(rand.NewSource(handSeed))
 
@@ -446,8 +321,7 @@ func playHand(opponentType string, handSeed int64, ourPosition int, logger *log.
 		BigBlind:   2,
 	})
 
-	// Use default deck for now - the table's RandSource should control randomness
-	// We'll need to ensure the deck uses the table's RandSource
+	// Use default deck for now - the table's Rand will	control randomness
 
 	// Add our bot at specified position
 	ourBot := game.NewPlayer(ourPosition, "OurBot", game.AI, STARTING_CHIPS)
@@ -463,7 +337,7 @@ func playHand(opponentType string, handSeed int64, ourPosition int, logger *log.
 
 	// Create agents with controlled RNG
 	agents := make(map[string]game.Agent)
-	agents["OurBot"] = createControlledBot(handRng, logger, opponentType)
+	agents["OurBot"] = bot.NewBotWithRNG(logger, bot.DefaultBotConfig(), handRng)
 
 	// Create opponent agents based on type
 	for i := 1; i <= 6; i++ {
@@ -511,29 +385,52 @@ func playHand(opponentType string, handSeed int64, ourPosition int, logger *log.
 	}
 }
 
-func createControlledBot(rng *rand.Rand, logger *log.Logger, opponentType string) game.Agent {
-	// Choose bot config based on opponent type
-	var config bot.BotConfig
-	switch opponentType {
-	case "fold":
-		config = bot.ExploitBotConfig // Use exploit config against fold-bots
-	default:
-		config = bot.DefaultBotConfig() // Default for other opponents
-	}
+func playHandWithTimeout(opponentType string, handSeed int64, ourPosition int, timeout time.Duration, logger *log.Logger) (HandResult, error) {
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 
-	return bot.NewBotWithRNG(logger, config, rng)
+	// Channel to receive the result
+	resultCh := make(chan HandResult, 1)
+	errorCh := make(chan error, 1)
+
+	// Run playHand in a goroutine
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				errorCh <- fmt.Errorf("panic in playHand: %v", r)
+			}
+		}()
+		
+		result := playHand(opponentType, handSeed, ourPosition, logger)
+		resultCh <- result
+	}()
+
+	// Wait for either completion or timeout
+	select {
+	case result := <-resultCh:
+		return result, nil
+	case err := <-errorCh:
+		return HandResult{}, err
+	case <-ctx.Done():
+		return HandResult{}, fmt.Errorf("hand timed out after %v (seed: %d, position: %d)", timeout, handSeed, ourPosition)
+	}
 }
 
 func createOpponent(opponentType string, rng *rand.Rand, logger *log.Logger) game.Agent {
 	switch opponentType {
 	case "fold":
-		return &FoldBot{logger: logger}
+		return bot.NewFoldBot(logger)
 	case "call":
-		return &CallBot{logger: logger}
+		return bot.NewCallBot(logger)
 	case "rand":
-		return &RandBot{rng: rng, logger: logger}
+		return bot.NewRandBot(rng, logger)
 	case "chart":
-		return &ChartBot{logger: logger}
+		return bot.NewChartBot(logger)
+	case "maniac":
+		return bot.NewManiacBot(rng, logger)
+	case "tag":
+		return bot.NewTAGBot(rng, logger)
 	default:
 		logger.Fatal("Unknown opponent type", "type", opponentType)
 		return nil
@@ -621,239 +518,20 @@ func printResults(stats *Statistics, opponentType string, duration time.Duration
 		passed := mean >= 1.0
 		fmt.Printf("fold-bot gate: mean >= 1.0 bb/hand: %.4f %s\n",
 			mean, passFailString(passed))
-	case "call", "rand":
+	case "call", "rand", "maniac":
 		passed := (mean - 1.96*stdErr) > 0
 		fmt.Printf("%s-bot gate: (mean - 1.96*se) > 0: %.4f %s\n",
 			opponentType, mean-1.96*stdErr, passFailString(passed))
-	case "chart":
+	case "chart", "tag":
 		passed := (mean - 1.96*stdErr) >= 0
-		fmt.Printf("chart-bot gate: (mean - 1.96*se) >= 0: %.4f %s\n",
-			mean-1.96*stdErr, passFailString(passed))
+		fmt.Printf("%s-bot gate: (mean - 1.96*se) >= 0: %.4f %s\n",
+			opponentType, mean-1.96*stdErr, passFailString(passed))
 	}
 }
 
 func passFailString(passed bool) string {
 	if passed {
-		return "✓ PASS"
+		return "✅ PASS"
 	}
-	return "✗ FAIL"
-}
-
-// Simple deterministic opponent implementations
-
-type FoldBot struct {
-	logger *log.Logger
-}
-
-func (f *FoldBot) MakeDecision(player *game.Player, table *game.Table) game.Decision {
-	// Always fold except when we can check
-	if table.CurrentBet <= player.BetThisRound {
-		return game.Decision{Action: game.Check, Amount: 0, Reasoning: "fold-bot checking"}
-	}
-	return game.Decision{Action: game.Fold, Amount: 0, Reasoning: "fold-bot folding"}
-}
-
-func (f *FoldBot) ExecuteAction(player *game.Player, table *game.Table) string {
-	decision := f.MakeDecision(player, table)
-
-	switch decision.Action {
-	case game.Fold:
-		player.Fold()
-	case game.Check:
-		player.Check()
-	}
-
-	if table.HandHistory != nil {
-		table.HandHistory.AddAction(player.Name, decision.Action, player.ActionAmount, table.Pot, table.CurrentRound, decision.Reasoning)
-	}
-
-	return decision.Reasoning
-}
-
-type CallBot struct {
-	logger *log.Logger
-}
-
-func (c *CallBot) MakeDecision(player *game.Player, table *game.Table) game.Decision {
-	// Check/call to river, fold river
-	if table.CurrentRound == game.River && table.CurrentBet > player.BetThisRound {
-		return game.Decision{Action: game.Fold, Amount: 0, Reasoning: "call-bot folding river"}
-	}
-
-	if table.CurrentBet <= player.BetThisRound {
-		return game.Decision{Action: game.Check, Amount: 0, Reasoning: "call-bot checking"}
-	}
-
-	return game.Decision{Action: game.Call, Amount: 0, Reasoning: "call-bot calling"}
-}
-
-func (c *CallBot) ExecuteAction(player *game.Player, table *game.Table) string {
-	decision := c.MakeDecision(player, table)
-
-	switch decision.Action {
-	case game.Fold:
-		player.Fold()
-	case game.Check:
-		player.Check()
-	case game.Call:
-		callAmount := table.CurrentBet - player.BetThisRound
-		if callAmount > 0 && callAmount <= player.Chips {
-			player.Call(callAmount)
-			table.Pot += callAmount
-		} else {
-			player.Check()
-		}
-	}
-
-	if table.HandHistory != nil {
-		table.HandHistory.AddAction(player.Name, decision.Action, player.ActionAmount, table.Pot, table.CurrentRound, decision.Reasoning)
-	}
-
-	return decision.Reasoning
-}
-
-type RandBot struct {
-	rng    *rand.Rand
-	logger *log.Logger
-}
-
-func (r *RandBot) MakeDecision(player *game.Player, table *game.Table) game.Decision {
-	// Uniform random legal action using fixed array to avoid allocation
-	var actions [3]game.Action
-	var actionCount int
-
-	// Can always fold (except when we can check for free)
-	if table.CurrentBet > player.BetThisRound {
-		actions[actionCount] = game.Fold
-		actionCount++
-	}
-
-	// Can always check/call
-	if table.CurrentBet <= player.BetThisRound {
-		actions[actionCount] = game.Check
-		actionCount++
-	} else {
-		actions[actionCount] = game.Call
-		actionCount++
-	}
-
-	// Can always raise if we have chips
-	if player.Chips > 0 {
-		actions[actionCount] = game.Raise
-		actionCount++
-	}
-
-	action := actions[r.rng.Intn(actionCount)]
-	return game.Decision{Action: action, Amount: 0, Reasoning: "rand-bot random action"}
-}
-
-func (r *RandBot) ExecuteAction(player *game.Player, table *game.Table) string {
-	decision := r.MakeDecision(player, table)
-
-	switch decision.Action {
-	case game.Fold:
-		player.Fold()
-	case game.Check:
-		player.Check()
-	case game.Call:
-		callAmount := table.CurrentBet - player.BetThisRound
-		if callAmount > 0 && callAmount <= player.Chips {
-			player.Call(callAmount)
-			table.Pot += callAmount
-		} else {
-			player.Check()
-		}
-	case game.Raise:
-		raiseAmount := table.BigBlind // Simple 1bb raise
-		totalBet := table.CurrentBet + raiseAmount
-		needed := totalBet - player.BetThisRound
-		if needed > 0 && needed <= player.Chips {
-			player.Raise(needed)
-			table.Pot += needed
-			table.CurrentBet = totalBet
-		} else {
-			// Fall back to call
-			callAmount := table.CurrentBet - player.BetThisRound
-			if callAmount > 0 && callAmount <= player.Chips {
-				player.Call(callAmount)
-				table.Pot += callAmount
-			} else {
-				player.Check()
-			}
-		}
-	}
-
-	if table.HandHistory != nil {
-		table.HandHistory.AddAction(player.Name, decision.Action, player.ActionAmount, table.Pot, table.CurrentRound, decision.Reasoning)
-	}
-
-	return decision.Reasoning
-}
-
-type ChartBot struct {
-	logger *log.Logger
-}
-
-func (c *ChartBot) MakeDecision(player *game.Player, table *game.Table) game.Decision {
-	// Simple push-fold pre-flop chart, check/call post-flop
-	if table.CurrentRound == game.PreFlop {
-		// Very basic push-fold: premium hands only
-		if len(player.HoleCards) == 2 {
-			card1, card2 := player.HoleCards[0], player.HoleCards[1]
-
-			// Push with premium pairs and AK
-			if (card1.Rank == card2.Rank && card1.Rank >= 10) || // TT+
-				(card1.Rank >= 13 && card2.Rank >= 13) { // AK, AQ, AA, KK, QQ, etc.
-				if player.Chips <= 20*table.BigBlind { // Only if short stack
-					return game.Decision{Action: game.Raise, Amount: 0, Reasoning: "chart-bot push"}
-				}
-			}
-		}
-
-		// Otherwise fold to raises, check/call otherwise
-		if table.CurrentBet > player.BetThisRound {
-			return game.Decision{Action: game.Fold, Amount: 0, Reasoning: "chart-bot folding"}
-		}
-		return game.Decision{Action: game.Check, Amount: 0, Reasoning: "chart-bot checking"}
-	}
-
-	// Post-flop: check/call
-	if table.CurrentBet <= player.BetThisRound {
-		return game.Decision{Action: game.Check, Amount: 0, Reasoning: "chart-bot checking"}
-	}
-	return game.Decision{Action: game.Call, Amount: 0, Reasoning: "chart-bot calling"}
-}
-
-func (c *ChartBot) ExecuteAction(player *game.Player, table *game.Table) string {
-	decision := c.MakeDecision(player, table)
-
-	switch decision.Action {
-	case game.Fold:
-		player.Fold()
-	case game.Check:
-		player.Check()
-	case game.Call:
-		callAmount := table.CurrentBet - player.BetThisRound
-		if callAmount > 0 && callAmount <= player.Chips {
-			player.Call(callAmount)
-			table.Pot += callAmount
-		} else {
-			player.Check()
-		}
-	case game.Raise:
-		// All-in push
-		allInAmount := player.Chips
-		if player.AllIn() {
-			table.Pot += allInAmount
-			if player.TotalBet > table.CurrentBet {
-				table.CurrentBet = player.TotalBet
-			}
-		}
-	}
-
-	if table.HandHistory != nil {
-		table.HandHistory.AddAction(player.Name, decision.Action, player.ActionAmount, table.Pot, table.CurrentRound, decision.Reasoning)
-	}
-
-	return decision.Reasoning
+	return "❌ FAIL"
 }

@@ -391,10 +391,30 @@ func (t *Table) setFirstToAct() {
 			}
 		}
 	} else {
+		// For 3+ players, find the first player after big blind to act
+		// This could be UTG in larger games, or the button in 3-player games
 		for _, player := range t.ActivePlayers {
 			if player.Position == UnderTheGun {
 				firstToAct = player
 				break
+			}
+		}
+
+		// If no UTG (e.g., 3-player game), find player after big blind
+		if firstToAct == nil {
+			// Find big blind player index
+			bigBlindIndex := -1
+			for i, player := range t.ActivePlayers {
+				if player.Position == BigBlind {
+					bigBlindIndex = i
+					break
+				}
+			}
+
+			// First player after big blind
+			if bigBlindIndex != -1 {
+				nextIndex := (bigBlindIndex + 1) % len(t.ActivePlayers)
+				firstToAct = t.ActivePlayers[nextIndex]
 			}
 		}
 	}
@@ -511,20 +531,26 @@ func (t *Table) IsBettingRoundComplete() bool {
 	playersActed := 0
 	playersAllIn := 0
 
+
+
 	for _, player := range t.ActivePlayers {
 		if player.IsInHand() {
 			playersInHand++
 			if player.IsAllIn {
 				playersAllIn++
 			}
-			if t.PlayersActed[player.ID] && player.BetThisRound == t.CurrentBet {
+
+			// A player has "acted properly" if:
+			// 1. They're all-in (can't act in current round, automatically counts as acted), OR
+			// 2. They have acted AND bet the current amount (normal case)
+			if player.IsAllIn {
+				playersActed++
+			} else if t.PlayersActed[player.ID] && player.BetThisRound == t.CurrentBet {
 				playersActed++
 			}
 		}
 	}
 
-	// Round is complete if all players have acted and matched the current bet,
-	// or if only one player remains, or if all but one are all-in
 	return playersActed == playersInHand || playersInHand <= 1 || playersInHand-playersAllIn <= 1
 }
 
@@ -595,13 +621,13 @@ func (t *Table) AwardPot() {
 	sort.Slice(contributors, func(i, j int) bool {
 		return contributors[i].bet < contributors[j].bet
 	})
-	
+
 	// If the highest bet is small blind + big blind or less, and we have exactly 2-3 active players,
 	// this is likely just blind posting without real betting action - award to all winners
 	activePlayers := t.GetActivePlayers()
 	maxBet := contributors[len(contributors)-1].bet
-	
-	// Simple heuristic: if max bet <= big blind and we have <= 3 active players, 
+
+	// Simple heuristic: if max bet <= big blind and we have <= 3 active players,
 	// treat as blind-only scenario
 	if len(activePlayers) <= 3 && maxBet <= t.BigBlind {
 		winners := t.FindWinners()
@@ -751,6 +777,182 @@ func (t *Table) GetActivePlayers() []*Player {
 		}
 	}
 	return active
+}
+
+// CreateTableState creates a read-only snapshot of the table state for decision making
+func (t *Table) CreateTableState(actingPlayer *Player) TableState {
+	players := make([]PlayerState, len(t.ActivePlayers))
+	actingIdx := -1
+
+	for i, p := range t.ActivePlayers {
+		players[i] = PlayerState{
+			Name:         p.Name,
+			Chips:        p.Chips,
+			Position:     p.Position,
+			BetThisRound: p.BetThisRound,
+			TotalBet:     p.TotalBet,
+			IsActive:     p.IsActive,
+			IsFolded:     p.IsFolded,
+			IsAllIn:      p.IsAllIn,
+			LastAction:   p.LastAction,
+			// HoleCards only visible to the acting player
+			HoleCards: func() []deck.Card {
+				if p == actingPlayer {
+					return p.HoleCards
+				}
+				return nil // Hidden from other players
+			}(),
+		}
+
+		if p == actingPlayer {
+			actingIdx = i
+		}
+	}
+
+	return TableState{
+		CurrentBet:      t.CurrentBet,
+		Pot:             t.Pot,
+		CurrentRound:    t.CurrentRound,
+		CommunityCards:  t.CommunityCards,
+		SmallBlind:      t.SmallBlind,
+		BigBlind:        t.BigBlind,
+		Players:         players,
+		ActingPlayerIdx: actingIdx,
+		HandHistory:     t.HandHistory,
+	}
+}
+
+// GetValidActions calculates the valid actions for the current acting player
+func (t *Table) GetValidActions() []ValidAction {
+	currentPlayer := t.GetCurrentPlayer()
+	if currentPlayer == nil || !currentPlayer.CanAct() {
+		return []ValidAction{}
+	}
+
+	var actions []ValidAction
+
+	// Fold is always available (except when checking is possible)
+	callAmount := t.CurrentBet - currentPlayer.BetThisRound
+	if callAmount > 0 {
+		actions = append(actions, ValidAction{
+			Action:    Fold,
+			MinAmount: 0,
+			MaxAmount: 0,
+		})
+	}
+
+	// Check is available when no bet to call
+	if callAmount == 0 {
+		actions = append(actions, ValidAction{
+			Action:    Check,
+			MinAmount: 0,
+			MaxAmount: 0,
+		})
+	}
+
+	// Call is available when there's a bet to call and player has chips
+	if callAmount > 0 && callAmount <= currentPlayer.Chips {
+		actions = append(actions, ValidAction{
+			Action:    Call,
+			MinAmount: callAmount,
+			MaxAmount: callAmount,
+		})
+	}
+
+	// Raise is available if player has enough chips for minimum raise
+	minRaise := t.CurrentBet + t.MinRaise
+	totalNeeded := minRaise - currentPlayer.BetThisRound
+	if totalNeeded <= currentPlayer.Chips {
+		actions = append(actions, ValidAction{
+			Action:    Raise,
+			MinAmount: minRaise,
+			MaxAmount: currentPlayer.BetThisRound + currentPlayer.Chips, // All-in amount
+		})
+	}
+
+	// All-in is available if player has chips and isn't already all-in
+	if currentPlayer.Chips > 0 && !currentPlayer.IsAllIn {
+		allInAmount := currentPlayer.BetThisRound + currentPlayer.Chips
+		actions = append(actions, ValidAction{
+			Action:    AllIn,
+			MinAmount: allInAmount,
+			MaxAmount: allInAmount,
+		})
+	}
+
+	return actions
+}
+
+// ApplyDecision applies a decision to the table state and returns the reasoning
+func (t *Table) ApplyDecision(decision Decision) (string, error) {
+	currentPlayer := t.GetCurrentPlayer()
+	if currentPlayer == nil {
+		return "", fmt.Errorf("no current player")
+	}
+
+	if !currentPlayer.CanAct() {
+		return "Player cannot act", nil
+	}
+
+	// Validate decision against valid actions
+	validActions := t.GetValidActions()
+	valid := false
+	for _, validAction := range validActions {
+		if validAction.Action == decision.Action {
+			if decision.Action == Raise &&
+				(decision.Amount < validAction.MinAmount || decision.Amount > validAction.MaxAmount) {
+				return "", fmt.Errorf("invalid raise amount: %d (valid range: %d-%d)",
+					decision.Amount, validAction.MinAmount, validAction.MaxAmount)
+			}
+			valid = true
+			break
+		}
+	}
+
+	if !valid {
+		return "", fmt.Errorf("invalid action: %s", decision.Action)
+	}
+
+	// Apply the decision
+	switch decision.Action {
+	case Fold:
+		currentPlayer.Fold()
+	case Call:
+		callAmount := t.CurrentBet - currentPlayer.BetThisRound
+		if callAmount > 0 && callAmount <= currentPlayer.Chips {
+			currentPlayer.Call(callAmount)
+			t.Pot += callAmount
+		} else {
+			currentPlayer.Check()
+		}
+	case Check:
+		currentPlayer.Check()
+	case Raise:
+		totalNeeded := decision.Amount - currentPlayer.BetThisRound
+		if totalNeeded > 0 && totalNeeded <= currentPlayer.Chips {
+			currentPlayer.Raise(totalNeeded)
+			t.Pot += totalNeeded
+			t.CurrentBet = decision.Amount
+		} else {
+			return "", fmt.Errorf("insufficient chips for raise")
+		}
+	case AllIn:
+		allInAmount := currentPlayer.Chips
+		if currentPlayer.AllIn() {
+			t.Pot += allInAmount
+			if currentPlayer.TotalBet > t.CurrentBet {
+				t.CurrentBet = currentPlayer.TotalBet
+			}
+		}
+	}
+
+	// Record action in hand history
+	if t.HandHistory != nil {
+		t.HandHistory.AddAction(currentPlayer.Name, decision.Action,
+			currentPlayer.ActionAmount, t.Pot, t.CurrentRound, decision.Reasoning)
+	}
+
+	return decision.Reasoning, nil
 }
 
 // Helper function
