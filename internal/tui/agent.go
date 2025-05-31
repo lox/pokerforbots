@@ -316,10 +316,7 @@ func (ti *TUIAgent) handleCall(args []string) (bool, error) {
 	ti.table.Pot += callAmount
 	ti.model.AddLogEntry(fmt.Sprintf("Called $%d", callAmount))
 
-	// Record action in hand history
-	if ti.table.HandHistory != nil {
-		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Call, callAmount, ti.table.Pot, ti.table.CurrentRound, "")
-	}
+	// Note: Action will be recorded in hand history by game engine
 
 	return true, nil
 }
@@ -395,10 +392,7 @@ func (ti *TUIAgent) handleRaise(args []string) (bool, error) {
 	ti.mainLogger.Info("Raise successful", "totalBetAmount", totalBetAmount, "raiseByAmount", raiseByAmount, "newPot", ti.table.Pot)
 	ti.model.AddLogEntry(fmt.Sprintf("Raised by $%d (to $%d)", raiseByAmount, totalBetAmount))
 
-	// Record action in hand history
-	if ti.table.HandHistory != nil {
-		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Raise, totalBetAmount, ti.table.Pot, ti.table.CurrentRound, "")
-	}
+	// Note: Action will be recorded in hand history by game engine
 
 	return true, nil
 }
@@ -408,10 +402,7 @@ func (ti *TUIAgent) handleFold(args []string) (bool, error) {
 	currentPlayer.Fold()
 	ti.model.AddLogEntry("Folded")
 
-	// Record action in hand history
-	if ti.table.HandHistory != nil {
-		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Fold, 0, ti.table.Pot, ti.table.CurrentRound, "")
-	}
+	// Note: Action will be recorded in hand history by game engine
 
 	return true, nil
 }
@@ -427,10 +418,7 @@ func (ti *TUIAgent) handleCheck(args []string) (bool, error) {
 	currentPlayer.Check()
 	ti.model.AddLogEntry("Checked")
 
-	// Record action in hand history
-	if ti.table.HandHistory != nil {
-		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Check, 0, ti.table.Pot, ti.table.CurrentRound, "")
-	}
+	// Note: Action will be recorded in hand history by game engine
 
 	return true, nil
 }
@@ -456,10 +444,7 @@ func (ti *TUIAgent) handleAllIn(args []string) (bool, error) {
 
 	ti.model.AddLogEntry(fmt.Sprintf("ALL-IN for $%d!", allInAmount))
 
-	// Record action in hand history
-	if ti.table.HandHistory != nil {
-		ti.table.HandHistory.AddAction(currentPlayer.Name, game.AllIn, allInAmount, ti.table.Pot, ti.table.CurrentRound, "")
-	}
+	// Note: Action will be recorded in hand history by game engine
 
 	return true, nil
 }
@@ -560,10 +545,7 @@ func (ti *TUIAgent) handleCallForDecision(args []string) game.Decision {
 	ti.table.Pot += callAmount
 	ti.model.AddLogEntry(fmt.Sprintf("Called $%d", callAmount))
 
-	// Record action in hand history
-	if ti.table.HandHistory != nil {
-		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Call, callAmount, ti.table.Pot, ti.table.CurrentRound, "")
-	}
+	// Action will be recorded in hand history via events when engine applies decision
 
 	return game.Decision{
 		Action:    game.Call,
@@ -626,10 +608,7 @@ func (ti *TUIAgent) handleRaiseForDecision(args []string) game.Decision {
 	ti.table.CurrentBet = amount
 	ti.model.AddLogEntry(fmt.Sprintf("Raised to $%d", amount))
 
-	// Record action in hand history
-	if ti.table.HandHistory != nil {
-		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Raise, amount, ti.table.Pot, ti.table.CurrentRound, "")
-	}
+	// Action will be recorded in hand history via events when engine applies decision
 
 	return game.Decision{
 		Action:    game.Raise,
@@ -643,10 +622,7 @@ func (ti *TUIAgent) handleFoldForDecision(args []string) game.Decision {
 	currentPlayer.Fold()
 	ti.model.AddLogEntry("Folded")
 
-	// Record action in hand history
-	if ti.table.HandHistory != nil {
-		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Fold, 0, ti.table.Pot, ti.table.CurrentRound, "")
-	}
+	// Action will be recorded in hand history via events when engine applies decision
 
 	return game.Decision{
 		Action:    game.Fold,
@@ -670,10 +646,7 @@ func (ti *TUIAgent) handleCheckForDecision(args []string) game.Decision {
 	currentPlayer.Check()
 	ti.model.AddLogEntry("Checked")
 
-	// Record action in hand history
-	if ti.table.HandHistory != nil {
-		ti.table.HandHistory.AddAction(currentPlayer.Name, game.Check, 0, ti.table.Pot, ti.table.CurrentRound, "")
-	}
+	// Action will be recorded in hand history via events when engine applies decision
 
 	return game.Decision{
 		Action:    game.Check,
@@ -711,10 +684,7 @@ func (ti *TUIAgent) handleAllInForDecision(args []string) game.Decision {
 
 	ti.model.AddLogEntry(fmt.Sprintf("ALL-IN for $%d!", allInAmount))
 
-	// Record action in hand history
-	if ti.table.HandHistory != nil {
-		ti.table.HandHistory.AddAction(currentPlayer.Name, game.AllIn, allInAmount, ti.table.Pot, ti.table.CurrentRound, "")
-	}
+	// Action will be recorded in hand history via events when engine applies decision
 
 	return game.Decision{
 		Action:    game.AllIn,
@@ -824,10 +794,7 @@ func (ti *TUIAgent) ShowPlayerActionWithThinking(player *game.Player, thinking s
 
 	ti.mainLogger.Info("Player action", logArgs...)
 
-	// Record action in hand history for human players (AI actions already recorded)
-	if player.Type == game.Human && ti.table.HandHistory != nil {
-		ti.table.HandHistory.AddAction(player.Name, player.LastAction, player.ActionAmount, ti.table.Pot, ti.table.CurrentRound, "")
-	}
+	// Note: Actions are recorded in hand history by the game engine for all players
 
 	var actionEntry string
 	switch action {
@@ -852,17 +819,27 @@ func (ti *TUIAgent) ShowPlayerActionWithThinking(player *game.Player, thinking s
 	// to preserve the poker experience
 }
 
-// OnPlayerAction implements the ActionObserver interface
-func (ti *TUIAgent) OnPlayerAction(player *game.Player, reasoning string) {
-	// Show all player actions in the log for complete game history
-	// For human players, don't show AI thinking reasoning
-	if player.Type == game.Human {
-		ti.ShowPlayerActionWithThinking(player, "")
-	} else {
-		// Show AI player actions with thinking
-		ti.ShowPlayerActionWithThinking(player, reasoning)
+// OnEvent implements EventSubscriber interface
+func (ti *TUIAgent) OnEvent(event game.GameEvent) {
+	switch e := event.(type) {
+	case game.PlayerActionEvent:
+		// Show all player actions in the log for complete game history
+		// For human players, don't show AI thinking reasoning
+		if e.Player.Type == game.Human {
+			ti.ShowPlayerActionWithThinking(e.Player, "")
+		} else {
+			// Show AI player actions with thinking
+			ti.ShowPlayerActionWithThinking(e.Player, e.Reasoning)
+		}
+	case game.StreetChangeEvent:
+		// Update table state and show transition
+		ti.table.CurrentRound = e.Round
+		ti.table.CommunityCards = e.CommunityCards
+		ti.ShowBettingRoundTransition()
 	}
 }
+
+
 
 // ShowBettingRoundComplete shows when a betting round completes
 func (ti *TUIAgent) ShowBettingRoundComplete() {

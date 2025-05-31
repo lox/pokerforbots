@@ -88,7 +88,7 @@ func startInteractiveGame(rng *rand.Rand, seats int, logger *log.Logger) error {
 		MaxSeats:   seats,
 		SmallBlind: 1,
 		BigBlind:   2,
-	})
+	}, nil) // EventBus will be set by engine
 	agents := make(map[string]game.Agent)
 
 	// Add human player
@@ -137,8 +137,9 @@ func startInteractiveGame(rng *rand.Rand, seats int, logger *log.Logger) error {
 	defaultAgent := bot.NewBotWithRNG(logger, bot.DefaultBotConfig(), rng)
 	engine := game.NewGameEngine(table, defaultAgent, logger)
 	
-	// Register TUI as action observer to see AI player actions
-	engine.AddObserver(hi)
+	// Subscribe TUI to game events
+	eventBus := engine.GetEventBus()
+	eventBus.Subscribe(hi) // TUI displays events
 
 	// Main game loop - much simpler!
 	for {

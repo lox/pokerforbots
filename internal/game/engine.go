@@ -6,40 +6,31 @@ import (
 	"github.com/charmbracelet/log"
 )
 
-// ActionObserver is notified when players take actions
-type ActionObserver interface {
-	OnPlayerAction(player *Player, reasoning string)
-}
-
 // GameEngine handles the core game loop logic that can be shared between
 // interactive play and simulation
 type GameEngine struct {
 	table        *Table
 	defaultAgent Agent
 	logger       *log.Logger
-	observers    []ActionObserver
+	eventBus     EventBus
 }
 
 // NewGameEngine creates a new game engine with a default agent
 func NewGameEngine(table *Table, defaultAgent Agent, logger *log.Logger) *GameEngine {
+	eventBus := NewEventBus()
+	table.SetEventBus(eventBus)
+	
 	return &GameEngine{
 		table:        table,
 		defaultAgent: defaultAgent,
 		logger:       logger,
-		observers:    []ActionObserver{},
+		eventBus:     eventBus,
 	}
 }
 
-// AddObserver adds an action observer
-func (ge *GameEngine) AddObserver(observer ActionObserver) {
-	ge.observers = append(ge.observers, observer)
-}
-
-// notifyObservers notifies all observers of a player action
-func (ge *GameEngine) notifyObservers(player *Player, reasoning string) {
-	for _, observer := range ge.observers {
-		observer.OnPlayerAction(player, reasoning)
-	}
+// GetEventBus returns the event bus for subscribing to game events
+func (ge *GameEngine) GetEventBus() EventBus {
+	return ge.eventBus
 }
 
 // HandResult contains the results of a completed hand
@@ -131,8 +122,9 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) (*HandResult, error) {
 				"amount", currentPlayer.ActionAmount,
 				"reasoning", reasoning)
 
-			// Notify observers of the action
-			ge.notifyObservers(currentPlayer, reasoning)
+			// Publish player action event
+			event := NewPlayerActionEvent(currentPlayer, playerAction, currentPlayer.ActionAmount, ge.table.CurrentRound, reasoning, ge.table.Pot)
+			ge.eventBus.Publish(event)
 
 			ge.table.AdvanceAction()
 		}
@@ -166,12 +158,21 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) (*HandResult, error) {
 			case PreFlop:
 				ge.table.DealFlop()
 				ge.logger.Debug("Dealt flop", "flop", ge.table.CommunityCards[:3])
+				// Publish street change event
+				streetEvent := NewStreetChangeEvent(ge.table.CurrentRound, ge.table.CommunityCards)
+				ge.eventBus.Publish(streetEvent)
 			case Flop:
 				ge.table.DealTurn()
 				ge.logger.Debug("Dealt turn", "turn", ge.table.CommunityCards[3])
+				// Publish street change event
+				streetEvent := NewStreetChangeEvent(ge.table.CurrentRound, ge.table.CommunityCards)
+				ge.eventBus.Publish(streetEvent)
 			case Turn:
 				ge.table.DealRiver()
 				ge.logger.Debug("Dealt river", "river", ge.table.CommunityCards[4])
+				// Publish street change event
+				streetEvent := NewStreetChangeEvent(ge.table.CurrentRound, ge.table.CommunityCards)
+				ge.eventBus.Publish(streetEvent)
 			case River:
 				// Go to showdown
 				ge.table.CurrentRound = Showdown
@@ -212,7 +213,14 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) (*HandResult, error) {
 // StartNewHand initializes a new hand on the table
 func (ge *GameEngine) StartNewHand() {
 	ge.table.StartNewHand()
+	
+	// Subscribe the hand history to events for this hand
+	if ge.table.HandHistory != nil {
+		ge.eventBus.Subscribe(ge.table.HandHistory)
+	}
 }
+
+
 
 // GetTable returns the current table state
 func (ge *GameEngine) GetTable() *Table {

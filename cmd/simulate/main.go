@@ -325,7 +325,7 @@ func playHand(opponentType string, opponentMix []string, handSeed int64, ourPosi
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	})
+	}, nil) // EventBus will be set by engine
 
 	// Use default deck for now - the table's Rand will	control randomness
 
@@ -360,7 +360,8 @@ func playHand(opponentType string, opponentMix []string, handSeed int64, ourPosi
 	}
 
 	// Create game engine and play hand (defaultAgent used as fallback only)
-	engine := game.NewGameEngine(table, agents["OurBot"], logger)
+	defaultAgent := bot.NewBotWithRNG(logger, bot.DefaultBotConfig(), handRng)
+	engine := game.NewGameEngine(table, defaultAgent, logger)
 
 	// Record initial chips
 	initialChips := ourBot.Chips

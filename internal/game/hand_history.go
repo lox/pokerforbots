@@ -75,7 +75,21 @@ func NewHandHistory(table *Table) *HandHistory {
 	}
 }
 
-// AddAction records a new action in the hand history
+// OnEvent implements EventSubscriber interface
+func (hh *HandHistory) OnEvent(event GameEvent) {
+	switch e := event.(type) {
+	case PlayerActionEvent:
+		hh.addAction(e.Player.Name, e.Action, e.Amount, e.PotAfter, e.Round, e.Reasoning)
+	case StreetChangeEvent:
+		hh.SetCommunityCards(e.CommunityCards)
+	case HandStartEvent:
+		// Hand history is already created when this event fires, but we could reset if needed
+	case HandEndEvent:
+		// Could record final results here if needed
+	}
+}
+
+// AddAction records a new action in the hand history (used for automatic actions like blinds)
 func (hh *HandHistory) AddAction(playerName string, action Action, amount int, potAfter int, round BettingRound, thinking string) {
 	hh.Actions = append(hh.Actions, HandAction{
 		PlayerName: playerName,
@@ -86,6 +100,11 @@ func (hh *HandHistory) AddAction(playerName string, action Action, amount int, p
 		Thinking:   thinking,
 		Timestamp:  time.Now(),
 	})
+}
+
+// addAction is a private wrapper for event handling
+func (hh *HandHistory) addAction(playerName string, action Action, amount int, potAfter int, round BettingRound, thinking string) {
+	hh.AddAction(playerName, action, amount, potAfter, round, thinking)
 }
 
 // AddPlayerHoleCards adds hole cards for a player (for showdown or when folding)
@@ -555,4 +574,76 @@ func (hh *HandHistory) HasPlayerActed(playerName string, round BettingRound) boo
 		}
 	}
 	return false
+}
+
+// GetNewActions returns actions that occurred after the given index
+func (hh *HandHistory) GetNewActions(lastActionIndex int) []HandAction {
+	if lastActionIndex < 0 || lastActionIndex >= len(hh.Actions) {
+		return hh.Actions
+	}
+	return hh.Actions[lastActionIndex+1:]
+}
+
+// GetActionCount returns the total number of actions recorded
+func (hh *HandHistory) GetActionCount() int {
+	return len(hh.Actions)
+}
+
+// GetDisplayActionsSince returns formatted action strings for TUI display starting from the given index
+func (hh *HandHistory) GetDisplayActionsSince(lastActionIndex int) []string {
+	newActions := hh.GetNewActions(lastActionIndex)
+	if len(newActions) == 0 {
+		return []string{}
+	}
+
+	var displayActions []string
+	currentRound := PreFlop
+	if lastActionIndex >= 0 && lastActionIndex < len(hh.Actions) {
+		currentRound = hh.Actions[lastActionIndex].Round
+	}
+	
+	for _, action := range newActions {
+		// Add round header if we've moved to a new round
+		if action.Round != currentRound {
+			switch action.Round {
+			case Flop:
+				displayActions = append(displayActions, "")
+				displayActions = append(displayActions, "*** FLOP ***")
+				if len(hh.CommunityCards) >= 3 {
+					flop := hh.CommunityCards[:3]
+					boardDisplay := fmt.Sprintf("Board: [%s %s %s]",
+						flop[0].String(), flop[1].String(), flop[2].String())
+					displayActions = append(displayActions, boardDisplay)
+				}
+			case Turn:
+				displayActions = append(displayActions, "")
+				displayActions = append(displayActions, "*** TURN ***")
+				if len(hh.CommunityCards) >= 4 {
+					boardDisplay := fmt.Sprintf("Board: [%s %s %s %s]",
+						hh.CommunityCards[0].String(), hh.CommunityCards[1].String(),
+						hh.CommunityCards[2].String(), hh.CommunityCards[3].String())
+					displayActions = append(displayActions, boardDisplay)
+				}
+			case River:
+				displayActions = append(displayActions, "")
+				displayActions = append(displayActions, "*** RIVER ***")
+				if len(hh.CommunityCards) >= 5 {
+					boardDisplay := fmt.Sprintf("Board: [%s %s %s %s %s]",
+						hh.CommunityCards[0].String(), hh.CommunityCards[1].String(),
+						hh.CommunityCards[2].String(), hh.CommunityCards[3].String(),
+						hh.CommunityCards[4].String())
+					displayActions = append(displayActions, boardDisplay)
+				}
+			case Showdown:
+				displayActions = append(displayActions, "")
+				displayActions = append(displayActions, "*** SHOWDOWN ***")
+			}
+			currentRound = action.Round
+		}
+		
+		// Add the action (no thinking for TUI to preserve poker experience)
+		displayActions = append(displayActions, hh.formatAction(action))
+	}
+	
+	return displayActions
 }

@@ -95,7 +95,7 @@ type Table struct {
 	// Betting
 	Pot        int // Main pot
 	CurrentBet int // Current bet to call
-	MinRaise   int // Minimum raise amount
+	MinRaise   int // Minimum raise amount (size of last raise, not always big blind)
 	ActionOn   int // Player index who needs to act
 
 	// Hand tracking
@@ -103,11 +103,12 @@ type Table struct {
 	HandHistory  *HandHistory // Current hand history
 
 	// Dependencies
-	rng *rand.Rand // Random number generator
+	rng      *rand.Rand // Random number generator
+	eventBus EventBus   // Event bus for publishing game events
 }
 
 // NewTable creates a new poker table with custom configuration
-func NewTable(rng *rand.Rand, config TableConfig) *Table {
+func NewTable(rng *rand.Rand, config TableConfig, eventBus EventBus) *Table {
 	return &Table{
 		MaxSeats:       config.MaxSeats,
 		SmallBlind:     config.SmallBlind,
@@ -126,7 +127,13 @@ func NewTable(rng *rand.Rand, config TableConfig) *Table {
 		ActionOn:       -1,
 		PlayersActed:   make(map[int]bool),
 		rng:            rng,
+		eventBus:       eventBus,
 	}
+}
+
+// SetEventBus sets the event bus for the table
+func (t *Table) SetEventBus(eventBus EventBus) {
+	t.eventBus = eventBus
 }
 
 // AddPlayer adds a player to the table
@@ -352,9 +359,10 @@ func (t *Table) postBlinds() {
 		smallBlindPlayer.Call(amount)
 		t.Pot += amount
 
-		// Record small blind posting in hand history
-		if t.HandHistory != nil {
-			t.HandHistory.AddAction(smallBlindPlayer.Name, Call, amount, t.Pot, PreFlop, "")
+		// Publish small blind event
+		if t.eventBus != nil {
+			event := NewPlayerActionEvent(smallBlindPlayer, Call, amount, PreFlop, "", t.Pot)
+			t.eventBus.Publish(event)
 		}
 	}
 
@@ -365,9 +373,10 @@ func (t *Table) postBlinds() {
 		t.Pot += amount
 		t.CurrentBet = amount
 
-		// Record big blind posting in hand history
-		if t.HandHistory != nil {
-			t.HandHistory.AddAction(bigBlindPlayer.Name, Call, amount, t.Pot, PreFlop, "")
+		// Publish big blind event
+		if t.eventBus != nil {
+			event := NewPlayerActionEvent(bigBlindPlayer, Call, amount, PreFlop, "", t.Pot)
+			t.eventBus.Publish(event)
 		}
 	}
 }
@@ -470,7 +479,7 @@ func (t *Table) DealRiver() {
 // startNewBettingRound starts a new betting round
 func (t *Table) startNewBettingRound() {
 	t.CurrentBet = 0
-	t.MinRaise = t.BigBlind
+	t.MinRaise = t.BigBlind // Reset to big blind for new betting round
 	t.PlayersActed = make(map[int]bool)
 
 	// Reset all players for new round
@@ -570,8 +579,58 @@ func (t *Table) String() string {
 		}())
 }
 
-// splitPot splits a pot amount among multiple winners, with remainder going to first winner
-func splitPot(potAmount int, winners []*Player) {
+
+
+// AwardPot awards the pot to winner(s), handling both simple splits and side pots
+func (t *Table) AwardPot() {
+	if t.Pot <= 0 {
+		return
+	}
+
+	// Calculate side pots for multi-way all-in scenarios
+	sidePots := CalculateSidePots(t.Players, t.Pot)
+	
+	if len(sidePots) == 0 {
+		// Simple case: no side pots, just award to winners
+		winners := t.FindWinners()
+		t.splitPotWithButtonOrder(t.Pot, winners)
+	} else {
+		// Complex case: award each side pot to eligible winners
+		for _, sidePot := range sidePots {
+			if len(sidePot.EligiblePlayers) == 0 || sidePot.Amount <= 0 {
+				continue
+			}
+			
+			// Find winners among eligible players
+			allWinners := t.FindWinners()
+			var winnersInSidePot []*Player
+			
+			eligibleSet := make(map[*Player]bool)
+			for _, p := range sidePot.EligiblePlayers {
+				eligibleSet[p] = true
+			}
+			
+			for _, winner := range allWinners {
+				if eligibleSet[winner] {
+					winnersInSidePot = append(winnersInSidePot, winner)
+				}
+			}
+			
+			// If no winners in this side pot, award to first eligible player
+			if len(winnersInSidePot) == 0 && len(sidePot.EligiblePlayers) > 0 {
+				winnersInSidePot = []*Player{sidePot.EligiblePlayers[0]}
+			}
+			
+			// Use table's button-order split function for proper remainder distribution
+			t.splitPotWithButtonOrder(sidePot.Amount, winnersInSidePot)
+		}
+	}
+
+	t.Pot = 0 // Pot has been fully awarded
+}
+
+// splitPotWithButtonOrder splits pot giving remainder to player closest clockwise to button
+func (t *Table) splitPotWithButtonOrder(potAmount int, winners []*Player) {
 	if len(winners) == 0 || potAmount <= 0 {
 		return
 	}
@@ -581,121 +640,60 @@ func splitPot(potAmount int, winners []*Player) {
 	remainder := potAmount % len(winners)
 
 	// Give each player their share
-	for i, winner := range winners {
+	for _, winner := range winners {
 		winner.Chips += sharePerPlayer
-		// First winner gets any remainder chip
-		if i == 0 {
-			winner.Chips += remainder
+	}
+
+	// Give remainder to player closest clockwise to button
+	if remainder > 0 {
+		closestToButton := t.findClosestToButton(winners)
+		if closestToButton != nil {
+			closestToButton.Chips += remainder
+		} else {
+			// Fallback: give to first winner
+			winners[0].Chips += remainder
 		}
 	}
 }
 
-// AwardPot awards the pot to winner(s), splitting in case of ties
-func (t *Table) AwardPot() {
-	// Enhanced pot award handling with side pots and ties.
-	// Build a list of all players that contributed chips to the pot (TotalBet > 0).
-	if t.Pot <= 0 {
-		return
+// findClosestToButton finds the player closest clockwise to the button among the given players
+func (t *Table) findClosestToButton(players []*Player) *Player {
+	if len(players) == 0 {
+		return nil
 	}
 
-	// Gather contributors with their total contribution this hand.
-	type contributor struct {
-		player *Player
-		bet    int
+	// Find button position
+	buttonSeat := t.DealerPosition
+	if buttonSeat <= 0 {
+		return players[0] // Fallback
 	}
 
-	var contributors []contributor
-	for _, p := range t.Players {
-		if p.TotalBet > 0 {
-			contributors = append(contributors, contributor{player: p, bet: p.TotalBet})
+	// Find the player with the smallest clockwise distance from button
+	closest := players[0]
+	minDistance := t.clockwiseDistance(buttonSeat, closest.SeatNumber)
+
+	for _, player := range players[1:] {
+		distance := t.clockwiseDistance(buttonSeat, player.SeatNumber)
+		if distance < minDistance {
+			minDistance = distance
+			closest = player
 		}
 	}
 
-	if len(contributors) == 0 {
-		// Fallback to old behaviour if we somehow lost tracking information.
-		winners := t.FindWinners()
-		splitPot(t.Pot, winners)
-		t.Pot = 0
-		return
+	return closest
+}
+
+// clockwiseDistance calculates clockwise distance from start to end seat
+func (t *Table) clockwiseDistance(startSeat, endSeat int) int {
+	if startSeat <= 0 || endSeat <= 0 {
+		return 999 // Invalid seats get max distance
 	}
 
-	// Check if differences are only due to blinds (no actual betting disparity)
-	// If all players have seen all streets and betting, side pots are legitimate
-	// But if only blinds were posted, all active players should share the pot equally
-	sort.Slice(contributors, func(i, j int) bool {
-		return contributors[i].bet < contributors[j].bet
-	})
-
-	// If the highest bet is small blind + big blind or less, and we have exactly 2-3 active players,
-	// this is likely just blind posting without real betting action - award to all winners
-	activePlayers := t.GetActivePlayers()
-	maxBet := contributors[len(contributors)-1].bet
-
-	// Simple heuristic: if max bet <= big blind and we have <= 3 active players,
-	// treat as blind-only scenario
-	if len(activePlayers) <= 3 && maxBet <= t.BigBlind {
-		winners := t.FindWinners()
-		splitPot(t.Pot, winners)
-		t.Pot = 0
-		return
+	distance := endSeat - startSeat
+	if distance <= 0 {
+		distance += t.MaxSeats // Wrap around
 	}
-
-	// Pre-compute the overall hand winners once so that we don't re-evaluate multiple times.
-	allWinners := t.FindWinners()
-	winnerSet := make(map[*Player]struct{}, len(allWinners))
-	for _, w := range allWinners {
-		winnerSet[w] = struct{}{}
-	}
-
-	remainingPot := t.Pot
-	prevLevel := 0
-
-	for idx := 0; idx < len(contributors); idx++ {
-		// Determine current side-pot bet level (contributors[idx].bet)
-		levelBet := contributors[idx].bet
-
-		// Players that have contributed at least this much are eligible for this pot slice.
-		eligible := contributors[idx:]
-		numEligible := len(eligible)
-		if numEligible == 0 {
-			continue
-		}
-
-		// Amount in this side pot is (levelBet - prevLevel) * numEligible
-		sidePot := (levelBet - prevLevel) * numEligible
-		if sidePot > remainingPot {
-			sidePot = remainingPot // safety – shouldn't really happen
-		}
-
-		// Determine winners among eligible players (could be single or multiple).
-		var sideWinners []*Player
-		for _, c := range eligible {
-			if _, ok := winnerSet[c.player]; ok {
-				sideWinners = append(sideWinners, c.player)
-			}
-		}
-
-		if len(sideWinners) == 0 {
-			// This should never happen, but fall back to all winners to avoid locking up.
-			sideWinners = allWinners
-		}
-
-		splitPot(sidePot, sideWinners)
-		remainingPot -= sidePot
-		prevLevel = levelBet
-
-		if remainingPot == 0 {
-			break
-		}
-	}
-
-	// Any chips that weren't allocated (edge cases) go to overall winners.
-	if remainingPot > 0 {
-		splitPot(remainingPot, allWinners)
-		remainingPot = 0
-	}
-
-	t.Pot = 0 // Pot has been fully awarded.
+	return distance
 }
 
 // FindWinners determines all winners of the hand (handles ties)
@@ -934,9 +932,18 @@ func (t *Table) ApplyDecision(decision Decision) (string, error) {
 	case Raise:
 		totalNeeded := decision.Amount - currentPlayer.BetThisRound
 		if totalNeeded > 0 && totalNeeded <= currentPlayer.Chips {
+			// Calculate the size of this raise for future minimum raise calculations
+			raiseSize := decision.Amount - t.CurrentBet
+			
 			currentPlayer.Raise(totalNeeded)
 			t.Pot += totalNeeded
 			t.CurrentBet = decision.Amount
+			
+			// Update minimum raise to be the size of this raise
+			// This is the correct Texas Hold'em rule
+			if raiseSize > 0 {
+				t.MinRaise = raiseSize
+			}
 		} else {
 			return "", fmt.Errorf("insufficient chips for raise")
 		}
@@ -944,17 +951,21 @@ func (t *Table) ApplyDecision(decision Decision) (string, error) {
 		allInAmount := currentPlayer.Chips
 		if currentPlayer.AllIn() {
 			t.Pot += allInAmount
+			
+			// If this all-in raises the bet, update minimum raise
 			if currentPlayer.TotalBet > t.CurrentBet {
+				raiseSize := currentPlayer.TotalBet - t.CurrentBet
 				t.CurrentBet = currentPlayer.TotalBet
+				
+				// Only update MinRaise if this all-in is a raise (not just a call)
+				if raiseSize >= t.MinRaise {
+					t.MinRaise = raiseSize
+				}
 			}
 		}
 	}
 
-	// Record action in hand history
-	if t.HandHistory != nil {
-		t.HandHistory.AddAction(currentPlayer.Name, decision.Action,
-			currentPlayer.ActionAmount, t.Pot, t.CurrentRound, decision.Reasoning)
-	}
+	// Note: Actions are now recorded via event system
 
 	return decision.Reasoning, nil
 }

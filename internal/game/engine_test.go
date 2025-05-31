@@ -91,7 +91,8 @@ func createTestTable() *Table {
 		SmallBlind: 10,
 		BigBlind:   20,
 	}
-	return NewTable(rng, config)
+	// Event bus will be set by the engine
+	return NewTable(rng, config, nil)
 }
 
 func createTestPlayers() []*Player {
@@ -350,10 +351,17 @@ func TestGameEngine_AllInScenario(t *testing.T) {
 		table.AddPlayer(player)
 	}
 
-	// Alice goes all-in, Bob calls
+	// In heads-up, big blind acts first pre-flop
+	// Both players should have reasonable action sequences
 	agents := map[string]Agent{
-		"Alice": NewMockAgent([]Decision{{Action: AllIn, Amount: 50, Reasoning: "all-in"}}),
-		"Bob":   &AlwaysCallAgent{},
+		"Alice": NewMockAgent([]Decision{
+			{Action: AllIn, Amount: 0, Reasoning: "all-in"}, // If Alice acts first
+			{Action: Call, Amount: 0, Reasoning: "call all-in"}, // If responding to Bob's action
+		}),
+		"Bob": NewMockAgent([]Decision{
+			{Action: AllIn, Amount: 0, Reasoning: "all-in"}, // If Bob acts first
+			{Action: Call, Amount: 0, Reasoning: "call all-in"}, // If responding to Alice's action
+		}),
 	}
 
 	defaultAgent := &AlwaysFoldAgent{}
@@ -392,7 +400,7 @@ func TestGameEngine_AllInScenario(t *testing.T) {
 	}
 
 	if alice.Chips != 0 {
-		t.Errorf("Expected Alice to have 0 chips, got %d", alice.Chips)
+		t.Errorf("Expected Alice to have 0 chips after all-in, got %d (started with 50, should have posted blinds and gone all-in)", alice.Chips)
 	}
 }
 
@@ -665,21 +673,62 @@ func TestAnalyticalAgent_BettingAnalysis(t *testing.T) {
 		table.AddPlayer(player)
 	}
 
+	// Create engine and set up event subscriptions
+	defaultAgent := &AlwaysFoldAgent{}
+	logger := log.New(io.Discard)
+	engine := NewGameEngine(table, defaultAgent, logger)
+	
 	// Start a new hand
-	table.StartNewHand()
+	engine.StartNewHand()
+	
+	// Verify hand history exists and is subscribed
+	if table.HandHistory == nil {
+		t.Fatal("Hand history not created")
+	}
 
-	// Simulate some betting action to test analysis
+	// Create agents - we want the current player (first to act) to raise
+	currentPlayerAtStart := table.GetCurrentPlayer()
+	if currentPlayerAtStart == nil {
+		t.Fatal("No current player")
+	}
+	
+	agents := map[string]Agent{
+		currentPlayerAtStart.Name: NewMockAgent([]Decision{
+			{Action: Raise, Amount: 40, Reasoning: "test raise"},
+		}),
+	}
+	
+	// Add analytical agent for other players  
+	for _, player := range table.Players {
+		if player.Name != currentPlayerAtStart.Name {
+			agents[player.Name] = &AnalyticalAgent{}
+		}
+	}
+
+	// Run partial hand to generate one raise action 
 	currentPlayer := table.GetCurrentPlayer()
 	if currentPlayer == nil {
 		t.Fatal("No current player")
 	}
 
-	// First player raises (create betting action)
-	raiseDecision := Decision{Action: Raise, Amount: 40, Reasoning: "test raise"}
-	_, err := table.ApplyDecision(raiseDecision)
+	// First player makes a raise
+	raiseAgent := agents[currentPlayer.Name]
+	if raiseAgent == nil {
+		t.Fatalf("No agent for current player %s", currentPlayer.Name)
+	}
+	tableState := table.CreateTableState(currentPlayer)
+	validActions := table.GetValidActions()
+	raiseDecision := raiseAgent.MakeDecision(tableState, validActions)
+
+	// Apply the raise and publish event (like engine does)
+	reasoning, err := table.ApplyDecision(raiseDecision)
 	if err != nil {
 		t.Fatalf("Failed to apply raise: %v", err)
 	}
+
+	// Publish the event (like engine does)
+	event := NewPlayerActionEvent(currentPlayer, raiseDecision.Action, raiseDecision.Amount, table.CurrentRound, reasoning, table.Pot)
+	engine.GetEventBus().Publish(event)
 
 	// Advance to next player
 	table.AdvanceAction()
@@ -690,8 +739,8 @@ func TestAnalyticalAgent_BettingAnalysis(t *testing.T) {
 
 	// Now test analytical agent
 	agent := &AnalyticalAgent{}
-	tableState := table.CreateTableState(currentPlayer)
-	validActions := table.GetValidActions()
+	tableState = table.CreateTableState(currentPlayer)
+	validActions = table.GetValidActions()
 	decision := agent.MakeDecision(tableState, validActions)
 
 	// Verify the decision includes analysis

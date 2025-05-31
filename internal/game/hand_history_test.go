@@ -60,10 +60,15 @@ func TestAddAction(t *testing.T) {
 		Actions: make([]HandAction, 0),
 	}
 
-	// Add some actions
-	hh.AddAction("Alice", Fold, 0, 0, PreFlop, "Weak hand")
-	hh.AddAction("Bob", Call, 10, 13, PreFlop, "")
-	hh.AddAction("Charlie", Raise, 20, 33, Flop, "Strong hand")
+	// Create dummy players for events
+	alice := &Player{ID: 1, Name: "Alice"}
+	bob := &Player{ID: 2, Name: "Bob"}
+	charlie := &Player{ID: 3, Name: "Charlie"}
+
+	// Add actions via events
+	hh.OnEvent(NewPlayerActionEvent(alice, Fold, 0, PreFlop, "Weak hand", 0))
+	hh.OnEvent(NewPlayerActionEvent(bob, Call, 10, PreFlop, "", 13))
+	hh.OnEvent(NewPlayerActionEvent(charlie, Raise, 20, Flop, "Strong hand", 33))
 
 	if len(hh.Actions) != 3 {
 		t.Errorf("Expected 3 actions, got %d", len(hh.Actions))
