@@ -68,14 +68,14 @@ type BotConfig struct {
 func DefaultBotConfig() BotConfig {
 	return BotConfig{
 		Name:              "Default",
-		AggressionFactor:  1.2,  // Slightly more aggressive
-		TightnessFactor:   0.9,  // Slightly looser
-		BluffFrequency:    0.35, // More bluffing
-		CBetFrequency:     0.7,  // More continuation betting
-		EquityThreshold:   0.03, // Lower threshold for aggression
+		AggressionFactor:  1.15, // Moderately aggressive
+		TightnessFactor:   0.95, // Slightly tighter
+		BluffFrequency:    0.3,  // Controlled bluffing
+		CBetFrequency:     0.65, // Selective continuation betting
+		EquityThreshold:   0.04, // Higher threshold for aggression
 		OpponentModel:     "random",
-		PositionAwareness: 1.1,  // More position awareness
-		PotOddsWeight:     1.2,  // More weight on pot odds
+		PositionAwareness: 1.3,  // Strong position awareness
+		PotOddsWeight:     1.2,  // Moderate pot odds weight
 	}
 }
 
@@ -599,15 +599,15 @@ func (b *Bot) getPositionFactorWithThinking(position game.Position, thinking *Th
 func (b *Bot) getPositionFactor(position game.Position) float64 {
 	switch position {
 	case game.SmallBlind, game.BigBlind:
-		return 0.8 // Play tighter in blinds
+		return 0.75 // Play tighter in blinds due to position disadvantage
 	case game.UnderTheGun, game.EarlyPosition:
-		return 0.7 // Play very tight in early position
+		return 0.65 // Play very tight in early position
 	case game.MiddlePosition:
-		return 0.9 // Standard play
+		return 0.85 // Slightly tighter than standard
 	case game.LatePosition, game.Cutoff:
-		return 1.1 // Play looser in late position
+		return 1.25 // Play significantly looser in late position
 	case game.Button:
-		return 1.2 // Play loosest on the button
+		return 1.4 // Maximum aggression on button
 	default:
 		return 1.0
 	}
@@ -772,7 +772,7 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player game.PlayerState, ta
 					activeOpponents++
 				} else {
 					// Default assumption for unknown opponents: moderately passive
-					totalFoldToBet += 0.7
+					totalFoldToBet += 0.65
 					activeOpponents++
 				}
 			}
@@ -781,16 +781,22 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player game.PlayerState, ta
 		// Against very passive opponents, be much more aggressive in unopened pots
 		if activeOpponents > 0 {
 			avgFoldToBet := totalFoldToBet / float64(activeOpponents)
-			if avgFoldToBet > 0.85 {
+			if avgFoldToBet > 0.8 {
 				thinking.AddThought("Extremely passive opponents detected - betting with any two cards")
 				return game.Raise
-			} else if avgFoldToBet > 0.75 && raiseProb > 0.05 {
+			} else if avgFoldToBet > 0.7 && raiseProb > 0.05 {
 				thinking.AddThought("Very passive opponents - increased aggression")
 				return game.Raise
-			} else if avgFoldToBet > 0.65 && raiseProb > 0.15 {
+			} else if avgFoldToBet > 0.6 && raiseProb > 0.1 {
 				thinking.AddThought("Moderately passive opponents - selective aggression")
 				return game.Raise
 			}
+		}
+		
+		// Increase bluffing frequency in late position but be selective
+		if positionFactor > 1.2 && equityCtx.Strength <= Weak && raiseProb > 0.15 && b.rng.Float64() < 0.4 {
+			thinking.AddThought("Late position selective bluff opportunity")
+			return game.Raise
 		}
 		
 		if foldProb > 0.5 {
@@ -903,12 +909,12 @@ func (b *Bot) adaptEquityToOpponents(baseEquity float64, tableState game.TableSt
 	default:
 		// Unknown/balanced opponents: assume some exploitability  
 		thinking.AddThought("Unknown opponents - assuming moderate passivity")
-		if baseEquity > 0.55 {
-			return baseEquity * 1.25 // Aggressive value betting against unknowns
-		} else if baseEquity < 0.4 {
-			return baseEquity + 0.15 // Decent bluff equity boost
+		if baseEquity > 0.6 {
+			return baseEquity * 1.15 // Moderate value betting against unknowns
+		} else if baseEquity < 0.35 {
+			return baseEquity + 0.1 // Conservative bluff equity boost
 		}
-		return baseEquity * 1.15
+		return baseEquity * 1.05
 	}
 }
 
@@ -948,13 +954,13 @@ func (b *Bot) shouldContinuationBet(_ game.PlayerState, tableState game.TableSta
 		baseCBetFreq := b.config.CBetFrequency
 		switch boardTexture {
 		case DryBoard:
-			return b.rng.Float64() < baseCBetFreq*1.2
+			return b.rng.Float64() < baseCBetFreq*1.3
 		case SemiWetBoard:
-			return b.rng.Float64() < baseCBetFreq
+			return b.rng.Float64() < baseCBetFreq*1.1
 		case WetBoard:
-			return b.rng.Float64() < baseCBetFreq*0.6
+			return b.rng.Float64() < baseCBetFreq*0.7
 		case VeryWetBoard:
-			return b.rng.Float64() < baseCBetFreq*0.3
+			return b.rng.Float64() < baseCBetFreq*0.4
 		}
 	}
 
