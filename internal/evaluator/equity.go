@@ -104,6 +104,38 @@ func (r TightRange) SampleHand(availableCards []deck.Card, rng *rand.Rand) ([]de
 	return RandomRange{}.SampleHand(availableCards, rng)
 }
 
+// MediumRange represents a medium opponent (moderate range between tight and loose)
+type MediumRange struct{}
+
+func (r MediumRange) SampleHand(availableCards []deck.Card, rng *rand.Rand) ([]deck.Card, bool) {
+	// Medium range: looser than tight, tighter than random
+	// Accept medium hands with some probability
+	maxAttempts := 50
+	attempts := 0
+
+	for attempts < maxAttempts {
+		hand, ok := RandomRange{}.SampleHand(availableCards, rng)
+		if !ok {
+			return hand, false
+		}
+
+		// Accept tight hands always
+		if isTightHand(hand) {
+			return hand, true
+		}
+
+		// Accept medium hands with 60% probability
+		if isMediumHand(hand) && rng.Float64() < 0.6 {
+			return hand, true
+		}
+
+		attempts++
+	}
+
+	// Fallback to random if we can't find a suitable hand
+	return RandomRange{}.SampleHand(availableCards, rng)
+}
+
 // LooseRange represents a loose opponent (wider range)
 type LooseRange struct{}
 
@@ -140,6 +172,43 @@ func isTightHand(hand []deck.Card) bool {
 	// Ace with decent kicker
 	if (card1.Rank == deck.Ace && card2.Rank >= deck.Nine) ||
 		(card2.Rank == deck.Ace && card1.Rank >= deck.Nine) {
+		return true
+	}
+
+	return false
+}
+
+func isMediumHand(hand []deck.Card) bool {
+	if len(hand) != 2 {
+		return false
+	}
+
+	// If it's already a tight hand, don't double count
+	if isTightHand(hand) {
+		return false
+	}
+
+	card1, card2 := hand[0], hand[1]
+
+	// Medium pocket pairs (66-99)
+	if card1.Rank == card2.Rank && card1.Rank >= 6 && card1.Rank <= 9 {
+		return true
+	}
+
+	// One high card (8+) with decent kicker
+	if (card1.Rank >= 8 && card2.Rank >= 6) || (card2.Rank >= 8 && card1.Rank >= 6) {
+		return true
+	}
+
+	// Suited hands with one medium card
+	if card1.Suit == card2.Suit {
+		if (card1.Rank >= 7 || card2.Rank >= 7) {
+			return true
+		}
+	}
+
+	// Ace with any kicker (not covered by tight)
+	if card1.Rank == deck.Ace || card2.Rank == deck.Ace {
 		return true
 	}
 

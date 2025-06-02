@@ -239,6 +239,46 @@ func (b *Bot) MakeDecision(tableState game.TableState, validActions []game.Valid
 	return decision
 }
 
+// findRelevantOpponent identifies the most relevant opponent for equity calculation
+func (b *Bot) findRelevantOpponent(player game.PlayerState, tableState game.TableState) string {
+	// Priority 1: Player who just bet/raised in current round
+	if tableState.HandHistory != nil {
+		for i := len(tableState.HandHistory.Actions) - 1; i >= 0; i-- {
+			action := tableState.HandHistory.Actions[i]
+			if action.Round != tableState.CurrentRound {
+				break
+			}
+			if action.PlayerName != player.Name && action.Action == game.Raise {
+				return action.PlayerName
+			}
+		}
+		
+		// Priority 2: Preflop raiser if no current round betting
+		if tableState.CurrentRound != game.PreFlop {
+			for _, action := range tableState.HandHistory.Actions {
+				if action.Round != game.PreFlop {
+					continue
+				}
+				if action.PlayerName != player.Name && action.Action == game.Raise {
+					return action.PlayerName
+				}
+			}
+		}
+	}
+
+	// Priority 3: Next active player
+	actingIdx := tableState.ActingPlayerIdx
+	for i := 1; i < len(tableState.Players); i++ {
+		nextIdx := (actingIdx + i) % len(tableState.Players)
+		nextPlayer := tableState.Players[nextIdx]
+		if nextPlayer.IsActive && !nextPlayer.IsFolded && nextPlayer.Name != player.Name {
+			return nextPlayer.Name
+		}
+	}
+
+	return ""
+}
+
 // updateOpponentStats initializes and updates opponent profiles
 func (b *Bot) updateOpponentStats(tableState game.TableState) {
 	// Initialize profiles for new players with neutral assumptions
@@ -414,93 +454,59 @@ func (b *Bot) evaluateHandStrengthWithThinking(player game.PlayerState, tableSta
 		return EquityContext{Strength: VeryWeak, Equity: 0.1}
 	}
 
-	// Pre-flop hand strength evaluation using equity
-	if tableState.CurrentRound == game.PreFlop {
-		// Use betting context to determine opponent range
-		var opponentRange evaluator.Range
-		context := b.getBettingContext(tableState)
-
-		switch context {
-		case "unopened":
-			opponentRange = evaluator.RandomRange{} // Limpers have wide ranges
-			thinking.AddThought("Unopened pot - using wide opponent range")
-		case "single-raised":
-			opponentRange = evaluator.TightRange{} // Raisers have tighter ranges
-			thinking.AddThought("Single raised pot - using tight opponent range")
-		case "multi-raised":
-			// For multi-raised, we'll use tight range as proxy for very tight
-			opponentRange = evaluator.TightRange{}
-			thinking.AddThought("Multi-raised pot - using very tight opponent range")
-		default:
-			opponentRange = evaluator.RandomRange{}
-		}
-
-		equity := evaluator.EstimateEquity(player.HoleCards, []deck.Card{}, opponentRange, 1000, b.rng)
-		thinking.AddThought(fmt.Sprintf("Pre-flop equity vs %s range: %.1f%%", context, equity*100))
-
-		strength := b.equityToHandStrength(equity)
-		thinking.AddThought(fmt.Sprintf("Preflop strength: %s", strength.String()))
-		return EquityContext{Strength: strength, Equity: equity}
-	}
-
-	// Post-flop evaluation with community cards
-	if len(tableState.CommunityCards) >= 3 {
-		// Add board description
-		boardStr := b.getBoardDescription(tableState.CommunityCards)
-		thinking.AddThought(fmt.Sprintf("Board: %s", boardStr))
-
-		equityCtx := b.evaluatePostFlopStrengthWithThinking(player, tableState.CommunityCards, thinking)
-		return equityCtx
-	}
-
-	thinking.AddThought("Not enough information, assuming medium strength")
-	return EquityContext{Strength: Medium, Equity: 0.5}
-}
-
-// evaluatePostFlopStrengthWithThinking evaluates post-flop hand strength with thinking
-func (b *Bot) evaluatePostFlopStrengthWithThinking(player game.PlayerState, communityCards []deck.Card, thinking *ThinkingContext) EquityContext {
-	// Determine if we're in position (simplified: Button or Cutoff = in position)
-	inPosition := player.Position == game.Button || player.Position == game.Cutoff
-
-	// Choose opponent range based on config and position
+	// Find the most relevant opponent for range construction
+	opponentName := b.findRelevantOpponent(player, tableState)
+	
 	var opponentRange evaluator.Range
-	switch b.config.OpponentModel {
-	case "tight":
-		opponentRange = evaluator.TightRange{}
-		thinking.AddThought("Using tight opponent model")
-	case "loose":
-		opponentRange = evaluator.LooseRange{}
-		thinking.AddThought("Using loose opponent model")
-	default: // "random"
-		opponentRange = evaluator.RandomRange{}
-		thinking.AddThought("Using random opponent model")
-	}
-
-	// Adjust based on position if position awareness is enabled
-	if b.config.PositionAwareness > 0.5 {
-		if inPosition {
-			thinking.AddThought("In position - adjusting opponent model tighter")
-			switch b.config.OpponentModel {
-			case "loose":
-				opponentRange = evaluator.RandomRange{}
-			case "random":
+	var rangeDescription string
+	
+	if opponentName != "" {
+		// Use improved range builder
+		rangeBuilder := NewSimpleRangeBuilder()
+		opponentRange, rangeDescription = rangeBuilder.BuildOpponentRange(opponentName, tableState)
+		thinking.AddThought(fmt.Sprintf("Range for %s: %s", opponentName, rangeDescription))
+	} else {
+		// Fallback to old logic for backward compatibility
+		if tableState.CurrentRound == game.PreFlop {
+			context := b.getBettingContext(tableState)
+			switch context {
+			case "unopened":
+				opponentRange = evaluator.LooseRange{} // Limpers have wide ranges  
+				thinking.AddThought("Unopened pot - using loose opponent range")
+			case "single-raised":
+				opponentRange = evaluator.TightRange{} // Raisers have tighter ranges
+				thinking.AddThought("Single raised pot - using tight opponent range")
+			case "multi-raised":
 				opponentRange = evaluator.TightRange{}
+				thinking.AddThought("Multi-raised pot - using very tight opponent range")
+			default:
+				opponentRange = evaluator.MediumRange{}
 			}
 		} else {
-			thinking.AddThought("Out of position - opponents can be looser")
+			// Post-flop: use position-aware range instead of random
+			opponentRange = evaluator.MediumRange{}
+			thinking.AddThought("Using medium opponent model postflop")
 		}
 	}
 
-	// Calculate equity
-	equity := evaluator.EstimateEquity(player.HoleCards, communityCards, opponentRange, 500, b.rng)
-	thinking.AddThought(fmt.Sprintf("Equity: %.1f%%", equity*100))
+	// Calculate equity with the determined range
+	equity := evaluator.EstimateEquity(player.HoleCards, tableState.CommunityCards, opponentRange, 1000, b.rng)
+	
+	if tableState.CurrentRound == game.PreFlop {
+		thinking.AddThought(fmt.Sprintf("Pre-flop equity: %.1f%%", equity*100))
+	} else {
+		// Add board description for postflop
+		boardStr := b.getBoardDescription(tableState.CommunityCards)
+		thinking.AddThought(fmt.Sprintf("Board: %s", boardStr))
+		thinking.AddThought(fmt.Sprintf("Equity: %.1f%%", equity*100))
+	}
 
-	// Convert equity to hand strength
 	strength := b.equityToHandStrength(equity)
 	thinking.AddThought(fmt.Sprintf("Hand strength: %s", strength.String()))
-
 	return EquityContext{Strength: strength, Equity: equity}
 }
+
+
 
 // equityToHandStrength maps equity percentage to hand strength categories
 func (b *Bot) equityToHandStrength(equity float64) HandStrength {
