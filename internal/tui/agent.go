@@ -2,24 +2,36 @@ package tui
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
-	"github.com/lox/holdem-cli/internal/evaluator"
+	"github.com/lox/holdem-cli/internal/deck"
 	"github.com/lox/holdem-cli/internal/game"
 )
+
+// TUIDisplayState holds local display state built from events
+type TUIDisplayState struct {
+	HandID         string
+	SmallBlind     int
+	BigBlind       int
+	CurrentPot     int
+	CurrentBet     int
+	CommunityCards []deck.Card
+	Players        []*game.Player
+	ActivePlayers  []*game.Player
+}
 
 // TUIAgent handles human player interaction through a TUI
 type TUIAgent struct {
 	model                *TUIModel
 	program              *tea.Program
-	table                *game.Table
 	uiLogger, mainLogger *log.Logger
+
+	// Local display state built from events (client-server ready)
+	displayState *TUIDisplayState
 }
 
 // NewTUIAgent creates a new TUI-based agent
@@ -28,11 +40,11 @@ func NewTUIAgent(table *game.Table, logger *log.Logger) (*TUIAgent, error) {
 	program := tea.NewProgram(model, tea.WithAltScreen())
 
 	return &TUIAgent{
-		model:      model,
-		program:    program,
-		table:      table,
-		uiLogger:   logger.WithPrefix("ui"),
-		mainLogger: logger,
+		model:        model,
+		program:      program,
+		uiLogger:     logger.WithPrefix("ui"),
+		mainLogger:   logger,
+		displayState: &TUIDisplayState{},
 	}, nil
 }
 
@@ -53,15 +65,37 @@ func (ti *TUIAgent) Close() error {
 		// Give the program a moment to clean up
 		ti.program.Wait()
 
-		// Ensure terminal is restored
+		// Only restore cursor, don't reset terminal completely
 		fmt.Print("\033[?25h") // Show cursor
-		fmt.Print("\033c")     // Reset terminal
 	}
 	return nil
 }
 
 // MakeDecision implements the Agent interface for human players via TUI
 func (ti *TUIAgent) MakeDecision(tableState game.TableState, validActions []game.ValidAction) game.Decision {
+	// Update the TUI model with the valid actions from the engine
+	ti.model.UpdateValidActions(validActions)
+
+	// Set that it's the human's turn and provide the player info
+	var humanPlayer *game.Player
+	if tableState.ActingPlayerIdx >= 0 && tableState.ActingPlayerIdx < len(tableState.Players) {
+		// Convert PlayerState back to Player for display (we need the full object)
+		playerState := tableState.Players[tableState.ActingPlayerIdx]
+		humanPlayer = &game.Player{
+			Name:         playerState.Name,
+			Chips:        playerState.Chips,
+			Position:     playerState.Position,
+			BetThisRound: playerState.BetThisRound,
+			TotalBet:     playerState.TotalBet,
+			HoleCards:    playerState.HoleCards,
+			IsActive:     playerState.IsActive,
+			IsFolded:     playerState.IsFolded,
+			IsAllIn:      playerState.IsAllIn,
+			LastAction:   playerState.LastAction,
+		}
+	}
+	ti.model.SetHumanTurn(true, humanPlayer)
+
 	for {
 		ti.mainLogger.Info("Waiting for user action")
 		action, args, shouldContinue, err := ti.model.WaitForAction()
@@ -74,6 +108,8 @@ func (ti *TUIAgent) MakeDecision(tableState game.TableState, validActions []game
 		ti.mainLogger.Info("Received user action", "action", action, "args", args, "continue", shouldContinue)
 		if !shouldContinue {
 			ti.mainLogger.Info("User chose to quit")
+			// Clear human turn before returning
+			ti.model.SetHumanTurn(false, nil)
 			return game.Decision{
 				Action:    game.Fold,
 				Amount:    0,
@@ -82,430 +118,61 @@ func (ti *TUIAgent) MakeDecision(tableState game.TableState, validActions []game
 		}
 
 		// Process the action and return a decision
-		// TODO: Update processActionForDecision to work with new interface
-		// For now, provide a simple decision based on action
-		decision := ti.processSimpleActionForDecision(action, args, validActions)
-		
+		decision := ti.processSimpleActionForDecision(action, args, tableState, validActions)
+
 		// If we get an invalid action indicator, loop back for another try
 		if decision.Reasoning == "Invalid input - try again" {
 			continue
 		}
-		
+
+		// Clear human turn before returning decision
+		ti.model.SetHumanTurn(false, nil)
 		return decision
 	}
 }
 
 // processSimpleActionForDecision provides a simple decision based on user action and validActions
-func (ti *TUIAgent) processSimpleActionForDecision(action string, args []string, validActions []game.ValidAction) game.Decision {
+func (ti *TUIAgent) processSimpleActionForDecision(action string, args []string, tableState game.TableState, validActions []game.ValidAction) game.Decision {
 	// Handle quit commands first
 	if action == "quit" || action == "q" || action == "exit" {
+		ti.mainLogger.Info("User typed quit command")
+		// Clear human turn before returning
+		ti.model.SetHumanTurn(false, nil)
 		return game.Decision{
-			Action:    game.Fold,
+			Action:    game.Quit,
 			Amount:    0,
 			Reasoning: "Player quit",
 		}
 	}
 
-	// Simple action mapping based on first letter
+	// Use the proper decision handlers
+	// Extract current player info from tableState
+	if tableState.ActingPlayerIdx < 0 || tableState.ActingPlayerIdx >= len(tableState.Players) {
+		return game.Decision{Action: game.Fold, Amount: 0, Reasoning: "Invalid player index"}
+	}
+	currentPlayer := tableState.Players[tableState.ActingPlayerIdx]
+
 	switch action {
 	case "f", "fold":
-		return game.Decision{Action: game.Fold, Amount: 0, Reasoning: "Player folded"}
+		return ti.handleFoldForDecision(args, tableState, currentPlayer)
 	case "c", "call":
-		for _, validAction := range validActions {
-			if validAction.Action == game.Call {
-				return game.Decision{Action: game.Call, Amount: 0, Reasoning: "Player called"}
-			}
-		}
+		return ti.handleCallForDecision(args, tableState, currentPlayer)
 	case "k", "check":
-		for _, validAction := range validActions {
-			if validAction.Action == game.Check {
-				return game.Decision{Action: game.Check, Amount: 0, Reasoning: "Player checked"}
-			}
-		}
+		return ti.handleCheckForDecision(args, tableState, currentPlayer)
 	case "r", "raise":
-		for _, validAction := range validActions {
-			if validAction.Action == game.Raise {
-				// Use minimum raise for now
-				return game.Decision{Action: game.Raise, Amount: validAction.MinAmount, Reasoning: "Player raised"}
-			}
-		}
+		return ti.handleRaiseForDecision(args, tableState, currentPlayer)
+	case "a", "allin", "all":
+		return ti.handleAllInForDecision(args, tableState, currentPlayer)
 	}
 
-	// If action not recognized or not valid, ask again
+	// If action not recognized, ask again
 	return game.Decision{Action: game.Fold, Amount: 0, Reasoning: "Invalid input - try again"}
-}
-
-// processActionForDecision processes a user action and returns a Decision
-func (ti *TUIAgent) processActionForDecision(action string, args []string, player *game.Player, table *game.Table) game.Decision {
-	ti.mainLogger.Info("Processing action for decision", "action", action, "args", args)
-
-	// Handle quit commands first
-	if action == "quit" || action == "q" || action == "exit" {
-		ti.mainLogger.Info("Quit command received")
-		return game.Decision{
-			Action:    game.Fold,
-			Amount:    0,
-			Reasoning: "Player quit",
-		}
-	}
-
-	// Handle empty action (Enter pressed) - this shouldn't happen in decision context
-	if action == "" {
-		ti.mainLogger.Info("Empty action received")
-		return game.Decision{
-			Action:    game.Check,
-			Amount:    0,
-			Reasoning: "No action specified",
-		}
-	}
-
-	currentPlayer := ti.table.GetCurrentPlayer()
-	if currentPlayer == nil || currentPlayer.Type != game.Human {
-		ti.model.AddLogEntry("Error: Not your turn")
-		return game.Decision{
-			Action:    game.Check,
-			Amount:    0,
-			Reasoning: "Not player's turn",
-		}
-	}
-
-	switch action {
-	case "call", "c":
-		return ti.handleCallForDecision(args)
-	case "raise", "r":
-		return ti.handleRaiseForDecision(args)
-	case "fold", "f":
-		return ti.handleFoldForDecision(args)
-	case "check", "ch":
-		return ti.handleCheckForDecision(args)
-	case "allin", "all", "a":
-		return ti.handleAllInForDecision(args)
-	case "hand", "h", "cards":
-		ti.handleShowHand(args)
-		return game.Decision{
-			Action:    game.Check,
-			Amount:    0,
-			Reasoning: "Showed hand information",
-		}
-	case "pot", "p":
-		ti.handleShowPot(args)
-		return game.Decision{
-			Action:    game.Check,
-			Amount:    0,
-			Reasoning: "Showed pot information",
-		}
-	case "players", "pl":
-		ti.handleShowPlayers(args)
-		return game.Decision{
-			Action:    game.Check,
-			Amount:    0,
-			Reasoning: "Showed player information",
-		}
-	case "help", "?":
-		ti.handleHelp(args)
-		return game.Decision{
-			Action:    game.Check,
-			Amount:    0,
-			Reasoning: "Showed help",
-		}
-	default:
-		ti.model.AddLogEntry(fmt.Sprintf("Unknown command: %s. Type 'help' for available commands.", action))
-		return game.Decision{
-			Action:    game.Check,
-			Amount:    0,
-			Reasoning: "Invalid input - try again",
-		}
-	}
-}
-
-
-
-// PromptForAction prompts the human player for their action (legacy method)
-func (ti *TUIAgent) PromptForAction() (bool, error) {
-	ti.mainLogger.Info("Waiting for user action")
-	action, args, shouldContinue, err := ti.model.WaitForAction()
-	if err != nil {
-		ti.mainLogger.Error("Error in WaitForAction", "error", err)
-		ti.model.AddLogEntry(fmt.Sprintf("Error: %s", err.Error()))
-		return true, nil // Continue on error
-	}
-
-	ti.mainLogger.Info("Received user action", "action", action, "args", args, "continue", shouldContinue)
-	if !shouldContinue {
-		ti.mainLogger.Info("User chose to quit")
-		return false, nil
-	}
-
-	// Process the action
-	result, err := ti.processAction(action, args)
-	ti.mainLogger.Info("Action processed", "result", result, "error", err)
-	return result, err
-}
-
-// processAction processes a user action and returns whether to continue
-func (ti *TUIAgent) processAction(action string, args []string) (bool, error) {
-	ti.mainLogger.Info("Processing action", "action", action, "args", args)
-
-	// Handle quit commands first (before checking current player)
-	if action == "quit" || action == "q" || action == "exit" {
-		ti.mainLogger.Info("Quit command received, returning false to quit")
-		return false, nil
-	}
-
-	// Handle empty action (Enter pressed) - continue the game
-	if action == "" {
-		ti.mainLogger.Info("Empty action (Enter pressed), returning true to continue")
-		return true, nil
-	}
-
-	currentPlayer := ti.table.GetCurrentPlayer()
-	if currentPlayer == nil || currentPlayer.Type != game.Human {
-		ti.model.AddLogEntry("Error: Not your turn")
-		return true, nil
-	}
-
-	switch action {
-	case "call", "c":
-		return ti.handleCall(args)
-	case "raise", "r":
-		return ti.handleRaise(args)
-	case "fold", "f":
-		return ti.handleFold(args)
-	case "check", "ch":
-		return ti.handleCheck(args)
-	case "allin", "all", "a":
-		return ti.handleAllIn(args)
-	case "hand", "h", "cards":
-		return ti.handleShowHand(args)
-	case "pot", "p":
-		return ti.handleShowPot(args)
-	case "players", "pl":
-		return ti.handleShowPlayers(args)
-	case "help", "?":
-		return ti.handleHelp(args)
-	case "quit", "q", "exit":
-		ti.mainLogger.Info("Quit command received, returning false to quit")
-		return false, nil // Return false to indicate quit
-	default:
-		ti.model.AddLogEntry(fmt.Sprintf("Unknown command: %s. Type 'help' for available commands.", action))
-		return true, nil
-	}
-}
-
-// Command handlers (adapted from original interface.go)
-
-func (ti *TUIAgent) handleCall(args []string) (bool, error) {
-	currentPlayer := ti.table.GetCurrentPlayer()
-
-	if ti.table.CurrentBet == 0 {
-		ti.model.AddLogEntry("Error: No bet to call, use 'check' instead")
-		return true, nil
-	}
-
-	callAmount := ti.table.CurrentBet - currentPlayer.BetThisRound
-	if callAmount <= 0 {
-		ti.model.AddLogEntry("Error: You have already called")
-		return true, nil
-	}
-
-	if !currentPlayer.Call(callAmount) {
-		ti.model.AddLogEntry("Error: Insufficient chips to call")
-		return true, nil
-	}
-
-	ti.table.Pot += callAmount
-	ti.model.AddLogEntry(fmt.Sprintf("Called $%d", callAmount))
-
-	// Note: Action will be recorded in hand history by game engine
-
-	return true, nil
-}
-
-func (ti *TUIAgent) handleRaise(args []string) (bool, error) {
-	ti.mainLogger.Info("handleRaise called", "args", args)
-	currentPlayer := ti.table.GetCurrentPlayer()
-
-	if len(args) == 0 {
-		ti.mainLogger.Warn("No raise amount specified")
-		ti.model.AddLogEntry("Error: Specify raise amount: 'raise <amount>' or 'raise to <amount>'")
-		return true, nil
-	}
-
-	var totalBetAmount int
-	var raiseByAmount int
-
-	// Check if it's "raise to X" (explicit total) or "raise X" (default: raise by X)
-	if len(args) >= 2 && args[0] == "to" {
-		// "raise to X" - explicit total bet amount
-		ti.mainLogger.Info("Parsing 'raise to' amount", "input", args[1])
-		amount, err := strconv.Atoi(args[1])
-		if err != nil {
-			ti.mainLogger.Error("Invalid amount format for 'raise to'", "input", args[1], "error", err)
-			ti.model.AddLogEntry(fmt.Sprintf("Error: Invalid amount: %s", args[1]))
-			return true, nil
-		}
-		totalBetAmount = amount
-		raiseByAmount = amount - ti.table.CurrentBet
-	} else {
-		// "raise X" - default behavior: raise by X
-		ti.mainLogger.Info("Parsing 'raise by' amount", "input", args[0])
-		amount, err := strconv.Atoi(args[0])
-		if err != nil {
-			ti.mainLogger.Error("Invalid amount format for raise", "input", args[0], "error", err)
-			ti.model.AddLogEntry(fmt.Sprintf("Error: Invalid amount: %s", args[0]))
-			return true, nil
-		}
-		raiseByAmount = amount
-		totalBetAmount = ti.table.CurrentBet + amount
-	}
-
-	ti.mainLogger.Info("Validating raise", "totalBetAmount", totalBetAmount, "raiseByAmount", raiseByAmount, "currentBet", ti.table.CurrentBet, "playerChips", currentPlayer.Chips)
-
-	if raiseByAmount <= 0 {
-		ti.mainLogger.Warn("Raise amount must be positive", "raiseByAmount", raiseByAmount)
-		ti.model.AddLogEntry("Error: Raise amount must be positive")
-		return true, nil
-	}
-
-	if totalBetAmount <= ti.table.CurrentBet {
-		ti.mainLogger.Warn("Total bet too low", "totalBetAmount", totalBetAmount, "currentBet", ti.table.CurrentBet)
-		ti.model.AddLogEntry(fmt.Sprintf("Error: Total bet must be more than current bet of $%d", ti.table.CurrentBet))
-		return true, nil
-	}
-
-	totalNeeded := totalBetAmount - currentPlayer.BetThisRound
-	if totalNeeded > currentPlayer.Chips {
-		ti.mainLogger.Warn("Insufficient chips", "totalNeeded", totalNeeded, "playerChips", currentPlayer.Chips)
-		ti.model.AddLogEntry(fmt.Sprintf("Error: Insufficient chips, you have $%d", currentPlayer.Chips))
-		return true, nil
-	}
-
-	ti.mainLogger.Info("Executing raise", "totalNeeded", totalNeeded)
-	if !currentPlayer.Raise(totalNeeded) {
-		ti.mainLogger.Error("Raise failed")
-		ti.model.AddLogEntry("Error: Failed to raise")
-		return true, nil
-	}
-
-	ti.table.Pot += totalNeeded
-	ti.table.CurrentBet = totalBetAmount
-	ti.mainLogger.Info("Raise successful", "totalBetAmount", totalBetAmount, "raiseByAmount", raiseByAmount, "newPot", ti.table.Pot)
-	ti.model.AddLogEntry(fmt.Sprintf("Raised by $%d (to $%d)", raiseByAmount, totalBetAmount))
-
-	// Note: Action will be recorded in hand history by game engine
-
-	return true, nil
-}
-
-func (ti *TUIAgent) handleFold(args []string) (bool, error) {
-	currentPlayer := ti.table.GetCurrentPlayer()
-	currentPlayer.Fold()
-	ti.model.AddLogEntry("Folded")
-
-	// Note: Action will be recorded in hand history by game engine
-
-	return true, nil
-}
-
-func (ti *TUIAgent) handleCheck(args []string) (bool, error) {
-	currentPlayer := ti.table.GetCurrentPlayer()
-
-	if ti.table.CurrentBet > currentPlayer.BetThisRound {
-		ti.model.AddLogEntry(fmt.Sprintf("Error: Cannot check, current bet is $%d, use 'call' or 'fold'", ti.table.CurrentBet))
-		return true, nil
-	}
-
-	currentPlayer.Check()
-	ti.model.AddLogEntry("Checked")
-
-	// Note: Action will be recorded in hand history by game engine
-
-	return true, nil
-}
-
-func (ti *TUIAgent) handleAllIn(args []string) (bool, error) {
-	currentPlayer := ti.table.GetCurrentPlayer()
-
-	if currentPlayer.Chips == 0 {
-		ti.model.AddLogEntry("Error: No chips to go all-in")
-		return true, nil
-	}
-
-	allInAmount := currentPlayer.Chips
-	if !currentPlayer.AllIn() {
-		ti.model.AddLogEntry("Error: Failed to go all-in")
-		return true, nil
-	}
-
-	ti.table.Pot += allInAmount
-	if currentPlayer.TotalBet > ti.table.CurrentBet {
-		ti.table.CurrentBet = currentPlayer.TotalBet
-	}
-
-	ti.model.AddLogEntry(fmt.Sprintf("ALL-IN for $%d!", allInAmount))
-
-	// Note: Action will be recorded in hand history by game engine
-
-	return true, nil
-}
-
-func (ti *TUIAgent) handleShowHand(_ []string) (bool, error) {
-	currentPlayer := ti.table.GetCurrentPlayer()
-	cards := ti.model.formatCards(currentPlayer.HoleCards)
-	ti.model.AddLogEntry(fmt.Sprintf("Your hole cards: %s", cards))
-	return true, nil
-}
-
-func (ti *TUIAgent) handleShowPot(_ []string) (bool, error) {
-	ti.model.AddLogEntry(fmt.Sprintf("Pot: $%d", ti.table.Pot))
-	ti.model.AddLogEntry(fmt.Sprintf("Current bet: $%d", ti.table.CurrentBet))
-	return true, nil
-}
-
-func (ti *TUIAgent) handleShowPlayers(_ []string) (bool, error) {
-	ti.model.AddLogEntry("Players:")
-	for _, player := range ti.table.ActivePlayers {
-		status := ""
-		if player.IsFolded {
-			status = " (folded)"
-		} else if player.IsAllIn {
-			status = " (all-in)"
-		}
-
-		marker := ""
-		if player == ti.table.GetCurrentPlayer() {
-			marker = " <-- current"
-		}
-
-		ti.model.AddLogEntry(fmt.Sprintf("  %s: $%d%s%s", player.Name, player.Chips, status, marker))
-	}
-	return true, nil
-}
-
-func (ti *TUIAgent) handleHelp(_ []string) (bool, error) {
-	ti.model.AddLogEntry("Available commands:")
-	ti.model.AddLogEntry("Game Actions:")
-	ti.model.AddLogEntry("  call       - Call the current bet")
-	ti.model.AddLogEntry("  raise <amt>- Raise to a specific amount")
-	ti.model.AddLogEntry("  fold       - Fold your hand")
-	ti.model.AddLogEntry("  check      - Check (no bet when none required)")
-	ti.model.AddLogEntry("  allin      - Go all-in with remaining chips")
-	ti.model.AddLogEntry("Information:")
-	ti.model.AddLogEntry("  hand       - Show your hole cards")
-	ti.model.AddLogEntry("  pot        - Show pot information")
-	ti.model.AddLogEntry("  players    - Show all player information")
-	ti.model.AddLogEntry("Utility:")
-	ti.model.AddLogEntry("  help       - Show this help")
-	ti.model.AddLogEntry("  quit       - Quit the game")
-	return true, nil
 }
 
 // Decision-returning versions of action handlers for Agent interface
 
-func (ti *TUIAgent) handleCallForDecision(args []string) game.Decision {
-	currentPlayer := ti.table.GetCurrentPlayer()
-
-	if ti.table.CurrentBet == 0 {
+func (ti *TUIAgent) handleCallForDecision(args []string, tableState game.TableState, currentPlayerState game.PlayerState) game.Decision {
+	if tableState.CurrentBet == 0 {
 		ti.model.AddLogEntry("Error: No bet to call, use 'check' instead")
 		return game.Decision{
 			Action:    game.Check,
@@ -514,7 +181,7 @@ func (ti *TUIAgent) handleCallForDecision(args []string) game.Decision {
 		}
 	}
 
-	callAmount := ti.table.CurrentBet - currentPlayer.BetThisRound
+	callAmount := tableState.CurrentBet - currentPlayerState.BetThisRound
 	if callAmount <= 0 {
 		ti.model.AddLogEntry("Error: You have already called")
 		return game.Decision{
@@ -524,7 +191,7 @@ func (ti *TUIAgent) handleCallForDecision(args []string) game.Decision {
 		}
 	}
 
-	if currentPlayer.Chips < callAmount {
+	if currentPlayerState.Chips < callAmount {
 		ti.model.AddLogEntry("Error: Insufficient chips to call")
 		return game.Decision{
 			Action:    game.Fold,
@@ -533,30 +200,15 @@ func (ti *TUIAgent) handleCallForDecision(args []string) game.Decision {
 		}
 	}
 
-	if !currentPlayer.Call(callAmount) {
-		ti.model.AddLogEntry("Error: Failed to call")
-		return game.Decision{
-			Action:    game.Fold,
-			Amount:    0,
-			Reasoning: "Call failed",
-		}
-	}
-
-	ti.table.Pot += callAmount
-	ti.model.AddLogEntry(fmt.Sprintf("Called $%d", callAmount))
-
-	// Action will be recorded in hand history via events when engine applies decision
-
+	// Don't mutate state - just return the decision for the engine to apply
 	return game.Decision{
 		Action:    game.Call,
-		Amount:    callAmount,
-		Reasoning: fmt.Sprintf("Called $%d", callAmount),
+		Amount:    0, // Engine will calculate the actual amount
+		Reasoning: "Player called",
 	}
 }
 
-func (ti *TUIAgent) handleRaiseForDecision(args []string) game.Decision {
-	currentPlayer := ti.table.GetCurrentPlayer()
-
+func (ti *TUIAgent) handleRaiseForDecision(args []string, tableState game.TableState, currentPlayerState game.PlayerState) game.Decision {
 	if len(args) == 0 {
 		ti.model.AddLogEntry("Error: Specify raise amount: 'raise <amount>'")
 		return game.Decision{
@@ -576,8 +228,8 @@ func (ti *TUIAgent) handleRaiseForDecision(args []string) game.Decision {
 		}
 	}
 
-	if amount <= ti.table.CurrentBet {
-		ti.model.AddLogEntry(fmt.Sprintf("Error: Raise must be more than current bet of $%d", ti.table.CurrentBet))
+	if amount <= tableState.CurrentBet {
+		ti.model.AddLogEntry(fmt.Sprintf("Error: Raise must be more than current bet of $%d", tableState.CurrentBet))
 		return game.Decision{
 			Action:    game.Check,
 			Amount:    0,
@@ -585,9 +237,9 @@ func (ti *TUIAgent) handleRaiseForDecision(args []string) game.Decision {
 		}
 	}
 
-	totalNeeded := amount - currentPlayer.BetThisRound
-	if totalNeeded > currentPlayer.Chips {
-		ti.model.AddLogEntry(fmt.Sprintf("Error: Insufficient chips, you have $%d", currentPlayer.Chips))
+	totalNeeded := amount - currentPlayerState.BetThisRound
+	if totalNeeded > currentPlayerState.Chips {
+		ti.model.AddLogEntry(fmt.Sprintf("Error: Insufficient chips, you have $%d", currentPlayerState.Chips))
 		return game.Decision{
 			Action:    game.Check,
 			Amount:    0,
@@ -595,47 +247,26 @@ func (ti *TUIAgent) handleRaiseForDecision(args []string) game.Decision {
 		}
 	}
 
-	if !currentPlayer.Raise(totalNeeded) {
-		ti.model.AddLogEntry("Error: Failed to raise")
-		return game.Decision{
-			Action:    game.Check,
-			Amount:    0,
-			Reasoning: "Invalid input - try again",
-		}
-	}
-
-	ti.table.Pot += totalNeeded
-	ti.table.CurrentBet = amount
-	ti.model.AddLogEntry(fmt.Sprintf("Raised to $%d", amount))
-
-	// Action will be recorded in hand history via events when engine applies decision
-
+	// Don't mutate state - just return the decision for the engine to apply
 	return game.Decision{
 		Action:    game.Raise,
-		Amount:    amount,
-		Reasoning: fmt.Sprintf("Raised to $%d", amount),
+		Amount:    amount, // Total bet amount (not the raise amount)
+		Reasoning: "Player raised",
 	}
 }
 
-func (ti *TUIAgent) handleFoldForDecision(args []string) game.Decision {
-	currentPlayer := ti.table.GetCurrentPlayer()
-	currentPlayer.Fold()
-	ti.model.AddLogEntry("Folded")
-
-	// Action will be recorded in hand history via events when engine applies decision
-
+func (ti *TUIAgent) handleFoldForDecision(args []string, tableState game.TableState, currentPlayerState game.PlayerState) game.Decision {
+	// Don't mutate state - just return the decision for the engine to apply
 	return game.Decision{
 		Action:    game.Fold,
 		Amount:    0,
-		Reasoning: "Folded",
+		Reasoning: "Player folded",
 	}
 }
 
-func (ti *TUIAgent) handleCheckForDecision(args []string) game.Decision {
-	currentPlayer := ti.table.GetCurrentPlayer()
-
-	if ti.table.CurrentBet > currentPlayer.BetThisRound {
-		ti.model.AddLogEntry(fmt.Sprintf("Error: Cannot check, current bet is $%d, use 'call' or 'fold'", ti.table.CurrentBet))
+func (ti *TUIAgent) handleCheckForDecision(args []string, tableState game.TableState, currentPlayerState game.PlayerState) game.Decision {
+	if tableState.CurrentBet > currentPlayerState.BetThisRound {
+		ti.model.AddLogEntry(fmt.Sprintf("Error: Cannot check, current bet is $%d, use 'call' or 'fold'", tableState.CurrentBet))
 		return game.Decision{
 			Action:    game.Fold,
 			Amount:    0,
@@ -643,22 +274,16 @@ func (ti *TUIAgent) handleCheckForDecision(args []string) game.Decision {
 		}
 	}
 
-	currentPlayer.Check()
-	ti.model.AddLogEntry("Checked")
-
-	// Action will be recorded in hand history via events when engine applies decision
-
+	// Don't mutate state - just return the decision for the engine to apply
 	return game.Decision{
 		Action:    game.Check,
 		Amount:    0,
-		Reasoning: "Checked",
+		Reasoning: "Player checked",
 	}
 }
 
-func (ti *TUIAgent) handleAllInForDecision(args []string) game.Decision {
-	currentPlayer := ti.table.GetCurrentPlayer()
-
-	if currentPlayer.Chips == 0 {
+func (ti *TUIAgent) handleAllInForDecision(args []string, tableState game.TableState, currentPlayerState game.PlayerState) game.Decision {
+	if currentPlayerState.Chips == 0 {
 		ti.model.AddLogEntry("Error: No chips to go all-in")
 		return game.Decision{
 			Action:    game.Check,
@@ -667,29 +292,12 @@ func (ti *TUIAgent) handleAllInForDecision(args []string) game.Decision {
 		}
 	}
 
-	allInAmount := currentPlayer.Chips
-	if !currentPlayer.AllIn() {
-		ti.model.AddLogEntry("Error: Failed to go all-in")
-		return game.Decision{
-			Action:    game.Check,
-			Amount:    0,
-			Reasoning: "All-in failed",
-		}
-	}
-
-	ti.table.Pot += allInAmount
-	if currentPlayer.TotalBet > ti.table.CurrentBet {
-		ti.table.CurrentBet = currentPlayer.TotalBet
-	}
-
-	ti.model.AddLogEntry(fmt.Sprintf("ALL-IN for $%d!", allInAmount))
-
-	// Action will be recorded in hand history via events when engine applies decision
-
+	// Don't mutate state - just return the decision for the engine to apply
+	// Engine will calculate the correct all-in amount
 	return game.Decision{
 		Action:    game.AllIn,
-		Amount:    allInAmount,
-		Reasoning: fmt.Sprintf("All-in for $%d", allInAmount),
+		Amount:    currentPlayerState.BetThisRound + currentPlayerState.Chips, // Total bet amount after all-in
+		Reasoning: "Player went all-in",
 	}
 }
 
@@ -707,23 +315,31 @@ func (ti *TUIAgent) AddLogEntry(entry string) {
 	ti.uiLogger.Info(cleanEntry)
 }
 
+// AddLogEntryAndScrollToShow adds an entry and scrolls to show it at the top
+func (ti *TUIAgent) AddLogEntryAndScrollToShow(entry string) {
+	ti.model.AddLogEntryAndScrollToShow(entry)
+	// Also log to file for complete history (strip ANSI codes)
+	cleanEntry := stripANSI(entry)
+	ti.uiLogger.Info(cleanEntry)
+}
+
 // ClearLog clears the game log display
 func (ti *TUIAgent) ClearLog() {
 	ti.model.ClearLog()
 }
 
 // InitializeHand initializes the display for a new hand
-func (ti *TUIAgent) InitializeHand(seats int) {
+func (ti *TUIAgent) InitializeHand(event game.HandStartEvent) {
 	// Log game state context to file
 	ti.mainLogger.Info("New hand started",
-		"handID", ti.table.HandID,
-		"players", seats,
-		"smallBlind", ti.table.SmallBlind,
-		"bigBlind", ti.table.BigBlind,
-		"pot", ti.table.Pot)
+		"handID", ti.displayState.HandID,
+		"players", len(event.Players),
+		"smallBlind", event.SmallBlind,
+		"bigBlind", event.BigBlind,
+		"pot", event.InitialPot)
 
 	// Log all players' hole cards for complete game history
-	for _, player := range ti.table.Players {
+	for _, player := range event.Players {
 		if len(player.HoleCards) > 0 {
 			ti.mainLogger.Info("Player hole cards",
 				"player", player.Name,
@@ -734,20 +350,22 @@ func (ti *TUIAgent) InitializeHand(seats int) {
 		}
 	}
 
-	// Show hand header
-	ti.AddLogEntry(fmt.Sprintf("Hand %s • %d players • $1/$2", ti.table.HandID, seats))
+	// Add hand header (no separator for first hand)
+	ti.AddLogEntryAndScrollToShow(fmt.Sprintf("Hand %s • %d players • $1/$2", ti.displayState.HandID, len(event.Players)))
 	ti.AddLogEntry("")
 	ti.AddLogEntry("*** HOLE CARDS ***")
 
 	// Show hole cards for human player
-	humanPlayer := ti.table.Players[0] // Human is first player
-	if len(humanPlayer.HoleCards) > 0 {
-		cards := ti.model.formatCards(humanPlayer.HoleCards)
-		ti.AddLogEntry(fmt.Sprintf("Dealt to You: %s", cards))
+	for _, player := range event.Players {
+		if player.Type == game.Human && len(player.HoleCards) > 0 {
+			cards := ti.model.formatCards(player.HoleCards)
+			ti.AddLogEntry(fmt.Sprintf("Dealt to You: %s", cards))
+			break
+		}
 	}
 
 	// Show blind posting
-	for _, player := range ti.table.ActivePlayers {
+	for _, player := range event.ActivePlayers {
 		if player.Position == game.SmallBlind && player.BetThisRound > 0 {
 			ti.AddLogEntry(fmt.Sprintf("%s: posts small blind $%d", player.Name, player.BetThisRound))
 		} else if player.Position == game.BigBlind && player.BetThisRound > 0 {
@@ -801,12 +419,13 @@ func (ti *TUIAgent) ShowPlayerActionWithThinking(player *game.Player, thinking s
 	case "fold":
 		actionEntry = fmt.Sprintf("%s: folds", player.Name)
 	case "call":
-		actionEntry = fmt.Sprintf("%s: calls $%d", player.Name, player.BetThisRound)
+		actionEntry = fmt.Sprintf("%s: calls $%d (pot now: $%d)", player.Name, player.ActionAmount, ti.displayState.CurrentPot)
 	case "check":
 		actionEntry = fmt.Sprintf("%s: checks", player.Name)
 	case "raise":
+		// For simplicity and accuracy, just show the total bet amount
 		actionEntry = fmt.Sprintf("%s: raises to $%d (pot now: $%d)",
-			player.Name, player.BetThisRound, ti.table.Pot)
+			player.Name, player.BetThisRound, ti.displayState.CurrentPot)
 	case "allin":
 		actionEntry = fmt.Sprintf("%s: goes all-in for $%d", player.Name, player.TotalBet)
 	default:
@@ -814,15 +433,51 @@ func (ti *TUIAgent) ShowPlayerActionWithThinking(player *game.Player, thinking s
 	}
 
 	ti.AddLogEntry(actionEntry)
-
-	// Note: AI thinking is recorded in HandHistory but NOT shown in TUI
-	// to preserve the poker experience
 }
 
 // OnEvent implements EventSubscriber interface
 func (ti *TUIAgent) OnEvent(event game.GameEvent) {
+	// Log all events for debugging
+	ti.mainLogger.Info("Received event", "type", event.EventType(), "timestamp", event.Timestamp())
+
 	switch e := event.(type) {
+	case game.HandStartEvent:
+		// Update local display state from event
+		ti.displayState.HandID = e.HandID
+		ti.displayState.Players = e.Players
+		ti.displayState.ActivePlayers = e.ActivePlayers
+		ti.displayState.SmallBlind = e.SmallBlind
+		ti.displayState.BigBlind = e.BigBlind
+		ti.displayState.CurrentPot = e.InitialPot
+		ti.model.UpdatePot(e.InitialPot)
+		ti.model.UpdateCurrentBet(0) // Start with no bet
+		ti.InitializeHand(e)
+	case game.HandEndEvent:
+		// Show hand summary with detailed event data
+		ti.mainLogger.Info("Processing HandEndEvent",
+			"handID", e.HandID,
+			"winners", len(e.Winners),
+			"potSize", e.PotSize,
+			"showdownType", e.ShowdownType,
+			"finalBoard", len(e.FinalBoard),
+			"summaryLength", len(e.Summary))
+
+		// Log each winner in detail
+		for i, winner := range e.Winners {
+			ti.mainLogger.Info("HandEndEvent winner detail",
+				"index", i,
+				"name", winner.PlayerName,
+				"amount", winner.Amount,
+				"handRank", winner.HandRank,
+				"holeCards", len(winner.HoleCards))
+		}
+
+		ti.ShowHandSummary(e)
 	case game.PlayerActionEvent:
+		// Update pot from event
+		ti.displayState.CurrentPot = e.PotAfter
+		ti.model.UpdatePot(e.PotAfter)
+
 		// Show all player actions in the log for complete game history
 		// For human players, don't show AI thinking reasoning
 		if e.Player.Type == game.Human {
@@ -832,19 +487,20 @@ func (ti *TUIAgent) OnEvent(event game.GameEvent) {
 			ti.ShowPlayerActionWithThinking(e.Player, e.Reasoning)
 		}
 	case game.StreetChangeEvent:
-		// Update table state and show transition
-		ti.table.CurrentRound = e.Round
-		ti.table.CommunityCards = e.CommunityCards
-		ti.ShowBettingRoundTransition()
+		// Update display state from event
+		ti.displayState.CommunityCards = e.CommunityCards
+		ti.displayState.CurrentBet = e.CurrentBet
+		ti.model.UpdateCurrentBet(e.CurrentBet)
+
+		// Show transition using event data
+		ti.ShowBettingRoundTransition(e)
 	}
 }
-
-
 
 // ShowBettingRoundComplete shows when a betting round completes
 func (ti *TUIAgent) ShowBettingRoundComplete() {
 	activePlayers := 0
-	for _, player := range ti.table.ActivePlayers {
+	for _, player := range ti.displayState.ActivePlayers {
 		if player.IsInHand() {
 			activePlayers++
 		}
@@ -855,22 +511,21 @@ func (ti *TUIAgent) ShowBettingRoundComplete() {
 		return
 	}
 
-	// roundName := ti.table.CurrentRound.String()
-	// ti.AddLogEntry(fmt.Sprintf("--- %s betting complete ---", roundName))
+	// Note: Round name would come from events in a true client-server setup
 }
 
 // ShowBettingRoundTransition shows transition to new betting round
-func (ti *TUIAgent) ShowBettingRoundTransition() {
+func (ti *TUIAgent) ShowBettingRoundTransition(event game.StreetChangeEvent) {
 	// Log betting round transition to file
 	ti.mainLogger.Info("Betting round transition",
-		"round", ti.table.CurrentRound.String(),
-		"pot", ti.table.Pot,
-		"currentBet", ti.table.CurrentBet)
+		"round", event.Round.String(),
+		"pot", ti.displayState.CurrentPot,
+		"currentBet", event.CurrentBet)
 
-	// Log community cards
-	if len(ti.table.CommunityCards) > 0 {
-		cardStrings := make([]string, len(ti.table.CommunityCards))
-		for i, card := range ti.table.CommunityCards {
+	// Log community cards from event
+	if len(event.CommunityCards) > 0 {
+		cardStrings := make([]string, len(event.CommunityCards))
+		for i, card := range event.CommunityCards {
 			cardStrings[i] = card.String()
 		}
 		ti.mainLogger.Info("Community cards", "cards", cardStrings)
@@ -878,97 +533,82 @@ func (ti *TUIAgent) ShowBettingRoundTransition() {
 
 	ti.AddLogEntry("")
 
-	switch ti.table.CurrentRound {
+	switch event.Round {
 	case game.Flop:
 		ti.AddLogEntry("*** FLOP ***")
-		if len(ti.table.CommunityCards) >= 3 {
-			flop := ti.table.CommunityCards[:3]
+		if len(event.CommunityCards) >= 3 {
+			flop := event.CommunityCards[:3]
 			ti.AddLogEntry(fmt.Sprintf("Board: %s", ti.model.formatCards(flop)))
 		}
 	case game.Turn:
 		ti.AddLogEntry("*** TURN ***")
-		if len(ti.table.CommunityCards) >= 4 {
+		if len(event.CommunityCards) >= 4 {
 			ti.AddLogEntry(fmt.Sprintf("Board: %s [%s]",
-				ti.model.formatCards(ti.table.CommunityCards[:3]),
-				ti.table.CommunityCards[3].String()))
+				ti.model.formatCards(event.CommunityCards[:3]),
+				event.CommunityCards[3].String()))
 		}
 	case game.River:
 		ti.AddLogEntry("*** RIVER ***")
-		if len(ti.table.CommunityCards) >= 5 {
+		if len(event.CommunityCards) >= 5 {
 			ti.AddLogEntry(fmt.Sprintf("Board: %s [%s]",
-				ti.model.formatCards(ti.table.CommunityCards[:4]),
-				ti.table.CommunityCards[4].String()))
+				ti.model.formatCards(event.CommunityCards[:4]),
+				event.CommunityCards[4].String()))
 		}
 	case game.Showdown:
 		ti.AddLogEntry("*** SHOWDOWN ***")
-		ti.AddLogEntry(fmt.Sprintf("Final Board: %s", ti.model.formatCards(ti.table.CommunityCards)))
+		ti.AddLogEntry(fmt.Sprintf("Final Board: %s", ti.model.formatCards(event.CommunityCards)))
 	}
 
-	ti.AddLogEntry(fmt.Sprintf("Pot: $%d", ti.table.Pot))
+	ti.AddLogEntry(fmt.Sprintf("Pot: $%d", ti.displayState.CurrentPot))
 	ti.AddLogEntry("")
 }
 
-// ShowCompleteShowdown handles the showdown display
-func (ti *TUIAgent) ShowCompleteShowdown() {
-	// Don't show anything here - we'll handle it all in ShowHandSummary
-}
+// ShowHandSummary shows the hand summary using the rich summary from HandHistory
+func (ti *TUIAgent) ShowHandSummary(handEndEvent game.HandEndEvent) {
+	// Log final hand state to file
+	ti.logFinalHandState(handEndEvent.PotSize)
 
-// ShowHandSummary shows the hand summary
-func (ti *TUIAgent) ShowHandSummary(finalPot int) {
+	// Use the beautiful summary from HandHistory
+	ti.AddLogEntry("")
 
-	// Populate HandHistory with final results
-	if ti.table.HandHistory != nil {
-		// Set community cards
-		ti.table.HandHistory.SetCommunityCards(ti.table.CommunityCards)
-
-		// Set final pot and winner info
-		winner := ti.table.FindWinner()
-		var winners []game.WinnerInfo
-		if winner != nil {
-			// Determine hand rank using evaluator
-			var handRank string
-			if len(winner.HoleCards) == 2 && len(ti.table.CommunityCards) == 5 {
-				// Only evaluate when we have exactly 7 cards (2 hole + 5 community)
-				allCards := append(winner.HoleCards, ti.table.CommunityCards...)
-				handScore := evaluator.Evaluate7(allCards)
-				handRank = handScore.String()
-			} else if len(ti.table.CommunityCards) == 0 {
-				// Hand ended pre-flop, winner by fold
-				handRank = "Win by fold"
-			} else {
-				// Hand ended before river, winner by fold
-				handRank = "Win by fold"
-			}
-
-			winners = []game.WinnerInfo{
-				{
-					PlayerName: winner.Name,
-					Amount:     finalPot,
-					HoleCards:  winner.HoleCards,
-					HandRank:   handRank,
-				},
+	// Split the summary into lines and add each one
+	if handEndEvent.Summary != "" {
+		lines := strings.Split(handEndEvent.Summary, "\n")
+		for _, line := range lines {
+			if line != "" {
+				ti.AddLogEntry(line)
 			}
 		}
-		ti.table.HandHistory.SetFinalResults(finalPot, winners)
+	} else {
+		// Fallback if no summary provided
+		ti.AddLogEntry(fmt.Sprintf("=== Hand %s Complete ===", ti.displayState.HandID))
+		ti.AddLogEntry(fmt.Sprintf("Pot: $%d", handEndEvent.PotSize))
+		for _, winner := range handEndEvent.Winners {
+			ti.AddLogEntry(fmt.Sprintf("Winner: %s ($%d)", winner.PlayerName, winner.Amount))
+		}
 	}
 
-	// Log final hand state to file
+	ti.AddLogEntry("")
+}
+
+// logFinalHandState logs the final hand state to the log file
+func (ti *TUIAgent) logFinalHandState(finalPot int) {
 	ti.mainLogger.Info("=== HAND COMPLETE ===",
-		"handID", ti.table.HandID,
+		"handID", ti.displayState.HandID,
 		"finalPot", finalPot,
-		"finalBet", ti.table.CurrentBet)
+		"finalBet", ti.displayState.CurrentBet)
 
 	// Log final board
-	if len(ti.table.CommunityCards) > 0 {
-		cardStrings := make([]string, len(ti.table.CommunityCards))
-		for i, card := range ti.table.CommunityCards {
+	if len(ti.displayState.CommunityCards) > 0 {
+		cardStrings := make([]string, len(ti.displayState.CommunityCards))
+		for i, card := range ti.displayState.CommunityCards {
 			cardStrings[i] = card.String()
 		}
 		ti.mainLogger.Info("Final board", "cards", cardStrings)
 	}
 
 	// Log all players' final state
-	for _, player := range ti.table.Players {
+	for _, player := range ti.displayState.Players {
 		logArgs := []interface{}{
 			"player", player.Name,
 			"type", map[game.PlayerType]string{game.Human: "Human", game.AI: "AI"}[player.Type],
@@ -983,52 +623,4 @@ func (ti *TUIAgent) ShowHandSummary(finalPot int) {
 		}
 		ti.mainLogger.Info("Final player state", logArgs...)
 	}
-
-	// Clean poker-style summary using unified implementation
-	ti.AddLogEntry("")
-	if ti.table.HandHistory != nil {
-		// Use unified summary but without showing hole cards in TUI
-		summaryText := ti.table.HandHistory.GenerateSummary(game.SummaryOpts{
-			PlayerPerspective: "You",
-		})
-		lines := strings.Split(strings.TrimSpace(summaryText), "\n")
-		for _, line := range lines {
-			if line != "" {
-				ti.AddLogEntry(line)
-			}
-		}
-	}
-
-	// Automatically save hand history
-	ti.autoSaveHandHistory()
-}
-
-// autoSaveHandHistory automatically saves the current hand history to a file
-func (ti *TUIAgent) autoSaveHandHistory() {
-	handID := ti.table.HandID
-
-	// Create handhistory directory if it doesn't exist
-	if err := os.MkdirAll("handhistory", 0755); err != nil {
-		ti.mainLogger.Error("Error creating handhistory directory", "error", err)
-		return
-	}
-
-	// Generate filename
-	filename := filepath.Join("handhistory", fmt.Sprintf("hand_%s.txt", handID))
-
-	// Generate hand history content from HandHistory service
-	var content string
-	if ti.table.HandHistory != nil {
-		content = ti.table.HandHistory.GenerateHistoryText()
-	} else {
-		content = fmt.Sprintf("=== HAND %s ===\nNo hand history available\n=== END HAND ===\n", handID)
-	}
-
-	// Write to file
-	if err := os.WriteFile(filename, []byte(content), 0644); err != nil {
-		ti.mainLogger.Error("Error saving hand history", "error", err, "filename", filename)
-		return
-	}
-
-	ti.mainLogger.Info("Hand history saved", "filename", filename)
 }

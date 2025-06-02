@@ -28,6 +28,13 @@ type TUIModel struct {
 	quitting     bool
 	focusedPane  int // 0 = log, 1 = input
 
+	// Display state (event-driven, client-server ready)
+	currentPot    int
+	currentBet    int
+	validActions  []game.ValidAction
+	isHumansTurn  bool
+	humanPlayer   *game.Player // Current human player info when it's their turn
+
 	// Dimensions
 	width  int
 	height int
@@ -166,6 +173,14 @@ func (m *TUIModel) View() string {
 	calculatedActionWidth := m.width - 2       // Full width minus border
 	calculatedActionHeight := actionHeight - 2 // Content height minus border
 
+	// Ensure action pane dimensions are valid (minimum 1x1)
+	if calculatedActionWidth < 1 {
+		calculatedActionWidth = 1
+	}
+	if calculatedActionHeight < 1 {
+		calculatedActionHeight = 1
+	}
+
 	actionStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#04B575")).
@@ -188,6 +203,14 @@ func (m *TUIModel) View() string {
 
 	calculatedSidebarHeight := m.height - actionHeight - 4 // Account for border x 2 and action pane
 
+	// Ensure sidebar dimensions are valid (minimum 1x1)
+	if calculatedSidebarWidth < 1 {
+		calculatedSidebarWidth = 1
+	}
+	if calculatedSidebarHeight < 1 {
+		calculatedSidebarHeight = 1
+	}
+
 	sidebarStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#626262")).
@@ -202,6 +225,14 @@ func (m *TUIModel) View() string {
 
 	calculatedLogWidth := m.width - calculatedSidebarWidth - 4 // Account for border x 2 and sidebar
 	calculatedLogHeight := m.height - actionHeight - 4         // Account for border x 2 and action pane
+
+	// Ensure viewport dimensions are valid (minimum 1x1)
+	if calculatedLogWidth < 1 {
+		calculatedLogWidth = 1
+	}
+	if calculatedLogHeight < 1 {
+		calculatedLogHeight = 1
+	}
 
 	m.logViewport.Width = calculatedLogWidth
 	m.logViewport.Height = calculatedLogHeight
@@ -233,7 +264,7 @@ func (m *TUIModel) renderSidebarPane() string {
 	var content strings.Builder
 
 	// Get players in seat order
-	players := m.table.Players
+	players := m.table.GetActivePlayers()
 	currentPlayer := m.table.GetCurrentPlayer()
 
 	for _, player := range players {
@@ -241,7 +272,7 @@ func (m *TUIModel) renderSidebarPane() string {
 		var indicators []string
 
 		// Position indicators (only show the most important ones)
-		if m.table.DealerPosition == player.SeatNumber {
+		if m.table.DealerPosition() == player.SeatNumber {
 			indicators = append(indicators, "D")
 		}
 		if player.Position == game.SmallBlind {
@@ -299,11 +330,11 @@ func (m *TUIModel) renderSidebarPane() string {
 
 	// Add pot and bet info at bottom (more compact)
 	content.WriteString("\n")
-	content.WriteString(WarningStyle.Render(fmt.Sprintf("Pot: $%d", m.table.Pot)))
+	content.WriteString(WarningStyle.Render(fmt.Sprintf("Pot: $%d", m.currentPot)))
 
-	if m.table.CurrentBet > 0 {
+	if m.currentBet > 0 {
 		content.WriteString(" | ")
-		content.WriteString(WarningStyle.Render(fmt.Sprintf("Bet: $%d", m.table.CurrentBet)))
+		content.WriteString(WarningStyle.Render(fmt.Sprintf("Bet: $%d", m.currentBet)))
 	}
 
 	return content.String()
@@ -314,28 +345,27 @@ func (m *TUIModel) renderActionPane() string {
 	var content strings.Builder
 
 	// Show current hand info
-	currentPlayer := m.table.GetCurrentPlayer()
-	if currentPlayer != nil && currentPlayer.Type == game.Human {
-		handInfo := m.renderHandInfo(currentPlayer)
+	if m.isHumansTurn && m.humanPlayer != nil {
+		handInfo := m.renderHandInfo(m.humanPlayer)
 		content.WriteString(handInfo)
 		content.WriteString("\n")
 
 		// Show available actions
-		actions := m.renderAvailableActions(currentPlayer)
+		actions := m.renderAvailableActions(m.humanPlayer)
 		content.WriteString(actions)
 		content.WriteString("\n")
-	} else if currentPlayer == nil {
-		// Between hands - show continuation prompt
-		content.WriteString(HandInfoStyle.Render("Hand Complete"))
+	} else if !m.isHumansTurn {
+		// Between hands or waiting for other players
+		content.WriteString(HandInfoStyle.Render("Waiting..."))
 		content.WriteString("\n")
 	}
 
 	// Update input placeholder based on game state and show input field
-	if currentPlayer == nil {
-		// Between hands
+	if !m.isHumansTurn {
+		// Between hands or waiting for others
 		m.actionInput.Placeholder = "Enter to continue, 'quit' to exit"
 	} else {
-		// During hand
+		// During hand - human's turn
 		m.actionInput.Placeholder = "Enter your action (call, raise 10, raise to 15, fold, check, etc.)"
 	}
 
@@ -348,13 +378,12 @@ func (m *TUIModel) renderActionPane() string {
 			"Log focused: ↑↓ scroll, PgUp/PgDn half page, Home/End, Tab to input"))
 	} else {
 		// Different help text based on game state
-		currentPlayer := m.table.GetCurrentPlayer()
-		if currentPlayer == nil {
-			// Between hands - minimal help
+		if !m.isHumansTurn {
+			// Between hands or waiting - minimal help
 			content.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render(
 				"Tab to scroll log • Ctrl+C to quit"))
 		} else {
-			// During hand
+			// During hand - human's turn
 			content.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#626262")).Render(
 				"Tab to scroll log • Enter to submit • Ctrl+C to quit"))
 		}
@@ -367,32 +396,36 @@ func (m *TUIModel) renderActionPane() string {
 // renderHandInfo renders current hand information
 func (m *TUIModel) renderHandInfo(player *game.Player) string {
 	hand := m.formatCards(player.HoleCards)
-	pot := fmt.Sprintf("$%d", m.table.Pot)
+	pot := fmt.Sprintf("$%d", m.currentPot)
 
 	return HandInfoStyle.Render(
 		fmt.Sprintf("Hand: %s  Pot: %s", hand, pot))
 }
 
-// renderAvailableActions renders available action buttons
+// renderAvailableActions renders available action buttons based on engine's valid actions
 func (m *TUIModel) renderAvailableActions(player *game.Player) string {
 	var actions []string
 
-	// Always can fold
-	actions = append(actions, ErrorStyle.Render("[fold]"))
-
-	if m.table.CurrentBet == 0 {
-		actions = append(actions, SuccessStyle.Render("[check]"))
-	} else {
-		callAmount := m.table.CurrentBet - player.BetThisRound
-		if callAmount <= player.Chips {
-			actions = append(actions, SuccessStyle.Render(fmt.Sprintf("[call $%d]", callAmount)))
+	// Use the valid actions provided by the game engine
+	for _, validAction := range m.validActions {
+		switch validAction.Action {
+		case game.Fold:
+			actions = append(actions, ErrorStyle.Render("[fold]"))
+		case game.Check:
+			actions = append(actions, SuccessStyle.Render("[check]"))
+		case game.Call:
+			// Just show the call amount - simpler and more reliable
+			actions = append(actions, SuccessStyle.Render(fmt.Sprintf("[call $%d]", validAction.MinAmount)))
+		case game.Raise:
+			actions = append(actions, WarningStyle.Render("[raise]"))
+		case game.AllIn:
+			actions = append(actions, WarningStyle.Render(fmt.Sprintf("[allin $%d]", validAction.MinAmount)))
 		}
 	}
 
-	// Can always raise if have chips
-	if player.Chips > 0 {
-		actions = append(actions, WarningStyle.Render("[raise]"))
-		actions = append(actions, WarningStyle.Render(fmt.Sprintf("[allin $%d]", player.Chips)))
+	// Fallback if no valid actions (shouldn't happen)
+	if len(actions) == 0 {
+		actions = append(actions, ErrorStyle.Render("[no actions available]"))
 	}
 
 	return ActionsStyle.Render("Actions: " + strings.Join(actions, " "))
@@ -429,10 +462,46 @@ func (m *TUIModel) AddLogEntry(entry string) {
 	}
 }
 
+// AddLogEntryAndScrollToShow adds an entry and scrolls to show it at the top
+func (m *TUIModel) AddLogEntryAndScrollToShow(entry string) {
+	m.gameLog = append(m.gameLog, entry)
+	content := strings.Join(m.gameLog, "\n")
+	m.logViewport.SetContent(content)
+
+	// Scroll to show the new entry at the top of the viewport
+	if m.logViewport.Height > 0 && m.logViewport.Width > 0 {
+		// Calculate line position (number of previous lines)
+		targetLine := len(m.gameLog) - 1
+		// Set the viewport position to show this line at the top
+		m.logViewport.SetYOffset(targetLine)
+	}
+}
+
 // ClearLog clears the game log
 func (m *TUIModel) ClearLog() {
 	m.gameLog = []string{}
 	m.logViewport.SetContent("")
+}
+
+// UpdatePot updates the current pot display value
+func (m *TUIModel) UpdatePot(pot int) {
+	m.currentPot = pot
+}
+
+// UpdateCurrentBet updates the current bet display value
+func (m *TUIModel) UpdateCurrentBet(bet int) {
+	m.currentBet = bet
+}
+
+// UpdateValidActions updates the valid actions display
+func (m *TUIModel) UpdateValidActions(actions []game.ValidAction) {
+	m.validActions = actions
+}
+
+// SetHumanTurn sets whether it's currently the human's turn to act
+func (m *TUIModel) SetHumanTurn(isHumansTurn bool, player *game.Player) {
+	m.isHumansTurn = isHumansTurn
+	m.humanPlayer = player
 }
 
 // processAction processes a user action
