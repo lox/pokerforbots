@@ -335,7 +335,7 @@ func EstimateEquityParallel(hole []deck.Card, board []deck.Card, opponentRange R
 		g.Go(func() error {
 			workerRng := rand.New(rand.NewSource(workerSeed))
 			result := runEquityWorker(hole, board, availableCards, opponentRange, workerSamples, workerRng)
-			
+
 			select {
 			case results <- result:
 				return nil
@@ -374,9 +374,9 @@ func EstimateEquityParallel(hole []deck.Card, board []deck.Card, opponentRange R
 }
 
 // runEquityWorker runs Monte Carlo simulation for a worker
-func runEquityWorker(hole []deck.Card, board []deck.Card, availableCards []deck.Card, 
+func runEquityWorker(hole []deck.Card, board []deck.Card, availableCards []deck.Card,
 	opponentRange Range, numSamples int, rng *rand.Rand) workerResult {
-	
+
 	wins := 0
 	ties := 0
 	validSamples := 0

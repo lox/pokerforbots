@@ -19,17 +19,17 @@ func NewCallBot(logger *log.Logger) *CallBot {
 // MakeDecision uses the clean architecture with immutable state
 func (c *CallBot) MakeDecision(tableState game.TableState, validActions []game.ValidAction) game.Decision {
 	actingPlayer := tableState.Players[tableState.ActingPlayerIdx]
-	
+
 	// Analyze betting action using hand history
 	roundSummary := tableState.HandHistory.GetBettingRoundSummary(tableState.CurrentRound)
-	
+
 	// Enhanced logic: fold river only if facing heavy action
 	if tableState.CurrentRound == game.River {
 		// Check if there was aggressive betting (multiple raises)
 		if roundSummary.NumRaises >= 2 {
 			return c.findAction(game.Fold, validActions, "folding river to aggressive betting")
 		}
-		
+
 		// Check bet sizing - fold to large bets on river
 		betSizing := tableState.HandHistory.GetBetSizingInfo(tableState.CurrentRound)
 		if len(betSizing) > 0 {
@@ -39,7 +39,7 @@ func (c *CallBot) MakeDecision(tableState game.TableState, validActions []game.V
 			}
 		}
 	}
-	
+
 	// Position-aware calling: be more selective from early position
 	if actingPlayer.Position == game.UnderTheGun || actingPlayer.Position == game.EarlyPosition {
 		// In early position, fold to 3-bets+ preflop
@@ -47,7 +47,7 @@ func (c *CallBot) MakeDecision(tableState game.TableState, validActions []game.V
 			return c.findAction(game.Fold, validActions, "folding to 3-bet from early position")
 		}
 	}
-	
+
 	// Stack size consideration
 	stackToBBRatio := float64(actingPlayer.Chips) / float64(tableState.BigBlind)
 	if stackToBBRatio < 10 { // Short stack
@@ -56,16 +56,16 @@ func (c *CallBot) MakeDecision(tableState game.TableState, validActions []game.V
 			return c.findAction(game.AllIn, validActions, "shoving with short stack")
 		}
 	}
-	
+
 	// Default call-bot behavior: call/check when possible
 	if c.hasAction(game.Check, validActions) {
 		return c.findAction(game.Check, validActions, "call-bot checking")
 	}
-	
+
 	if c.hasAction(game.Call, validActions) {
 		return c.findAction(game.Call, validActions, "call-bot calling")
 	}
-	
+
 	// Fallback to fold
 	return c.findAction(game.Fold, validActions, "call-bot forced fold")
 }
@@ -90,7 +90,7 @@ func (c *CallBot) findAction(preferredAction game.Action, validActions []game.Va
 			}
 		}
 	}
-	
+
 	// Fallback to first available action
 	if len(validActions) > 0 {
 		return game.Decision{
@@ -99,9 +99,7 @@ func (c *CallBot) findAction(preferredAction game.Action, validActions []game.Va
 			Reasoning: "fallback: " + reasoning,
 		}
 	}
-	
+
 	// Should never happen with correct ValidActions
 	return game.Decision{Action: game.Fold, Amount: 0, Reasoning: "emergency fold"}
 }
-
-

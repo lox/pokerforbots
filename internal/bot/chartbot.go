@@ -17,7 +17,7 @@ func NewChartBot(logger *log.Logger) *ChartBot {
 
 func (c *ChartBot) MakeDecision(tableState game.TableState, validActions []game.ValidAction) game.Decision {
 	actingPlayer := tableState.Players[tableState.ActingPlayerIdx]
-	
+
 	// Simple push-fold pre-flop chart, check/call post-flop
 	if tableState.CurrentRound == game.PreFlop {
 		// Very basic push-fold: premium hands only
@@ -64,5 +64,3 @@ func (c *ChartBot) MakeDecision(tableState game.TableState, validActions []game.
 	}
 	return game.Decision{Action: game.Fold, Amount: 0, Reasoning: "chart-bot folding"}
 }
-
-

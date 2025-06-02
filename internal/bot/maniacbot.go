@@ -20,11 +20,11 @@ func NewManiacBot(rng *rand.Rand, logger *log.Logger) *ManiacBot {
 
 func (m *ManiacBot) MakeDecision(tableState game.TableState, validActions []game.ValidAction) game.Decision {
 	actingPlayer := tableState.Players[tableState.ActingPlayerIdx]
-	
+
 	// Maniac strategy: raise/shove very frequently, call sometimes, rarely fold
 	var hasCheck, hasCall, hasRaise, hasAllIn bool
 	var raiseMin, raiseMax int
-	
+
 	for _, action := range validActions {
 		switch action.Action {
 		case game.Check:
@@ -39,7 +39,7 @@ func (m *ManiacBot) MakeDecision(tableState game.TableState, validActions []game
 			hasAllIn = true
 		}
 	}
-	
+
 	if hasCheck {
 		// We can check - but maniacs prefer to bet
 		if m.rng.Float64() < 0.85 { // 85% chance to bet
@@ -60,22 +60,20 @@ func (m *ManiacBot) MakeDecision(tableState game.TableState, validActions []game
 	} else {
 		// Facing a bet
 		randValue := m.rng.Float64()
-		
+
 		if randValue < 0.4 { // 40% chance to shove
 			if hasAllIn {
 				return game.Decision{Action: game.AllIn, Amount: 0, Reasoning: "maniac shove over bet"}
 			} else if hasRaise {
 				return game.Decision{Action: game.Raise, Amount: raiseMax, Reasoning: "maniac max raise over bet"}
 			}
-		} 
-		
+		}
+
 		if randValue < 0.8 && hasCall { // 40% chance to call (total 80%)
 			return game.Decision{Action: game.Call, Amount: 0, Reasoning: "maniac call"}
 		}
-		
+
 		// 20% chance to fold
 		return game.Decision{Action: game.Fold, Amount: 0, Reasoning: "maniac fold"}
 	}
 }
-
-

@@ -1,3 +1,4 @@
+//go:build ignore
 // +build ignore
 
 // This program generates lookup tables for poker hand evaluation at compile time.
@@ -35,7 +36,7 @@ var (
 		// Convert back to full rank bitmap (shift left by 2 to account for ranks 2-14)
 		fullBits := uint32(rankBits) << 2
 		straightHigh := computeStraight(fullBits)
-		
+
 		if rankBits%16 == 0 {
 			fmt.Fprintf(f, "\n\t\t")
 		}
@@ -53,7 +54,7 @@ var (
 	// Generate kicker LUT
 	for mask := 0; mask < 32768; mask++ {
 		kickerValue := computeHighestSingle(mask)
-		
+
 		if mask%16 == 0 {
 			fmt.Fprintf(f, "\n\t\t")
 		}

@@ -63,12 +63,12 @@ func TestEstimateEquity(t *testing.T) {
 			hole := deck.MustParseCards(tt.hole)
 			var board []deck.Card
 			if tt.board != "" {
-			board = deck.MustParseCards(tt.board)
+				board = deck.MustParseCards(tt.board)
 			}
 
 			// Use fixed seed for deterministic tests
-		rng := rand.New(rand.NewSource(12345))
-		equity := EstimateEquity(hole, board, tt.opponentRange, 1000, rng)
+			rng := rand.New(rand.NewSource(12345))
+			equity := EstimateEquity(hole, board, tt.opponentRange, 1000, rng)
 
 			if equity < tt.expectedMin || equity > tt.expectedMax {
 				t.Errorf("Equity %.3f outside expected range [%.3f, %.3f]",

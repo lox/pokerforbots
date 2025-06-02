@@ -220,12 +220,12 @@ func findHighestKicker(rankCounts [15]int, excludeRanks ...int) int {
 			availableMask |= 1 << rank
 		}
 	}
-	
+
 	// Remove excluded ranks from available mask
 	for _, rank := range excludeRanks {
 		availableMask &^= 1 << rank // Clear bit for excluded rank
 	}
-	
+
 	// Use LUT for O(1) lookup instead of loop
 	return int(kickerLUT[availableMask])
 }

@@ -74,12 +74,10 @@ func DefaultBotConfig() BotConfig {
 		CBetFrequency:     0.65, // Selective continuation betting
 		EquityThreshold:   0.04, // Higher threshold for aggression
 		OpponentModel:     "random",
-		PositionAwareness: 1.3,  // Strong position awareness
-		PotOddsWeight:     1.2,  // Moderate pot odds weight
+		PositionAwareness: 1.3, // Strong position awareness
+		PotOddsWeight:     1.2, // Moderate pot odds weight
 	}
 }
-
-
 
 // HandStrength represents the relative strength of a hand
 type HandStrength int
@@ -179,9 +177,9 @@ func (b *Bot) MakeDecision(tableState game.TableState, validActions []game.Valid
 			Reasoning: "Invalid acting player index",
 		}
 	}
-	
+
 	actingPlayer := tableState.Players[tableState.ActingPlayerIdx]
-	
+
 	// Create thinking context to accumulate thoughts
 	thinking := &ThinkingContext{}
 
@@ -229,7 +227,7 @@ func (b *Bot) MakeDecision(tableState game.TableState, validActions []game.Valid
 		Amount:    amount,
 		Reasoning: thinking.GetThoughts(),
 	}
-	
+
 	decision = b.validateAndAdjustDecision(decision, validActions, thinking)
 
 	b.logger.Info("Bot decision made",
@@ -296,13 +294,13 @@ func (b *Bot) trackOpponentAction(playerName string, action game.Action, handHis
 	// Update hand count for pre-flop actions
 	if currentRound == game.PreFlop {
 		profile.HandsPlayed++
-		
+
 		// Track VPIP (voluntary put money in pot)
 		if action == game.Call || action == game.Raise {
 			profile.HandsVoluntary++
 			profile.VPIP = float64(profile.HandsVoluntary) / float64(profile.HandsPlayed)
 		}
-		
+
 		// Track PFR (pre-flop raise)
 		if action == game.Raise {
 			profile.HandsRaised++
@@ -313,11 +311,11 @@ func (b *Bot) trackOpponentAction(playerName string, action game.Action, handHis
 	// Track post-flop aggression
 	if currentRound != game.PreFlop {
 		profile.PostflopActions++
-		
+
 		if action == game.Raise {
 			profile.BetsAndRaises++
 		}
-		
+
 		if profile.PostflopActions > 0 {
 			profile.Aggression = float64(profile.BetsAndRaises) / float64(profile.PostflopActions)
 		}
@@ -341,7 +339,7 @@ func (b *Bot) trackOpponentAction(playerName string, action game.Action, handHis
 				break
 			}
 		}
-		
+
 		if facedBet {
 			profile.BetsFaced++
 			profile.FoldsToBet++
@@ -360,6 +358,55 @@ func (b *Bot) trackOpponentAction(playerName string, action game.Action, handHis
 	}
 }
 
+// getBettingContext analyzes the current betting action to determine opponent ranges
+func (b *Bot) getBettingContext(tableState game.TableState) string {
+	if tableState.CurrentRound != game.PreFlop {
+		return "postflop"
+	}
+
+	// Count raises in current hand
+	raises := 0
+	for _, player := range tableState.Players {
+		if player.BetThisRound > tableState.BigBlind {
+			raises++
+		}
+	}
+
+	switch {
+	case raises == 0:
+		return "unopened"
+	case raises == 1:
+		return "single-raised"
+	case raises >= 2:
+		return "multi-raised"
+	default:
+		return "unopened"
+	}
+}
+
+// getDynamicExploitationLevel adjusts exploitation based on number of opponents
+func (b *Bot) getDynamicExploitationLevel(tableState game.TableState) float64 {
+	activeOpponents := 0
+	for _, player := range tableState.Players {
+		if !player.IsFolded && player.IsActive &&
+			player.Name != tableState.Players[tableState.ActingPlayerIdx].Name {
+			activeOpponents++
+		}
+	}
+
+	// Reduce exploitation in multi-way pots
+	switch {
+	case activeOpponents <= 1:
+		return b.exploitationLevel // Full exploitation heads-up
+	case activeOpponents == 2:
+		return b.exploitationLevel * 0.7 // Reduce in 3-way
+	case activeOpponents >= 3:
+		return b.exploitationLevel * 0.4 // Much more conservative in 4+ way
+	default:
+		return b.exploitationLevel * 0.5
+	}
+}
+
 // evaluateHandStrengthWithThinking evaluates hand strength while building thoughts
 func (b *Bot) evaluateHandStrengthWithThinking(player game.PlayerState, tableState game.TableState, thinking *ThinkingContext) EquityContext {
 	if len(player.HoleCards) != 2 {
@@ -369,9 +416,27 @@ func (b *Bot) evaluateHandStrengthWithThinking(player game.PlayerState, tableSta
 
 	// Pre-flop hand strength evaluation using equity
 	if tableState.CurrentRound == game.PreFlop {
-		// Calculate equity against random opponent for pre-flop evaluation
-		equity := evaluator.EstimateEquity(player.HoleCards, []deck.Card{}, evaluator.RandomRange{}, 1000, b.rng)
-		thinking.AddThought(fmt.Sprintf("Pre-flop equity vs random: %.1f%%", equity*100))
+		// Use betting context to determine opponent range
+		var opponentRange evaluator.Range
+		context := b.getBettingContext(tableState)
+
+		switch context {
+		case "unopened":
+			opponentRange = evaluator.RandomRange{} // Limpers have wide ranges
+			thinking.AddThought("Unopened pot - using wide opponent range")
+		case "single-raised":
+			opponentRange = evaluator.TightRange{} // Raisers have tighter ranges
+			thinking.AddThought("Single raised pot - using tight opponent range")
+		case "multi-raised":
+			// For multi-raised, we'll use tight range as proxy for very tight
+			opponentRange = evaluator.TightRange{}
+			thinking.AddThought("Multi-raised pot - using very tight opponent range")
+		default:
+			opponentRange = evaluator.RandomRange{}
+		}
+
+		equity := evaluator.EstimateEquity(player.HoleCards, []deck.Card{}, opponentRange, 1000, b.rng)
+		thinking.AddThought(fmt.Sprintf("Pre-flop equity vs %s range: %.1f%%", context, equity*100))
 
 		strength := b.equityToHandStrength(equity)
 		thinking.AddThought(fmt.Sprintf("Preflop strength: %s", strength.String()))
@@ -672,7 +737,7 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player game.PlayerState, ta
 	// Apply adapted equity for opponent modeling
 	if adaptedEquity != equityCtx.Equity {
 		thinking.AddThought(fmt.Sprintf("Opponent modeling adjusted equity from %.1f%% to %.1f%%", equityCtx.Equity*100, adaptedEquity*100))
-		
+
 		// Adjust probabilities based on adapted equity
 		equityDiff := adaptedEquity - equityCtx.Equity
 		if equityDiff > 0 {
@@ -777,28 +842,32 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player game.PlayerState, ta
 				}
 			}
 		}
-		
-		// Against very passive opponents, be much more aggressive in unopened pots
+
+		// Against very passive opponents, be more aggressive but with caps
 		if activeOpponents > 0 {
 			avgFoldToBet := totalFoldToBet / float64(activeOpponents)
-			if avgFoldToBet > 0.8 {
-				thinking.AddThought("Extremely passive opponents detected - betting with any two cards")
+			// Cap bluff frequency even against tight opponents
+			maxBluffFreq := 0.4 // Never bluff more than 40% of the time
+
+			if avgFoldToBet > 0.8 && equityCtx.Strength >= Weak && b.rng.Float64() < maxBluffFreq {
+				// Against extreme folders, but only with some equity
+				thinking.AddThought("Tight opponents - selective aggression with weak+ hands")
 				return game.Raise
-			} else if avgFoldToBet > 0.7 && raiseProb > 0.05 {
-				thinking.AddThought("Very passive opponents - increased aggression")
+			} else if avgFoldToBet > 0.7 && equityCtx.Strength >= Medium && raiseProb > 0.05 {
+				thinking.AddThought("Moderately tight opponents - value betting focus")
 				return game.Raise
 			} else if avgFoldToBet > 0.6 && raiseProb > 0.1 {
 				thinking.AddThought("Moderately passive opponents - selective aggression")
 				return game.Raise
 			}
 		}
-		
+
 		// Increase bluffing frequency in late position but be selective
 		if positionFactor > 1.2 && equityCtx.Strength <= Weak && raiseProb > 0.15 && b.rng.Float64() < 0.4 {
 			thinking.AddThought("Late position selective bluff opportunity")
 			return game.Raise
 		}
-		
+
 		if foldProb > 0.5 {
 			thinking.AddThought("Checking instead of folding when possible")
 			return game.Check
@@ -871,7 +940,7 @@ func (b *Bot) adaptEquityToOpponents(baseEquity float64, tableState game.TableSt
 
 	// Classify opponent pool
 	playerType := b.classifyOpponentPool(avgVPIP, avgFoldToBet, avgAggression)
-	
+
 	// Adjust equity based on opponent type
 	switch playerType {
 	case "tight-passive":
@@ -886,7 +955,8 @@ func (b *Bot) adaptEquityToOpponents(baseEquity float64, tableState game.TableSt
 		}
 		// Against moderately tight players: increase bluff equity with faster learning
 		bluffBonus := (avgFoldToBet - 0.5) * 0.6 // Increased from 0.5 to 0.6
-		return baseEquity + bluffBonus*b.exploitationLevel
+		dynamicExploit := b.getDynamicExploitationLevel(tableState)
+		return baseEquity + bluffBonus*dynamicExploit
 
 	case "tight-aggressive":
 		// Against TAG: play fundamentally sound, no exploitation
@@ -907,7 +977,7 @@ func (b *Bot) adaptEquityToOpponents(baseEquity float64, tableState game.TableSt
 		return baseEquity * 0.8
 
 	default:
-		// Unknown/balanced opponents: assume some exploitability  
+		// Unknown/balanced opponents: assume some exploitability
 		thinking.AddThought("Unknown opponents - assuming moderate passivity")
 		if baseEquity > 0.6 {
 			return baseEquity * 1.15 // Moderate value betting against unknowns
@@ -1054,10 +1124,10 @@ func (b *Bot) validateAndAdjustDecision(decision game.Decision, validActions []g
 			return decision // Valid non-raise action
 		}
 	}
-	
+
 	// Action not valid, need fallback
 	thinking.AddThought(fmt.Sprintf("Invalid action %s, falling back", decision.Action.String()))
-	
+
 	// Fallback priority: Call > Check > Fold
 	for _, validAction := range validActions {
 		if validAction.Action == game.Call {
@@ -1067,7 +1137,7 @@ func (b *Bot) validateAndAdjustDecision(decision game.Decision, validActions []g
 			return decision
 		}
 	}
-	
+
 	for _, validAction := range validActions {
 		if validAction.Action == game.Check {
 			decision.Action = game.Check
@@ -1076,7 +1146,7 @@ func (b *Bot) validateAndAdjustDecision(decision game.Decision, validActions []g
 			return decision
 		}
 	}
-	
+
 	for _, validAction := range validActions {
 		if validAction.Action == game.Fold {
 			decision.Action = game.Fold
@@ -1085,7 +1155,7 @@ func (b *Bot) validateAndAdjustDecision(decision game.Decision, validActions []g
 			return decision
 		}
 	}
-	
+
 	// Should never reach here, but if no valid actions, fold
 	decision.Action = game.Fold
 	decision.Amount = 0
