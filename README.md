@@ -1,6 +1,6 @@
 # Texas Hold'em CLI
 
-A command-line Texas Hold'em poker game that simulates a PokerStars-style experience with AI opponents.
+A command-line Texas Hold'em poker game that simulates a PokerStars-style experience with AI opponents, plus a poker odds calculator tool.
 
 ## Features
 
@@ -18,6 +18,8 @@ A command-line Texas Hold'em poker game that simulates a PokerStars-style experi
 
 ## Quick Start
 
+### Texas Hold'em Game
+
 ```bash
 # Normal gameplay
 go run cmd/holdem/main.go
@@ -27,6 +29,25 @@ go run cmd/holdem/main.go --test-mode
 
 # Specify table size
 go run cmd/holdem/main.go --players 9
+```
+
+### Poker Odds Calculator
+
+```bash
+# Calculate odds between two hands
+go run cmd/poker-odds/main.go "AcKh" "KdQs"
+
+# With community board
+go run cmd/poker-odds/main.go "AcKh" "KdQs" --board "Td7s8h"
+
+# Show detailed hand type probabilities
+go run cmd/poker-odds/main.go "AcKh" "KdQs" --board "Td7s8h" --possibilities
+
+# Multiple hands
+go run cmd/poker-odds/main.go "AcKh" "KdQs" "2h2c" "TsJs"
+
+# High accuracy with more iterations
+go run cmd/poker-odds/main.go "AcKh" "KdQs" --iterations 1000000
 ```
 
 ## Gameplay
@@ -48,14 +69,44 @@ go run cmd/holdem/main.go --players 9
 - Blinds remain static throughout session
 - Bankrolls are ephemeral (reset each session)
 
+## Poker Odds Calculator
+
+The `poker-odds` tool calculates win probabilities for Texas Hold'em hands using Monte Carlo simulation or exhaustive calculation. It supports:
+
+- **Multiple hands**: Compare any number of hands against each other
+- **Board cards**: Specify 0-5 community cards using standard notation (e.g., "Td7s8h")
+- **Hand probabilities**: Show detailed breakdown of hand types with `--possibilities`
+- **High accuracy**: Configurable iterations with `--iterations N` for precision control
+- **Fast calculation**: Optimized Monte Carlo simulation using existing evaluator
+- **Reproducible results**: Use `--seed N` for deterministic output
+
+### Card Notation
+
+Cards use standard poker notation:
+- **Ranks**: A (Ace), K (King), Q (Queen), J (Jack), T (Ten), 9, 8, 7, 6, 5, 4, 3, 2
+- **Suits**: s (spades), h (hearts), d (diamonds), c (clubs)
+- **Examples**: "AcKh" (Ace of clubs, King of hearts), "2s2d" (pocket deuces)
+
+### Output
+
+```
+hand        win    tie
+A♣ K♥   71.4%   1.1%
+K♦ Q♠   27.5%   1.1%
+
+100000 iterations in 54ms
+```
+
 ## Project Structure
 
 ```
 cmd/holdem/          # Main application entry point
+cmd/poker-odds/      # Poker odds calculator tool
 internal/game/       # Core game logic and display system
 internal/deck/       # Card and deck implementation
-internal/player/     # Player types (human/AI)
-internal/evaluator/  # Hand strength evaluation
+internal/evaluator/  # Hand strength evaluation and equity calculation
+internal/bot/        # AI agents
+internal/tui/        # Terminal UI components
 ```
 
 ## Development

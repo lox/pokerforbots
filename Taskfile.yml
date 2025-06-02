@@ -45,6 +45,7 @@ tasks:
     cmds:
       - mkdir -p {{.DIST_DIR}}
       - go build -o {{.DIST_DIR}}/{{.BINARY_NAME}} ./cmd/holdem
+      - go build -o {{.DIST_DIR}}/poker-odds ./cmd/poker-odds
 
   build-all:
     desc: Build for multiple platforms
@@ -55,6 +56,10 @@ tasks:
       - GOOS=darwin GOARCH=amd64 go build -o {{.DIST_DIR}}/{{.BINARY_NAME}}-darwin-amd64 ./cmd/holdem
       - GOOS=darwin GOARCH=arm64 go build -o {{.DIST_DIR}}/{{.BINARY_NAME}}-darwin-arm64 ./cmd/holdem
       - GOOS=windows GOARCH=amd64 go build -o {{.DIST_DIR}}/{{.BINARY_NAME}}-windows-amd64.exe ./cmd/holdem
+      - GOOS=linux GOARCH=amd64 go build -o {{.DIST_DIR}}/poker-odds-linux-amd64 ./cmd/poker-odds
+      - GOOS=darwin GOARCH=amd64 go build -o {{.DIST_DIR}}/poker-odds-darwin-amd64 ./cmd/poker-odds
+      - GOOS=darwin GOARCH=arm64 go build -o {{.DIST_DIR}}/poker-odds-darwin-arm64 ./cmd/poker-odds
+      - GOOS=windows GOARCH=amd64 go build -o {{.DIST_DIR}}/poker-odds-windows-amd64.exe ./cmd/poker-odds
 
   run:
     desc: Run the application
