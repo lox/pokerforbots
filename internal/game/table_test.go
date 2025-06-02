@@ -13,22 +13,22 @@ func TestNewTable(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+	})
 
-	if table.MaxSeats != 6 {
-		t.Errorf("Expected 6 seats, got %d", table.MaxSeats)
+	if table.maxSeats != 6 {
+		t.Errorf("Expected 6 seats, got %d", table.maxSeats)
 	}
 
-	if table.SmallBlind != 1 {
-		t.Errorf("Expected small blind 1, got %d", table.SmallBlind)
+	if table.smallBlind != 1 {
+		t.Errorf("Expected small blind 1, got %d", table.smallBlind)
 	}
 
-	if table.BigBlind != 2 {
-		t.Errorf("Expected big blind 2, got %d", table.BigBlind)
+	if table.bigBlind != 2 {
+		t.Errorf("Expected big blind 2, got %d", table.bigBlind)
 	}
 
-	if table.State != WaitingToStart {
-		t.Errorf("Expected WaitingToStart state, got %s", table.State)
+	if table.state != WaitingToStart {
+		t.Errorf("Expected WaitingToStart state, got %s", table.state)
 	}
 }
 
@@ -37,7 +37,7 @@ func TestAddPlayer(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+	})
 
 	player1 := NewPlayer(1, "Alice", Human, 200)
 	player2 := NewPlayer(2, "Bob", AI, 200)
@@ -50,8 +50,8 @@ func TestAddPlayer(t *testing.T) {
 		t.Error("Should be able to add second player")
 	}
 
-	if len(table.Players) != 2 {
-		t.Errorf("Expected 2 players, got %d", len(table.Players))
+	if len(table.players) != 2 {
+		t.Errorf("Expected 2 players, got %d", len(table.players))
 	}
 
 	// Check seat assignments
@@ -69,7 +69,7 @@ func TestTableFull(t *testing.T) {
 		MaxSeats:   2, // Set to 2 seats so it's full after 2 players
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+	})
 
 	player1 := NewPlayer(1, "Alice", Human, 200)
 	player2 := NewPlayer(2, "Bob", AI, 200)
@@ -89,7 +89,7 @@ func TestStartNewHand(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+	})
 
 	// Add players
 	player1 := NewPlayer(1, "Alice", Human, 200)
@@ -100,28 +100,28 @@ func TestStartNewHand(t *testing.T) {
 	// Start hand
 	table.StartNewHand()
 
-	if table.State != InProgress {
-		t.Errorf("Expected InProgress state, got %s", table.State)
+	if table.state != InProgress {
+		t.Errorf("Expected InProgress state, got %s", table.state)
 	}
 
-	if table.HandID == "" {
+	if table.handID == "" {
 		t.Errorf("Expected hand ID to be generated, got empty string")
 	}
 
-	if table.CurrentRound != PreFlop {
-		t.Errorf("Expected PreFlop round, got %s", table.CurrentRound)
+	if table.currentRound != PreFlop {
+		t.Errorf("Expected PreFlop round, got %s", table.currentRound)
 	}
 
 	// Check that players have hole cards
-	for _, player := range table.ActivePlayers {
+	for _, player := range table.activePlayers {
 		if len(player.HoleCards) != 2 {
 			t.Errorf("Player %s should have 2 hole cards, got %d", player.Name, len(player.HoleCards))
 		}
 	}
 
 	// Check blinds were posted
-	if table.Pot != 3 { // 1 + 2
-		t.Errorf("Expected pot of 3 after blinds, got %d", table.Pot)
+	if table.pot != 3 { // 1 + 2
+		t.Errorf("Expected pot of 3 after blinds, got %d", table.pot)
 	}
 }
 
@@ -130,18 +130,17 @@ func TestPositionsHeadsUp(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+	})
 
 	player1 := NewPlayer(1, "Alice", Human, 200)
 	player2 := NewPlayer(2, "Bob", AI, 200)
 	table.AddPlayer(player1)
 	table.AddPlayer(player2)
-
 	table.StartNewHand()
 
 	// In heads-up, dealer is small blind
 	var sbPlayer, bbPlayer *Player
-	for _, player := range table.ActivePlayers {
+	for _, player := range table.activePlayers {
 		switch player.Position {
 		case SmallBlind:
 			sbPlayer = player
@@ -226,7 +225,7 @@ func TestBettingRounds(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+	})
 
 	player1 := NewPlayer(1, "Alice", Human, 200)
 	player2 := NewPlayer(2, "Bob", AI, 200)
@@ -236,38 +235,38 @@ func TestBettingRounds(t *testing.T) {
 	table.StartNewHand()
 
 	// Should start at preflop
-	if table.CurrentRound != PreFlop {
-		t.Errorf("Expected PreFlop, got %s", table.CurrentRound)
+	if table.currentRound != PreFlop {
+		t.Errorf("Expected PreFlop, got %s", table.currentRound)
 	}
 
 	// Deal flop
 	table.DealFlop()
-	if table.CurrentRound != Flop {
-		t.Errorf("Expected Flop, got %s", table.CurrentRound)
+	if table.currentRound != Flop {
+		t.Errorf("Expected Flop, got %s", table.currentRound)
 	}
 
-	if len(table.CommunityCards) != 3 {
-		t.Errorf("Expected 3 community cards after flop, got %d", len(table.CommunityCards))
+	if len(table.communityCards) != 3 {
+		t.Errorf("Expected 3 community cards after flop, got %d", len(table.communityCards))
 	}
 
 	// Deal turn
 	table.DealTurn()
-	if table.CurrentRound != Turn {
-		t.Errorf("Expected Turn, got %s", table.CurrentRound)
+	if table.currentRound != Turn {
+		t.Errorf("Expected Turn, got %s", table.currentRound)
 	}
 
-	if len(table.CommunityCards) != 4 {
-		t.Errorf("Expected 4 community cards after turn, got %d", len(table.CommunityCards))
+	if len(table.communityCards) != 4 {
+		t.Errorf("Expected 4 community cards after turn, got %d", len(table.communityCards))
 	}
 
 	// Deal river
 	table.DealRiver()
-	if table.CurrentRound != River {
-		t.Errorf("Expected River, got %s", table.CurrentRound)
+	if table.currentRound != River {
+		t.Errorf("Expected River, got %s", table.currentRound)
 	}
 
-	if len(table.CommunityCards) != 5 {
-		t.Errorf("Expected 5 community cards after river, got %d", len(table.CommunityCards))
+	if len(table.communityCards) != 5 {
+		t.Errorf("Expected 5 community cards after river, got %d", len(table.communityCards))
 	}
 }
 
@@ -278,7 +277,7 @@ func TestButtonRotation(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+	})
 
 	// Add 3 players - AddPlayer will assign seats 1, 2, 3 automatically
 	for i := 1; i <= 3; i++ {
@@ -288,8 +287,8 @@ func TestButtonRotation(t *testing.T) {
 
 	// Start first hand - should pick first player (seat 1)
 	table.StartNewHand()
-	if table.DealerPosition != 1 {
-		t.Errorf("Expected first dealer to be seat 1, got %d", table.DealerPosition)
+	if table.dealerPosition != 1 {
+		t.Errorf("Expected first dealer to be seat 1, got %d", table.dealerPosition)
 		return
 	}
 
@@ -298,8 +297,8 @@ func TestButtonRotation(t *testing.T) {
 
 	for i, expected := range expectedSequence {
 		table.StartNewHand()
-		if table.DealerPosition != expected {
-			t.Errorf("Hand %d: expected dealer %d, got %d", i+2, expected, table.DealerPosition)
+		if table.dealerPosition != expected {
+			t.Errorf("Hand %d: expected dealer %d, got %d", i+2, expected, table.dealerPosition)
 		}
 	}
 }
@@ -310,7 +309,7 @@ func TestPotDistribution(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+	})
 
 	// Add players
 	player1 := NewPlayer(1, "Alice", Human, 200)
@@ -343,7 +342,7 @@ func TestPotDistribution(t *testing.T) {
 		}
 	}
 
-	finalPot := table.Pot
+	finalPot := table.pot
 
 	// Find winner and award pot
 	winner := table.FindWinner()
@@ -360,8 +359,8 @@ func TestPotDistribution(t *testing.T) {
 	}
 
 	// Check that pot is now empty
-	if table.Pot != 0 {
-		t.Errorf("Pot should be 0 after awarding, got %d", table.Pot)
+	if table.pot != 0 {
+		t.Errorf("Pot should be 0 after awarding, got %d", table.pot)
 	}
 }
 
@@ -371,7 +370,7 @@ func TestFindWinnerEvaluatesHandStrength(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+	})
 
 	// Add players - player1 will be first in ActivePlayers
 	player1 := NewPlayer(1, "WeakHand", Human, 200)
@@ -389,7 +388,7 @@ func TestFindWinnerEvaluatesHandStrength(t *testing.T) {
 	player2.HoleCards = deck.MustParseCards("KhAs")
 
 	// Set community cards to give player2 top pair
-	table.CommunityCards = deck.MustParseCards("3dAh6h9cQd")
+	table.communityCards = deck.MustParseCards("3dAh6h9cQd")
 
 	// Now with proper hand evaluation: Player2 should win with pair of Aces
 	winner := table.FindWinner()
@@ -403,7 +402,7 @@ func TestFindWinnerEvaluatesHandStrength(t *testing.T) {
 		player1.HoleCards[0], player1.HoleCards[1])
 	t.Logf("Player2 cards: %s %s (pair of Aces)",
 		player2.HoleCards[0], player2.HoleCards[1])
-	t.Logf("Community: %v", table.CommunityCards)
+	t.Logf("Community: %v", table.communityCards)
 	t.Logf("Winner: %s (correct hand evaluation)", winner.Name)
 }
 
@@ -413,7 +412,7 @@ func TestPotAmountPreservedForSummary(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+	})
 
 	// Add players
 	player1 := NewPlayer(1, "Alice", Human, 200)
@@ -446,7 +445,7 @@ func TestPotAmountPreservedForSummary(t *testing.T) {
 	}
 
 	// Verify pot is preserved before awarding
-	potBeforeAward := table.Pot
+	potBeforeAward := table.pot
 	if potBeforeAward < 3 { // Should be at least blinds + some betting
 		t.Errorf("Expected pot to be larger, got %d", potBeforeAward)
 	}
@@ -458,7 +457,7 @@ func TestPotAmountPreservedForSummary(t *testing.T) {
 	}
 
 	// Pot should still be intact for summary display
-	potForSummary := table.Pot
+	potForSummary := table.pot
 	if potForSummary != potBeforeAward {
 		t.Errorf("Pot should still be %d for summary display, got %d", potBeforeAward, potForSummary)
 	}
@@ -473,8 +472,8 @@ func TestPotAmountPreservedForSummary(t *testing.T) {
 	}
 
 	// Verify pot is now empty
-	if table.Pot != 0 {
-		t.Errorf("Pot should be 0 after awarding, got %d", table.Pot)
+	if table.pot != 0 {
+		t.Errorf("Pot should be 0 after awarding, got %d", table.pot)
 	}
 }
 
@@ -484,7 +483,8 @@ func TestBettingRoundCompleteWhenAllCheck(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+		Seed:       42,
+	})
 
 	// Add 3 players to test checking around
 	player1 := NewPlayer(1, "Alice", AI, 200)
@@ -507,8 +507,8 @@ func TestBettingRoundCompleteWhenAllCheck(t *testing.T) {
 		}
 
 		// Call to match big blind or check if already matched
-		if currentPlayer.BetThisRound < table.CurrentBet {
-			callAmount := table.CurrentBet
+		if currentPlayer.BetThisRound < table.currentBet {
+			callAmount := table.currentBet
 			decision := Decision{Action: Call, Amount: callAmount, Reasoning: "call to see flop"}
 			_, err := table.ApplyDecision(decision)
 			if err != nil {
@@ -565,10 +565,10 @@ func TestBettingRoundCompleteWhenAllCheck(t *testing.T) {
 		t.Errorf("Betting round should be complete after all players check, but it's not. Actions taken: %d", actionCount)
 
 		// Debug info
-		t.Logf("CurrentBet: %d", table.CurrentBet)
-		for i, player := range table.ActivePlayers {
+		t.Logf("CurrentBet: %d", table.currentBet)
+		for i, player := range table.activePlayers {
 			t.Logf("Player %d (%s): BetThisRound=%d, PlayersActed[%d]=%v",
-				i, player.Name, player.BetThisRound, player.ID, table.PlayersActed[player.ID])
+				i, player.Name, player.BetThisRound, player.ID, table.playersActed[player.ID])
 		}
 	}
 
@@ -584,7 +584,7 @@ func TestPostFlopCheckingRoundBug(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+	})
 
 	// Add 3 players
 	player1 := NewPlayer(1, "Alice", AI, 200)
@@ -599,17 +599,17 @@ func TestPostFlopCheckingRoundBug(t *testing.T) {
 
 	// Simulate getting to flop
 	table.startNewBettingRound() // This simulates moving to flop
-	table.CurrentRound = Flop
+	table.currentRound = Flop
 
 	t.Logf("Post-flop state:")
-	t.Logf("CurrentBet: %d", table.CurrentBet)
-	t.Logf("CurrentRound: %s", table.CurrentRound)
-	for _, player := range table.ActivePlayers {
+	t.Logf("CurrentBet: %d", table.currentBet)
+	t.Logf("CurrentRound: %s", table.currentRound)
+	for _, player := range table.activePlayers {
 		t.Logf("Player %s: BetThisRound=%d", player.Name, player.BetThisRound)
 	}
 
 	// Now simulate everyone checking
-	for i, player := range table.ActivePlayers {
+	for i, player := range table.activePlayers {
 		// Check that check is a valid action
 		validActions := table.GetValidActions()
 		t.Logf("Player %s valid actions: %+v", player.Name, validActions)
@@ -641,15 +641,15 @@ func TestPostFlopCheckingRoundBug(t *testing.T) {
 		// Debug the completion logic
 		playersInHand := 0
 		playersActed := 0
-		for _, p := range table.ActivePlayers {
+		for _, p := range table.activePlayers {
 			if p.IsInHand() {
 				playersInHand++
-				if table.PlayersActed[p.ID] && (p.IsAllIn || p.BetThisRound == table.CurrentBet) {
+				if table.playersActed[p.ID] && (p.IsAllIn || p.BetThisRound == table.currentBet) {
 					playersActed++
 					t.Logf("  Player %s counted as acted", p.Name)
 				} else {
 					t.Logf("  Player %s NOT counted as acted (acted=%v, BetThisRound=%d, CurrentBet=%d)",
-						p.Name, table.PlayersActed[p.ID], p.BetThisRound, table.CurrentBet)
+						p.Name, table.playersActed[p.ID], p.BetThisRound, table.currentBet)
 				}
 			}
 		}
@@ -673,7 +673,7 @@ func TestBettingRoundPlayerActionOrder(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+	})
 
 	// Add 4 players to test the scenario from the bug report
 	player1 := NewPlayer(1, "Player1", AI, 200)
@@ -753,8 +753,8 @@ func TestBettingRoundPlayerActionOrder(t *testing.T) {
 		}
 
 		// Have current player call or fold
-		if table.CurrentBet > currentPlayer.BetThisRound {
-			decision = Decision{Action: Call, Amount: table.CurrentBet, Reasoning: "Call raise"}
+		if table.currentBet > currentPlayer.BetThisRound {
+			decision = Decision{Action: Call, Amount: table.currentBet, Reasoning: "Call raise"}
 		} else {
 			decision = Decision{Action: Check, Amount: 0, Reasoning: "Check"}
 		}
@@ -779,7 +779,7 @@ func TestBettingRoundRaiseResponse(t *testing.T) {
 		MaxSeats:   3,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+	})
 
 	// Add 3 players for simpler scenario
 	player1 := NewPlayer(1, "SB", AI, 200)  // Small blind
@@ -842,5 +842,189 @@ func TestBettingRoundRaiseResponse(t *testing.T) {
 
 	if !canCall {
 		t.Error("Button should be able to call the raise")
+	}
+}
+
+// TestPotAwardingBug reproduces the bug where winner doesn't receive full pot
+func TestPotAwardingBug(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	table := NewTable(rng, TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
+
+	// Add 6 players with 200 chips each
+	players := []*Player{
+		NewPlayer(1, "You", Human, 200),
+		NewPlayer(2, "AI-2", AI, 200),
+		NewPlayer(3, "AI-3", AI, 200),
+		NewPlayer(4, "AI-4", AI, 200),
+		NewPlayer(5, "AI-5", AI, 200),
+		NewPlayer(6, "AI-6", AI, 200),
+	}
+
+	for _, player := range players {
+		table.AddPlayer(player)
+	}
+
+	// Start hand and deal hole cards
+	table.StartNewHand()
+
+	// Simulate the exact betting scenario from the bug:
+	// Pre-flop: AI-6 calls $2, You raise to $7, AI-2 calls $7, AI-3 folds, AI-4 raises to $12, AI-5 folds, AI-6 folds, You calls $5, AI-2 calls $5
+	// After pre-flop: You=$12, AI-2=$12, AI-4=$12, others folded with smaller amounts
+
+	// Manually set up the betting state after pre-flop
+	you := players[0]      // You
+	ai2 := players[1]      // AI-2  
+	ai3 := players[2]      // AI-3
+	ai4 := players[3]      // AI-4
+	ai5 := players[4]      // AI-5
+	ai6 := players[5]      // AI-6
+
+	// Set up final state manually to match the bug scenario
+	// Each player's chips should be: starting_chips - total_bet
+	you.Chips = 200 - 200 // All-in for $200, so 0 chips left
+	you.TotalBet = 200
+	you.IsAllIn = true
+	
+	ai2.Chips = 200 - 52  // Bet $52, folded
+	ai2.TotalBet = 52
+	ai2.IsFolded = true
+	
+	ai3.Chips = 200 - 0   // Folded pre-flop, no contribution
+	ai3.TotalBet = 0
+	ai3.IsFolded = true
+	
+	ai4.Chips = 200 - 52  // Bet $52, still in hand but didn't call all-in
+	ai4.TotalBet = 52
+	ai4.IsFolded = false  // Still in hand but didn't call all-in
+	
+	ai5.Chips = 200 - 2   // Posted big blind $2, then folded
+	ai5.TotalBet = 2
+	ai5.IsFolded = true
+	
+	ai6.Chips = 200 - 2   // Called big blind $2 initially, then folded
+	ai6.TotalBet = 2
+	ai6.IsFolded = true
+
+	// Set the pot to match the total contributions
+	expectedPot := 200 + 52 + 0 + 52 + 2 + 2 // = 308
+	table.pot = expectedPot
+
+	// Track total chips before awarding (should be starting chips minus pot)
+	totalChipsBefore := 0
+	for _, p := range players {
+		totalChipsBefore += p.Chips
+	}
+	// Total should be: 6*200 - 308 = 1200 - 308 = 892
+	expectedTotalBefore := 6*200 - expectedPot
+	if totalChipsBefore != expectedTotalBefore {
+		t.Errorf("Total chips before awarding should be %d, got %d", expectedTotalBefore, totalChipsBefore)
+	}
+
+	// Record initial chip counts
+	initialChips := make([]int, len(players))
+	for i, p := range players {
+		initialChips[i] = p.Chips
+	}
+
+	// Award pot (You should be the only winner since AI-4 didn't call the all-in)
+	table.AwardPot()
+
+	// Track total chips after awarding
+	totalChipsAfter := 0
+	for _, p := range players {
+		totalChipsAfter += p.Chips
+	}
+
+	// Check that total chips equals starting amount (chips conserved)
+	expectedTotalAfter := 6 * 200 // Should be back to starting total
+	if totalChipsAfter != expectedTotalAfter {
+		t.Errorf("Total chips should be %d, got %d (difference: %d)", 
+			expectedTotalAfter, totalChipsAfter, expectedTotalAfter-totalChipsAfter)
+	}
+	
+	// Use the new chip conservation validation method
+	if err := table.ValidateChipConservation(expectedTotalAfter); err != nil {
+		t.Errorf("Chip conservation validation failed: %v", err)
+	}
+
+	// You should have won the entire pot since you're the only player still in hand
+	expectedYourChips := initialChips[0] + expectedPot
+	if you.Chips != expectedYourChips {
+		t.Errorf("You should have %d chips (initial %d + pot %d), but got %d", 
+			expectedYourChips, initialChips[0], expectedPot, you.Chips)
+	}
+
+	// Verify pot was fully distributed
+	if table.pot != 0 {
+		t.Errorf("Pot should be 0 after awarding, but got %d", table.pot)
+	}
+}
+
+// TestChipConservation demonstrates the chip conservation validation
+// This assertion can be used in any test to ensure chips aren't created or destroyed
+func TestChipConservation(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	table := NewTable(rng, TableConfig{
+		MaxSeats:   3,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
+
+	// Add 3 players with 100 chips each
+	players := []*Player{
+		NewPlayer(1, "Alice", AI, 100),
+		NewPlayer(2, "Bob", AI, 100),
+		NewPlayer(3, "Charlie", AI, 100),
+	}
+
+	for _, player := range players {
+		table.AddPlayer(player)
+	}
+
+	expectedTotal := 300 // 3 players × 100 chips
+
+	// Should pass initially
+	if err := table.ValidateChipConservation(expectedTotal); err != nil {
+		t.Errorf("Initial chip conservation should pass: %v", err)
+	}
+
+	// Simulate some betting
+	table.StartNewHand()
+	table.pot = 50 // Simulate 50 chips in pot
+	players[0].Chips = 80 // Alice lost 20 to pot
+	players[1].Chips = 75 // Bob lost 25 to pot  
+	players[2].Chips = 95 // Charlie lost 5 to pot
+
+	// Should still pass (pot + player chips = 300)
+	if err := table.ValidateChipConservation(expectedTotal); err != nil {
+		t.Errorf("Conservation should pass with pot: %v", err)
+	}
+
+	// Award pot to Alice
+	table.pot = 0
+	players[0].Chips += 50 // Alice wins the 50 chip pot
+
+	// Should still pass
+	if err := table.ValidateChipConservation(expectedTotal); err != nil {
+		t.Errorf("Conservation should pass after pot award: %v", err)
+	}
+
+	// Simulate chip creation bug (should fail)
+	players[0].Chips += 10 // Alice magically gets 10 extra chips
+
+	// Should fail
+	if err := table.ValidateChipConservation(expectedTotal); err == nil {
+		t.Error("Conservation should fail when chips are created")
+	} else {
+		t.Logf("Correctly detected chip creation: %v", err)
+	}
+
+	// Test the helper method too
+	if table.GetTotalChips() != expectedTotal+10 {
+		t.Errorf("GetTotalChips should return %d, got %d", expectedTotal+10, table.GetTotalChips())
 	}
 }

@@ -76,6 +76,7 @@ const (
 	Raise
 	Check
 	AllIn
+	Quit
 )
 
 // String returns the string representation of an action
@@ -91,6 +92,8 @@ func (a Action) String() string {
 		return "check"
 	case AllIn:
 		return "all-in"
+	case Quit:
+		return "quit"
 	default:
 		return "no action"
 	}
@@ -168,12 +171,12 @@ func (p *Player) Call(amount int) bool {
 	p.TotalBet += amount
 	p.LastAction = Call
 	p.ActionAmount = amount
-	
+
 	// If player has no chips left after call, mark as all-in
 	if p.Chips == 0 {
 		p.IsAllIn = true
 	}
-	
+
 	return true
 }
 
@@ -188,12 +191,12 @@ func (p *Player) Raise(totalAmount int) bool {
 	p.TotalBet += totalAmount
 	p.LastAction = Raise
 	p.ActionAmount = totalAmount
-	
+
 	// If player has no chips left after raise, mark as all-in
 	if p.Chips == 0 {
 		p.IsAllIn = true
 	}
-	
+
 	return true
 }
 

@@ -4,7 +4,7 @@ import "sort"
 
 // SidePot represents a side pot in a multi-way all-in scenario
 type SidePot struct {
-	Amount       int       // Amount in this side pot
+	Amount          int       // Amount in this side pot
 	EligiblePlayers []*Player // Players eligible to win this side pot
 }
 
@@ -16,7 +16,7 @@ func CalculateSidePots(players []*Player, mainPot int) []SidePot {
 		player *Player
 		amount int
 	}
-	
+
 	var contributions []contribution
 	hasAllIn := false
 	for _, p := range players {
@@ -30,30 +30,33 @@ func CalculateSidePots(players []*Player, mainPot int) []SidePot {
 			}
 		}
 	}
-	
+
 	if len(contributions) == 0 {
 		return nil
 	}
-	
+
 	// Only create side pots if there's an all-in situation
 	// Otherwise, use simple pot distribution
 	if !hasAllIn {
 		return nil
 	}
-	
+
 	// Sort by contribution amount (ascending)
 	sort.Slice(contributions, func(i, j int) bool {
 		return contributions[i].amount < contributions[j].amount
 	})
-	
+
 	var sidePots []SidePot
 	remainingPot := mainPot
 	prevLevel := 0
-	
+
 	for i := 0; i < len(contributions); i++ {
 		currentLevel := contributions[i].amount
+
+		// Count all players who contributed at this level or higher (for pot calculation)
+		contributorsAtLevel := len(contributions) - i
 		
-		// All players from this index onwards are eligible for this side pot
+		// Only players still in hand are eligible to win (separate from pot calculation)
 		eligible := make([]*Player, 0, len(contributions)-i)
 		for j := i; j < len(contributions); j++ {
 			// Only include players who are still in the hand (not folded)
@@ -61,41 +64,41 @@ func CalculateSidePots(players []*Player, mainPot int) []SidePot {
 				eligible = append(eligible, contributions[j].player)
 			}
 		}
-		
+
 		if len(eligible) == 0 {
 			continue
 		}
-		
+
 		// Calculate the amount for this side pot
-		// It's (currentLevel - prevLevel) * number of eligible players
+		// It's (currentLevel - prevLevel) * number of ALL contributors at this level
 		levelDiff := currentLevel - prevLevel
-		sidePotAmount := levelDiff * len(eligible)
-		
+		sidePotAmount := levelDiff * contributorsAtLevel
+
 		// Don't exceed remaining pot
 		if sidePotAmount > remainingPot {
 			sidePotAmount = remainingPot
 		}
-		
+
 		if sidePotAmount > 0 {
 			sidePots = append(sidePots, SidePot{
 				Amount:          sidePotAmount,
 				EligiblePlayers: eligible,
 			})
-			
+
 			remainingPot -= sidePotAmount
 			if remainingPot <= 0 {
 				break
 			}
 		}
-		
+
 		prevLevel = currentLevel
-		
+
 		// Skip to next unique contribution level
 		for i+1 < len(contributions) && contributions[i+1].amount == currentLevel {
 			i++
 		}
 	}
-	
+
 	return sidePots
 }
 
@@ -107,14 +110,14 @@ func AwardSidePots(sidePots []SidePot, handEvaluator func([]*Player) []*Player) 
 		if len(sidePot.EligiblePlayers) == 0 || sidePot.Amount <= 0 {
 			continue
 		}
-		
+
 		// Find winners among eligible players
 		winners := handEvaluator(sidePot.EligiblePlayers)
 		if len(winners) == 0 {
 			// Fallback: award to first eligible player
 			winners = []*Player{sidePot.EligiblePlayers[0]}
 		}
-		
+
 		// Split this side pot among winners
 		// TODO: Use button-order remainder distribution for side pots too
 		splitPot(sidePot.Amount, winners)

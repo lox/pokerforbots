@@ -26,8 +26,8 @@ func TestCalculateSidePots_SimpleCase(t *testing.T) {
 func TestCalculateSidePots_OneAllIn(t *testing.T) {
 	// Alice goes all-in with small stack, others call
 	players := []*Player{
-		{Name: "Alice", TotalBet: 50, IsActive: true, IsAllIn: true},  // All-in with small stack
-		{Name: "Bob", TotalBet: 100, IsActive: true, IsAllIn: false},   // Called the all-in and more
+		{Name: "Alice", TotalBet: 50, IsActive: true, IsAllIn: true},     // All-in with small stack
+		{Name: "Bob", TotalBet: 100, IsActive: true, IsAllIn: false},     // Called the all-in and more
 		{Name: "Charlie", TotalBet: 100, IsActive: true, IsAllIn: false}, // Called the all-in and more
 	}
 
@@ -60,8 +60,8 @@ func TestCalculateSidePots_OneAllIn(t *testing.T) {
 func TestCalculateSidePots_MultipleAllIns(t *testing.T) {
 	// Complex scenario: multiple all-ins with different amounts
 	players := []*Player{
-		{Name: "Alice", TotalBet: 30, IsActive: true, IsAllIn: true},  // Smallest all-in
-		{Name: "Bob", TotalBet: 70, IsActive: true, IsAllIn: true},    // Medium all-in  
+		{Name: "Alice", TotalBet: 30, IsActive: true, IsAllIn: true},     // Smallest all-in
+		{Name: "Bob", TotalBet: 70, IsActive: true, IsAllIn: true},       // Medium all-in
 		{Name: "Charlie", TotalBet: 100, IsActive: true, IsAllIn: false}, // Largest bet
 		{Name: "David", TotalBet: 100, IsActive: true, IsAllIn: false},   // Matched largest
 	}
@@ -70,7 +70,7 @@ func TestCalculateSidePots_MultipleAllIns(t *testing.T) {
 
 	// Should create three side pots:
 	// Main pot: 30 * 4 = 120 (all four eligible)
-	// Side pot 1: 40 * 3 = 120 (Bob, Charlie, David)  
+	// Side pot 1: 40 * 3 = 120 (Bob, Charlie, David)
 	// Side pot 2: 30 * 2 = 60 (Charlie, David)
 	if len(sidePots) != 3 {
 		t.Errorf("Expected 3 side pots, got %d", len(sidePots))
@@ -97,8 +97,8 @@ func TestCalculateSidePots_WithFoldedPlayers(t *testing.T) {
 	// Scenario where some players have folded and there's an all-in
 	players := []*Player{
 		{Name: "Alice", TotalBet: 50, IsActive: false, IsFolded: true, IsAllIn: false}, // Folded
-		{Name: "Bob", TotalBet: 50, IsActive: true, IsAllIn: true}, // All-in
-		{Name: "Charlie", TotalBet: 100, IsActive: true, IsAllIn: false}, // Regular bet
+		{Name: "Bob", TotalBet: 50, IsActive: true, IsAllIn: true},                     // All-in
+		{Name: "Charlie", TotalBet: 100, IsActive: true, IsAllIn: false},               // Regular bet
 	}
 
 	sidePots := CalculateSidePots(players, 200)
@@ -108,9 +108,9 @@ func TestCalculateSidePots_WithFoldedPlayers(t *testing.T) {
 		t.Errorf("Expected 2 side pots, got %d", len(sidePots))
 	}
 
-	// Main pot: 50 * 2 = 100 (only Bob and Charlie eligible)
-	if sidePots[0].Amount != 100 {
-		t.Errorf("Expected main pot 100, got %d", sidePots[0].Amount)
+	// Main pot: 50 * 3 = 150 (includes Alice's contribution even though she's folded)
+	if sidePots[0].Amount != 150 {
+		t.Errorf("Expected main pot 150, got %d", sidePots[0].Amount)
 	}
 	if len(sidePots[0].EligiblePlayers) != 2 {
 		t.Errorf("Expected 2 eligible players in main pot, got %d", len(sidePots[0].EligiblePlayers))
@@ -209,7 +209,7 @@ func TestSplitPot_EdgeCases(t *testing.T) {
 		alice := &Player{Name: "Alice", Chips: 1000}
 		winners := []*Player{alice}
 		splitPot(0, winners)
-		
+
 		if alice.Chips != 1000 {
 			t.Errorf("Alice should still have 1000 chips, got %d", alice.Chips)
 		}
@@ -219,7 +219,7 @@ func TestSplitPot_EdgeCases(t *testing.T) {
 		alice := &Player{Name: "Alice", Chips: 1000}
 		winners := []*Player{alice}
 		splitPot(-50, winners)
-		
+
 		if alice.Chips != 1000 {
 			t.Errorf("Alice should still have 1000 chips, got %d", alice.Chips)
 		}

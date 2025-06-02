@@ -17,16 +17,17 @@ func TestSixMaxPositions(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+		Seed:       42,
+	})
 
 	// Add 6 players to test full 6-max position assignment
 	players := []*Player{
 		NewPlayer(1, "UTG", AI, 200),
-		NewPlayer(2, "LJ", AI, 200),     // LoJack (Low Jack)
-		NewPlayer(3, "HJ", AI, 200),     // HiJack (High Jack)  
-		NewPlayer(4, "CO", AI, 200),     // Cutoff
-		NewPlayer(5, "BTN", AI, 200),    // Button
-		NewPlayer(6, "SB", AI, 200),     // Small Blind (BB will be UTG)
+		NewPlayer(2, "LJ", AI, 200),  // LoJack (Low Jack)
+		NewPlayer(3, "HJ", AI, 200),  // HiJack (High Jack)
+		NewPlayer(4, "CO", AI, 200),  // Cutoff
+		NewPlayer(5, "BTN", AI, 200), // Button
+		NewPlayer(6, "SB", AI, 200),  // Small Blind (BB will be UTG)
 	}
 
 	for _, player := range players {
@@ -41,7 +42,7 @@ func TestSixMaxPositions(t *testing.T) {
 
 	// Find the button player
 	var buttonPlayer *Player
-	for _, player := range table.ActivePlayers {
+	for _, player := range table.activePlayers {
 		if player.Position == Button {
 			buttonPlayer = player
 			break
@@ -54,7 +55,7 @@ func TestSixMaxPositions(t *testing.T) {
 
 	// Verify we have all required positions for 6-max
 	positions := make(map[Position]bool)
-	for _, player := range table.ActivePlayers {
+	for _, player := range table.activePlayers {
 		positions[player.Position] = true
 	}
 
@@ -66,7 +67,7 @@ func TestSixMaxPositions(t *testing.T) {
 	}
 
 	// Verify UTG acts first pre-flop (except in heads-up)
-	if len(table.ActivePlayers) > 2 {
+	if len(table.activePlayers) > 2 {
 		firstToAct := table.GetCurrentPlayer()
 		if firstToAct.Position != UnderTheGun {
 			t.Errorf("In 6-max, UTG should act first pre-flop, got %s", firstToAct.Position)
@@ -80,7 +81,8 @@ func TestPostFlopActionOrder(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
-	}, nil)
+		Seed:       42,
+	})
 
 	// Add 4 players to test action order
 	alice := NewPlayer(1, "Alice", AI, 200)
@@ -101,8 +103,8 @@ func TestPostFlopActionOrder(t *testing.T) {
 			break
 		}
 
-		if currentPlayer.BetThisRound < table.CurrentBet {
-			decision := Decision{Action: Call, Amount: table.CurrentBet, Reasoning: "call"}
+		if currentPlayer.BetThisRound < table.currentBet {
+			decision := Decision{Action: Call, Amount: table.currentBet, Reasoning: "call"}
 			_, err := table.ApplyDecision(decision)
 			if err != nil {
 				t.Fatalf("Failed to apply call: %v", err)
@@ -126,7 +128,7 @@ func TestPostFlopActionOrder(t *testing.T) {
 	table.DealFlop()
 
 	// Post-flop, first to act should be first active seat left of button
-	buttonSeat := table.DealerPosition
+	buttonSeat := table.dealerPosition
 	firstToAct := table.GetCurrentPlayer()
 
 	if firstToAct == nil {
@@ -134,27 +136,27 @@ func TestPostFlopActionOrder(t *testing.T) {
 	}
 
 	// The first to act should NOT be the button (unless heads-up)
-	if len(table.ActivePlayers) > 2 && firstToAct.SeatNumber == buttonSeat {
+	if len(table.activePlayers) > 2 && firstToAct.SeatNumber == buttonSeat {
 		t.Error("Button should not act first post-flop in multi-way pot")
 	}
 
 	// In heads-up, button acts last post-flop (so opponent acts first)
-	if len(table.ActivePlayers) == 2 {
+	if len(table.activePlayers) == 2 {
 		// Find the non-button player
 		var nonButtonPlayer *Player
-		for _, player := range table.ActivePlayers {
+		for _, player := range table.activePlayers {
 			if player.SeatNumber != buttonSeat {
 				nonButtonPlayer = player
 				break
 			}
 		}
-		
+
 		if nonButtonPlayer != nil && firstToAct != nonButtonPlayer {
 			t.Error("In heads-up, non-button player should act first post-flop")
 		}
 	}
 
-	t.Logf("Button seat: %d, First to act post-flop: %s (seat %d)", 
+	t.Logf("Button seat: %d, First to act post-flop: %s (seat %d)",
 		buttonSeat, firstToAct.Name, firstToAct.SeatNumber)
 }
 
@@ -169,7 +171,8 @@ func TestMinimumRaiseRules(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
-	}, nil)
+		Seed:       42,
+	})
 
 	// Add players
 	alice := NewPlayer(1, "Alice", AI, 1000)
@@ -183,8 +186,8 @@ func TestMinimumRaiseRules(t *testing.T) {
 	table.StartNewHand()
 
 	// Initial state: BB is 10, so minimum raise should be 10
-	if table.MinRaise != 10 {
-		t.Errorf("Initial MinRaise should be 10 (big blind), got %d", table.MinRaise)
+	if table.minRaise != 10 {
+		t.Errorf("Initial MinRaise should be 10 (big blind), got %d", table.minRaise)
 	}
 
 	// Current bet is 10 (big blind), so minimum raise total should be 20
@@ -213,8 +216,8 @@ func TestMinimumRaiseRules(t *testing.T) {
 	}
 
 	// MinRaise should now be 20 (the size of the last raise)
-	if table.MinRaise != 20 {
-		t.Errorf("After raise to 30, MinRaise should be 20, got %d", table.MinRaise)
+	if table.minRaise != 20 {
+		t.Errorf("After raise to 30, MinRaise should be 20, got %d", table.minRaise)
 	}
 
 	table.AdvanceAction()
@@ -245,8 +248,8 @@ func TestMinimumRaiseRules(t *testing.T) {
 	}
 
 	// MinRaise should now be 30 (the size of the last raise)
-	if table.MinRaise != 30 {
-		t.Errorf("After raise to 60, MinRaise should be 30, got %d", table.MinRaise)
+	if table.minRaise != 30 {
+		t.Errorf("After raise to 60, MinRaise should be 30, got %d", table.minRaise)
 	}
 }
 
@@ -256,7 +259,8 @@ func TestMinimumRaiseAcrossRounds(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
-	}, nil)
+		Seed:       42,
+	})
 
 	// Add players
 	alice := NewPlayer(1, "Alice", AI, 1000)
@@ -275,21 +279,21 @@ func TestMinimumRaiseAcrossRounds(t *testing.T) {
 	}
 
 	// MinRaise should be 30 (the size of the raise)
-	if table.MinRaise != 30 {
-		t.Errorf("After pre-flop raise, MinRaise should be 30, got %d", table.MinRaise)
+	if table.minRaise != 30 {
+		t.Errorf("After pre-flop raise, MinRaise should be 30, got %d", table.minRaise)
 	}
 
 	// Move to flop (this calls startNewBettingRound internally)
 	table.DealFlop()
 
 	// MinRaise should reset to big blind for new round
-	if table.MinRaise != 10 {
-		t.Errorf("After dealing flop, MinRaise should reset to 10, got %d", table.MinRaise)
+	if table.minRaise != 10 {
+		t.Errorf("After dealing flop, MinRaise should reset to 10, got %d", table.minRaise)
 	}
 
 	// Current bet should be 0 for new round
-	if table.CurrentBet != 0 {
-		t.Errorf("After dealing flop, CurrentBet should be 0, got %d", table.CurrentBet)
+	if table.currentBet != 0 {
+		t.Errorf("After dealing flop, CurrentBet should be 0, got %d", table.currentBet)
 	}
 }
 
@@ -299,7 +303,8 @@ func TestMinimumOpeningBet(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
-	}, nil)
+		Seed:       42,
+	})
 
 	alice := NewPlayer(1, "Alice", AI, 200)
 	bob := NewPlayer(2, "Bob", AI, 200)
@@ -313,8 +318,8 @@ func TestMinimumOpeningBet(t *testing.T) {
 	currentPlayer := table.GetCurrentPlayer()
 	if currentPlayer != nil {
 		// Determine if player needs to call or can check
-		callAmount := table.CurrentBet - currentPlayer.BetThisRound
-		
+		callAmount := table.currentBet - currentPlayer.BetThisRound
+
 		if callAmount > 0 {
 			// Player needs to call
 			decision := Decision{Action: Call, Amount: callAmount, Reasoning: "call to match"}
@@ -335,7 +340,7 @@ func TestMinimumOpeningBet(t *testing.T) {
 		// Second player acts
 		currentPlayer = table.GetCurrentPlayer()
 		if currentPlayer != nil {
-			callAmount = table.CurrentBet - currentPlayer.BetThisRound
+			callAmount = table.currentBet - currentPlayer.BetThisRound
 			if callAmount > 0 {
 				decision := Decision{Action: Call, Amount: callAmount, Reasoning: "call"}
 				_, err := table.ApplyDecision(decision)
@@ -357,7 +362,7 @@ func TestMinimumOpeningBet(t *testing.T) {
 
 	// On flop, minimum opening bet should be big blind amount
 	validActions := table.GetValidActions()
-	
+
 	var betAction *ValidAction
 	for _, action := range validActions {
 		if action.Action == Raise { // Bet is represented as Raise when no previous bet
@@ -371,7 +376,7 @@ func TestMinimumOpeningBet(t *testing.T) {
 	}
 
 	// Minimum bet should be big blind (10)
-	expectedMinBet := table.BigBlind
+	expectedMinBet := table.bigBlind
 	if betAction.MinAmount < expectedMinBet {
 		t.Errorf("Minimum opening bet should be at least %d (big blind), got %d", expectedMinBet, betAction.MinAmount)
 	}
@@ -383,7 +388,8 @@ func TestRaiseValidation(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
-	}, nil)
+		Seed:       42,
+	})
 
 	// Add players
 	alice := NewPlayer(1, "Alice", AI, 1000)
@@ -417,7 +423,8 @@ func TestBettingRoundComplete_WithRaises(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
-	}, nil)
+		Seed:       42,
+	})
 
 	// Add players
 	alice := NewPlayer(1, "Alice", AI, 1000)
@@ -483,11 +490,12 @@ func TestAllInRaiseRules(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
-	}, nil)
+		Seed:       42,
+	})
 
 	// Add players with different stack sizes
-	alice := NewPlayer(1, "Alice", AI, 45)   // Small stack
-	bob := NewPlayer(2, "Bob", AI, 1000)     // Big stack
+	alice := NewPlayer(1, "Alice", AI, 45)       // Small stack
+	bob := NewPlayer(2, "Bob", AI, 1000)         // Big stack
 	charlie := NewPlayer(3, "Charlie", AI, 1000) // Big stack
 	table.AddPlayer(alice)
 	table.AddPlayer(bob)
@@ -501,9 +509,9 @@ func TestAllInRaiseRules(t *testing.T) {
 	currentPlayer := table.GetCurrentPlayer()
 	if currentPlayer.Name != "Alice" {
 		// Find Alice if she's not first to act
-		for i, player := range table.ActivePlayers {
+		for i, player := range table.activePlayers {
 			if player.Name == "Alice" {
-				table.ActionOn = i
+				table.actionOn = i
 				currentPlayer = table.GetCurrentPlayer()
 				break
 			}
@@ -525,8 +533,8 @@ func TestAllInRaiseRules(t *testing.T) {
 	// If Alice's all-in was a raise (total bet > previous bet), MinRaise should update
 	if alice.TotalBet > 10 { // If her total bet exceeds the big blind
 		expectedMinRaise := alice.TotalBet - 10 // Size of the raise
-		if table.MinRaise != expectedMinRaise {
-			t.Errorf("After Alice's all-in raise, MinRaise should be %d, got %d", expectedMinRaise, table.MinRaise)
+		if table.minRaise != expectedMinRaise {
+			t.Errorf("After Alice's all-in raise, MinRaise should be %d, got %d", expectedMinRaise, table.minRaise)
 		}
 	}
 }
@@ -538,7 +546,8 @@ func TestInsufficientRaiseAllIn(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
-	}, nil)
+		Seed:       42,
+	})
 
 	// Add players
 	alice := NewPlayer(1, "Alice", AI, 1000)
@@ -559,8 +568,8 @@ func TestInsufficientRaiseAllIn(t *testing.T) {
 	}
 
 	// MinRaise should be 40 (size of the raise)
-	if table.MinRaise != 40 {
-		t.Errorf("After Alice's raise, MinRaise should be 40, got %d", table.MinRaise)
+	if table.minRaise != 40 {
+		t.Errorf("After Alice's raise, MinRaise should be 40, got %d", table.minRaise)
 	}
 
 	table.AdvanceAction()
@@ -575,8 +584,8 @@ func TestInsufficientRaiseAllIn(t *testing.T) {
 		}
 
 		// MinRaise should stay 40 because Charlie's all-in wasn't a full raise
-		if table.MinRaise != 40 {
-			t.Errorf("After Charlie's insufficient all-in, MinRaise should stay 40, got %d", table.MinRaise)
+		if table.minRaise != 40 {
+			t.Errorf("After Charlie's insufficient all-in, MinRaise should stay 40, got %d", table.minRaise)
 		}
 	}
 }
@@ -587,14 +596,15 @@ func TestAllInDoesNotReopenBetting(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
-	}, nil)
+		Seed:       42,
+	})
 
-	// Create specific scenario: 
+	// Create specific scenario:
 	// Alice raises, Bob calls, Charlie (short stack) goes all-in for less than minimum raise
 	// Alice should NOT get another chance to act
-	alice := NewPlayer(1, "Alice", AI, 1000)    // Big stack
-	bob := NewPlayer(2, "Bob", AI, 1000)        // Big stack  
-	charlie := NewPlayer(3, "Charlie", AI, 25)  // Short stack (after blinds ~15 chips)
+	alice := NewPlayer(1, "Alice", AI, 1000)   // Big stack
+	bob := NewPlayer(2, "Bob", AI, 1000)       // Big stack
+	charlie := NewPlayer(3, "Charlie", AI, 25) // Short stack (after blinds ~15 chips)
 	table.AddPlayer(alice)
 	table.AddPlayer(bob)
 	table.AddPlayer(charlie)
@@ -619,7 +629,7 @@ func TestAllInDoesNotReopenBetting(t *testing.T) {
 	currentPlayer = table.GetCurrentPlayer()
 	if currentPlayer != nil {
 		actionSequence = append(actionSequence, currentPlayer.Name)
-		
+
 		// If this is the short stack (Charlie), they need to go all-in
 		if currentPlayer.Name == "Charlie" {
 			decision = Decision{Action: AllIn, Amount: 0, Reasoning: "forced all-in"}
@@ -629,7 +639,7 @@ func TestAllInDoesNotReopenBetting(t *testing.T) {
 			}
 		} else {
 			// Regular player can call
-			callAmount := table.CurrentBet - currentPlayer.BetThisRound
+			callAmount := table.currentBet - currentPlayer.BetThisRound
 			decision = Decision{Action: Call, Amount: callAmount, Reasoning: "call"}
 			_, err = table.ApplyDecision(decision)
 			if err != nil {
@@ -643,7 +653,7 @@ func TestAllInDoesNotReopenBetting(t *testing.T) {
 	currentPlayer = table.GetCurrentPlayer()
 	if currentPlayer != nil {
 		actionSequence = append(actionSequence, currentPlayer.Name)
-		
+
 		// If this is the short stack, they go all-in; otherwise they call
 		if currentPlayer.Name == "Charlie" {
 			decision = Decision{Action: AllIn, Amount: 0, Reasoning: "forced all-in"}
@@ -651,26 +661,26 @@ func TestAllInDoesNotReopenBetting(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to apply all-in: %v", err)
 			}
-			
+
 			// Verify Charlie's all-in is less than minimum raise
-			minRaiseAmount := 30 + table.MinRaise // Should be 30 + 20 = 50 minimum
+			minRaiseAmount := 30 + table.minRaise // Should be 30 + 20 = 50 minimum
 			if currentPlayer.TotalBet < minRaiseAmount {
-				t.Logf("Charlie's all-in (%d) is less than minimum raise (%d) - correct", 
+				t.Logf("Charlie's all-in (%d) is less than minimum raise (%d) - correct",
 					currentPlayer.TotalBet, minRaiseAmount)
 			} else {
-				t.Errorf("Expected Charlie's all-in to be insufficient, but got %d >= %d", 
+				t.Errorf("Expected Charlie's all-in to be insufficient, but got %d >= %d",
 					currentPlayer.TotalBet, minRaiseAmount)
 			}
 		} else {
 			// Regular player calls
-			callAmount := table.CurrentBet - currentPlayer.BetThisRound
+			callAmount := table.currentBet - currentPlayer.BetThisRound
 			decision = Decision{Action: Call, Amount: callAmount, Reasoning: "call"}
 			_, err = table.ApplyDecision(decision)
 			if err != nil {
 				t.Fatalf("Failed to apply call: %v", err)
 			}
 		}
-		
+
 		table.AdvanceAction()
 	}
 
@@ -696,7 +706,8 @@ func TestValidActionsMinRaise(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
-	}, nil)
+		Seed:       42,
+	})
 
 	// Add players
 	alice := NewPlayer(1, "Alice", AI, 1000)
@@ -718,9 +729,9 @@ func TestValidActionsMinRaise(t *testing.T) {
 		table.AdvanceAction()
 	} else {
 		// Find Alice and make her raise (she might not be first to act)
-		for i, player := range table.ActivePlayers {
+		for i, player := range table.activePlayers {
 			if player.Name == "Alice" {
-				table.ActionOn = i
+				table.actionOn = i
 				decision := Decision{Action: Raise, Amount: 40, Reasoning: "raise"}
 				_, err := table.ApplyDecision(decision)
 				if err != nil {
@@ -733,7 +744,7 @@ func TestValidActionsMinRaise(t *testing.T) {
 	}
 
 	// Debug: check state after Alice's raise
-	t.Logf("After Alice's raise: CurrentBet=%d, MinRaise=%d", table.CurrentBet, table.MinRaise)
+	t.Logf("After Alice's raise: CurrentBet=%d, MinRaise=%d", table.currentBet, table.minRaise)
 
 	// Check valid actions for next player
 	validActions := table.GetValidActions()
@@ -759,7 +770,7 @@ func TestValidActionsMinRaise(t *testing.T) {
 	currentPlayer = table.GetCurrentPlayer()
 	if currentPlayer.Name == "Charlie" {
 		validActions = table.GetValidActions()
-		
+
 		hasRaise := false
 		for _, action := range validActions {
 			if action.Action == Raise {
@@ -798,7 +809,8 @@ func TestShowdownLastAggressor(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
-	}, nil)
+		Seed:       42,
+	})
 
 	alice := NewPlayer(1, "Alice", AI, 200)
 	bob := NewPlayer(2, "Bob", AI, 200)
@@ -814,7 +826,7 @@ func TestShowdownLastAggressor(t *testing.T) {
 			break
 		}
 
-		callAmount := table.CurrentBet - currentPlayer.BetThisRound
+		callAmount := table.currentBet - currentPlayer.BetThisRound
 		if callAmount > 0 {
 			decision := Decision{Action: Call, Amount: callAmount, Reasoning: "call"}
 			_, err := table.ApplyDecision(decision)
@@ -847,7 +859,7 @@ func TestShowdownLastAggressor(t *testing.T) {
 		// Second player calls
 		currentPlayer := table.GetCurrentPlayer()
 		if currentPlayer != nil {
-			callAmount := table.CurrentBet - currentPlayer.BetThisRound
+			callAmount := table.currentBet - currentPlayer.BetThisRound
 			decision = Decision{Action: Call, Amount: callAmount, Reasoning: "call"}
 			_, err = table.ApplyDecision(decision)
 			if err != nil {
@@ -870,7 +882,7 @@ func TestShowdownLastAggressor(t *testing.T) {
 
 	t.Logf("Last aggressor: %s", lastAggressor.Name)
 	t.Logf("Winner: %s", winner.Name)
-	
+
 	// The key rule tested here is that the system can identify the last aggressor
 	// and in a real implementation would show their cards first
 	if lastAggressor == nil {
@@ -884,7 +896,8 @@ func TestOddChipDistribution(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil)
+		Seed:       42,
+	})
 
 	// Add 3 players so we can test odd chip distribution
 	alice := NewPlayer(1, "Alice", AI, 200)
@@ -927,7 +940,7 @@ func TestOddChipDistribution(t *testing.T) {
 	}
 
 	// Create a three-way tie scenario
-	table.CommunityCards = []deck.Card{
+	table.communityCards = []deck.Card{
 		{Suit: deck.Spades, Rank: deck.Ace},
 		{Suit: deck.Hearts, Rank: deck.King},
 		{Suit: deck.Clubs, Rank: deck.Queen},
@@ -950,11 +963,11 @@ func TestOddChipDistribution(t *testing.T) {
 	}
 
 	// Ensure pot is odd number for remainder test
-	if table.Pot%3 == 0 {
-		table.Pot += 1 // Make it odd
+	if table.pot%3 == 0 {
+		table.pot += 1 // Make it odd
 	}
 
-	potBeforeAward := table.Pot
+	potBeforeAward := table.pot
 	sharePerPlayer := potBeforeAward / 3
 	remainder := potBeforeAward % 3
 
@@ -967,8 +980,8 @@ func TestOddChipDistribution(t *testing.T) {
 
 	// Find who is closest clockwise to button among the tied players
 	// This requires finding the button position and determining clockwise order
-	buttonSeat := table.DealerPosition
-	
+	buttonSeat := table.dealerPosition
+
 	// Award pot
 	table.AwardPot()
 
@@ -983,7 +996,7 @@ func TestOddChipDistribution(t *testing.T) {
 	playersWithExtra := 0
 	playerWithMostChips := ""
 	maxReceived := 0
-	
+
 	for player, received := range chipsReceived {
 		if received > sharePerPlayer {
 			playersWithExtra++
@@ -1007,7 +1020,7 @@ func TestOddChipDistribution(t *testing.T) {
 
 	t.Logf("Pot: %d, Split among 3: %d each + %d remainder", potBeforeAward, sharePerPlayer, remainder)
 	t.Logf("Button seat: %d", buttonSeat)
-	t.Logf("Chips received - Alice: %d, Bob: %d, Charlie: %d", 
+	t.Logf("Chips received - Alice: %d, Bob: %d, Charlie: %d",
 		chipsReceived["Alice"], chipsReceived["Bob"], chipsReceived["Charlie"])
 	t.Logf("Player with extra chips: %s", playerWithMostChips)
 }
@@ -1022,7 +1035,8 @@ func TestDealerButtonAdvancement(t *testing.T) {
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
-	}, nil)
+		Seed:       42,
+	})
 
 	// Add 3 players
 	alice := NewPlayer(1, "Alice", AI, 200)
@@ -1034,19 +1048,19 @@ func TestDealerButtonAdvancement(t *testing.T) {
 
 	// Start first hand and record initial button position
 	table.StartNewHand()
-	initialButton := table.DealerPosition
-	
+	initialButton := table.dealerPosition
+
 	// Start second hand - button should advance
 	table.StartNewHand()
-	secondButton := table.DealerPosition
-	
+	secondButton := table.dealerPosition
+
 	// Start third hand - button should advance again
 	table.StartNewHand()
-	thirdButton := table.DealerPosition
-	
+	thirdButton := table.dealerPosition
+
 	// Start fourth hand - should wrap around to initial position
 	table.StartNewHand()
-	fourthButton := table.DealerPosition
+	fourthButton := table.dealerPosition
 
 	// Button should advance clockwise: 1 -> 2 -> 3 -> 1
 	expectedSequence := []int{initialButton}
@@ -1059,13 +1073,13 @@ func TestDealerButtonAdvancement(t *testing.T) {
 	}
 
 	actualSequence := []int{initialButton, secondButton, thirdButton, fourthButton}
-	
+
 	t.Logf("Expected button sequence: %v", expectedSequence)
 	t.Logf("Actual button sequence: %v", actualSequence)
 
 	for i, expected := range expectedSequence {
 		if actualSequence[i] != expected {
-			t.Errorf("Hand %d: expected button at seat %d, got %d", 
+			t.Errorf("Hand %d: expected button at seat %d, got %d",
 				i+1, expected, actualSequence[i])
 		}
 	}

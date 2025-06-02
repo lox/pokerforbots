@@ -11,18 +11,18 @@ import (
 func TestNewHandHistory(t *testing.T) {
 	// Create a test table
 	table := &Table{
-		HandID:         "01h5n0et5q6mt3v7ms1234abcd",
-		SmallBlind:     1,
-		BigBlind:       2,
-		DealerPosition: 3,
-		Players: []*Player{
+		handID:         "01h5n0et5q6mt3v7ms1234abcd",
+		smallBlind:     1,
+		bigBlind:       2,
+		dealerPosition: 3,
+		players: []*Player{
 			{Name: "Alice", Chips: 100, Position: Button},
 			{Name: "Bob", Chips: 200, Position: SmallBlind},
 			{Name: "Charlie", Chips: 150, Position: BigBlind},
 		},
 	}
 
-	hh := NewHandHistory(table)
+	hh := NewHandHistory(table, 12345, &NoOpHandHistoryWriter{})
 
 	// Test basic fields
 	if hh.HandID != "01h5n0et5q6mt3v7ms1234abcd" {
@@ -426,10 +426,10 @@ func TestGetCurrentRoundActions(t *testing.T) {
 func TestGetBettingRoundSummary(t *testing.T) {
 	hh := &HandHistory{
 		SmallBlind: 10,
-		BigBlind: 20,
+		BigBlind:   20,
 		Actions: []HandAction{
 			{PlayerName: "Alice", Action: Call, Amount: 10, Round: PreFlop}, // Small blind
-			{PlayerName: "Bob", Action: Call, Amount: 20, Round: PreFlop},   // Big blind  
+			{PlayerName: "Bob", Action: Call, Amount: 20, Round: PreFlop},   // Big blind
 			{PlayerName: "Charlie", Action: Raise, Amount: 40, Round: PreFlop},
 			{PlayerName: "Alice", Action: Call, Amount: 30, Round: PreFlop},
 			{PlayerName: "Bob", Action: Raise, Amount: 80, Round: PreFlop}, // 3-bet
@@ -464,7 +464,7 @@ func TestGetBettingRoundSummary(t *testing.T) {
 func TestGetBetSizingInfo(t *testing.T) {
 	hh := &HandHistory{
 		Actions: []HandAction{
-			{PlayerName: "Alice", Action: Raise, Amount: 20, PotAfter: 50},  // 20 into 30 pot
+			{PlayerName: "Alice", Action: Raise, Amount: 20, PotAfter: 50}, // 20 into 30 pot
 			{PlayerName: "Bob", Action: Call, Amount: 20, PotAfter: 70},
 			{PlayerName: "Charlie", Action: Raise, Amount: 60, PotAfter: 130}, // 60 into 70 pot
 		},

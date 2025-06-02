@@ -9,6 +9,47 @@ import (
 	"github.com/lox/holdem-cli/internal/deck"
 )
 
+// HandHistoryWriter interface for writing hand history
+type HandHistoryWriter interface {
+	WriteHandHistory(handID string, content string) error
+}
+
+// FileHandHistoryWriter writes hand history to files
+type FileHandHistoryWriter struct {
+	directory string
+}
+
+// NewFileHandHistoryWriter creates a new file-based hand history writer
+func NewFileHandHistoryWriter(directory string) *FileHandHistoryWriter {
+	return &FileHandHistoryWriter{directory: directory}
+}
+
+// WriteHandHistory writes hand history to a file
+func (w *FileHandHistoryWriter) WriteHandHistory(handID string, content string) error {
+	// Ensure directory exists
+	if err := os.MkdirAll(w.directory, 0755); err != nil {
+		return fmt.Errorf("failed to create hand history directory: %w", err)
+	}
+
+	// Generate filename
+	filename := filepath.Join(w.directory, fmt.Sprintf("hand_%s.txt", handID))
+
+	// Write to file
+	if err := os.WriteFile(filename, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write hand history file: %w", err)
+	}
+
+	return nil
+}
+
+// NoOpHandHistoryWriter is a no-op writer for tests
+type NoOpHandHistoryWriter struct{}
+
+// WriteHandHistory does nothing (for tests)
+func (w *NoOpHandHistoryWriter) WriteHandHistory(handID string, content string) error {
+	return nil
+}
+
 // HandAction represents a single action taken during a hand
 type HandAction struct {
 	PlayerName string       // Name of the player who acted
@@ -24,6 +65,7 @@ type HandAction struct {
 type HandHistory struct {
 	HandID         string
 	StartTime      time.Time
+	Seed           int64 // Random seed for exact reproduction
 	SmallBlind     int
 	BigBlind       int
 	DealerPosition int
@@ -32,6 +74,9 @@ type HandHistory struct {
 	CommunityCards []deck.Card      // Final community cards
 	FinalPot       int
 	Winners        []WinnerInfo
+
+	// Configuration
+	writer HandHistoryWriter // Writer for saving hand history
 }
 
 // PlayerSnapshot captures player state at the start of a hand
@@ -51,9 +96,9 @@ type WinnerInfo struct {
 }
 
 // NewHandHistory creates a new hand history for a hand
-func NewHandHistory(table *Table) *HandHistory {
-	players := make([]PlayerSnapshot, len(table.Players))
-	for i, player := range table.Players {
+func NewHandHistory(table *Table, seed int64, writer HandHistoryWriter) *HandHistory {
+	players := make([]PlayerSnapshot, len(table.players))
+	for i, player := range table.players {
 		players[i] = PlayerSnapshot{
 			Name:     player.Name,
 			Chips:    player.Chips,
@@ -63,15 +108,17 @@ func NewHandHistory(table *Table) *HandHistory {
 	}
 
 	return &HandHistory{
-		HandID:         table.HandID,
+		HandID:         table.handID,
 		StartTime:      time.Now(),
-		SmallBlind:     table.SmallBlind,
-		BigBlind:       table.BigBlind,
-		DealerPosition: table.DealerPosition,
+		Seed:           seed,
+		SmallBlind:     table.smallBlind,
+		BigBlind:       table.bigBlind,
+		DealerPosition: table.dealerPosition,
 		Players:        players,
 		Actions:        make([]HandAction, 0),
 		FinalPot:       0,
 		Winners:        make([]WinnerInfo, 0),
+		writer:         writer,
 	}
 }
 
@@ -137,6 +184,7 @@ func (hh *HandHistory) GenerateHistoryText() string {
 	// Header
 	history += fmt.Sprintf("=== HAND %s ===\n", hh.HandID)
 	history += fmt.Sprintf("Date: %s\n", hh.StartTime.Format("2006-01-02 15:04:05"))
+	history += fmt.Sprintf("Seed: %d\n", hh.Seed)
 	history += fmt.Sprintf("Blinds: %d/%d\n", hh.SmallBlind, hh.BigBlind)
 	history += fmt.Sprintf("Players: %d\n", len(hh.Players))
 	history += fmt.Sprintf("Dealer Position: %d\n\n", hh.DealerPosition)
@@ -415,25 +463,13 @@ func (hh *HandHistory) GenerateSummary(opts SummaryOpts) string {
 	return summary
 }
 
-// SaveToFile saves the hand history to a file
+// SaveToFile saves the hand history using the configured writer
 func (hh *HandHistory) SaveToFile() error {
-	// Ensure handhistory directory exists
-	if err := os.MkdirAll("handhistory", 0755); err != nil {
-		return fmt.Errorf("failed to create handhistory directory: %w", err)
-	}
-
-	// Generate filename
-	filename := filepath.Join("handhistory", fmt.Sprintf("hand_%s.txt", hh.HandID))
-
 	// Generate content
 	content := hh.GenerateHistoryText()
 
-	// Write to file
-	if err := os.WriteFile(filename, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write hand history file: %w", err)
-	}
-
-	return nil
+	// Write using the configured writer
+	return hh.writer.WriteHandHistory(hh.HandID, content)
 }
 
 // GetDisplayActions returns formatted action strings for display in TUI
@@ -504,12 +540,12 @@ func (hh *HandHistory) GetCurrentRoundActions(currentRound BettingRound) []HandA
 // GetBettingRoundSummary analyzes the betting action for a specific round
 func (hh *HandHistory) GetBettingRoundSummary(currentRound BettingRound) BettingRoundSummary {
 	actions := hh.GetCurrentRoundActions(currentRound)
-	
+
 	summary := BettingRoundSummary{
-		Round:    currentRound,
-		Actions:  actions,
+		Round:   currentRound,
+		Actions: actions,
 	}
-	
+
 	// Count raises and find aggressor
 	for _, action := range actions {
 		switch action.Action {
@@ -524,12 +560,12 @@ func (hh *HandHistory) GetBettingRoundSummary(currentRound BettingRound) Betting
 			}
 		}
 	}
-	
+
 	// Set initial bet (big blind for preflop, 0 for other rounds)
 	if currentRound == PreFlop {
 		summary.InitialBet = hh.BigBlind
 	}
-	
+
 	return summary
 }
 
@@ -537,12 +573,12 @@ func (hh *HandHistory) GetBettingRoundSummary(currentRound BettingRound) Betting
 func (hh *HandHistory) GetBetSizingInfo(currentRound BettingRound) []BetSizingInfo {
 	actions := hh.GetCurrentRoundActions(currentRound)
 	var sizing []BetSizingInfo
-	
+
 	for _, action := range actions {
 		if action.Action == Raise {
 			// Calculate pot size before this bet
 			potBefore := action.PotAfter - action.Amount
-			
+
 			sizing = append(sizing, BetSizingInfo{
 				PlayerName: action.PlayerName,
 				Amount:     action.Amount,
@@ -551,7 +587,7 @@ func (hh *HandHistory) GetBetSizingInfo(currentRound BettingRound) []BetSizingIn
 			})
 		}
 	}
-	
+
 	return sizing
 }
 
@@ -601,7 +637,7 @@ func (hh *HandHistory) GetDisplayActionsSince(lastActionIndex int) []string {
 	if lastActionIndex >= 0 && lastActionIndex < len(hh.Actions) {
 		currentRound = hh.Actions[lastActionIndex].Round
 	}
-	
+
 	for _, action := range newActions {
 		// Add round header if we've moved to a new round
 		if action.Round != currentRound {
@@ -640,10 +676,10 @@ func (hh *HandHistory) GetDisplayActionsSince(lastActionIndex int) []string {
 			}
 			currentRound = action.Round
 		}
-		
+
 		// Add the action (no thinking for TUI to preserve poker experience)
 		displayActions = append(displayActions, hh.formatAction(action))
 	}
-	
+
 	return displayActions
 }
