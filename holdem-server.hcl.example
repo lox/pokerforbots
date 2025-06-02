@@ -1,0 +1,86 @@
+# Holdem Server Configuration Example
+# Copy this file to holdem-server.hcl and customize for your setup
+
+server {
+  address   = "localhost"
+  port      = 8080
+  log_level = "info"
+  log_file  = "holdem-server.log"
+}
+
+# Define poker tables
+table "microstakes" {
+  small_blind = 1
+  big_blind   = 2
+  max_players = 6
+  buy_in_min  = 100
+  buy_in_max  = 1000
+  auto_start  = true
+}
+
+table "lowstakes" {
+  small_blind = 5
+  big_blind   = 10
+  max_players = 6
+  buy_in_min  = 500
+  buy_in_max  = 5000
+  auto_start  = true
+}
+
+table "highstakes" {
+  small_blind = 25
+  big_blind   = 50
+  max_players = 6
+  buy_in_min  = 2500
+  buy_in_max  = 25000
+  auto_start  = false
+}
+
+# Define bots to populate tables
+bot "aggressive_annie" {
+  strategy   = "maniac"
+  tables     = ["microstakes", "lowstakes"]
+  buy_in     = 200
+  difficulty = "medium"
+}
+
+bot "tight_ted" {
+  strategy   = "chart"
+  tables     = ["microstakes"]
+  buy_in     = 300
+  difficulty = "hard"
+}
+
+bot "calling_station_carl" {
+  strategy   = "call"
+  tables     = ["microstakes", "lowstakes"]
+  buy_in     = 150
+  difficulty = "easy"
+}
+
+bot "tag_player_tom" {
+  strategy   = "tag"
+  tables     = ["lowstakes", "highstakes"]
+  buy_in     = 1000
+  difficulty = "hard"
+}
+
+bot "random_randy" {
+  strategy   = "rand"
+  tables     = ["microstakes"]
+  buy_in     = 200
+  difficulty = "easy"
+}
+
+# Available bot strategies:
+# - "chart"  : Tight-aggressive using push-fold charts
+# - "tag"    : Tight-aggressive with advanced play
+# - "maniac" : Loose-aggressive, raises frequently
+# - "call"   : Calling station, rarely folds
+# - "fold"   : Nit, folds most hands
+# - "rand"   : Random decisions (for testing)
+
+# Available difficulties:
+# - "easy"   : Makes more mistakes
+# - "medium" : Balanced play
+# - "hard"   : Near-optimal play

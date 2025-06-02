@@ -10,8 +10,8 @@ import (
 // TestTightRangeImprovements validates our tight range improvements
 func TestTightRangeImprovements(t *testing.T) {
 	// Test that tight range gives realistic equity for weak hands like 5♣6♣
-	fiveClubs := deck.Card{Rank: 5, Suit: 0}   // 5♣
-	sixClubs := deck.Card{Rank: 6, Suit: 0}    // 6♣
+	fiveClubs := deck.Card{Rank: 5, Suit: 0} // 5♣
+	sixClubs := deck.Card{Rank: 6, Suit: 0}  // 6♣
 	hand := []deck.Card{fiveClubs, sixClubs}
 
 	// Verify this hand is not considered "tight"
@@ -34,38 +34,38 @@ func TestTightRangeImprovements(t *testing.T) {
 func TestTightRangeSamplingQuality(t *testing.T) {
 	// Verify TightRange samples mostly tight hands
 	rng := rand.New(rand.NewSource(1))
-	
+
 	var availableCards []deck.Card
 	for suit := 0; suit < 4; suit++ {
 		for rank := 2; rank <= 14; rank++ {
 			availableCards = append(availableCards, deck.Card{Rank: rank, Suit: suit})
 		}
 	}
-	
+
 	tightRange := TightRange{}
 	tightCount := 0
 	samples := 100
-	
+
 	for i := 0; i < samples; i++ {
 		hand, ok := tightRange.SampleHand(availableCards, rng)
 		if !ok {
 			t.Error("Failed to sample hand")
 			continue
 		}
-		
+
 		if isTightHand(hand) {
 			tightCount++
 		}
-		
+
 		if i < 5 { // Log first 5 samples for debugging
-			t.Logf("Sample %d: %s %s (tight: %v)", 
+			t.Logf("Sample %d: %s %s (tight: %v)",
 				i+1, hand[0].String(), hand[1].String(), isTightHand(hand))
 		}
 	}
-	
+
 	tightPercentage := float64(tightCount) * 100 / float64(samples)
 	t.Logf("TightRange sampling: %d/%d tight hands (%.1f%%)", tightCount, samples, tightPercentage)
-	
+
 	// Should sample mostly tight hands (allowing for some fallback to MediumRange)
 	if tightPercentage < 70 {
 		t.Errorf("TightRange should sample mostly tight hands, got %.1f%%", tightPercentage)
@@ -78,10 +78,10 @@ func TestEquityProgressionAcrossRanges(t *testing.T) {
 		{Rank: 11, Suit: 1}, // J♦
 		{Rank: 7, Suit: 2},  // 7♥
 	}
-	
+
 	board := []deck.Card{
 		{Rank: 14, Suit: 1}, // A♥ - Ace on board
-		{Rank: 10, Suit: 2}, // T♦ 
+		{Rank: 10, Suit: 2}, // T♦
 		{Rank: 7, Suit: 3},  // 7♠ - Bottom pair for J7
 	}
 
@@ -91,21 +91,21 @@ func TestEquityProgressionAcrossRanges(t *testing.T) {
 	randomEquity := EstimateEquity(j7, board, RandomRange{}, 1000, rng)
 	mediumEquity := EstimateEquity(j7, board, MediumRange{}, 1000, rng)
 	tightEquity := EstimateEquity(j7, board, TightRange{}, 1000, rng)
-	
+
 	t.Logf("J7 with bottom pair on A-T-7 board:")
 	t.Logf("  vs Random range: %.1f%%", randomEquity*100)
-	t.Logf("  vs Medium range: %.1f%%", mediumEquity*100) 
+	t.Logf("  vs Medium range: %.1f%%", mediumEquity*100)
 	t.Logf("  vs Tight range:  %.1f%%", tightEquity*100)
-	
+
 	// Equity should decrease as opponent range gets tighter (fundamental poker principle)
 	if tightEquity >= mediumEquity {
 		t.Error("Equity vs tight range should be less than vs medium range")
 	}
-	
+
 	if mediumEquity >= randomEquity {
 		t.Error("Equity vs medium range should be less than vs random range")
 	}
-	
+
 	// The original bot bug: showing 64% equity vs aggressive opponents
 	// Our fix should show more realistic numbers
 	if tightEquity > 0.50 {
@@ -117,8 +117,8 @@ func TestTightHandDefinitionUpdates(t *testing.T) {
 	// Test our updated tight hand definition
 	testCases := []struct {
 		rank1, suit1, rank2, suit2 int
-		shouldBeTight               bool
-		description                 string
+		shouldBeTight              bool
+		description                string
 	}{
 		// Should be tight
 		{14, 0, 13, 0, true, "A♣K♣ - premium suited"},
@@ -142,7 +142,7 @@ func TestTightHandDefinitionUpdates(t *testing.T) {
 			{Rank: tc.rank1, Suit: tc.suit1},
 			{Rank: tc.rank2, Suit: tc.suit2},
 		}
-		
+
 		result := isTightHand(hand)
 		if result != tc.shouldBeTight {
 			t.Errorf("%s: expected tight=%v, got tight=%v", tc.description, tc.shouldBeTight, result)
@@ -153,24 +153,24 @@ func TestTightHandDefinitionUpdates(t *testing.T) {
 func TestMediumRangeExists(t *testing.T) {
 	// Verify MediumRange works as expected
 	rng := rand.New(rand.NewSource(1))
-	
+
 	var availableCards []deck.Card
 	for suit := 0; suit < 4; suit++ {
 		for rank := 2; rank <= 14; rank++ {
 			availableCards = append(availableCards, deck.Card{Rank: rank, Suit: suit})
 		}
 	}
-	
+
 	mediumRange := MediumRange{}
 	samples := 50
-	
+
 	for i := 0; i < samples; i++ {
 		hand, ok := mediumRange.SampleHand(availableCards, rng)
 		if !ok {
 			t.Error("Failed to sample from MediumRange")
 			continue
 		}
-		
+
 		if i < 3 { // Log a few samples
 			t.Logf("MediumRange sample %d: %s %s", i+1, hand[0].String(), hand[1].String())
 		}

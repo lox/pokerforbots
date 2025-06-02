@@ -84,7 +84,7 @@ func (r TightRange) SampleHand(availableCards []deck.Card, rng *rand.Rand) ([]de
 	}
 
 	attempts := 0
-	for attempts < 200 {  // More attempts for better tight range
+	for attempts < 200 { // More attempts for better tight range
 		// Pick 2 random cards without creating full permutation
 		idx1 := rng.Intn(len(availableCards))
 		idx2 := rng.Intn(len(availableCards) - 1)
@@ -165,7 +165,7 @@ func isTightHand(hand []deck.Card) bool {
 	if card1.Suit == card2.Suit {
 		gap := abs(card1.Rank - card2.Rank)
 		if gap <= 1 && (card1.Rank >= deck.Ten && card2.Rank >= deck.Nine) ||
-		   (card2.Rank >= deck.Ten && card1.Rank >= deck.Nine) {
+			(card2.Rank >= deck.Ten && card1.Rank >= deck.Nine) {
 			return true
 		}
 	}
@@ -203,7 +203,7 @@ func isMediumHand(hand []deck.Card) bool {
 
 	// Suited hands with one medium card
 	if card1.Suit == card2.Suit {
-		if (card1.Rank >= 7 || card2.Rank >= 7) {
+		if card1.Rank >= 7 || card2.Rank >= 7 {
 			return true
 		}
 	}

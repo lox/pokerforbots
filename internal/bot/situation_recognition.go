@@ -9,15 +9,15 @@ import (
 
 // SituationContext captures the key elements of a poker decision
 type SituationContext struct {
-	Player          game.PlayerState
-	TableState      game.TableState
-	HandStrength    HandStrength
-	Equity          float64
-	PotOdds         float64
-	IsInPosition    bool
-	IsMultiway      bool
-	ActionSequence  ActionSequenceType
-	BoardTexture    BoardTexture
+	Player         game.PlayerState
+	TableState     game.TableState
+	HandStrength   HandStrength
+	Equity         float64
+	PotOdds        float64
+	IsInPosition   bool
+	IsMultiway     bool
+	ActionSequence ActionSequenceType
+	BoardTexture   BoardTexture
 }
 
 // ActionSequenceType describes the betting action leading to this decision
@@ -35,11 +35,11 @@ const (
 
 // SituationRule represents a fundamental poker concept
 type SituationRule struct {
-	Name        string
-	Condition   func(SituationContext) bool
-	Adjustment  ActionAdjustment
-	Reasoning   string
-	Priority    int // Higher priority rules override lower ones
+	Name       string
+	Condition  func(SituationContext) bool
+	Adjustment ActionAdjustment
+	Reasoning  string
+	Priority   int // Higher priority rules override lower ones
 }
 
 // ActionAdjustment modifies action probabilities
@@ -79,7 +79,7 @@ func (sr *SituationRecognizer) EvaluateSituation(ctx SituationContext) (ActionAd
 			totalAdjustment.FoldMultiplier *= rule.Adjustment.FoldMultiplier
 			totalAdjustment.CallMultiplier *= rule.Adjustment.CallMultiplier
 			totalAdjustment.RaiseMultiplier *= rule.Adjustment.RaiseMultiplier
-			
+
 			appliedRules = append(appliedRules, rule.Name)
 		}
 	}
@@ -103,9 +103,9 @@ func getFundamentalPokerRules() []SituationRule {
 					ctx.TableState.CurrentBet > 0
 			},
 			Adjustment: ActionAdjustment{
-				FoldMultiplier:  1.3,  // Moderately more likely to fold
-				CallMultiplier:  0.9,  // Slightly less likely to call
-				RaiseMultiplier: 0.3,  // Less likely to 3-bet
+				FoldMultiplier:  1.3, // Moderately more likely to fold
+				CallMultiplier:  0.9, // Slightly less likely to call
+				RaiseMultiplier: 0.3, // Less likely to 3-bet
 			},
 			Reasoning: "Weak hand in blinds vs late position raise - avoid 3-betting",
 			Priority:  100,
@@ -122,9 +122,9 @@ func getFundamentalPokerRules() []SituationRule {
 					ctx.ActionSequence == PostflopBet
 			},
 			Adjustment: ActionAdjustment{
-				FoldMultiplier:  1.2,  // Moderately more likely to fold
-				CallMultiplier:  1.0,  // Same likelihood to call
-				RaiseMultiplier: 0.4,  // Less likely to raise/jam
+				FoldMultiplier:  1.2, // Moderately more likely to fold
+				CallMultiplier:  1.0, // Same likelihood to call
+				RaiseMultiplier: 0.4, // Less likely to raise/jam
 			},
 			Reasoning: "Draw out of position vs aggression - play cautiously",
 			Priority:  90,
@@ -156,9 +156,9 @@ func getFundamentalPokerRules() []SituationRule {
 					ctx.TableState.CurrentBet == 0 // Considering betting
 			},
 			Adjustment: ActionAdjustment{
-				FoldMultiplier:  1.0,  // Check instead of fold
-				CallMultiplier:  1.0,  // Check instead of call
-				RaiseMultiplier: 0.4,  // Much less likely to bet
+				FoldMultiplier:  1.0, // Check instead of fold
+				CallMultiplier:  1.0, // Check instead of call
+				RaiseMultiplier: 0.4, // Much less likely to bet
 			},
 			Reasoning: "Weak hand in multiway pot - avoid betting",
 			Priority:  70,
@@ -173,9 +173,9 @@ func getFundamentalPokerRules() []SituationRule {
 					ctx.TableState.CurrentRound != game.PreFlop
 			},
 			Adjustment: ActionAdjustment{
-				FoldMultiplier:  0.5,  // Less likely to fold
-				CallMultiplier:  0.8,  // Less likely to just call
-				RaiseMultiplier: 1.5,  // More likely to bet/raise
+				FoldMultiplier:  0.5, // Less likely to fold
+				CallMultiplier:  0.8, // Less likely to just call
+				RaiseMultiplier: 1.5, // More likely to bet/raise
 			},
 			Reasoning: "Strong hand in position - value betting",
 			Priority:  60,
@@ -237,7 +237,7 @@ func determineActionSequence(tableState game.TableState) ActionSequenceType {
 
 	preflopRaises := 0
 	postflopBets := 0
-	
+
 	for _, action := range tableState.HandHistory.Actions {
 		if action.Round == game.PreFlop && action.Action == game.Raise {
 			preflopRaises++
@@ -274,33 +274,33 @@ func determineBoardTexture(communityCards []deck.Card) BoardTexture {
 	if len(communityCards) < 3 {
 		return DryBoard
 	}
-	
+
 	// Simple board texture analysis
 	wetness := 0
-	
+
 	// Check for flush possibilities
 	suitCounts := make(map[int]int)
 	for _, card := range communityCards {
 		suitCounts[card.Suit]++
 	}
-	
+
 	maxSuitCount := 0
 	for _, count := range suitCounts {
 		if count > maxSuitCount {
 			maxSuitCount = count
 		}
 	}
-	
+
 	if maxSuitCount >= 3 {
 		wetness += 2 // Flush draw possible
 	}
-	
+
 	// Check for straight possibilities
 	ranks := make([]int, len(communityCards))
 	for i, card := range communityCards {
 		ranks[i] = card.Rank
 	}
-	
+
 	// Sort ranks
 	for i := 0; i < len(ranks); i++ {
 		for j := i + 1; j < len(ranks); j++ {
@@ -309,7 +309,7 @@ func determineBoardTexture(communityCards []deck.Card) BoardTexture {
 			}
 		}
 	}
-	
+
 	// Check connectivity
 	connectedCards := 1
 	for i := 1; i < len(ranks); i++ {
@@ -317,11 +317,11 @@ func determineBoardTexture(communityCards []deck.Card) BoardTexture {
 			connectedCards++
 		}
 	}
-	
+
 	if connectedCards >= 3 {
 		wetness += 2 // Straight draws possible
 	}
-	
+
 	// Classify based on wetness
 	switch {
 	case wetness >= 4:

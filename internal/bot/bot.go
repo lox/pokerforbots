@@ -252,7 +252,7 @@ func (b *Bot) findRelevantOpponent(player game.PlayerState, tableState game.Tabl
 				return action.PlayerName
 			}
 		}
-		
+
 		// Priority 2: Preflop raiser if no current round betting
 		if tableState.CurrentRound != game.PreFlop {
 			for _, action := range tableState.HandHistory.Actions {
@@ -456,10 +456,10 @@ func (b *Bot) evaluateHandStrengthWithThinking(player game.PlayerState, tableSta
 
 	// Find the most relevant opponent for range construction
 	opponentName := b.findRelevantOpponent(player, tableState)
-	
+
 	var opponentRange evaluator.Range
 	var rangeDescription string
-	
+
 	if opponentName != "" {
 		// Use improved range builder
 		rangeBuilder := NewSimpleRangeBuilder()
@@ -471,7 +471,7 @@ func (b *Bot) evaluateHandStrengthWithThinking(player game.PlayerState, tableSta
 			context := b.getBettingContext(tableState)
 			switch context {
 			case "unopened":
-				opponentRange = evaluator.LooseRange{} // Limpers have wide ranges  
+				opponentRange = evaluator.LooseRange{} // Limpers have wide ranges
 				thinking.AddThought("Unopened pot - using loose opponent range")
 			case "single-raised":
 				opponentRange = evaluator.TightRange{} // Raisers have tighter ranges
@@ -491,7 +491,7 @@ func (b *Bot) evaluateHandStrengthWithThinking(player game.PlayerState, tableSta
 
 	// Calculate equity with the determined range
 	equity := evaluator.EstimateEquity(player.HoleCards, tableState.CommunityCards, opponentRange, 1000, b.rng)
-	
+
 	if tableState.CurrentRound == game.PreFlop {
 		thinking.AddThought(fmt.Sprintf("Pre-flop equity: %.1f%%", equity*100))
 	} else {
@@ -505,8 +505,6 @@ func (b *Bot) evaluateHandStrengthWithThinking(player game.PlayerState, tableSta
 	thinking.AddThought(fmt.Sprintf("Hand strength: %s", strength.String()))
 	return EquityContext{Strength: strength, Equity: equity}
 }
-
-
 
 // equityToHandStrength maps equity percentage to hand strength categories
 func (b *Bot) equityToHandStrength(equity float64) HandStrength {
@@ -714,7 +712,7 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player game.PlayerState, ta
 	situationCtx := BuildSituationContext(player, tableState, equityCtx.Strength, equityCtx.Equity, potOdds)
 	recognizer := NewSituationRecognizer()
 	adjustment, reasoning := recognizer.EvaluateSituation(situationCtx)
-	
+
 	thinking.AddThought(fmt.Sprintf("Situation analysis: %s", reasoning))
 	// Check for continuation betting opportunity
 	shouldCBet := b.shouldContinuationBet(player, tableState, equityCtx.Strength, positionFactor)
@@ -766,11 +764,11 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player game.PlayerState, ta
 	}
 
 	// Apply situation-based adjustments instead of hardcoded factors
-	thinking.AddThought(fmt.Sprintf("Applying situation adjustments: fold×%.2f, call×%.2f, raise×%.2f", 
+	thinking.AddThought(fmt.Sprintf("Applying situation adjustments: fold×%.2f, call×%.2f, raise×%.2f",
 		adjustment.FoldMultiplier, adjustment.CallMultiplier, adjustment.RaiseMultiplier))
-	
+
 	foldProb *= adjustment.FoldMultiplier
-	callProb *= adjustment.CallMultiplier  
+	callProb *= adjustment.CallMultiplier
 	raiseProb *= adjustment.RaiseMultiplier
 
 	// Still apply config factors for overall bot personality

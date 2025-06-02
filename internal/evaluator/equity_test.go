@@ -193,7 +193,7 @@ func TestIsTightHand(t *testing.T) {
 			cards:    "As9h",
 			expected: false, // Updated: only AT+ considered tight
 		},
-		
+
 		// Test cases for updated tight definition
 		{
 			name:     "Pocket Tens",

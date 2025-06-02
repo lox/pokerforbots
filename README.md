@@ -1,4 +1,4 @@
-# Texas Hold'em CLI
+# Poker for Bots
 
 A command-line Texas Hold'em poker game that simulates a PokerStars-style experience with AI opponents, plus a poker odds calculator tool.
 

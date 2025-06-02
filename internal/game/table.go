@@ -1018,20 +1018,20 @@ func (t *Table) ApplyDecision(decision Decision) (string, error) {
 // This is a critical invariant - chips should never be created or destroyed
 func (t *Table) ValidateChipConservation(expectedTotal int) error {
 	actualTotal := 0
-	
+
 	// Count chips held by all players
 	for _, player := range t.players {
 		actualTotal += player.Chips
 	}
-	
+
 	// Add chips currently in the pot (if any)
 	actualTotal += t.pot
-	
+
 	if actualTotal != expectedTotal {
-		return fmt.Errorf("chip conservation violation: expected %d total chips, but found %d (difference: %d)", 
+		return fmt.Errorf("chip conservation violation: expected %d total chips, but found %d (difference: %d)",
 			expectedTotal, actualTotal, actualTotal-expectedTotal)
 	}
-	
+
 	return nil
 }
 

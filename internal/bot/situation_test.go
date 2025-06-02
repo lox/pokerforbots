@@ -9,7 +9,7 @@ import (
 
 func TestSituationRecognition(t *testing.T) {
 	// Test the specific scenario from the hand history: 5♣6♣ from SB vs CO raise
-	
+
 	// Setup the situation
 	player := game.PlayerState{
 		Name:     "AI-4",
@@ -45,21 +45,21 @@ func TestSituationRecognition(t *testing.T) {
 
 	// Build situation context
 	situationCtx := BuildSituationContext(player, tableState, Weak, 0.39, 1.6)
-	
+
 	t.Logf("Debug - ActionSequence: %v", situationCtx.ActionSequence)
 	t.Logf("Debug - Position: %v", situationCtx.Player.Position)
 	t.Logf("Debug - HandStrength: %v", situationCtx.HandStrength)
 	t.Logf("Debug - CurrentBet: %v", situationCtx.TableState.CurrentBet)
-	
+
 	// Test situation recognition
 	recognizer := NewSituationRecognizer()
 	adjustment, reasoning := recognizer.EvaluateSituation(situationCtx)
-	
+
 	t.Logf("Situation: 5♣6♣ from SB vs CO raise")
 	t.Logf("Reasoning: %s", reasoning)
-	t.Logf("Adjustments: fold×%.2f, call×%.2f, raise×%.2f", 
+	t.Logf("Adjustments: fold×%.2f, call×%.2f, raise×%.2f",
 		adjustment.FoldMultiplier, adjustment.CallMultiplier, adjustment.RaiseMultiplier)
-	
+
 	// Should heavily discourage raising
 	if adjustment.RaiseMultiplier > 0.3 {
 		t.Errorf("Raise multiplier too high for 5♣6♣ from SB: %.2f", adjustment.RaiseMultiplier)
@@ -68,9 +68,9 @@ func TestSituationRecognition(t *testing.T) {
 
 func TestSituationRecognitionPostflop(t *testing.T) {
 	// Test the postflop jam scenario: gut-shot draw OOP vs bet
-	
+
 	player := game.PlayerState{
-		Name:     "AI-4", 
+		Name:     "AI-4",
 		Position: game.SmallBlind,
 		HoleCards: []deck.Card{
 			{Rank: 5, Suit: 0}, // 5♣
@@ -100,16 +100,16 @@ func TestSituationRecognitionPostflop(t *testing.T) {
 
 	// Build situation context - gut-shot draw
 	situationCtx := BuildSituationContext(player, tableState, Weak, 0.27, 2.3)
-	
+
 	// Test situation recognition
 	recognizer := NewSituationRecognizer()
 	adjustment, reasoning := recognizer.EvaluateSituation(situationCtx)
-	
+
 	t.Logf("Situation: 5♣6♣ gut-shot OOP vs pot-sized bet")
 	t.Logf("Reasoning: %s", reasoning)
-	t.Logf("Adjustments: fold×%.2f, call×%.2f, raise×%.2f", 
+	t.Logf("Adjustments: fold×%.2f, call×%.2f, raise×%.2f",
 		adjustment.FoldMultiplier, adjustment.CallMultiplier, adjustment.RaiseMultiplier)
-	
+
 	// Should heavily discourage raising (jamming)
 	if adjustment.RaiseMultiplier > 0.4 {
 		t.Errorf("Raise multiplier too high for gut-shot OOP vs bet: %.2f", adjustment.RaiseMultiplier)
@@ -118,7 +118,7 @@ func TestSituationRecognitionPostflop(t *testing.T) {
 
 func TestPositionAdvantage(t *testing.T) {
 	// Test that strong hands in position get encouraged to bet
-	
+
 	player := game.PlayerState{
 		Name:     "Hero",
 		Position: game.Button,
@@ -150,16 +150,16 @@ func TestPositionAdvantage(t *testing.T) {
 
 	// Build situation context - top pair in position
 	situationCtx := BuildSituationContext(player, tableState, VeryStrong, 0.85, 0)
-	
+
 	// Test situation recognition
 	recognizer := NewSituationRecognizer()
 	adjustment, reasoning := recognizer.EvaluateSituation(situationCtx)
-	
+
 	t.Logf("Situation: TPTK in position vs check")
 	t.Logf("Reasoning: %s", reasoning)
-	t.Logf("Adjustments: fold×%.2f, call×%.2f, raise×%.2f", 
+	t.Logf("Adjustments: fold×%.2f, call×%.2f, raise×%.2f",
 		adjustment.FoldMultiplier, adjustment.CallMultiplier, adjustment.RaiseMultiplier)
-	
+
 	// Should encourage betting for value
 	if adjustment.RaiseMultiplier < 1.2 {
 		t.Errorf("Raise multiplier too low for strong hand in position: %.2f", adjustment.RaiseMultiplier)

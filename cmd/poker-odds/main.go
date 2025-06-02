@@ -16,11 +16,11 @@ import (
 )
 
 type CLI struct {
-	Hands        []string `arg:"" help:"Player hands in format 'AcKd QhJs' (space separated, quoted)" required:"true"`
-	Board        string   `short:"b" help:"Community board cards (e.g., 'Td7s8h')"`
-	Possibilities bool    `short:"p" help:"Show detailed hand type probabilities"`
-	Iterations   int      `short:"i" help:"Number of Monte Carlo iterations" default:"100000"`
-	Seed         *int64   `help:"Random seed for reproducible results"`
+	Hands         []string `arg:"" help:"Player hands in format 'AcKd QhJs' (space separated, quoted)" required:"true"`
+	Board         string   `short:"b" help:"Community board cards (e.g., 'Td7s8h')"`
+	Possibilities bool     `short:"p" help:"Show detailed hand type probabilities"`
+	Iterations    int      `short:"i" help:"Number of Monte Carlo iterations" default:"100000"`
+	Seed          *int64   `help:"Random seed for reproducible results"`
 }
 
 var (
@@ -34,16 +34,16 @@ var (
 			Foreground(lipgloss.Color("14"))
 
 	winStyle = lipgloss.NewStyle().
-		       Foreground(lipgloss.Color("10"))
+			Foreground(lipgloss.Color("10"))
 
 	tieStyle = lipgloss.NewStyle().
-		       Foreground(lipgloss.Color("11"))
+			Foreground(lipgloss.Color("11"))
 
 	categoryStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("12"))
 
 	percentStyle = lipgloss.NewStyle().
-		       Foreground(lipgloss.Color("9"))
+			Foreground(lipgloss.Color("9"))
 )
 
 func main() {
@@ -96,16 +96,16 @@ func main() {
 }
 
 type PlayerResult struct {
-	Hand         []deck.Card
-	Wins         int
-	Ties         int
-	Total        int
+	Hand          []deck.Card
+	Wins          int
+	Ties          int
+	Total         int
 	Possibilities map[string]int // For --possibilities mode
 }
 
 func parseHands(handStrings []string) ([][]deck.Card, error) {
 	var hands [][]deck.Card
-	
+
 	for i, handStr := range handStrings {
 		// Remove any extra spaces and parse
 		handStr = strings.TrimSpace(handStr)
@@ -118,13 +118,13 @@ func parseHands(handStrings []string) ([][]deck.Card, error) {
 		}
 		hands = append(hands, hand)
 	}
-	
+
 	return hands, nil
 }
 
 func validateNoDuplicates(hands [][]deck.Card, board []deck.Card) error {
 	seen := make(map[deck.Card]bool)
-	
+
 	// Check board cards
 	for _, card := range board {
 		if seen[card] {
@@ -132,7 +132,7 @@ func validateNoDuplicates(hands [][]deck.Card, board []deck.Card) error {
 		}
 		seen[card] = true
 	}
-	
+
 	// Check hand cards
 	for i, hand := range hands {
 		for _, card := range hand {
@@ -142,21 +142,21 @@ func validateNoDuplicates(hands [][]deck.Card, board []deck.Card) error {
 			seen[card] = true
 		}
 	}
-	
+
 	return nil
 }
 
 func calculateMonteCarlo(hands [][]deck.Card, board []deck.Card, iterations int, rng *rand.Rand) []PlayerResult {
 	numPlayers := len(hands)
 	results := make([]PlayerResult, numPlayers)
-	
+
 	// Initialize results
 	for i := range results {
 		results[i].Hand = hands[i]
 		results[i].Total = iterations
 		results[i].Possibilities = make(map[string]int)
 	}
-	
+
 	// Create used cards set
 	usedCards := evaluator.NewCardSet(board)
 	for _, hand := range hands {
@@ -164,7 +164,7 @@ func calculateMonteCarlo(hands [][]deck.Card, board []deck.Card, iterations int,
 			usedCards.Add(card)
 		}
 	}
-	
+
 	// Create available cards
 	var availableCards []deck.Card
 	for suit := deck.Spades; suit <= deck.Clubs; suit++ {
@@ -175,13 +175,13 @@ func calculateMonteCarlo(hands [][]deck.Card, board []deck.Card, iterations int,
 			}
 		}
 	}
-	
+
 	// Run Monte Carlo simulation
 	for iter := 0; iter < iterations; iter++ {
 		// Complete the board if needed
 		fullBoard := make([]deck.Card, len(board))
 		copy(fullBoard, board)
-		
+
 		cardsNeeded := 5 - len(board)
 		if cardsNeeded > 0 {
 			// Randomly select cards for board completion
@@ -190,7 +190,7 @@ func calculateMonteCarlo(hands [][]deck.Card, board []deck.Card, iterations int,
 				fullBoard = append(fullBoard, availableCards[idx])
 			}
 		}
-		
+
 		// Evaluate all hands
 		handRanks := make([]evaluator.HandRank, numPlayers)
 		for i, hand := range hands {
@@ -198,12 +198,12 @@ func calculateMonteCarlo(hands [][]deck.Card, board []deck.Card, iterations int,
 			copy(fullHand[:2], hand)
 			copy(fullHand[2:], fullBoard)
 			handRanks[i] = evaluator.Evaluate7(fullHand)
-			
+
 			// Track hand types for possibilities
 			handType := handRanks[i].String()
 			results[i].Possibilities[handType]++
 		}
-		
+
 		// Determine winners
 		bestRank := handRanks[0]
 		for i := 1; i < numPlayers; i++ {
@@ -211,7 +211,7 @@ func calculateMonteCarlo(hands [][]deck.Card, board []deck.Card, iterations int,
 				bestRank = handRanks[i]
 			}
 		}
-		
+
 		// Count wins and ties
 		winnersCount := 0
 		for _, rank := range handRanks {
@@ -219,7 +219,7 @@ func calculateMonteCarlo(hands [][]deck.Card, board []deck.Card, iterations int,
 				winnersCount++
 			}
 		}
-		
+
 		for i, rank := range handRanks {
 			if rank.Compare(bestRank) == 0 {
 				if winnersCount == 1 {
@@ -230,11 +230,9 @@ func calculateMonteCarlo(hands [][]deck.Card, board []deck.Card, iterations int,
 			}
 		}
 	}
-	
+
 	return results
 }
-
-
 
 func selectRandomIndices(max, count int, rng *rand.Rand) []int {
 	if count >= max {
@@ -244,10 +242,10 @@ func selectRandomIndices(max, count int, rng *rand.Rand) []int {
 		}
 		return indices
 	}
-	
+
 	indices := make([]int, count)
 	used := make(map[int]bool)
-	
+
 	for i := 0; i < count; i++ {
 		for {
 			idx := rng.Intn(max)
@@ -258,7 +256,7 @@ func selectRandomIndices(max, count int, rng *rand.Rand) []int {
 			}
 		}
 	}
-	
+
 	return indices
 }
 
@@ -268,36 +266,36 @@ func displayResults(results []PlayerResult, board []deck.Card, showPossibilities
 		fmt.Printf("%s\n", headerStyle.Render("board"))
 		fmt.Printf("%s\n\n", formatCards(board))
 	}
-	
+
 	// Display hand results using tabwriter for proper alignment
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	
+
 	// Header
-	fmt.Fprintf(w, "%s\t%s\t%s\n", 
+	fmt.Fprintf(w, "%s\t%s\t%s\n",
 		headerStyle.Render("hand"),
 		headerStyle.Render("win"),
 		headerStyle.Render("tie"))
-	
+
 	// Results
 	for _, result := range results {
 		handStr := formatCards(result.Hand)
 		winPct := float64(result.Wins) / float64(result.Total) * 100
 		tiePct := float64(result.Ties) / float64(result.Total) * 100
-		
-		fmt.Fprintf(w, "%s\t%s\t%s\n", 
+
+		fmt.Fprintf(w, "%s\t%s\t%s\n",
 			handStyle.Render(handStr),
 			winStyle.Render(fmt.Sprintf("%.1f%%", winPct)),
 			tieStyle.Render(fmt.Sprintf("%.1f%%", tiePct)))
 	}
-	
+
 	w.Flush()
-	
+
 	// Display possibilities breakdown if requested
 	if showPossibilities && len(results) > 0 {
 		fmt.Printf("\n")
 		displayPossibilities(results)
 	}
-	
+
 	// Display footer
 	fmt.Printf("\n")
 	fmt.Printf("%d iterations in %v\n", iterations, duration.Truncate(time.Millisecond))
@@ -311,29 +309,29 @@ func displayPossibilities(results []PlayerResult) {
 			allTypes[handType] = true
 		}
 	}
-	
+
 	// Order hand types by strength
 	orderedTypes := []string{
 		"Royal Flush", "Straight Flush", "Four of a Kind", "Full House",
 		"Flush", "Straight", "Three of a Kind", "Two Pair", "One Pair", "High Card",
 	}
-	
+
 	// Use tabwriter for proper alignment
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	
+
 	// Display header
 	fmt.Fprintf(w, "%s", categoryStyle.Render("hand"))
 	for i := range results {
 		fmt.Fprintf(w, "\t%s", handStyle.Render(formatCards(results[i].Hand)))
 	}
 	fmt.Fprintf(w, "\n")
-	
+
 	// Display each hand type
 	for _, handType := range orderedTypes {
 		if !allTypes[handType] {
 			continue
 		}
-		
+
 		fmt.Fprintf(w, "%s", categoryStyle.Render(handType))
 		for _, result := range results {
 			count := result.Possibilities[handType]
@@ -346,7 +344,7 @@ func displayPossibilities(results []PlayerResult) {
 		}
 		fmt.Fprintf(w, "\n")
 	}
-	
+
 	w.Flush()
 }
 

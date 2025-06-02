@@ -55,7 +55,7 @@ func CalculateSidePots(players []*Player, mainPot int) []SidePot {
 
 		// Count all players who contributed at this level or higher (for pot calculation)
 		contributorsAtLevel := len(contributions) - i
-		
+
 		// Only players still in hand are eligible to win (separate from pot calculation)
 		eligible := make([]*Player, 0, len(contributions)-i)
 		for j := i; j < len(contributions); j++ {

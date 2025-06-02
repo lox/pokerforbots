@@ -11,10 +11,10 @@ import (
 // GameEngine handles the core game loop logic that can be shared between
 // interactive play and simulation
 type GameEngine struct {
-	table        *Table
-	defaultAgent Agent
-	logger       *log.Logger
-	eventBus     EventBus
+	table             *Table
+	defaultAgent      Agent
+	logger            *log.Logger
+	eventBus          EventBus
 	startingChipTotal int // Track total chips when engine was created
 }
 
@@ -220,7 +220,7 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) (*HandResult, error) {
 
 	if result.Winner != nil {
 		ge.logger.Debug("Hand complete", "winner", result.Winner.Name, "pot", result.PotSize)
-		
+
 		// Validate chip conservation after pot awarding
 		if err := ge.validateChipConservation(); err != nil {
 			ge.logger.Error("Chip conservation violation detected!", "error", err)

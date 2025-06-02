@@ -29,11 +29,11 @@ type TUIModel struct {
 	focusedPane  int // 0 = log, 1 = input
 
 	// Display state (event-driven, client-server ready)
-	currentPot    int
-	currentBet    int
-	validActions  []game.ValidAction
-	isHumansTurn  bool
-	humanPlayer   *game.Player // Current human player info when it's their turn
+	currentPot   int
+	currentBet   int
+	validActions []game.ValidAction
+	isHumansTurn bool
+	humanPlayer  *game.Player // Current human player info when it's their turn
 
 	// Dimensions
 	width  int

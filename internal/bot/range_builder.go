@@ -49,7 +49,7 @@ func (rb *SimpleRangeBuilder) getPositionBasedRange(position game.Position) eval
 	case game.UnderTheGun, game.EarlyPosition:
 		return evaluator.TightRange{} // 15-20% range
 	case game.MiddlePosition:
-		return evaluator.MediumRange{} // 20-25% range  
+		return evaluator.MediumRange{} // 20-25% range
 	case game.LatePosition, game.Cutoff:
 		return evaluator.MediumRange{} // 25-30% range
 	case game.Button:
@@ -74,7 +74,7 @@ func (rb *SimpleRangeBuilder) applyActionFilters(baseRange evaluator.Range, oppo
 		if action.Round != game.PreFlop || action.PlayerName != opponentName {
 			continue
 		}
-		
+
 		if action.Action == game.Raise {
 			currentRange = evaluator.TightRange{}
 			descriptions = append(descriptions, "PF raise -> tight range")
@@ -90,7 +90,7 @@ func (rb *SimpleRangeBuilder) applyActionFilters(baseRange evaluator.Range, oppo
 			if action.Round == game.PreFlop || action.PlayerName != opponentName {
 				continue
 			}
-			
+
 			if action.Action == game.Raise {
 				// Postflop betting after preflop aggression = very tight
 				if preflopRaised {
@@ -105,7 +105,7 @@ func (rb *SimpleRangeBuilder) applyActionFilters(baseRange evaluator.Range, oppo
 				break
 			}
 		}
-		
+
 		// If no postflop betting, they're checking/calling
 		if !postflopBet && preflopRaised {
 			descriptions = append(descriptions, "PF raiser checking postflop -> maintaining tight range")

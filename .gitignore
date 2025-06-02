@@ -7,3 +7,7 @@
 /main
 /simulate
 /holdem
+
+# Configs
+/holdem-server.hcl
+/holdem-client.hcl

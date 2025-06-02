@@ -55,23 +55,23 @@ func TestParseHands(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			hands, err := parseHands(tt.input)
-			
+
 			if tt.hasError {
 				if err == nil {
 					t.Errorf("Expected error but got none")
 				}
 				return
 			}
-			
+
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
 				return
 			}
-			
+
 			if len(hands) != tt.expected {
 				t.Errorf("Expected %d hands, got %d", tt.expected, len(hands))
 			}
-			
+
 			for _, hand := range hands {
 				if len(hand) != 2 {
 					t.Errorf("Each hand should have exactly 2 cards, got %d", len(hand))
@@ -127,11 +127,11 @@ func TestValidateNoDuplicates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateNoDuplicates(tt.hands, tt.board)
-			
+
 			if tt.hasError && err == nil {
 				t.Errorf("Expected error but got none")
 			}
-			
+
 			if !tt.hasError && err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}
@@ -142,7 +142,7 @@ func TestValidateNoDuplicates(t *testing.T) {
 func TestSelectRandomIndices(t *testing.T) {
 	// Use a fixed seed for deterministic testing
 	mockRng := rand.New(rand.NewSource(42))
-	
+
 	tests := []struct {
 		name     string
 		max      int
@@ -172,11 +172,11 @@ func TestSelectRandomIndices(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			indices := selectRandomIndices(tt.max, tt.count, mockRng)
-			
+
 			if len(indices) != tt.expected {
 				t.Errorf("Expected %d indices, got %d", tt.expected, len(indices))
 			}
-			
+
 			// Check for duplicates
 			seen := make(map[int]bool)
 			for _, idx := range indices {
@@ -184,7 +184,7 @@ func TestSelectRandomIndices(t *testing.T) {
 					t.Errorf("Duplicate index found: %d", idx)
 				}
 				seen[idx] = true
-				
+
 				if idx < 0 || idx >= tt.max {
 					t.Errorf("Index out of range: %d (max: %d)", idx, tt.max)
 				}
@@ -199,10 +199,10 @@ func TestFormatCards(t *testing.T) {
 		deck.NewCard(deck.Hearts, deck.King),
 		deck.NewCard(deck.Diamonds, deck.Queen),
 	}
-	
+
 	result := formatCards(cards)
 	expected := "A♠ K♥ Q♦"
-	
+
 	if result != expected {
 		t.Errorf("Expected %q, got %q", expected, result)
 	}

@@ -876,36 +876,36 @@ func TestPotAwardingBug(t *testing.T) {
 	// After pre-flop: You=$12, AI-2=$12, AI-4=$12, others folded with smaller amounts
 
 	// Manually set up the betting state after pre-flop
-	you := players[0]      // You
-	ai2 := players[1]      // AI-2  
-	ai3 := players[2]      // AI-3
-	ai4 := players[3]      // AI-4
-	ai5 := players[4]      // AI-5
-	ai6 := players[5]      // AI-6
+	you := players[0] // You
+	ai2 := players[1] // AI-2
+	ai3 := players[2] // AI-3
+	ai4 := players[3] // AI-4
+	ai5 := players[4] // AI-5
+	ai6 := players[5] // AI-6
 
 	// Set up final state manually to match the bug scenario
 	// Each player's chips should be: starting_chips - total_bet
 	you.Chips = 200 - 200 // All-in for $200, so 0 chips left
 	you.TotalBet = 200
 	you.IsAllIn = true
-	
-	ai2.Chips = 200 - 52  // Bet $52, folded
+
+	ai2.Chips = 200 - 52 // Bet $52, folded
 	ai2.TotalBet = 52
 	ai2.IsFolded = true
-	
-	ai3.Chips = 200 - 0   // Folded pre-flop, no contribution
+
+	ai3.Chips = 200 - 0 // Folded pre-flop, no contribution
 	ai3.TotalBet = 0
 	ai3.IsFolded = true
-	
-	ai4.Chips = 200 - 52  // Bet $52, still in hand but didn't call all-in
+
+	ai4.Chips = 200 - 52 // Bet $52, still in hand but didn't call all-in
 	ai4.TotalBet = 52
-	ai4.IsFolded = false  // Still in hand but didn't call all-in
-	
-	ai5.Chips = 200 - 2   // Posted big blind $2, then folded
+	ai4.IsFolded = false // Still in hand but didn't call all-in
+
+	ai5.Chips = 200 - 2 // Posted big blind $2, then folded
 	ai5.TotalBet = 2
 	ai5.IsFolded = true
-	
-	ai6.Chips = 200 - 2   // Called big blind $2 initially, then folded
+
+	ai6.Chips = 200 - 2 // Called big blind $2 initially, then folded
 	ai6.TotalBet = 2
 	ai6.IsFolded = true
 
@@ -942,10 +942,10 @@ func TestPotAwardingBug(t *testing.T) {
 	// Check that total chips equals starting amount (chips conserved)
 	expectedTotalAfter := 6 * 200 // Should be back to starting total
 	if totalChipsAfter != expectedTotalAfter {
-		t.Errorf("Total chips should be %d, got %d (difference: %d)", 
+		t.Errorf("Total chips should be %d, got %d (difference: %d)",
 			expectedTotalAfter, totalChipsAfter, expectedTotalAfter-totalChipsAfter)
 	}
-	
+
 	// Use the new chip conservation validation method
 	if err := table.ValidateChipConservation(expectedTotalAfter); err != nil {
 		t.Errorf("Chip conservation validation failed: %v", err)
@@ -954,7 +954,7 @@ func TestPotAwardingBug(t *testing.T) {
 	// You should have won the entire pot since you're the only player still in hand
 	expectedYourChips := initialChips[0] + expectedPot
 	if you.Chips != expectedYourChips {
-		t.Errorf("You should have %d chips (initial %d + pot %d), but got %d", 
+		t.Errorf("You should have %d chips (initial %d + pot %d), but got %d",
 			expectedYourChips, initialChips[0], expectedPot, you.Chips)
 	}
 
@@ -994,9 +994,9 @@ func TestChipConservation(t *testing.T) {
 
 	// Simulate some betting
 	table.StartNewHand()
-	table.pot = 50 // Simulate 50 chips in pot
+	table.pot = 50        // Simulate 50 chips in pot
 	players[0].Chips = 80 // Alice lost 20 to pot
-	players[1].Chips = 75 // Bob lost 25 to pot  
+	players[1].Chips = 75 // Bob lost 25 to pot
 	players[2].Chips = 95 // Charlie lost 5 to pot
 
 	// Should still pass (pot + player chips = 300)
