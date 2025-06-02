@@ -4,7 +4,7 @@ import (
 	"math/rand"
 
 	"github.com/charmbracelet/log"
-	"github.com/lox/holdem-cli/internal/game"
+	"github.com/lox/pokerforbots/internal/game"
 )
 
 // TAGBot is a Tight Aggressive bot that plays premium hands aggressively

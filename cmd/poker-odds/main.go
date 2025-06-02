@@ -11,8 +11,8 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/lox/holdem-cli/internal/deck"
-	"github.com/lox/holdem-cli/internal/evaluator"
+	"github.com/lox/pokerforbots/internal/deck"
+	"github.com/lox/pokerforbots/internal/evaluator"
 )
 
 type CLI struct {

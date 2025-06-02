@@ -5,8 +5,8 @@ import (
 	"math/rand"
 	"sort"
 
-	"github.com/lox/holdem-cli/internal/deck"
-	"github.com/lox/holdem-cli/internal/evaluator"
+	"github.com/lox/pokerforbots/internal/deck"
+	"github.com/lox/pokerforbots/internal/evaluator"
 )
 
 // TableConfig holds configuration for creating a table

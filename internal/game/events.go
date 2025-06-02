@@ -3,7 +3,7 @@ package game
 import (
 	"time"
 
-	"github.com/lox/holdem-cli/internal/deck"
+	"github.com/lox/pokerforbots/internal/deck"
 )
 
 // GameEvent represents any event that occurs during a poker game

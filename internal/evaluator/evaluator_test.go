@@ -1,8 +1,9 @@
 package evaluator
 
 import (
-	"github.com/lox/holdem-cli/internal/deck"
 	"testing"
+
+	"github.com/lox/pokerforbots/internal/deck"
 )
 
 func TestEvaluate7(t *testing.T) {

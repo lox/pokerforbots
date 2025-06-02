@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/lox/holdem-cli/internal/deck"
-	"github.com/lox/holdem-cli/internal/game"
+	"github.com/lox/pokerforbots/internal/deck"
+	"github.com/lox/pokerforbots/internal/game"
 )
 
 // Message represents the base WebSocket message structure

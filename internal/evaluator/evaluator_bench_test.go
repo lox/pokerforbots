@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/lox/holdem-cli/internal/deck"
+	"github.com/lox/pokerforbots/internal/deck"
 )
 
 // Generate7CardHands creates N random 7-card hands using a fixed seed

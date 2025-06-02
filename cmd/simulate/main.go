@@ -14,8 +14,8 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/charmbracelet/log"
-	"github.com/lox/holdem-cli/internal/bot"
-	"github.com/lox/holdem-cli/internal/game"
+	"github.com/lox/pokerforbots/internal/bot"
+	"github.com/lox/pokerforbots/internal/game"
 )
 
 type CLI struct {
@@ -263,6 +263,7 @@ func runSimulation(numHands int, opponentType string, seed int64, timeout time.D
 	}
 
 	fmt.Printf("Target: <2ms per hand for optimal performance\n\n")
+	fmt.Printf("Duplicate simulation mode: Each hand is played twice with swapped seats to reduce variance.\n\n")
 
 	for hand := 0; hand < numHands; hand++ {
 		// Generate independent seed for this hand
@@ -271,15 +272,36 @@ func runSimulation(numHands int, opponentType string, seed int64, timeout time.D
 		// Rotate OurBot's position (1-6) to eliminate positional bias
 		ourPosition := (hand % 6) + 1
 
-		result, err := playHandWithTimeout(opponentType, opponentMix, handSeed, ourPosition, timeout, logger)
-		if err != nil {
+		// Play hand as usual
+		result1, err1 := playHandWithTimeout(opponentType, opponentMix, handSeed, ourPosition, timeout, logger)
+		if err1 != nil {
 			fmt.Printf("\n❌ HANG DETECTED on hand %d!\n", hand+1)
 			fmt.Printf("Reproduction command: go run ./cmd/simulate --hands=1 --seed=%d --opponent=%s --timeout=10s\n", handSeed, opponentType)
 			fmt.Printf("Hand seed: %d, Position: %d\n", handSeed, ourPosition)
-			fmt.Printf("Error: %v\n", err)
+			fmt.Printf("Error: %v\n", err1)
 			os.Exit(1)
 		}
-		stats.Add(result)
+
+		// Play duplicate hand with swapped seat (choose a different seat)
+		// For simplicity, swap with seat 1 if not already, else seat 2
+		var swappedPosition int
+		if ourPosition != 1 {
+			swappedPosition = 1
+		} else {
+			swappedPosition = 2
+		}
+		result2, err2 := playHandWithTimeout(opponentType, opponentMix, handSeed, swappedPosition, timeout, logger)
+		if err2 != nil {
+			fmt.Printf("\n❌ HANG DETECTED on duplicate hand %d!\n", hand+1)
+			fmt.Printf("Reproduction command: go run ./cmd/simulate --hands=1 --seed=%d --opponent=%s --timeout=10s\n", handSeed, opponentType)
+			fmt.Printf("Hand seed: %d, Position: %d\n", handSeed, swappedPosition)
+			fmt.Printf("Error: %v\n", err2)
+			os.Exit(1)
+		}
+
+		// Add both results to statistics
+		stats.Add(result1)
+		stats.Add(result2)
 	}
 
 	return stats, opponentInfo

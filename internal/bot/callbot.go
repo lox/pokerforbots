@@ -2,7 +2,7 @@ package bot
 
 import (
 	"github.com/charmbracelet/log"
-	"github.com/lox/holdem-cli/internal/game"
+	"github.com/lox/pokerforbots/internal/game"
 )
 
 // CallBot is a simple bot that checks/calls to river, then folds river

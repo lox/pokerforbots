@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"github.com/lox/holdem-cli/internal/deck"
-	"github.com/lox/holdem-cli/internal/game"
+	"github.com/lox/pokerforbots/internal/deck"
+	"github.com/lox/pokerforbots/internal/game"
 )
 
 // NetworkTUIAdapter adapts TUIModel to work with NetworkAgent

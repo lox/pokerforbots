@@ -3,7 +3,7 @@ version: '3'
 vars:
   DIST_DIR: dist
   BINARY_NAME: holdem
-  GO_MODULE: github.com/lox/holdem-cli
+  GO_MODULE: github.com/lox/pokerforbots
 
 tasks:
   default:
@@ -44,7 +44,8 @@ tasks:
     deps: [clean]
     cmds:
       - mkdir -p {{.DIST_DIR}}
-      - go build -o {{.DIST_DIR}}/{{.BINARY_NAME}} ./cmd/holdem
+      - go build -o {{.DIST_DIR}}/holdem-server ./cmd/holdem-server
+      - go build -o {{.DIST_DIR}}/holdem-client ./cmd/holdem-client
       - go build -o {{.DIST_DIR}}/poker-odds ./cmd/poker-odds
 
   build-all:
@@ -52,19 +53,28 @@ tasks:
     deps: [clean]
     cmds:
       - mkdir -p {{.DIST_DIR}}
-      - GOOS=linux GOARCH=amd64 go build -o {{.DIST_DIR}}/{{.BINARY_NAME}}-linux-amd64 ./cmd/holdem
-      - GOOS=darwin GOARCH=amd64 go build -o {{.DIST_DIR}}/{{.BINARY_NAME}}-darwin-amd64 ./cmd/holdem
-      - GOOS=darwin GOARCH=arm64 go build -o {{.DIST_DIR}}/{{.BINARY_NAME}}-darwin-arm64 ./cmd/holdem
-      - GOOS=windows GOARCH=amd64 go build -o {{.DIST_DIR}}/{{.BINARY_NAME}}-windows-amd64.exe ./cmd/holdem
+      - GOOS=linux GOARCH=amd64 go build -o {{.DIST_DIR}}/holdem-server-linux-amd64 ./cmd/holdem-server
+      - GOOS=darwin GOARCH=amd64 go build -o {{.DIST_DIR}}/holdem-server-darwin-amd64 ./cmd/holdem-server
+      - GOOS=darwin GOARCH=arm64 go build -o {{.DIST_DIR}}/holdem-server-darwin-arm64 ./cmd/holdem-server
+      - GOOS=windows GOARCH=amd64 go build -o {{.DIST_DIR}}/holdem-server-windows-amd64.exe ./cmd/holdem-server
+      - GOOS=linux GOARCH=amd64 go build -o {{.DIST_DIR}}/holdem-client-linux-amd64 ./cmd/holdem-client
+      - GOOS=darwin GOARCH=amd64 go build -o {{.DIST_DIR}}/holdem-client-darwin-amd64 ./cmd/holdem-client
+      - GOOS=darwin GOARCH=arm64 go build -o {{.DIST_DIR}}/holdem-client-darwin-arm64 ./cmd/holdem-client
+      - GOOS=windows GOARCH=amd64 go build -o {{.DIST_DIR}}/holdem-client-windows-amd64.exe ./cmd/holdem-client
       - GOOS=linux GOARCH=amd64 go build -o {{.DIST_DIR}}/poker-odds-linux-amd64 ./cmd/poker-odds
       - GOOS=darwin GOARCH=amd64 go build -o {{.DIST_DIR}}/poker-odds-darwin-amd64 ./cmd/poker-odds
       - GOOS=darwin GOARCH=arm64 go build -o {{.DIST_DIR}}/poker-odds-darwin-arm64 ./cmd/poker-odds
       - GOOS=windows GOARCH=amd64 go build -o {{.DIST_DIR}}/poker-odds-windows-amd64.exe ./cmd/poker-odds
 
   run:
-    desc: Run the application
+    desc: Run the server application
     cmds:
-      - go run ./cmd/holdem
+      - go run ./cmd/holdem-server
+
+  run-client:
+    desc: Run the client application
+    cmds:
+      - go run ./cmd/holdem-client
 
   clean:
     desc: Clean build artifacts

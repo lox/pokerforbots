@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
-	"github.com/lox/holdem-cli/internal/game"
-	"github.com/lox/holdem-cli/internal/server"
+	"github.com/lox/pokerforbots/internal/game"
+	"github.com/lox/pokerforbots/internal/server"
 )
 
 // NetworkAgent implements the Agent interface for remote game servers

@@ -9,7 +9,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/gorilla/websocket"
-	"github.com/lox/holdem-cli/internal/server" // Reuse message types
+	"github.com/lox/pokerforbots/internal/server" // Reuse message types
 )
 
 // Client represents a WebSocket client for the poker game

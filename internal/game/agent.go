@@ -1,6 +1,6 @@
 package game
 
-import "github.com/lox/holdem-cli/internal/deck"
+import "github.com/lox/pokerforbots/internal/deck"
 
 // Decision represents a player's decision with reasoning
 type Decision struct {

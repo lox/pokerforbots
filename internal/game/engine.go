@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/log"
-	"github.com/lox/holdem-cli/internal/evaluator"
+	"github.com/lox/pokerforbots/internal/evaluator"
 )
 
 // GameEngine handles the core game loop logic that can be shared between

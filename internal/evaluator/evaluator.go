@@ -37,7 +37,7 @@ package evaluator
 
 //go:generate go run gen_luts.go
 
-import "github.com/lox/holdem-cli/internal/deck"
+import "github.com/lox/pokerforbots/internal/deck"
 
 // Evaluate7 evaluates 7 cards and returns a HandRank where lower = stronger
 func Evaluate7(cards []deck.Card) HandRank {

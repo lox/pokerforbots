@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/lox/holdem-cli/internal/deck"
+	"github.com/lox/pokerforbots/internal/deck"
 	"golang.org/x/sync/errgroup"
 )
 

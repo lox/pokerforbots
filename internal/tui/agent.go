@@ -8,8 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
-	"github.com/lox/holdem-cli/internal/deck"
-	"github.com/lox/holdem-cli/internal/game"
+	"github.com/lox/pokerforbots/internal/deck"
+	"github.com/lox/pokerforbots/internal/game"
 )
 
 // TUIDisplayState holds local display state built from events

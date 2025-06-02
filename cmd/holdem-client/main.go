@@ -10,9 +10,9 @@ import (
 	"github.com/alecthomas/kong"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
-	"github.com/lox/holdem-cli/internal/client"
-	"github.com/lox/holdem-cli/internal/game"
-	"github.com/lox/holdem-cli/internal/tui"
+	"github.com/lox/pokerforbots/internal/client"
+	"github.com/lox/pokerforbots/internal/game"
+	"github.com/lox/pokerforbots/internal/tui"
 )
 
 var CLI struct {

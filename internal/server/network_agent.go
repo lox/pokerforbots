@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
-	"github.com/lox/holdem-cli/internal/game"
+	"github.com/lox/pokerforbots/internal/game"
 )
 
 // NetworkAgent represents a server-side agent that proxies decisions to/from a remote client

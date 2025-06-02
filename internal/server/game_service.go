@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
-	"github.com/lox/holdem-cli/internal/bot"
-	"github.com/lox/holdem-cli/internal/game"
+	"github.com/lox/pokerforbots/internal/bot"
+	"github.com/lox/pokerforbots/internal/game"
 )
 
 // GameTable represents a poker table managed by the server
@@ -436,6 +436,19 @@ func (gs *GameService) startTableGame(table *GameTable) {
 			table.logger.Info("Not enough players, pausing game")
 			table.status = "waiting"
 			return
+		}
+
+		// Check if we have at least one remote player (not just server-local bots)
+		hasRemotePlayer := len(table.networkAgents) > 0
+
+		if !hasRemotePlayer {
+			table.logger.Info("No remote players connected, pausing game")
+			table.status = "waiting"
+
+			// Wait for a remote player to join before continuing
+			// This prevents endless server-local bot-vs-bot games
+			time.Sleep(1 * time.Second)
+			continue
 		}
 
 		// Start a new hand

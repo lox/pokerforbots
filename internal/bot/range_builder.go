@@ -3,8 +3,8 @@ package bot
 import (
 	"fmt"
 
-	"github.com/lox/holdem-cli/internal/evaluator"
-	"github.com/lox/holdem-cli/internal/game"
+	"github.com/lox/pokerforbots/internal/evaluator"
+	"github.com/lox/pokerforbots/internal/game"
 )
 
 // SimpleRangeBuilder builds opponent ranges based on action context

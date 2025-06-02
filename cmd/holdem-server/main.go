@@ -8,7 +8,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/charmbracelet/log"
-	"github.com/lox/holdem-cli/internal/server"
+	"github.com/lox/pokerforbots/internal/server"
 )
 
 var CLI struct {

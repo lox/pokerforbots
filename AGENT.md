@@ -45,7 +45,7 @@ This is a **Texas Hold'em CLI poker game** with AI opponents, built in Go. The g
 
 ## Development Notes
 - Use CashApp's Hermit for dependency management
-- Go module: github.com/lox/holdem-cli
+- Go module: github.com/lox/pokerforbots
 - **Game IDs**: Random UUIDv7 IDs with base32 encoding (26 chars, TypeID-compatible)
 - **Deterministic Testing**: Use `rand.New` with fixed seed for reproducible game ID generation in tests
 

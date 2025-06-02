@@ -3,8 +3,8 @@ package bot
 import (
 	"testing"
 
-	"github.com/lox/holdem-cli/internal/deck"
-	"github.com/lox/holdem-cli/internal/game"
+	"github.com/lox/pokerforbots/internal/deck"
+	"github.com/lox/pokerforbots/internal/game"
 )
 
 func TestSituationRecognition(t *testing.T) {

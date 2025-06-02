@@ -1,4 +1,4 @@
-module github.com/lox/holdem-cli
+module github.com/lox/pokerforbots
 
 go 1.24
 

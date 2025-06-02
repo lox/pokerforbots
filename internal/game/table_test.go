@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/lox/holdem-cli/internal/deck"
+	"github.com/lox/pokerforbots/internal/deck"
 )
 
 func TestNewTable(t *testing.T) {

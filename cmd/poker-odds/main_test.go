@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/lox/holdem-cli/internal/deck"
+	"github.com/lox/pokerforbots/internal/deck"
 )
 
 func TestParseHands(t *testing.T) {

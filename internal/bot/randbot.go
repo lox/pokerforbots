@@ -4,7 +4,7 @@ import (
 	"math/rand"
 
 	"github.com/charmbracelet/log"
-	"github.com/lox/holdem-cli/internal/game"
+	"github.com/lox/pokerforbots/internal/game"
 )
 
 // RandBot is a simple bot that makes uniform random legal actions

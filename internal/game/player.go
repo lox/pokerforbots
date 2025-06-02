@@ -3,8 +3,8 @@ package game
 import (
 	"fmt"
 
-	"github.com/lox/holdem-cli/internal/deck"
-	"github.com/lox/holdem-cli/internal/evaluator"
+	"github.com/lox/pokerforbots/internal/deck"
+	"github.com/lox/pokerforbots/internal/evaluator"
 )
 
 // PlayerType represents the type of player

@@ -2,7 +2,7 @@ package bot
 
 import (
 	"github.com/charmbracelet/log"
-	"github.com/lox/holdem-cli/internal/game"
+	"github.com/lox/pokerforbots/internal/game"
 )
 
 // ChartBot implements a simple push-fold pre-flop chart and check/call post-flop
