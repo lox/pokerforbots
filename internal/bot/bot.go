@@ -710,6 +710,12 @@ func (b *Bot) calculatePotOddsWithThinking(player game.PlayerState, tableState g
 
 // makeDecisionBasedOnFactorsWithThinking makes the final decision with thinking
 func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player game.PlayerState, tableState game.TableState, equityCtx EquityContext, positionFactor, potOdds float64, thinking *ThinkingContext, validActions []game.ValidAction) game.Action {
+	// Use situation recognition to evaluate this spot
+	situationCtx := BuildSituationContext(player, tableState, equityCtx.Strength, equityCtx.Equity, potOdds)
+	recognizer := NewSituationRecognizer()
+	adjustment, reasoning := recognizer.EvaluateSituation(situationCtx)
+	
+	thinking.AddThought(fmt.Sprintf("Situation analysis: %s", reasoning))
 	// Check for continuation betting opportunity
 	shouldCBet := b.shouldContinuationBet(player, tableState, equityCtx.Strength, positionFactor)
 	if shouldCBet && tableState.CurrentBet == 0 {
@@ -759,35 +765,29 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player game.PlayerState, ta
 		}
 	}
 
-	// Apply aggression factor
+	// Apply situation-based adjustments instead of hardcoded factors
+	thinking.AddThought(fmt.Sprintf("Applying situation adjustments: fold×%.2f, call×%.2f, raise×%.2f", 
+		adjustment.FoldMultiplier, adjustment.CallMultiplier, adjustment.RaiseMultiplier))
+	
+	foldProb *= adjustment.FoldMultiplier
+	callProb *= adjustment.CallMultiplier  
+	raiseProb *= adjustment.RaiseMultiplier
+
+	// Still apply config factors for overall bot personality
 	if b.config.AggressionFactor != 1.0 {
 		thinking.AddThought(fmt.Sprintf("Applying aggression factor %.1f", b.config.AggressionFactor))
-		aggressionBoost := (b.config.AggressionFactor - 1.0) * 0.3
+		aggressionBoost := (b.config.AggressionFactor - 1.0) * 0.15 // Reduced impact
 		raiseProb += aggressionBoost
 		callProb -= aggressionBoost * 0.6
 		foldProb -= aggressionBoost * 0.4
 	}
 
-	// Apply tightness factor
 	if b.config.TightnessFactor != 1.0 {
 		thinking.AddThought(fmt.Sprintf("Applying tightness factor %.1f", b.config.TightnessFactor))
-		tightnessBoost := (b.config.TightnessFactor - 1.0) * 0.25
+		tightnessBoost := (b.config.TightnessFactor - 1.0) * 0.15 // Reduced impact
 		foldProb += tightnessBoost
 		callProb -= tightnessBoost * 0.7
 		raiseProb -= tightnessBoost * 0.3
-	}
-
-	// Adjust for position
-	if positionFactor < 1.0 {
-		thinking.AddThought("Tightening up due to position")
-		foldProb = foldProb * (2.0 - positionFactor)
-		callProb = callProb * positionFactor
-		raiseProb = raiseProb * positionFactor
-	} else {
-		thinking.AddThought("Playing looser with position advantage")
-		foldProb = foldProb / positionFactor
-		callProb = callProb * positionFactor
-		raiseProb = raiseProb * positionFactor
 	}
 
 	// Use raw equity for precise pot odds comparison
@@ -830,6 +830,8 @@ func (b *Bot) makeDecisionBasedOnFactorsWithThinking(player game.PlayerState, ta
 		callProb /= total
 		raiseProb /= total
 	}
+
+	// Situation recognition already handles position and draw penalties
 
 	// Special cases
 	if tableState.CurrentBet == 0 {

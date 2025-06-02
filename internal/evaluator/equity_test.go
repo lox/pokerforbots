@@ -155,7 +155,7 @@ func TestIsTightHand(t *testing.T) {
 		{
 			name:     "Pocket Deuces",
 			cards:    "2h2c",
-			expected: true,
+			expected: false, // Updated: only TT+ considered tight
 		},
 
 		// High cards
@@ -179,7 +179,7 @@ func TestIsTightHand(t *testing.T) {
 		{
 			name:     "Low suited connector 87s",
 			cards:    "8h7h",
-			expected: true,
+			expected: false, // Updated: only T9s+ premium connectors considered tight
 		},
 
 		// Ace with good kicker
@@ -191,7 +191,29 @@ func TestIsTightHand(t *testing.T) {
 		{
 			name:     "A9 offsuit",
 			cards:    "As9h",
-			expected: true,
+			expected: false, // Updated: only AT+ considered tight
+		},
+		
+		// Test cases for updated tight definition
+		{
+			name:     "Pocket Tens",
+			cards:    "Ts Th",
+			expected: true, // TT+ should be tight
+		},
+		{
+			name:     "Pocket Nines",
+			cards:    "9s 9h",
+			expected: false, // Only TT+ tight
+		},
+		{
+			name:     "Premium connector T9s",
+			cards:    "Ts9s",
+			expected: true, // T9s+ should be tight
+		},
+		{
+			name:     "AT offsuit should be tight",
+			cards:    "AsTh",
+			expected: true, // AT+ should be tight
 		},
 
 		// Weak hands

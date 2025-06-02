@@ -536,7 +536,13 @@ func printResults(stats *Statistics, opponentType string, duration time.Duration
 		fmt.Printf("%s-bot gate: (mean - 1.96*se) >= 0: %.4f %s\n",
 			opponentType, mean-1.96*stdErr, passFailString(passed))
 	default:
-		fmt.Printf("Unknown opponent type: %s\n", opponentType)
+		if strings.HasPrefix(opponentType, "mixed") {
+			passed := (mean - 1.96*stdErr) >= 0
+			fmt.Printf("%s-bot gate: (mean - 1.96*se) >= 0: %.4f %s\n",
+				opponentType, mean-1.96*stdErr, passFailString(passed))
+		} else {
+			fmt.Printf("Unknown opponent type: %s\n", opponentType)
+		}
 	}
 }
 

@@ -84,7 +84,7 @@ func (r TightRange) SampleHand(availableCards []deck.Card, rng *rand.Rand) ([]de
 	}
 
 	attempts := 0
-	for attempts < 100 {
+	for attempts < 200 {  // More attempts for better tight range
 		// Pick 2 random cards without creating full permutation
 		idx1 := rng.Intn(len(availableCards))
 		idx2 := rng.Intn(len(availableCards) - 1)
@@ -100,8 +100,8 @@ func (r TightRange) SampleHand(availableCards []deck.Card, rng *rand.Rand) ([]de
 		attempts++
 	}
 
-	// Fallback to random if we can't find a tight hand
-	return RandomRange{}.SampleHand(availableCards, rng)
+	// Fallback to medium range if we can't find a tight hand (not random)
+	return MediumRange{}.SampleHand(availableCards, rng)
 }
 
 // MediumRange represents a medium opponent (moderate range between tight and loose)
@@ -151,27 +151,28 @@ func isTightHand(hand []deck.Card) bool {
 
 	card1, card2 := hand[0], hand[1]
 
-	// Pocket pairs
-	if card1.Rank == card2.Rank {
+	// Pocket pairs (TT+)
+	if card1.Rank == card2.Rank && card1.Rank >= deck.Ten {
 		return true
 	}
 
-	// High cards (both > 9)
-	if card1.Rank >= deck.Ten && card2.Rank >= deck.Ten {
+	// High cards (both Jack+)
+	if card1.Rank >= deck.Jack && card2.Rank >= deck.Jack {
 		return true
 	}
 
-	// Suited connectors or one-gappers
+	// Premium suited connectors (T9s+ only)
 	if card1.Suit == card2.Suit {
 		gap := abs(card1.Rank - card2.Rank)
-		if gap <= 2 && (card1.Rank >= deck.Seven || card2.Rank >= deck.Seven) {
+		if gap <= 1 && (card1.Rank >= deck.Ten && card2.Rank >= deck.Nine) ||
+		   (card2.Rank >= deck.Ten && card1.Rank >= deck.Nine) {
 			return true
 		}
 	}
 
-	// Ace with decent kicker
-	if (card1.Rank == deck.Ace && card2.Rank >= deck.Nine) ||
-		(card2.Rank == deck.Ace && card1.Rank >= deck.Nine) {
+	// Ace with good kicker (AT+)
+	if (card1.Rank == deck.Ace && card2.Rank >= deck.Ten) ||
+		(card2.Rank == deck.Ace && card1.Rank >= deck.Ten) {
 		return true
 	}
 
