@@ -39,4 +39,3 @@ func (h *HumanAgent) MakeDecision(tableState TableState, validActions []ValidAct
 
 	return decision
 }
-

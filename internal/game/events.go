@@ -23,7 +23,7 @@ type PlayerActionEvent struct {
 	timestamp time.Time
 }
 
-func (e PlayerActionEvent) EventType() string { return "player_action" }
+func (e PlayerActionEvent) EventType() string    { return "player_action" }
 func (e PlayerActionEvent) Timestamp() time.Time { return e.timestamp }
 
 // NewPlayerActionEvent creates a new player action event
@@ -43,61 +43,75 @@ func NewPlayerActionEvent(player *Player, action Action, amount int, round Betti
 type StreetChangeEvent struct {
 	Round          BettingRound
 	CommunityCards []deck.Card
+	CurrentBet     int
 	timestamp      time.Time
 }
 
-func (e StreetChangeEvent) EventType() string { return "street_change" }
+func (e StreetChangeEvent) EventType() string    { return "street_change" }
 func (e StreetChangeEvent) Timestamp() time.Time { return e.timestamp }
 
 // NewStreetChangeEvent creates a new street change event
-func NewStreetChangeEvent(round BettingRound, communityCards []deck.Card) StreetChangeEvent {
+func NewStreetChangeEvent(round BettingRound, communityCards []deck.Card, currentBet int) StreetChangeEvent {
 	cards := make([]deck.Card, len(communityCards))
 	copy(cards, communityCards)
 	return StreetChangeEvent{
 		Round:          round,
 		CommunityCards: cards,
+		CurrentBet:     currentBet,
 		timestamp:      time.Now(),
 	}
 }
 
 // HandStartEvent is published when a new hand begins
 type HandStartEvent struct {
-	HandID    string
-	Players   []*Player
-	timestamp time.Time
+	HandID        string
+	Players       []*Player
+	ActivePlayers []*Player
+	SmallBlind    int
+	BigBlind      int
+	InitialPot    int
+	timestamp     time.Time
 }
 
-func (e HandStartEvent) EventType() string { return "hand_start" }
+func (e HandStartEvent) EventType() string    { return "hand_start" }
 func (e HandStartEvent) Timestamp() time.Time { return e.timestamp }
 
 // NewHandStartEvent creates a new hand start event
-func NewHandStartEvent(handID string, players []*Player) HandStartEvent {
+func NewHandStartEvent(handID string, players []*Player, activePlayers []*Player, smallBlind, bigBlind, initialPot int) HandStartEvent {
 	return HandStartEvent{
-		HandID:    handID,
-		Players:   players,
-		timestamp: time.Now(),
+		HandID:        handID,
+		Players:       players,
+		ActivePlayers: activePlayers,
+		SmallBlind:    smallBlind,
+		BigBlind:      bigBlind,
+		InitialPot:    initialPot,
+		timestamp:     time.Now(),
 	}
 }
 
 // HandEndEvent is published when a hand completes
 type HandEndEvent struct {
 	HandID       string
-	Winners      []*Player
+	Winners      []WinnerInfo
 	PotSize      int
 	ShowdownType string
+	FinalBoard   []deck.Card
+	Summary      string // Rich formatted summary from HandHistory
 	timestamp    time.Time
 }
 
-func (e HandEndEvent) EventType() string { return "hand_end" }
+func (e HandEndEvent) EventType() string    { return "hand_end" }
 func (e HandEndEvent) Timestamp() time.Time { return e.timestamp }
 
 // NewHandEndEvent creates a new hand end event
-func NewHandEndEvent(handID string, winners []*Player, potSize int, showdownType string) HandEndEvent {
+func NewHandEndEvent(handID string, winners []WinnerInfo, potSize int, showdownType string, finalBoard []deck.Card, summary string) HandEndEvent {
 	return HandEndEvent{
 		HandID:       handID,
 		Winners:      winners,
 		PotSize:      potSize,
 		ShowdownType: showdownType,
+		FinalBoard:   finalBoard,
+		Summary:      summary,
 		timestamp:    time.Now(),
 	}
 }

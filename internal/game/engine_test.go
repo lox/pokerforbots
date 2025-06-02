@@ -86,13 +86,11 @@ func (t *TrackingAgent) MakeDecision(tableState TableState, validActions []Valid
 
 func createTestTable() *Table {
 	rng := rand.New(rand.NewSource(42)) // Fixed seed for deterministic tests
-	config := TableConfig{
+	return NewTable(rng, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 10,
 		BigBlind:   20,
-	}
-	// Event bus will be set by the engine
-	return NewTable(rng, config, nil)
+	})
 }
 
 func createTestPlayers() []*Player {
@@ -204,8 +202,8 @@ func TestGameEngine_PlayHandToShowdown(t *testing.T) {
 		t.Error("Expected a winner")
 	}
 
-	if table.CurrentRound != Showdown {
-		t.Errorf("Expected game to end in showdown, got %s", table.CurrentRound)
+	if table.currentRound != Showdown {
+		t.Errorf("Expected game to end in showdown, got %s", table.currentRound)
 	}
 }
 
@@ -355,11 +353,11 @@ func TestGameEngine_AllInScenario(t *testing.T) {
 	// Both players should have reasonable action sequences
 	agents := map[string]Agent{
 		"Alice": NewMockAgent([]Decision{
-			{Action: AllIn, Amount: 0, Reasoning: "all-in"}, // If Alice acts first
+			{Action: AllIn, Amount: 0, Reasoning: "all-in"},     // If Alice acts first
 			{Action: Call, Amount: 0, Reasoning: "call all-in"}, // If responding to Bob's action
 		}),
 		"Bob": NewMockAgent([]Decision{
-			{Action: AllIn, Amount: 0, Reasoning: "all-in"}, // If Bob acts first
+			{Action: AllIn, Amount: 0, Reasoning: "all-in"},     // If Bob acts first
 			{Action: Call, Amount: 0, Reasoning: "call all-in"}, // If responding to Alice's action
 		}),
 	}
@@ -384,7 +382,7 @@ func TestGameEngine_AllInScenario(t *testing.T) {
 
 	// Find Alice and verify she's all-in
 	var alice *Player
-	for _, player := range table.ActivePlayers {
+	for _, player := range table.activePlayers {
 		if player.Name == "Alice" {
 			alice = player
 			break
@@ -465,16 +463,16 @@ func TestGameEngine_StartNewHand(t *testing.T) {
 	engine.StartNewHand()
 
 	// Verify hand was started
-	if table.State != InProgress {
-		t.Errorf("Expected table state InProgress, got %s", table.State)
+	if table.state != InProgress {
+		t.Errorf("Expected table state InProgress, got %s", table.state)
 	}
 
-	if table.HandID == "" {
+	if table.handID == "" {
 		t.Error("Expected hand ID to be set")
 	}
 
-	if table.CurrentRound != PreFlop {
-		t.Errorf("Expected current round PreFlop, got %s", table.CurrentRound)
+	if table.currentRound != PreFlop {
+		t.Errorf("Expected current round PreFlop, got %s", table.currentRound)
 	}
 }
 
@@ -677,12 +675,12 @@ func TestAnalyticalAgent_BettingAnalysis(t *testing.T) {
 	defaultAgent := &AlwaysFoldAgent{}
 	logger := log.New(io.Discard)
 	engine := NewGameEngine(table, defaultAgent, logger)
-	
+
 	// Start a new hand
 	engine.StartNewHand()
-	
+
 	// Verify hand history exists and is subscribed
-	if table.HandHistory == nil {
+	if table.handHistory == nil {
 		t.Fatal("Hand history not created")
 	}
 
@@ -691,21 +689,21 @@ func TestAnalyticalAgent_BettingAnalysis(t *testing.T) {
 	if currentPlayerAtStart == nil {
 		t.Fatal("No current player")
 	}
-	
+
 	agents := map[string]Agent{
 		currentPlayerAtStart.Name: NewMockAgent([]Decision{
 			{Action: Raise, Amount: 40, Reasoning: "test raise"},
 		}),
 	}
-	
-	// Add analytical agent for other players  
-	for _, player := range table.Players {
+
+	// Add analytical agent for other players
+	for _, player := range table.players {
 		if player.Name != currentPlayerAtStart.Name {
 			agents[player.Name] = &AnalyticalAgent{}
 		}
 	}
 
-	// Run partial hand to generate one raise action 
+	// Run partial hand to generate one raise action
 	currentPlayer := table.GetCurrentPlayer()
 	if currentPlayer == nil {
 		t.Fatal("No current player")
@@ -727,7 +725,7 @@ func TestAnalyticalAgent_BettingAnalysis(t *testing.T) {
 	}
 
 	// Publish the event (like engine does)
-	event := NewPlayerActionEvent(currentPlayer, raiseDecision.Action, raiseDecision.Amount, table.CurrentRound, reasoning, table.Pot)
+	event := NewPlayerActionEvent(currentPlayer, raiseDecision.Action, raiseDecision.Amount, table.currentRound, reasoning, table.pot)
 	engine.GetEventBus().Publish(event)
 
 	// Advance to next player

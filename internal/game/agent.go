@@ -32,7 +32,7 @@ type PlayerState struct {
 
 // TableState represents the read-only state of the table for decision making
 type TableState struct {
-	CurrentBet       int
+	CurrentBet      int
 	Pot             int
 	CurrentRound    BettingRound
 	CommunityCards  []deck.Card
@@ -40,9 +40,9 @@ type TableState struct {
 	BigBlind        int
 	Players         []PlayerState // ALL players with appropriate visibility
 	ActingPlayerIdx int           // Which player in the slice is making the decision
-	
+
 	// Betting context from hand history
-	HandHistory     *HandHistory  // Full hand history for analysis
+	HandHistory *HandHistory // Full hand history for analysis
 }
 
 // Agent represents any entity (human or AI) that can make decisions for a player
