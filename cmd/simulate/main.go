@@ -253,7 +253,6 @@ func main() {
 
 func runSimulation(numHands int, opponentType string, seed int64, timeout time.Duration, logger *log.Logger) (*Statistics, string) {
 	stats := &Statistics{}
-	startTime := time.Now()
 
 	// Determine opponent info string
 	opponentInfo := opponentType
@@ -281,36 +280,6 @@ func runSimulation(numHands int, opponentType string, seed int64, timeout time.D
 			os.Exit(1)
 		}
 		stats.Add(result)
-
-		// Progress updates every 50k hands (Phase 2 requirement)
-		if (hand+1)%50000 == 0 {
-			elapsed := time.Since(startTime)
-			handsPerSec := float64(hand+1) / elapsed.Seconds()
-			avgHandTime := elapsed / time.Duration(hand+1)
-
-			mean := stats.Mean()
-			se := stats.StdError()
-			low, high := stats.ConfidenceInterval95()
-
-			fmt.Printf("=== %d HANDS COMPLETED ===\n", hand+1)
-			fmt.Printf("Performance: %.1f hands/sec, %.2fms/hand\n", handsPerSec, avgHandTime.Seconds()*1000)
-			fmt.Printf("Results: %.4f bb/hand ± %.4f SE\n", mean, se)
-			fmt.Printf("95%% CI: [%.4f, %.4f] bb/hand\n", low, high)
-			if avgHandTime.Milliseconds() > 2 {
-				fmt.Printf("⚠️  Performance below target (>2ms/hand)\n")
-			} else {
-				fmt.Printf("✅ Performance on target (<2ms/hand)\n")
-			}
-			fmt.Printf("\n")
-		}
-
-		// Lightweight progress for smaller intervals
-		if (hand+1)%10000 == 0 && (hand+1)%50000 != 0 {
-			elapsed := time.Since(startTime)
-			handsPerSec := float64(hand+1) / elapsed.Seconds()
-			mean := stats.Mean()
-			fmt.Printf("Hand %d: %.3f bb/hand (%.0f hands/sec)\n", hand+1, mean, handsPerSec)
-		}
 	}
 
 	return stats, opponentInfo
@@ -325,7 +294,8 @@ func playHand(opponentType string, opponentMix []string, handSeed int64, ourPosi
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, nil) // EventBus will be set by engine
+		Seed:       handSeed,
+	})
 
 	// Use default deck for now - the table's Rand will	control randomness
 
@@ -366,7 +336,7 @@ func playHand(opponentType string, opponentMix []string, handSeed int64, ourPosi
 	// Record initial chips
 	initialChips := ourBot.Chips
 	startChips := make(map[string]int)
-	for _, player := range table.Players {
+	for _, player := range table.GetActivePlayers() {
 		startChips[player.Name] = player.Chips
 	}
 
@@ -389,11 +359,11 @@ func playHand(opponentType string, opponentMix []string, handSeed int64, ourPosi
 	// Calculate net BB for our bot
 	finalChips := ourBot.Chips
 	netChips := finalChips - initialChips
-	netBB := float64(netChips) / float64(table.BigBlind)
+	netBB := float64(netChips) / float64(table.BigBlind())
 
 	// Calculate final pot size from the largest chip delta (winner's gain)
 	maxDelta := 0
-	for _, player := range table.Players {
+	for _, player := range table.GetActivePlayers() {
 		delta := player.Chips - startChips[player.Name]
 		if delta > maxDelta {
 			maxDelta = delta
@@ -406,11 +376,11 @@ func playHand(opponentType string, opponentMix []string, handSeed int64, ourPosi
 	if handResult != nil {
 		wentToShowdown = (handResult.ShowdownType == "showdown")
 		// Street reached can be inferred from the current round when hand ended
-		if table.CurrentRound == game.Flop {
+		if table.CurrentRound() == game.Flop {
 			streetReached = "Flop"
-		} else if table.CurrentRound == game.Turn {
+		} else if table.CurrentRound() == game.Turn {
 			streetReached = "Turn"
-		} else if table.CurrentRound == game.River {
+		} else if table.CurrentRound() == game.River {
 			streetReached = "River"
 		}
 	}
@@ -436,12 +406,6 @@ func playHandWithTimeout(opponentType string, opponentMix []string, handSeed int
 
 	// Run playHand in a goroutine
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errorCh <- fmt.Errorf("panic in playHand: %v", r)
-			}
-		}()
-
 		result := playHand(opponentType, opponentMix, handSeed, ourPosition, logger)
 		resultCh <- result
 	}()
@@ -567,10 +531,12 @@ func printResults(stats *Statistics, opponentType string, duration time.Duration
 		passed := (mean - 1.96*stdErr) > 0
 		fmt.Printf("%s-bot gate: (mean - 1.96*se) > 0: %.4f %s\n",
 			opponentType, mean-1.96*stdErr, passFailString(passed))
-	case "chart", "tag":
+	case "chart", "tag", "mixed":
 		passed := (mean - 1.96*stdErr) >= 0
 		fmt.Printf("%s-bot gate: (mean - 1.96*se) >= 0: %.4f %s\n",
 			opponentType, mean-1.96*stdErr, passFailString(passed))
+	default:
+		fmt.Printf("Unknown opponent type: %s\n", opponentType)
 	}
 }
 
