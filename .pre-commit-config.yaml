@@ -15,7 +15,7 @@ repos:
         language: system
         types: [go]
 
-  # Go linting with local golangci-lint (warning mode - doesn't fail commit)
+  # Go linting with local golangci-lint (warning mode until all issues fixed)
   - repo: local
     hooks:
       - id: golangci-lint

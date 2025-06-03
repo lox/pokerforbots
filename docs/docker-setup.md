@@ -29,7 +29,7 @@ This Docker setup makes it easy to test the client-server functionality of the H
 
 ### Clients
 - **holdem-client-1**: Automated client "Alice"
-- **holdem-client-2**: Automated client "Bob" 
+- **holdem-client-2**: Automated client "Bob"
 - **holdem-client-interactive**: On-demand interactive client
 
 ### Local Game (for comparison)

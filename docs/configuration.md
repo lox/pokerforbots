@@ -155,7 +155,7 @@ ui {
 # Use default config file
 ./bin/holdem-client
 
-# Specify config file  
+# Specify config file
 ./bin/holdem-client --config=configs/client-pro.hcl
 
 # Override config with flags

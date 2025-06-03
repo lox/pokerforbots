@@ -281,7 +281,7 @@ func displayResults(results []PlayerResult, board []deck.Card, showPossibilities
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
 	// Header
-	fmt.Fprintf(w, "%s\t%s\t%s\n",
+	_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n",
 		headerStyle.Render("hand"),
 		headerStyle.Render("win"),
 		headerStyle.Render("tie"))
@@ -292,13 +292,13 @@ func displayResults(results []PlayerResult, board []deck.Card, showPossibilities
 		winPct := float64(result.Wins) / float64(result.Total) * 100
 		tiePct := float64(result.Ties) / float64(result.Total) * 100
 
-		fmt.Fprintf(w, "%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n",
 			handStyle.Render(handStr),
 			winStyle.Render(fmt.Sprintf("%.1f%%", winPct)),
 			tieStyle.Render(fmt.Sprintf("%.1f%%", tiePct)))
 	}
 
-	w.Flush()
+	_ = w.Flush()
 
 	// Display possibilities breakdown if requested
 	if showPossibilities && len(results) > 0 {
@@ -330,11 +330,11 @@ func displayPossibilities(results []PlayerResult) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
 	// Display header
-	fmt.Fprintf(w, "%s", categoryStyle.Render("hand"))
+	_, _ = fmt.Fprintf(w, "%s", categoryStyle.Render("hand"))
 	for i := range results {
-		fmt.Fprintf(w, "\t%s", handStyle.Render(formatCards(results[i].Hand)))
+		_, _ = fmt.Fprintf(w, "\t%s", handStyle.Render(formatCards(results[i].Hand)))
 	}
-	fmt.Fprintf(w, "\n")
+	_, _ = fmt.Fprintf(w, "\n")
 
 	// Display each hand type
 	for _, handType := range orderedTypes {
@@ -342,20 +342,20 @@ func displayPossibilities(results []PlayerResult) {
 			continue
 		}
 
-		fmt.Fprintf(w, "%s", categoryStyle.Render(handType))
+		_, _ = fmt.Fprintf(w, "%s", categoryStyle.Render(handType))
 		for _, result := range results {
 			count := result.Possibilities[handType]
 			pct := float64(count) / float64(result.Total) * 100
 			if count > 0 {
-				fmt.Fprintf(w, "\t%s", percentStyle.Render(fmt.Sprintf("%.1f%%", pct)))
+				_, _ = fmt.Fprintf(w, "\t%s", percentStyle.Render(fmt.Sprintf("%.1f%%", pct)))
 			} else {
-				fmt.Fprintf(w, "\t%s", percentStyle.Render("."))
+				_, _ = fmt.Fprintf(w, "\t%s", percentStyle.Render("."))
 			}
 		}
-		fmt.Fprintf(w, "\n")
+		_, _ = fmt.Fprintf(w, "\n")
 	}
 
-	w.Flush()
+	_ = w.Flush()
 }
 
 func formatCards(cards []deck.Card) string {

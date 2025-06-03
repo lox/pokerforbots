@@ -165,7 +165,7 @@ func main() {
 	go func() {
 		<-c
 		logger.Info("Shutting down server...")
-		wsServer.Stop()
+		_ = wsServer.Stop()
 		os.Exit(0)
 	}()
 

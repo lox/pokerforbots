@@ -193,36 +193,36 @@ func (s *Statistics) IsLedgerBalanced() bool {
 func (s *Statistics) Validate() error {
 	// Check ledger balance
 	if !s.IsLedgerBalanced() {
-		return fmt.Errorf("ledger mismatch: AllBB=%.6f, ShowdownBB=%.6f, NonShowdownBB=%.6f", 
+		return fmt.Errorf("ledger mismatch: AllBB=%.6f, ShowdownBB=%.6f, NonShowdownBB=%.6f",
 			s.AllBB, s.ShowdownBB, s.NonShowdownBB)
 	}
-	
+
 	// Check that hands count is positive
 	if s.Hands <= 0 {
 		return fmt.Errorf("invalid hands count: %d", s.Hands)
 	}
-	
+
 	// Check that values array matches hands count
 	if len(s.Values) != s.Hands {
-		return fmt.Errorf("values array length (%d) does not match hands count (%d)", 
+		return fmt.Errorf("values array length (%d) does not match hands count (%d)",
 			len(s.Values), s.Hands)
 	}
-	
+
 	// Check that wins don't exceed total hands
 	totalWins := s.ShowdownWins + s.NonShowdownWins
 	if totalWins > s.Hands {
 		return fmt.Errorf("total wins (%d) exceeds total hands (%d)", totalWins, s.Hands)
 	}
-	
+
 	// Check position data consistency
 	totalPositionHands := 0
 	for pos := 1; pos <= 6; pos++ {
 		totalPositionHands += s.PositionResults[pos].Hands
 	}
 	if totalPositionHands != s.Hands {
-		return fmt.Errorf("position hands total (%d) does not match total hands (%d)", 
+		return fmt.Errorf("position hands total (%d) does not match total hands (%d)",
 			totalPositionHands, s.Hands)
 	}
-	
+
 	return nil
 }

@@ -40,7 +40,7 @@ func main() {
 
 		if err := pprof.StartCPUProfile(f); err != nil {
 			fmt.Fprintf(os.Stderr, "Error starting CPU profile: %v\n", err)
-			f.Close()
+			_ = f.Close()
 			os.Exit(1)
 		}
 		fmt.Printf("CPU profiling enabled, writing to %s\n", cli.CPUProfile)
@@ -80,7 +80,7 @@ func main() {
 	// Stop CPU profiling before exit
 	if cpuFile != nil {
 		pprof.StopCPUProfile()
-		cpuFile.Close()
+		_ = cpuFile.Close()
 		fmt.Printf("CPU profile written to %s\n", cli.CPUProfile)
 	}
 
@@ -95,10 +95,10 @@ func main() {
 		runtime.GC()
 		if err := pprof.WriteHeapProfile(f); err != nil {
 			fmt.Fprintf(os.Stderr, "Error writing memory profile: %v\n", err)
-			f.Close()
+			_ = f.Close()
 			os.Exit(1)
 		}
-		f.Close()
+		_ = f.Close()
 		fmt.Printf("Memory profile written to %s\n", cli.MemProfile)
 	}
 

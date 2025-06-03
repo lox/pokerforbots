@@ -512,7 +512,7 @@ func TestAllInRaiseRules(t *testing.T) {
 		for i, player := range table.activePlayers {
 			if player.Name == "Alice" {
 				table.actionOn = i
-				currentPlayer = table.GetCurrentPlayer()
+				// currentPlayer = table.GetCurrentPlayer() // Update tracked for debugging
 				break
 			}
 		}
@@ -725,7 +725,7 @@ func TestValidActionsMinRaise(t *testing.T) {
 	t.Logf("Current player to act: %s", currentPlayer.Name)
 	if currentPlayer.Name == "Alice" {
 		decision := Decision{Action: Raise, Amount: 40, Reasoning: "raise"}
-		table.ApplyDecision(decision)
+		_, _ = table.ApplyDecision(decision)
 		table.AdvanceAction()
 	} else {
 		// Find Alice and make her raise (she might not be first to act)
@@ -880,14 +880,14 @@ func TestShowdownLastAggressor(t *testing.T) {
 		t.Fatal("Should have a winner at showdown")
 	}
 
-	t.Logf("Last aggressor: %s", lastAggressor.Name)
-	t.Logf("Winner: %s", winner.Name)
-
 	// The key rule tested here is that the system can identify the last aggressor
 	// and in a real implementation would show their cards first
 	if lastAggressor == nil {
 		t.Error("Should be able to identify last aggressor for showdown order")
+	} else {
+		t.Logf("Last aggressor: %s", lastAggressor.Name)
 	}
+	t.Logf("Winner: %s", winner.Name)
 }
 
 // TestOddChipDistribution tests that odd chips in split pots go to the player closest clockwise to button

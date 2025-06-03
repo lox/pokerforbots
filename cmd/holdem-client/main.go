@@ -51,7 +51,7 @@ func main() {
 	if cfg.Player.Name == "" {
 		fmt.Print("Enter your player name: ")
 		var input string
-		fmt.Scanln(&input)
+		_, _ = fmt.Scanln(&input)
 		cfg.Player.Name = strings.TrimSpace(input)
 		if cfg.Player.Name == "" {
 			fmt.Println("Player name is required")
@@ -71,7 +71,7 @@ func main() {
 		fmt.Printf("Failed to open log file: %v\n", err)
 		ctx.Exit(1)
 	}
-	defer logFile.Close()
+	defer func() { _ = logFile.Close() }()
 
 	logger := log.New(logFile)
 	switch cfg.UI.LogLevel {
@@ -119,7 +119,7 @@ func main() {
 		fmt.Printf("Failed to connect to server: %v\n", err)
 		ctx.Exit(1)
 	}
-	defer wsClient.Disconnect()
+	defer func() { _ = wsClient.Disconnect() }()
 
 	// Authenticate
 	err = wsClient.Auth(cfg.Player.Name)
@@ -157,7 +157,7 @@ func main() {
 	}
 
 	// Cleanup
-	wsClient.Disconnect()
+	_ = wsClient.Disconnect()
 }
 
 // handleCommands processes special commands from user input
@@ -189,10 +189,10 @@ func handleCommands(wsClient *client.Client, tuiModel *tui.TUIModel, logger *log
 				}
 				tableID := args[0]
 				buyIn := cfg.Player.DefaultBuyIn
-				if len(args) > 1 {
-					// Parse buy-in if provided
-					// buyIn = parseBuyIn(args[1])
-				}
+				// TODO: Parse buy-in if provided as second argument
+				// if len(args) > 1 {
+				//     buyIn = parseBuyIn(args[1])
+				// }
 
 				err := wsClient.JoinTable(tableID, buyIn)
 				if err != nil {

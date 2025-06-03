@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -183,36 +182,4 @@ func (nam *NetworkAgentManager) HandlePlayerDecision(playerName string, data Pla
 	}
 
 	return agent.HandleDecision(data)
-}
-
-// Helper function to parse action string and amount
-func parseActionAmount(actionStr string) (game.Action, int, error) {
-	switch actionStr {
-	case "fold", "f":
-		return game.Fold, 0, nil
-	case "call", "c":
-		return game.Call, 0, nil
-	case "check", "k":
-		return game.Check, 0, nil
-	case "allin", "all", "a":
-		return game.AllIn, 0, nil
-	default:
-		// Try to parse raise actions like "raise 100" or "r 100"
-		if actionStr == "raise" || actionStr == "r" {
-			// Amount should be specified separately
-			return game.Raise, 0, nil
-		}
-
-		// Try to parse combined actions
-		if len(actionStr) > 5 && actionStr[:5] == "raise" {
-			amountStr := actionStr[5:]
-			amount, err := strconv.Atoi(amountStr)
-			if err != nil {
-				return game.Fold, 0, fmt.Errorf("invalid raise amount: %s", amountStr)
-			}
-			return game.Raise, amount, nil
-		}
-
-		return game.Fold, 0, fmt.Errorf("unknown action: %s", actionStr)
-	}
 }

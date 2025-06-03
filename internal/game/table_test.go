@@ -800,7 +800,7 @@ func TestBettingRoundRaiseResponse(t *testing.T) {
 
 	// Button calls
 	decision := Decision{Action: Call, Amount: 2, Reasoning: "Call"}
-	table.ApplyDecision(decision)
+	_, _ = table.ApplyDecision(decision)
 	table.AdvanceAction()
 
 	// Small blind raises
@@ -810,7 +810,7 @@ func TestBettingRoundRaiseResponse(t *testing.T) {
 	}
 
 	decision = Decision{Action: Raise, Amount: 6, Reasoning: "Raise to $6"}
-	table.ApplyDecision(decision)
+	_, _ = table.ApplyDecision(decision)
 	table.AdvanceAction()
 
 	// Big blind should act next
@@ -821,7 +821,7 @@ func TestBettingRoundRaiseResponse(t *testing.T) {
 
 	// Big blind calls
 	decision = Decision{Action: Call, Amount: 6, Reasoning: "Call raise"}
-	table.ApplyDecision(decision)
+	_, _ = table.ApplyDecision(decision)
 	table.AdvanceAction()
 
 	// Now button should get chance to respond to the raise
@@ -885,7 +885,7 @@ func TestPotAwardingBug(t *testing.T) {
 
 	// Set up final state manually to match the bug scenario
 	// Each player's chips should be: starting_chips - total_bet
-	you.Chips = 200 - 200 // All-in for $200, so 0 chips left
+	you.Chips = 0 // All-in for $200, so 0 chips left
 	you.TotalBet = 200
 	you.IsAllIn = true
 

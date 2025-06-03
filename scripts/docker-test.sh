@@ -45,10 +45,10 @@ build() {
 start_server() {
     log "Starting Holdem server..."
     docker-compose up -d holdem-server
-    
+
     log "Waiting for server to be healthy..."
     timeout 30 bash -c 'until docker-compose exec holdem-server curl -f http://localhost:8080/health; do sleep 2; done'
-    
+
     if [ $? -eq 0 ]; then
         log "Server is running and healthy at http://localhost:8080"
         log "You can check server logs with: docker-compose logs -f holdem-server"
@@ -62,10 +62,10 @@ start_server() {
 start_full() {
     log "Starting full setup (server + automated clients)..."
     docker-compose up -d holdem-server holdem-client-1 holdem-client-2
-    
+
     log "Waiting for server to be healthy..."
     timeout 30 bash -c 'until docker-compose exec holdem-server curl -f http://localhost:8080/health; do sleep 2; done'
-    
+
     if [ $? -eq 0 ]; then
         log "Full setup is running!"
         log "Server: http://localhost:8080"
@@ -106,7 +106,7 @@ clean() {
 status() {
     log "Service status:"
     docker-compose ps
-    
+
     echo ""
     log "Server health check:"
     if docker-compose exec holdem-server curl -f http://localhost:8080/health 2>/dev/null; then
@@ -119,17 +119,17 @@ status() {
 # Test the complete flow
 test_flow() {
     log "Running complete test flow..."
-    
+
     # Clean start
     stop
-    
+
     # Build and start server
     build
     start_server
-    
+
     # Show some status
     status
-    
+
     log "Test completed! You can now:"
     log "  1. Connect a client: $0 client [player_name]"
     log "  2. Start automated clients: $0 full"

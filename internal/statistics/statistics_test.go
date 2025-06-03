@@ -38,7 +38,7 @@ func TestStatistics_SingleValue(t *testing.T) {
 		FinalPotSize:   20,
 		StreetReached:  "River",
 	}
-	
+
 	stats.Add(result)
 
 	if stats.Hands != 1 {
@@ -69,7 +69,7 @@ func TestStatistics_SingleValue(t *testing.T) {
 
 func TestStatistics_MultipleValues(t *testing.T) {
 	stats := &Statistics{}
-	
+
 	// Add several hand results with known values
 	results := []HandResult{
 		{NetBB: 1.0, Position: 1, WentToShowdown: false, FinalPotSize: 4},
@@ -124,7 +124,7 @@ func TestStatistics_MultipleValues(t *testing.T) {
 
 func TestStatistics_Percentiles(t *testing.T) {
 	stats := &Statistics{}
-	
+
 	// Add values: 1, 2, 3, 4, 5
 	for i := 1; i <= 5; i++ {
 		stats.Add(HandResult{NetBB: float64(i), Position: 1})
@@ -151,7 +151,7 @@ func TestStatistics_Percentiles(t *testing.T) {
 
 func TestStatistics_ConfidenceInterval(t *testing.T) {
 	stats := &Statistics{}
-	
+
 	// Add some values with known statistical properties
 	values := []float64{1, 2, 3, 4, 5}
 	for _, v := range values {
@@ -160,12 +160,12 @@ func TestStatistics_ConfidenceInterval(t *testing.T) {
 
 	low, high := stats.ConfidenceInterval95()
 	mean := stats.Mean()
-	
+
 	// CI should be symmetric around the mean
 	if math.Abs((low+high)/2-mean) > 1e-9 {
 		t.Errorf("Confidence interval not symmetric around mean. Low: %f, High: %f, Mean: %f", low, high, mean)
 	}
-	
+
 	// CI should be wider than zero for multiple values
 	if high-low <= 0 {
 		t.Errorf("Confidence interval should be positive width, got %f", high-low)
@@ -174,7 +174,7 @@ func TestStatistics_ConfidenceInterval(t *testing.T) {
 
 func TestStatistics_PositionAnalysis(t *testing.T) {
 	stats := &Statistics{}
-	
+
 	// Add different results for different positions
 	stats.Add(HandResult{NetBB: 2.0, Position: 1})
 	stats.Add(HandResult{NetBB: 3.0, Position: 1})
@@ -205,7 +205,7 @@ func TestStatistics_PositionAnalysis(t *testing.T) {
 
 func TestStatistics_PotSizeTracking(t *testing.T) {
 	stats := &Statistics{}
-	
+
 	// Add hands with different pot sizes
 	stats.Add(HandResult{NetBB: 1.0, FinalPotSize: 20})  // 10bb pot
 	stats.Add(HandResult{NetBB: 5.0, FinalPotSize: 200}) // 100bb pot (big pot)
@@ -227,7 +227,7 @@ func TestStatistics_PotSizeTracking(t *testing.T) {
 
 func TestStatistics_Variance(t *testing.T) {
 	stats := &Statistics{}
-	
+
 	// Add values with known variance: [1, 3, 5] -> variance = 4.0
 	values := []float64{1, 3, 5}
 	for _, v := range values {
@@ -247,12 +247,12 @@ func TestStatistics_Variance(t *testing.T) {
 
 func TestStatistics_Validate_Valid(t *testing.T) {
 	stats := &Statistics{}
-	
+
 	// Add some valid data
 	stats.Add(HandResult{NetBB: 1.0, Position: 1})
 	stats.Add(HandResult{NetBB: -1.0, Position: 2})
 	stats.Add(HandResult{NetBB: 0.5, Position: 1})
-	
+
 	err := stats.Validate()
 	if err != nil {
 		t.Errorf("Expected valid stats to pass validation, got error: %v", err)
@@ -264,15 +264,15 @@ func TestStatistics_Validate_LedgerMismatch(t *testing.T) {
 	stats.Hands = 1
 	stats.SumBB = 1.0
 	stats.Values = []float64{1.0}
-	
+
 	// Intentionally create ledger mismatch
 	stats.AllBB = 1.0
 	stats.ShowdownBB = 0.5
 	stats.NonShowdownBB = 0.6 // Should be 0.5 to balance
-	
+
 	// Add position data
 	stats.PositionResults[1].Hands = 1
-	
+
 	err := stats.Validate()
 	if err == nil {
 		t.Error("Expected validation to fail with ledger mismatch")
@@ -285,7 +285,7 @@ func TestStatistics_Validate_LedgerMismatch(t *testing.T) {
 func TestStatistics_Validate_InvalidHandsCount(t *testing.T) {
 	stats := &Statistics{}
 	stats.Hands = 0 // Invalid
-	
+
 	err := stats.Validate()
 	if err == nil {
 		t.Error("Expected validation to fail with invalid hands count")
@@ -302,7 +302,7 @@ func TestStatistics_Validate_ValuesMismatch(t *testing.T) {
 	stats.AllBB = 1.0
 	stats.ShowdownBB = 0.0
 	stats.NonShowdownBB = 1.0
-	
+
 	err := stats.Validate()
 	if err == nil {
 		t.Error("Expected validation to fail with values array mismatch")
@@ -321,10 +321,10 @@ func TestStatistics_Validate_TooManyWins(t *testing.T) {
 	stats.NonShowdownBB = 1.0
 	stats.ShowdownWins = 2
 	stats.NonShowdownWins = 2 // Total wins = 4, but only 2 hands
-	
+
 	// Add position data
 	stats.PositionResults[1].Hands = 2
-	
+
 	err := stats.Validate()
 	if err == nil {
 		t.Error("Expected validation to fail with too many wins")
@@ -341,11 +341,11 @@ func TestStatistics_Validate_PositionMismatch(t *testing.T) {
 	stats.AllBB = 2.0
 	stats.ShowdownBB = 1.0
 	stats.NonShowdownBB = 1.0
-	
+
 	// Add wrong position data - should total to 2 but we'll make it 1
 	stats.PositionResults[1].Hands = 1
 	// Missing one hand in position data
-	
+
 	err := stats.Validate()
 	if err == nil {
 		t.Error("Expected validation to fail with position hands mismatch")

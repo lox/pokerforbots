@@ -15,7 +15,7 @@ This is a **client/server Texas Hold'em poker platform** designed for bot develo
 - Run server: `./bin/holdem-server [--config holdem-server.hcl]`
 - Server with flags: `./bin/holdem-server --addr=0.0.0.0:8080 --log-level=debug`
 
-### Client Commands  
+### Client Commands
 - Interactive client: `./bin/holdem-client [--config holdem-client.hcl]`
 - Client with flags: `./bin/holdem-client --server=ws://localhost:8080 --player=Alice`
 
@@ -33,6 +33,7 @@ This is a **client/server Texas Hold'em poker platform** designed for bot develo
 - Format: `go fmt ./...` or `./bin/task fmt`
 - Clean: `./bin/task clean`
 - All checks: `./bin/task check` (test + lint + build)
+- Pre-commit hooks: `pre-commit install` (run once), then hooks run automatically on commit
 - Demo: `vhs demo.tape` to generate animated GIF demo of the TUI in demo.gif
 
 ### Poker Odds Calculator

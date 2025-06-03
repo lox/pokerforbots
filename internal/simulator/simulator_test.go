@@ -34,7 +34,7 @@ func TestNew(t *testing.T) {
 
 func TestRunSimulation_Convenience(t *testing.T) {
 	logger := log.NewWithOptions(nil, log.Options{Level: log.WarnLevel})
-	
+
 	stats, opponentInfo, err := RunSimulation(2, "fold", 12345, 5*time.Second, logger)
 	if err != nil {
 		t.Fatalf("RunSimulation failed: %v", err)
@@ -62,7 +62,7 @@ func TestSimulator_Run_FoldBot(t *testing.T) {
 
 	simulator := New(config)
 	stats, opponentInfo, err := simulator.Run()
-	
+
 	if err != nil {
 		t.Fatalf("Run() failed: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestSimulator_Run_FoldBot(t *testing.T) {
 	if stats.Hands != 4 { // 2 hands * 2 (duplicate mode)
 		t.Errorf("Expected 4 total hands, got %d", stats.Hands)
 	}
-	
+
 	// Against fold bots, we should always win
 	if stats.Mean() <= 0 {
 		t.Errorf("Expected positive mean against fold bots, got %f", stats.Mean())
@@ -94,7 +94,7 @@ func TestSimulator_Run_CallBot(t *testing.T) {
 
 	simulator := New(config)
 	stats, opponentInfo, err := simulator.Run()
-	
+
 	if err != nil {
 		t.Fatalf("Run() failed: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestSimulator_Run_MixedOpponents(t *testing.T) {
 
 	simulator := New(config)
 	stats, opponentInfo, err := simulator.Run()
-	
+
 	if err != nil {
 		t.Fatalf("Run() failed: %v", err)
 	}
@@ -140,11 +140,11 @@ func TestSimulator_Run_MixedOpponents(t *testing.T) {
 func TestCreateMixedOpponentTypes(t *testing.T) {
 	mix := createMixedOpponentTypes()
 	expected := []string{"tag", "rand", "tag", "maniac", "call"}
-	
+
 	if len(mix) != len(expected) {
 		t.Errorf("Expected %d opponent types, got %d", len(expected), len(mix))
 	}
-	
+
 	for i, expectedType := range expected {
 		if i >= len(mix) || mix[i] != expectedType {
 			t.Errorf("Expected opponent type %d to be %s, got %s", i, expectedType, mix[i])
@@ -154,9 +154,9 @@ func TestCreateMixedOpponentTypes(t *testing.T) {
 
 func TestCreateOpponent(t *testing.T) {
 	logger := log.NewWithOptions(nil, log.Options{Level: log.WarnLevel})
-	
+
 	testCases := []string{"fold", "call", "rand", "chart", "maniac", "tag"}
-	
+
 	for _, opponentType := range testCases {
 		t.Run(opponentType, func(t *testing.T) {
 			agent := createOpponent(opponentType, nil, logger)
@@ -178,11 +178,11 @@ func TestSimulator_PlayHand_Deterministic(t *testing.T) {
 	}
 
 	simulator := New(config)
-	
+
 	// Play the same hand twice with same parameters
 	result1 := simulator.playHand("fold", nil, 12345, 3)
 	result2 := simulator.playHand("fold", nil, 12345, 3)
-	
+
 	// Results should be identical for deterministic seed
 	if result1.NetBB != result2.NetBB {
 		t.Errorf("Expected identical NetBB, got %f vs %f", result1.NetBB, result2.NetBB)
@@ -206,7 +206,7 @@ func TestSimulator_PlayHand_PositionTracking(t *testing.T) {
 	}
 
 	simulator := New(config)
-	
+
 	// Test different positions
 	for position := 1; position <= 6; position++ {
 		result := simulator.playHand("fold", nil, 12345, position)
@@ -227,7 +227,7 @@ func TestSimulator_PlayHandWithTimeout_Success(t *testing.T) {
 	}
 
 	simulator := New(config)
-	
+
 	result, err := simulator.playHandWithTimeout("fold", nil, 12345, 3)
 	if err != nil {
 		t.Fatalf("playHandWithTimeout failed: %v", err)
@@ -251,7 +251,7 @@ func TestSimulator_PlayHandWithTimeout_VeryShortTimeout(t *testing.T) {
 	}
 
 	simulator := New(config)
-	
+
 	_, err := simulator.playHandWithTimeout("fold", nil, 12345, 3)
 	if err == nil {
 		t.Error("Expected timeout error with very short timeout, got nil")
@@ -273,17 +273,17 @@ func TestSimulator_Run_PositionRotation(t *testing.T) {
 
 	simulator := New(config)
 	stats, _, err := simulator.Run()
-	
+
 	if err != nil {
 		t.Fatalf("Run() failed: %v", err)
 	}
-	
+
 	// With 6 hands in duplicate mode, we should have 12 total hands
 	// Each position should be represented
 	if stats.Hands != 12 {
 		t.Errorf("Expected 12 total hands, got %d", stats.Hands)
 	}
-	
+
 	// Check that positions are being tracked
 	totalPositionHands := 0
 	for pos := 1; pos <= 6; pos++ {
@@ -306,27 +306,27 @@ func TestSimulator_Run_StatisticsIntegration(t *testing.T) {
 
 	simulator := New(config)
 	stats, _, err := simulator.Run()
-	
+
 	if err != nil {
 		t.Fatalf("Run() failed: %v", err)
 	}
-	
+
 	// Verify statistics are being collected properly
 	if stats.Hands != 6 { // 3 hands * 2 (duplicate mode)
 		t.Errorf("Expected 6 total hands, got %d", stats.Hands)
 	}
-	
+
 	// Against fold bots, should be profitable
 	if stats.Mean() <= 0 {
 		t.Errorf("Expected positive mean against fold bots, got %f", stats.Mean())
 	}
-	
+
 	// Should have some winning hands
 	totalWins := stats.ShowdownWins + stats.NonShowdownWins
 	if totalWins == 0 {
 		t.Error("Expected some winning hands against fold bots")
 	}
-	
+
 	// Ledger should balance
 	if !stats.IsLedgerBalanced() {
 		t.Error("Expected balanced ledger")
@@ -335,7 +335,7 @@ func TestSimulator_Run_StatisticsIntegration(t *testing.T) {
 
 // Helper function to check if an error is a timeout error
 func isTimeoutError(err error) bool {
-	return err != nil && (err.Error() == "context deadline exceeded" || 
+	return err != nil && (err.Error() == "context deadline exceeded" ||
 		err.Error() == "hand timed out after 1ns" ||
 		err.Error()[:14] == "hand timed out")
 }
@@ -351,7 +351,7 @@ func BenchmarkSimulator_PlayHand(b *testing.B) {
 	}
 
 	simulator := New(config)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = simulator.playHand("fold", nil, int64(i), 3)
@@ -373,14 +373,14 @@ func TestSimulator_Run_ValidationSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() should succeed with valid simulation, got error: %v", err)
 	}
-	
+
 	if stats == nil {
 		t.Fatal("Expected valid statistics, got nil")
 	}
 	if opponentInfo != "fold" {
 		t.Errorf("Expected 'fold' opponent info, got %s", opponentInfo)
 	}
-	
+
 	// Statistics should be valid after Run() completes
 	if validationErr := stats.Validate(); validationErr != nil {
 		t.Errorf("Statistics should be valid after successful Run(), got: %v", validationErr)
@@ -405,7 +405,7 @@ func TestPrintSummary(t *testing.T) {
 
 	// PrintSummary should not panic and should work with valid stats
 	PrintSummary(stats, opponentInfo)
-	
+
 	// Test with mixed opponent type
 	PrintSummary(stats, "mixed(tag,rand,tag,maniac,call)")
 }

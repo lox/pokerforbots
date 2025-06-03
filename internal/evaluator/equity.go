@@ -311,7 +311,7 @@ func EstimateEquitySequential(hole []deck.Card, board []deck.Card, opponentRange
 		}
 
 		// Return slice to pool for reuse
-		boardCandidatesPool.Put(boardCandidates)
+		boardCandidatesPool.Put(&boardCandidates)
 
 		if len(finalBoard) != 5 {
 			continue
@@ -421,8 +421,8 @@ func EstimateEquityParallel(hole []deck.Card, board []deck.Card, opponentRange R
 	totalValidSamples := 0
 
 	go func() {
+		defer close(results)
 		g.Wait()
-		close(results)
 	}()
 
 	for result := range results {
@@ -502,7 +502,7 @@ func runEquityWorker(hole []deck.Card, board []deck.Card, availableCards []deck.
 			filled++
 		}
 
-		boardCandidatesPool.Put(boardCandidates)
+		boardCandidatesPool.Put(&boardCandidates)
 
 		if len(finalBoard) != 5 {
 			continue
