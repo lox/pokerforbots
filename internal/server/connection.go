@@ -12,14 +12,15 @@ import (
 
 // Connection represents a WebSocket connection to a client
 type Connection struct {
-	conn     *websocket.Conn
-	send     chan *Message
-	playerID string
-	tableID  string
-	logger   *log.Logger
-	ctx      context.Context
-	cancel   context.CancelFunc
-	mu       sync.RWMutex
+	conn      *websocket.Conn
+	send      chan *Message
+	playerID  string
+	tableID   string
+	logger    *log.Logger
+	ctx       context.Context
+	cancel    context.CancelFunc
+	mu        sync.RWMutex
+	closeOnce sync.Once
 }
 
 // NewConnection creates a new connection wrapper
@@ -43,9 +44,13 @@ func (c *Connection) Start() {
 
 // Close closes the connection
 func (c *Connection) Close() error {
-	c.cancel()
-	close(c.send)
-	return c.conn.Close()
+	var err error
+	c.closeOnce.Do(func() {
+		c.cancel()
+		close(c.send)
+		err = c.conn.Close()
+	})
+	return err
 }
 
 // SendMessage sends a message to the client
