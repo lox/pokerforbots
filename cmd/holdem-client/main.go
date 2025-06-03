@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -108,11 +107,8 @@ func main() {
 	// Create WebSocket client
 	wsClient := client.NewClient(cfg.Server.URL, logger)
 
-	// Create TUI adapter
-	tuiAdapter := tui.NewNetworkTUIAdapter(tuiModel)
-
-	// Create network agent (handles server events and user input)
-	_ = client.NewNetworkAgent(wsClient, tuiAdapter, logger)
+	// Set up simple bridge between client and TUI
+	tui.SetupSimpleNetworkHandlers(wsClient, tuiModel)
 
 	// Connect to server
 	err = wsClient.Connect()
@@ -128,10 +124,6 @@ func main() {
 		fmt.Printf("Failed to authenticate: %v\n", err)
 		ctx.Exit(1)
 	}
-
-	// Wait for auth response (simple wait)
-	// In a real implementation, you'd want better synchronization
-	// time.Sleep(1 * time.Second)
 
 	// Start TUI
 	program := tea.NewProgram(tuiModel, tea.WithAltScreen())
@@ -150,8 +142,8 @@ func main() {
 	tuiModel.AddLogEntry("  \033[1m/quit\033[0m - Quit the game")
 	tuiModel.AddLogEntry("")
 
-	// Set up command handler
-	go handleCommands(wsClient, tuiModel, logger, cfg)
+	// Start command handler in TUI package
+	tui.StartCommandHandler(wsClient, tuiModel, cfg.Player.DefaultBuyIn)
 
 	// Run TUI
 	if _, err := program.Run(); err != nil {
@@ -161,109 +153,4 @@ func main() {
 
 	// Cleanup
 	_ = wsClient.Disconnect()
-}
-
-// handleCommands processes special commands from user input
-func handleCommands(wsClient *client.Client, tuiModel *tui.TUIModel, logger *log.Logger, cfg *client.ClientConfig) {
-	for {
-		action, args, shouldContinue, err := tuiModel.WaitForAction()
-		if err != nil {
-			logger.Error("Error waiting for action", "error", err)
-			continue
-		}
-
-		logger.Debug("handleCommands", "action", action, "args", args, "shouldContinue", shouldContinue)
-
-		if !shouldContinue {
-			break
-		}
-
-		// Handle special commands
-		if strings.HasPrefix(action, "/") || action == "quit" {
-			switch action {
-			case "/list":
-				err := wsClient.ListTables()
-				if err != nil {
-					tuiModel.AddLogEntry(fmt.Sprintf("Error listing tables: %v", err))
-				}
-
-			case "/join":
-				if len(args) < 1 {
-					tuiModel.AddLogEntry("Usage: /join <table_id>")
-					continue
-				}
-				tableID := args[0]
-				buyIn := cfg.Player.DefaultBuyIn
-				// TODO: Parse buy-in if provided as second argument
-				// if len(args) > 1 {
-				//     buyIn = parseBuyIn(args[1])
-				// }
-
-				err := wsClient.JoinTable(tableID, buyIn)
-				if err != nil {
-					tuiModel.AddLogEntry(fmt.Sprintf("Error joining table: %v", err))
-				}
-
-			case "/leave":
-				tableID := wsClient.GetTableID()
-				if tableID == "" {
-					tuiModel.AddLogEntry("You're not at a table")
-					continue
-				}
-
-				err := wsClient.LeaveTable(tableID)
-				if err != nil {
-					tuiModel.AddLogEntry(fmt.Sprintf("Error leaving table: %v", err))
-				}
-
-			case "/addbot":
-				tableID := wsClient.GetTableID()
-				if tableID == "" {
-					tuiModel.AddLogEntry("You must be at a table to add bots")
-					continue
-				}
-
-				count := 1 // Default to 1 bot
-				if len(args) > 0 {
-					if parsed, err := strconv.Atoi(args[0]); err == nil && parsed > 0 && parsed <= 5 {
-						count = parsed
-					} else {
-						tuiModel.AddLogEntry("Usage: /addbot [count] (count must be 1-5)")
-						continue
-					}
-				}
-
-				err := wsClient.AddBots(tableID, count)
-				if err != nil {
-					tuiModel.AddLogEntry(fmt.Sprintf("Error adding bots: %v", err))
-				}
-
-			case "/kickbot":
-				if len(args) < 1 {
-					tuiModel.AddLogEntry("Usage: /kickbot <bot_name>")
-					continue
-				}
-
-				tableID := wsClient.GetTableID()
-				if tableID == "" {
-					tuiModel.AddLogEntry("You must be at a table to kick bots")
-					continue
-				}
-
-				botName := args[0]
-				err := wsClient.KickBot(tableID, botName)
-				if err != nil {
-					tuiModel.AddLogEntry(fmt.Sprintf("Error kicking bot: %v", err))
-				}
-
-			case "/quit", "quit":
-				tuiModel.SendQuitSignal()
-				return
-
-			default:
-				tuiModel.AddLogEntry(fmt.Sprintf("Unknown command: %s", action))
-			}
-		}
-		// Non-command actions are handled by the NetworkAgent via game events
-	}
 }

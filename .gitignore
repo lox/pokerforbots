@@ -7,6 +7,9 @@
 /main
 /simulate
 /holdem
+/holdem-client
+/holdem-server
+/poker-odds
 
 # Configs
 /holdem-server.hcl
