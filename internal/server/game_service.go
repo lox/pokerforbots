@@ -467,6 +467,11 @@ func (gs *GameService) AddBots(tableID string, count int) ([]string, error) {
 		return nil, fmt.Errorf("could not add any bots (table may be full)")
 	}
 
+	// Start game if we have enough players and table is waiting
+	if len(table.players) >= 2 && table.status == "waiting" {
+		go gs.startTableGame(table)
+	}
+
 	return botNames, nil
 }
 
