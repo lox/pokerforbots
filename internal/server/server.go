@@ -86,6 +86,15 @@ func (s *Server) run() {
 			s.mu.Lock()
 			if _, ok := s.connections[conn]; ok {
 				delete(s.connections, conn)
+
+				// Clean up player from any tables they were in
+				playerID := conn.GetPlayer()
+				tableID := conn.GetTable()
+				if playerID != "" && tableID != "" && gameService != nil {
+					s.logger.Info("Cleaning up disconnected player", "player", playerID, "table", tableID)
+					_ = gameService.LeaveTable(tableID, playerID) // Ignore errors during cleanup
+				}
+
 				_ = conn.Close() // Ignore close errors during unregistration
 			}
 			s.mu.Unlock()
