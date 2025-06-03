@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -75,6 +76,10 @@ func (na *NetworkAgent) setupEventHandlers() {
 	na.client.AddEventHandler("street_change", na.handleStreetChange)
 	na.client.AddEventHandler("hand_end", na.handleHandEnd)
 	na.client.AddEventHandler("action_required", na.handleActionRequired)
+
+	// Bot management events
+	na.client.AddEventHandler("bot_added", na.handleBotAdded)
+	na.client.AddEventHandler("bot_kicked", na.handleBotKicked)
 
 	// Error handling
 	na.client.AddEventHandler("error", na.handleError)
@@ -443,4 +448,25 @@ func parsePositionFromString(posStr string) game.Position {
 	default:
 		return game.MiddlePosition
 	}
+}
+
+func (na *NetworkAgent) handleBotAdded(msg *server.Message) {
+	var data server.BotAddedData
+	if err := json.Unmarshal(msg.Data, &data); err != nil {
+		na.logger.Error("Failed to parse bot added data", "error", err)
+		return
+	}
+
+	botList := strings.Join(data.BotNames, ", ")
+	na.tui.AddLogEntry(fmt.Sprintf("Added bots: %s", botList))
+}
+
+func (na *NetworkAgent) handleBotKicked(msg *server.Message) {
+	var data server.BotKickedData
+	if err := json.Unmarshal(msg.Data, &data); err != nil {
+		na.logger.Error("Failed to parse bot kicked data", "error", err)
+		return
+	}
+
+	na.tui.AddLogEntry(fmt.Sprintf("Kicked bot: %s", data.BotName))
 }

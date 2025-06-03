@@ -294,6 +294,32 @@ func (c *Client) SendDecision(action string, amount int, reasoning string) error
 	return c.SendMessage(decisionMsg)
 }
 
+// AddBots adds bots to the current table
+func (c *Client) AddBots(tableID string, count int) error {
+	addBotMsg, err := server.NewMessage("add_bot", server.AddBotData{
+		TableID: tableID,
+		Count:   count,
+	})
+	if err != nil {
+		return err
+	}
+
+	return c.SendMessage(addBotMsg)
+}
+
+// KickBot removes a bot from the current table
+func (c *Client) KickBot(tableID string, botName string) error {
+	kickBotMsg, err := server.NewMessage("kick_bot", server.KickBotData{
+		TableID: tableID,
+		BotName: botName,
+	})
+	if err != nil {
+		return err
+	}
+
+	return c.SendMessage(kickBotMsg)
+}
+
 // SetTableID sets the current table ID
 func (c *Client) SetTableID(tableID string) {
 	c.mu.Lock()

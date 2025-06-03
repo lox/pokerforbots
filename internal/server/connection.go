@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -218,6 +219,22 @@ func (c *Connection) handleMessage(msg *Message) {
 		}
 		c.handlePlayerDecision(data)
 
+	case "add_bot":
+		var data AddBotData
+		if err := json.Unmarshal(msg.Data, &data); err != nil {
+			c.sendError("invalid_message", "Failed to parse add bot data")
+			return
+		}
+		c.handleAddBot(data)
+
+	case "kick_bot":
+		var data KickBotData
+		if err := json.Unmarshal(msg.Data, &data); err != nil {
+			c.sendError("invalid_message", "Failed to parse kick bot data")
+			return
+		}
+		c.handleKickBot(data)
+
 	default:
 		c.sendError("unknown_message_type", "Unknown message type: "+msg.Type)
 	}
@@ -370,4 +387,69 @@ func (c *Connection) handlePlayerDecision(data PlayerDecisionData) {
 	}
 
 	// No response needed - the game engine will publish events
+}
+
+func (c *Connection) handleAddBot(data AddBotData) {
+	c.logger.Info("Add bot request", "tableId", data.TableID, "count", data.Count, "player", c.GetPlayer())
+
+	if gameService == nil {
+		c.sendError("service_unavailable", "Game service not available")
+		return
+	}
+
+	playerName := c.GetPlayer()
+	if playerName == "" {
+		c.sendError("not_authenticated", "Must authenticate first")
+		return
+	}
+
+	// Default to 1 bot if count not specified
+	count := data.Count
+	if count <= 0 {
+		count = 1
+	}
+	if count > 5 {
+		count = 5 // Limit to 5 bots max
+	}
+
+	botNames, err := gameService.AddBots(data.TableID, count)
+	if err != nil {
+		c.sendError("add_bot_failed", err.Error())
+		return
+	}
+
+	response, _ := NewMessage("bot_added", BotAddedData{
+		TableID:  data.TableID,
+		BotNames: botNames,
+		Message:  fmt.Sprintf("Added %d bot(s) to table", len(botNames)),
+	})
+	_ = c.SendMessage(response) // Ignore send errors
+}
+
+func (c *Connection) handleKickBot(data KickBotData) {
+	c.logger.Info("Kick bot request", "tableId", data.TableID, "botName", data.BotName, "player", c.GetPlayer())
+
+	if gameService == nil {
+		c.sendError("service_unavailable", "Game service not available")
+		return
+	}
+
+	playerName := c.GetPlayer()
+	if playerName == "" {
+		c.sendError("not_authenticated", "Must authenticate first")
+		return
+	}
+
+	err := gameService.KickBot(data.TableID, data.BotName)
+	if err != nil {
+		c.sendError("kick_bot_failed", err.Error())
+		return
+	}
+
+	response, _ := NewMessage("bot_kicked", BotKickedData{
+		TableID: data.TableID,
+		BotName: data.BotName,
+		Message: fmt.Sprintf("Kicked bot %s from table", data.BotName),
+	})
+	_ = c.SendMessage(response) // Ignore send errors
 }

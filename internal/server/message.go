@@ -54,6 +54,16 @@ type PlayerDecisionData struct {
 	Reasoning string `json:"reasoning,omitempty"`
 }
 
+type AddBotData struct {
+	TableID string `json:"tableId"`
+	Count   int    `json:"count,omitempty"` // Number of bots to add, default 1
+}
+
+type KickBotData struct {
+	TableID string `json:"tableId"`
+	BotName string `json:"botName"`
+}
+
 // Server → Client Messages
 
 type AuthResponseData struct {
@@ -161,6 +171,18 @@ type ActionRequiredData struct {
 	ValidActions   []ValidActionInfo `json:"validActions"`
 	TableState     TableStateData    `json:"tableState"`
 	TimeoutSeconds int               `json:"timeoutSeconds"`
+}
+
+type BotAddedData struct {
+	TableID  string   `json:"tableId"`
+	BotNames []string `json:"botNames"`
+	Message  string   `json:"message"`
+}
+
+type BotKickedData struct {
+	TableID string `json:"tableId"`
+	BotName string `json:"botName"`
+	Message string `json:"message"`
 }
 
 // Helper functions to convert between internal types and message types

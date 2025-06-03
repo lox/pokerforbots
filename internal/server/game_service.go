@@ -412,3 +412,88 @@ func (gs *GameService) startTableGame(table *GameTable) {
 func (gs *GameService) HandlePlayerDecision(playerName string, data PlayerDecisionData) error {
 	return gs.agentManager.HandlePlayerDecision(playerName, data)
 }
+
+// AddBots adds AI bots to the specified table
+func (gs *GameService) AddBots(tableID string, count int) ([]string, error) {
+	gs.mu.Lock()
+	defer gs.mu.Unlock()
+
+	table, exists := gs.tables[tableID]
+	if !exists {
+		return nil, fmt.Errorf("table not found: %s", tableID)
+	}
+
+	var botNames []string
+	for i := 0; i < count; i++ {
+		// Check if table is full
+		if len(table.players) >= table.MaxPlayers {
+			break
+		}
+
+		// Generate unique bot name
+		botName := fmt.Sprintf("Bot_%d", len(table.botAgents)+1)
+		for table.players[botName] != nil {
+			botName = fmt.Sprintf("Bot_%d", len(table.botAgents)+len(botNames)+i+1)
+		}
+
+		// Create bot with sophisticated AI
+		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+		botConfig := bot.DefaultBotConfig()
+		botConfig.Name = botName
+		botAgent := bot.NewBotWithConfig(rng, gs.logger, botConfig)
+
+		// Create game player for the bot
+		botPlayer := &game.Player{
+			Name:       botName,
+			Chips:      2000,                 // Default buy-in for bots
+			Position:   game.UnknownPosition, // Will be assigned by engine
+			SeatNumber: -1,                   // Will be assigned
+			Type:       game.AI,
+			IsActive:   true,
+		}
+
+		// Add to table
+		table.players[botName] = botPlayer
+		table.botAgents[botName] = botAgent
+
+		// Add to game engine table
+		table.engine.GetTable().AddPlayer(botPlayer)
+
+		botNames = append(botNames, botName)
+		table.logger.Info("Added bot to table", "botName", botName, "tableId", tableID)
+	}
+
+	if len(botNames) == 0 {
+		return nil, fmt.Errorf("could not add any bots (table may be full)")
+	}
+
+	return botNames, nil
+}
+
+// KickBot removes a bot from the specified table
+func (gs *GameService) KickBot(tableID string, botName string) error {
+	gs.mu.Lock()
+	defer gs.mu.Unlock()
+
+	table, exists := gs.tables[tableID]
+	if !exists {
+		return fmt.Errorf("table not found: %s", tableID)
+	}
+
+	// Check if the player is actually a bot
+	if _, isBot := table.botAgents[botName]; !isBot {
+		return fmt.Errorf("player %s is not a bot or does not exist", botName)
+	}
+
+	// Mark bot as inactive first
+	if botPlayer := table.players[botName]; botPlayer != nil {
+		botPlayer.IsActive = false
+	}
+
+	// Remove from table maps
+	delete(table.players, botName)
+	delete(table.botAgents, botName)
+
+	table.logger.Info("Kicked bot from table", "botName", botName, "tableId", tableID)
+	return nil
+}

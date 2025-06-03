@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -144,6 +145,8 @@ func main() {
 	tuiModel.AddLogEntry("  \033[1m/list\033[0m - List available tables")
 	tuiModel.AddLogEntry("  \033[1m/join <table_id>\033[0m - Join a table")
 	tuiModel.AddLogEntry("  \033[1m/leave\033[0m - Leave current table")
+	tuiModel.AddLogEntry("  \033[1m/addbot [count]\033[0m - Add bots to table (1-5)")
+	tuiModel.AddLogEntry("  \033[1m/kickbot <name>\033[0m - Remove a bot from table")
 	tuiModel.AddLogEntry("  \033[1m/quit\033[0m - Quit the game")
 	tuiModel.AddLogEntry("")
 
@@ -211,6 +214,46 @@ func handleCommands(wsClient *client.Client, tuiModel *tui.TUIModel, logger *log
 				err := wsClient.LeaveTable(tableID)
 				if err != nil {
 					tuiModel.AddLogEntry(fmt.Sprintf("Error leaving table: %v", err))
+				}
+
+			case "/addbot":
+				tableID := wsClient.GetTableID()
+				if tableID == "" {
+					tuiModel.AddLogEntry("You must be at a table to add bots")
+					continue
+				}
+
+				count := 1 // Default to 1 bot
+				if len(args) > 0 {
+					if parsed, err := strconv.Atoi(args[0]); err == nil && parsed > 0 && parsed <= 5 {
+						count = parsed
+					} else {
+						tuiModel.AddLogEntry("Usage: /addbot [count] (count must be 1-5)")
+						continue
+					}
+				}
+
+				err := wsClient.AddBots(tableID, count)
+				if err != nil {
+					tuiModel.AddLogEntry(fmt.Sprintf("Error adding bots: %v", err))
+				}
+
+			case "/kickbot":
+				if len(args) < 1 {
+					tuiModel.AddLogEntry("Usage: /kickbot <bot_name>")
+					continue
+				}
+
+				tableID := wsClient.GetTableID()
+				if tableID == "" {
+					tuiModel.AddLogEntry("You must be at a table to kick bots")
+					continue
+				}
+
+				botName := args[0]
+				err := wsClient.KickBot(tableID, botName)
+				if err != nil {
+					tuiModel.AddLogEntry(fmt.Sprintf("Error kicking bot: %v", err))
 				}
 
 			case "/quit", "quit":
