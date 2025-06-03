@@ -141,10 +141,10 @@ func main() {
 	tuiModel.AddLogEntry("Player: " + cfg.Player.Name)
 	tuiModel.AddLogEntry("")
 	tuiModel.AddLogEntry("Commands:")
-	tuiModel.AddLogEntry("  /list - List available tables")
-	tuiModel.AddLogEntry("  /join <table_id> - Join a table")
-	tuiModel.AddLogEntry("  /leave - Leave current table")
-	tuiModel.AddLogEntry("  /quit - Quit the game")
+	tuiModel.AddLogEntry("  \033[1m/list\033[0m - List available tables")
+	tuiModel.AddLogEntry("  \033[1m/join <table_id>\033[0m - Join a table")
+	tuiModel.AddLogEntry("  \033[1m/leave\033[0m - Leave current table")
+	tuiModel.AddLogEntry("  \033[1m/quit\033[0m - Quit the game")
 	tuiModel.AddLogEntry("")
 
 	// Set up command handler
@@ -169,12 +169,14 @@ func handleCommands(wsClient *client.Client, tuiModel *tui.TUIModel, logger *log
 			continue
 		}
 
+		logger.Debug("handleCommands", "action", action, "args", args, "shouldContinue", shouldContinue)
+
 		if !shouldContinue {
 			break
 		}
 
 		// Handle special commands
-		if strings.HasPrefix(action, "/") {
+		if strings.HasPrefix(action, "/") || action == "quit" {
 			switch action {
 			case "/list":
 				err := wsClient.ListTables()
@@ -211,7 +213,8 @@ func handleCommands(wsClient *client.Client, tuiModel *tui.TUIModel, logger *log
 					tuiModel.AddLogEntry(fmt.Sprintf("Error leaving table: %v", err))
 				}
 
-			case "/quit":
+			case "/quit", "quit":
+				tuiModel.SendQuitSignal()
 				return
 
 			default:
