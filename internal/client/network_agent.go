@@ -115,9 +115,7 @@ func (na *NetworkAgent) handleAuthResponse(msg *server.Message) {
 		return
 	}
 
-	if data.Success {
-		na.tui.AddLogEntry(fmt.Sprintf("Authenticated as %s", data.PlayerID))
-	} else {
+	if !data.Success {
 		na.tui.AddLogEntry(fmt.Sprintf("Authentication failed: %s", data.Error))
 	}
 }
@@ -129,6 +127,7 @@ func (na *NetworkAgent) handleTableList(msg *server.Message) {
 		return
 	}
 
+	na.tui.AddLogEntry("")
 	na.tui.AddLogEntry("Available tables:")
 	for _, table := range data.Tables {
 		na.tui.AddLogEntry(fmt.Sprintf("  %s: %s (%d/%d players, stakes %s)",
@@ -144,9 +143,8 @@ func (na *NetworkAgent) handleTableJoined(msg *server.Message) {
 	}
 
 	na.client.SetTableID(data.TableID)
+	na.tui.AddLogEntry("")
 	na.tui.AddLogEntry(fmt.Sprintf("Joined table %s (seat %d)", data.TableID, data.SeatNumber))
-
-	// Show other players
 	na.tui.AddLogEntry("Players at table:")
 	for _, player := range data.Players {
 		na.tui.AddLogEntry(fmt.Sprintf("  %s: $%d", player.Name, player.Chips))
