@@ -16,7 +16,6 @@ var CLI struct {
 	Addr     string `short:"a" long:"addr" help:"Server address to bind to (overrides config)"`
 	LogLevel string `short:"l" long:"log-level" help:"Log level (overrides config)"`
 	Tables   int    `short:"t" long:"tables" help:"Number of tables to create (legacy mode)"`
-	Bots     int    `short:"b" long:"bots" help:"Number of bots per table (legacy mode)"`
 }
 
 func main() {
@@ -38,19 +37,14 @@ func main() {
 		cfg.Server.LogLevel = CLI.LogLevel
 	}
 
-	// Handle legacy mode (command line tables/bots)
-	if CLI.Tables > 0 || CLI.Bots > 0 {
+	// Handle legacy mode (command line tables)
+	if CLI.Tables > 0 {
 		// Use legacy mode - override config with command line args
 		cfg.Tables = []server.TableConfig{}
-		cfg.Bots = []server.BotConfig{}
 
 		tables := CLI.Tables
 		if tables == 0 {
 			tables = 1
-		}
-		bots := CLI.Bots
-		if bots == 0 {
-			bots = 3
 		}
 
 		for i := 0; i < tables; i++ {
@@ -64,18 +58,6 @@ func main() {
 				BuyInMax:   1000,
 				AutoStart:  true,
 			})
-
-			// Add bots for this table
-			for j := 0; j < bots; j++ {
-				botName := fmt.Sprintf("Bot_%d_%d", i+1, j+1)
-				cfg.Bots = append(cfg.Bots, server.BotConfig{
-					Name:       botName,
-					Strategy:   "chart",
-					Tables:     []string{tableName},
-					BuyIn:      200,
-					Difficulty: "medium",
-				})
-			}
 		}
 	}
 
@@ -102,8 +84,7 @@ func main() {
 
 	logger.Info("Starting Holdem Server",
 		"addr", cfg.GetServerAddress(),
-		"tables", len(cfg.Tables),
-		"totalBots", len(cfg.Bots))
+		"tables", len(cfg.Tables))
 
 	// Create WebSocket server
 	wsServer := server.NewServer(cfg.GetServerAddress(), logger)
@@ -134,28 +115,6 @@ func main() {
 			"name", tableConfig.Name,
 			"stakes", fmt.Sprintf("$%d/$%d", tableConfig.SmallBlind, tableConfig.BigBlind),
 			"maxPlayers", tableConfig.MaxPlayers)
-	}
-
-	// Add bots from configuration
-	for _, botConfig := range cfg.Bots {
-		for _, tableName := range botConfig.Tables {
-			tableID, exists := tableIDMap[tableName]
-			if !exists {
-				logger.Warn("Bot configured for non-existent table", "bot", botConfig.Name, "table", tableName)
-				continue
-			}
-
-			err := gameService.AddBotToTable(tableID, botConfig.Name, botConfig.BuyIn, botConfig.Strategy)
-			if err != nil {
-				logger.Error("Failed to add bot to table", "error", err, "bot", botConfig.Name, "table", tableName)
-			} else {
-				logger.Info("Added bot to table",
-					"bot", botConfig.Name,
-					"table", tableName,
-					"strategy", botConfig.Strategy,
-					"buyIn", botConfig.BuyIn)
-			}
-		}
 	}
 
 	// Handle graceful shutdown

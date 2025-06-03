@@ -182,9 +182,10 @@ func (na *NetworkAgent) handleHandStart(msg *server.Message) {
 	// Show blind posting
 	for _, player := range data.Players {
 		if player.BetThisRound > 0 {
-			if player.Position == "small_blind" {
+			switch player.Position {
+			case "small_blind":
 				na.tui.AddLogEntry(fmt.Sprintf("%s: posts small blind $%d", player.Name, player.BetThisRound))
-			} else if player.Position == "big_blind" {
+			case "big_blind":
 				na.tui.AddLogEntry(fmt.Sprintf("%s: posts big blind $%d", player.Name, player.BetThisRound))
 			}
 		}
@@ -347,7 +348,7 @@ func (na *NetworkAgent) waitForUserDecision(timeoutSeconds int) {
 
 		if !shouldContinue {
 			// User wants to quit
-			na.client.SendDecision("fold", 0, "Player quit")
+			_ = na.client.SendDecision("fold", 0, "Player quit")
 			return
 		}
 

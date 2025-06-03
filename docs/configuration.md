@@ -22,13 +22,6 @@ table "table_name" {
   buy_in_max  = 1000
   auto_start  = true
 }
-
-bot "bot_name" {
-  strategy   = "chart"
-  tables     = ["table_name"]
-  buy_in     = 200
-  difficulty = "medium"
-}
 ```
 
 ### Server Block
@@ -51,23 +44,7 @@ bot "bot_name" {
 | `buy_in_max` | number | 500×BB | Maximum buy-in |
 | `auto_start` | bool | true | Start game with 2+ players |
 
-### Bot Block
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `strategy` | string | "chart" | Bot strategy (see below) |
-| `tables` | list | all tables | Tables to join |
-| `buy_in` | number | 200 | Bot buy-in amount |
-| `difficulty` | string | "medium" | Difficulty: easy, medium, hard |
-
-#### Bot Strategies
-
-- **`chart`** - Conservative play using pre-flop charts
-- **`tag`** - Tight-Aggressive (solid, selective)
-- **`maniac`** - Loose-Aggressive (lots of action)
-- **`call`** - Calling station (calls everything)
-- **`rand`** - Random decisions (testing only)
-- **`fold`** - Always folds (testing only)
 
 ## Client Configuration (`holdem-client.hcl`)
 
@@ -146,7 +123,7 @@ ui {
 ./bin/holdem-server --config=my-server.hcl --addr=0.0.0.0:9000 --log-level=debug
 
 # Legacy mode (ignore config file)
-./bin/holdem-server --tables=3 --bots=2
+./bin/holdem-server --tables=3
 ```
 
 ### Client
@@ -195,25 +172,6 @@ table "highstakes" {
   buy_in_min  = 1000
   buy_in_max  = 10000
 }
-
-# Bots for each stake level
-bot "micro_fish" {
-  strategy = "call"
-  tables   = ["microstakes"]
-  buy_in   = 100
-}
-
-bot "mid_tag" {
-  strategy = "tag"
-  tables   = ["midstakes"]
-  buy_in   = 500
-}
-
-bot "high_maniac" {
-  strategy = "maniac"
-  tables   = ["highstakes"]
-  buy_in   = 5000
-}
 ```
 
 ### Tournament Player Client
@@ -241,7 +199,7 @@ ui {
 
 Both server and client validate configuration on startup:
 
-- **Server**: Validates port ranges, table limits, bot strategies
+- **Server**: Validates port ranges, table limits
 - **Client**: Validates URLs, timeouts, log levels, themes
 
 Invalid configurations will show helpful error messages and exit.
@@ -276,7 +234,7 @@ The new HCL configuration is fully backward compatible. Existing command-line us
 
 ```bash
 # This still works (legacy mode)
-./bin/holdem-server --tables=2 --bots=3 --addr=localhost:9000
+./bin/holdem-server --tables=2 --addr=localhost:9000
 
 # But this is more flexible (HCL mode)
 ./bin/holdem-server --config=my-server.hcl

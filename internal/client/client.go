@@ -96,7 +96,7 @@ func (c *Client) Disconnect() error {
 		defer c.mu.Unlock()
 
 		if c.conn != nil {
-			c.conn.Close()
+			_ = c.conn.Close() // Ignore close errors during shutdown
 			c.connected = false
 		}
 
@@ -166,15 +166,15 @@ func (c *Client) writePump() {
 	ticker := time.NewTicker(54 * time.Second) // Ping interval
 	defer func() {
 		ticker.Stop()
-		c.conn.Close()
+		_ = c.conn.Close() // Ignore close errors during cleanup
 	}()
 
 	for {
 		select {
 		case message, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if !ok {
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
@@ -184,7 +184,7 @@ func (c *Client) writePump() {
 			}
 
 		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}

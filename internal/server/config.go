@@ -12,7 +12,6 @@ import (
 type ServerConfig struct {
 	Server ServerSettings `hcl:"server,block"`
 	Tables []TableConfig  `hcl:"table,block"`
-	Bots   []BotConfig    `hcl:"bot,block"`
 }
 
 // ServerSettings contains server-level configuration
@@ -34,15 +33,6 @@ type TableConfig struct {
 	AutoStart  bool   `hcl:"auto_start,optional"`
 }
 
-// BotConfig defines bot configuration for tables
-type BotConfig struct {
-	Name       string   `hcl:"name,label"`
-	Strategy   string   `hcl:"strategy"`
-	Tables     []string `hcl:"tables,optional"`
-	BuyIn      int      `hcl:"buy_in,optional"`
-	Difficulty string   `hcl:"difficulty,optional"`
-}
-
 // DefaultServerConfig returns default server configuration
 func DefaultServerConfig() *ServerConfig {
 	return &ServerConfig{
@@ -61,15 +51,6 @@ func DefaultServerConfig() *ServerConfig {
 				BuyInMin:   100,
 				BuyInMax:   1000,
 				AutoStart:  true,
-			},
-		},
-		Bots: []BotConfig{
-			{
-				Name:       "bot1",
-				Strategy:   "chart",
-				Tables:     []string{"main"},
-				BuyIn:      200,
-				Difficulty: "medium",
 			},
 		},
 	}
@@ -121,25 +102,6 @@ func LoadServerConfig(filename string) (*ServerConfig, error) {
 		}
 	}
 
-	// Apply defaults to bots
-	for i := range config.Bots {
-		if config.Bots[i].Strategy == "" {
-			config.Bots[i].Strategy = "chart"
-		}
-		if config.Bots[i].BuyIn == 0 {
-			config.Bots[i].BuyIn = 200
-		}
-		if config.Bots[i].Difficulty == "" {
-			config.Bots[i].Difficulty = "medium"
-		}
-		if len(config.Bots[i].Tables) == 0 {
-			// If no tables specified, add to all tables
-			for _, table := range config.Tables {
-				config.Bots[i].Tables = append(config.Bots[i].Tables, table.Name)
-			}
-		}
-	}
-
 	return &config, nil
 }
 
@@ -168,25 +130,6 @@ func (c *ServerConfig) Validate() error {
 		}
 	}
 
-	// Validate bot strategies
-	validStrategies := map[string]bool{
-		"chart":  true,
-		"tag":    true,
-		"maniac": true,
-		"rand":   true,
-		"call":   true,
-		"fold":   true,
-	}
-
-	for _, bot := range c.Bots {
-		if !validStrategies[bot.Strategy] {
-			return fmt.Errorf("bot %s: invalid strategy %s", bot.Name, bot.Strategy)
-		}
-		if bot.BuyIn <= 0 {
-			return fmt.Errorf("bot %s: buy-in must be positive", bot.Name)
-		}
-	}
-
 	return nil
 }
 
@@ -203,18 +146,4 @@ func (c *ServerConfig) GetTableByName(name string) *TableConfig {
 		}
 	}
 	return nil
-}
-
-// GetBotsForTable returns all bots configured for a specific table
-func (c *ServerConfig) GetBotsForTable(tableName string) []BotConfig {
-	var bots []BotConfig
-	for _, bot := range c.Bots {
-		for _, table := range bot.Tables {
-			if table == tableName {
-				bots = append(bots, bot)
-				break
-			}
-		}
-	}
-	return bots
 }

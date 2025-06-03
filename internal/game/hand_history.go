@@ -555,7 +555,7 @@ func (hh *HandHistory) GetBettingRoundSummary(currentRound BettingRound) Betting
 			summary.CurrentBet = action.PotAfter - (action.PotAfter - action.Amount) // This is the new bet level
 		case Call:
 			// Skip blind posts for counting callers
-			if !(currentRound == PreFlop && hh.isBlindPosting(action)) {
+			if currentRound != PreFlop || !hh.isBlindPosting(action) {
 				summary.NumCallers++
 			}
 		}

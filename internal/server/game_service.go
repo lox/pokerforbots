@@ -93,7 +93,7 @@ func (tes *TableEventSubscriber) handleHandStart(event game.HandStartEvent) {
 				continue
 			}
 
-			tes.server.SendToPlayer(p.Name, playerMsg)
+			_ = tes.server.SendToPlayer(p.Name, playerMsg) // Ignore send errors
 		}
 	}
 }
@@ -345,68 +345,6 @@ func (gs *GameService) LeaveTable(tableID, playerName string) error {
 	gs.agentManager.RemoveAgent(playerName)
 
 	table.logger.Info("Player left table", "player", playerName, "remaining", len(table.players))
-
-	return nil
-}
-
-// AddBotToTable adds an AI bot to a table
-func (gs *GameService) AddBotToTable(tableID, botName string, buyIn int, difficulty string) error {
-	gs.mu.Lock()
-	defer gs.mu.Unlock()
-
-	table := gs.tables[tableID]
-	if table == nil {
-		return fmt.Errorf("table not found: %s", tableID)
-	}
-
-	if len(table.players) >= table.MaxPlayers {
-		return fmt.Errorf("table is full")
-	}
-
-	// Create game engine if this is the first player
-	if table.engine == nil {
-		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-		gameTable := game.NewTable(rng, game.TableConfig{
-			MaxSeats:   table.MaxPlayers,
-			SmallBlind: table.SmallBlind,
-			BigBlind:   table.BigBlind,
-			Seed:       time.Now().UnixNano(),
-		})
-		defaultAgent := bot.NewChartBot(gs.logger)
-		table.engine = game.NewGameEngine(gameTable, defaultAgent, table.logger)
-
-		// Subscribe to events
-		table.engine.GetEventBus().Subscribe(table.eventSub)
-	}
-
-	// Create bot player
-	player := &game.Player{
-		Name:       botName,
-		Chips:      buyIn,
-		Type:       game.AI,
-		SeatNumber: len(table.players) + 1,
-	}
-
-	table.engine.GetTable().AddPlayer(player)
-	table.players[botName] = player
-
-	// Create bot agent based on difficulty
-	var botAgent game.Agent
-	switch difficulty {
-	case "easy", "simple":
-		botAgent = bot.NewChartBot(table.logger)
-	default:
-		botAgent = bot.NewChartBot(table.logger) // Default to chart bot
-	}
-
-	table.botAgents[botName] = botAgent
-
-	table.logger.Info("Bot added to table", "bot", botName, "difficulty", difficulty, "buyIn", buyIn)
-
-	// Start game if we have enough players
-	if len(table.players) >= 2 && table.status == "waiting" {
-		go gs.startTableGame(table)
-	}
 
 	return nil
 }

@@ -1064,11 +1064,12 @@ func TestDealerButtonAdvancement(t *testing.T) {
 
 	// Button should advance clockwise: 1 -> 2 -> 3 -> 1
 	expectedSequence := []int{initialButton}
-	if initialButton == 1 {
+	switch initialButton {
+	case 1:
 		expectedSequence = append(expectedSequence, 2, 3, 1)
-	} else if initialButton == 2 {
+	case 2:
 		expectedSequence = append(expectedSequence, 3, 1, 2)
-	} else {
+	default:
 		expectedSequence = append(expectedSequence, 1, 2, 3)
 	}
 

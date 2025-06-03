@@ -48,7 +48,8 @@ func NewCardSet(cards []deck.Card) CardSet {
 // Slice pool for reusable boardCandidates allocation
 var boardCandidatesPool = sync.Pool{
 	New: func() interface{} {
-		return make([]deck.Card, 0, 52)
+		slice := make([]deck.Card, 0, 52)
+		return &slice
 	},
 }
 
@@ -290,7 +291,7 @@ func EstimateEquitySequential(hole []deck.Card, board []deck.Card, opponentRange
 		filled := 0
 
 		// Get reusable boardCandidates slice from pool
-		boardCandidates := boardCandidatesPool.Get().([]deck.Card)
+		boardCandidates := *boardCandidatesPool.Get().(*[]deck.Card)
 		boardCandidates = boardCandidates[:0] // Reset length but keep capacity
 
 		// Collect available cards for board completion (fast bitset lookup)
@@ -422,7 +423,7 @@ func EstimateEquityParallel(hole []deck.Card, board []deck.Card, opponentRange R
 
 	go func() {
 		defer close(results)
-		g.Wait()
+		_ = g.Wait() // Error group wait, errors already handled in worker functions
 	}()
 
 	for result := range results {
@@ -484,7 +485,7 @@ func runEquityWorker(hole []deck.Card, board []deck.Card, availableCards []deck.
 		filled := 0
 
 		// Get reusable boardCandidates slice from pool
-		boardCandidates := boardCandidatesPool.Get().([]deck.Card)
+		boardCandidates := *boardCandidatesPool.Get().(*[]deck.Card)
 		boardCandidates = boardCandidates[:0]
 
 		for _, card := range availableCards {

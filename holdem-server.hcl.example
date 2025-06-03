@@ -36,51 +36,5 @@ table "highstakes" {
   auto_start  = false
 }
 
-# Define bots to populate tables
-bot "aggressive_annie" {
-  strategy   = "maniac"
-  tables     = ["microstakes", "lowstakes"]
-  buy_in     = 200
-  difficulty = "medium"
-}
-
-bot "tight_ted" {
-  strategy   = "chart"
-  tables     = ["microstakes"]
-  buy_in     = 300
-  difficulty = "hard"
-}
-
-bot "calling_station_carl" {
-  strategy   = "call"
-  tables     = ["microstakes", "lowstakes"]
-  buy_in     = 150
-  difficulty = "easy"
-}
-
-bot "tag_player_tom" {
-  strategy   = "tag"
-  tables     = ["lowstakes", "highstakes"]
-  buy_in     = 1000
-  difficulty = "hard"
-}
-
-bot "random_randy" {
-  strategy   = "rand"
-  tables     = ["microstakes"]
-  buy_in     = 200
-  difficulty = "easy"
-}
-
-# Available bot strategies:
-# - "chart"  : Tight-aggressive using push-fold charts
-# - "tag"    : Tight-aggressive with advanced play
-# - "maniac" : Loose-aggressive, raises frequently
-# - "call"   : Calling station, rarely folds
-# - "fold"   : Nit, folds most hands
-# - "rand"   : Random decisions (for testing)
-
-# Available difficulties:
-# - "easy"   : Makes more mistakes
-# - "medium" : Balanced play
-# - "hard"   : Near-optimal play
+# Poker bots can connect remotely using the holdem-client
+# See the bot examples in the repository for different strategies

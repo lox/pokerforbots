@@ -57,7 +57,7 @@ func (c *Connection) SendMessage(msg *Message) error {
 		return c.ctx.Err()
 	default:
 		c.logger.Warn("Connection send buffer full, closing connection")
-		c.Close()
+		_ = c.Close() // Ignore close errors
 		return ErrConnectionClosed
 	}
 }
@@ -110,12 +110,12 @@ var (
 
 // readPump handles incoming messages from the client
 func (c *Connection) readPump() {
-	defer c.Close()
+	defer func() { _ = c.Close() }() // Ignore close errors during cleanup
 
 	c.conn.SetReadLimit(maxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(pongWait))
+		_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 
@@ -144,15 +144,15 @@ func (c *Connection) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
-		c.conn.Close()
+		_ = c.conn.Close() // Ignore close errors during cleanup
 	}()
 
 	for {
 		select {
 		case message, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
@@ -162,7 +162,7 @@ func (c *Connection) writePump() {
 			}
 
 		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
@@ -229,7 +229,7 @@ func (c *Connection) sendError(code, message string) {
 		return
 	}
 
-	c.SendMessage(errorMsg)
+	_ = c.SendMessage(errorMsg) // Ignore send errors during error handling
 }
 
 // GameService reference - set by server
@@ -255,7 +255,7 @@ func (c *Connection) handleAuth(data AuthData) {
 		Success:  true,
 		PlayerID: data.PlayerName,
 	})
-	c.SendMessage(response)
+	_ = c.SendMessage(response) // Ignore send errors
 }
 
 func (c *Connection) handleJoinTable(data JoinTableData) {
@@ -299,7 +299,7 @@ func (c *Connection) handleJoinTable(data JoinTableData) {
 		SeatNumber: table.players[playerName].SeatNumber,
 		Players:    players,
 	})
-	c.SendMessage(response)
+	_ = c.SendMessage(response) // Ignore send errors
 }
 
 func (c *Connection) handleLeaveTable(data LeaveTableData) {
@@ -326,7 +326,7 @@ func (c *Connection) handleLeaveTable(data LeaveTableData) {
 	c.SetTable("")
 
 	response, _ := NewMessage("table_left", map[string]string{"tableId": data.TableID})
-	c.SendMessage(response)
+	_ = c.SendMessage(response) // Ignore send errors
 }
 
 func (c *Connection) handleListTables() {
@@ -341,7 +341,7 @@ func (c *Connection) handleListTables() {
 	response, _ := NewMessage("table_list", TableListData{
 		Tables: tables,
 	})
-	c.SendMessage(response)
+	_ = c.SendMessage(response) // Ignore send errors
 }
 
 func (c *Connection) handlePlayerDecision(data PlayerDecisionData) {

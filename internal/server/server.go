@@ -65,7 +65,7 @@ func (s *Server) Stop() error {
 	// Close all connections
 	s.mu.Lock()
 	for conn := range s.connections {
-		conn.Close()
+		_ = conn.Close() // Ignore close errors during shutdown
 	}
 	s.mu.Unlock()
 
@@ -86,7 +86,7 @@ func (s *Server) run() {
 			s.mu.Lock()
 			if _, ok := s.connections[conn]; ok {
 				delete(s.connections, conn)
-				conn.Close()
+				_ = conn.Close() // Ignore close errors during unregistration
 			}
 			s.mu.Unlock()
 			s.logger.Info("Client disconnected", "total", len(s.connections))
@@ -119,7 +119,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 // handleHealth handles health check requests
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "OK")
+	_, _ = fmt.Fprintf(w, "OK") // Ignore write errors for health check
 }
 
 // BroadcastToTable sends a message to all connections at a specific table
