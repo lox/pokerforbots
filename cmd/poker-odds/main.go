@@ -16,11 +16,11 @@ import (
 )
 
 type CLI struct {
-	Hands         []string `arg:"" help:"Player hands in format 'AcKd QhJs' (space separated, quoted)" required:"true"`
-	Board         string   `short:"b" help:"Community board cards (e.g., 'Td7s8h')"`
-	Possibilities bool     `short:"p" help:"Show detailed hand type probabilities"`
-	Iterations    int      `short:"i" help:"Number of Monte Carlo iterations" default:"100000"`
-	Seed          *int64   `help:"Random seed for reproducible results"`
+	Hands         []string `arg:"" help:"Player hands in format 'AcKd QhJs' (space separated, quoted). Cards use standard notation: ranks A,K,Q,J,T,9-2 and suits s,h,d,c. Examples: 'AcKh' 'KdQs' '2h2c'" required:"true"`
+	Board         string   `short:"b" help:"Community board cards (0-5 cards) using standard notation (e.g., 'Td7s8h', 'AcKhQd')"`
+	Possibilities bool     `short:"p" help:"Show detailed breakdown of hand type probabilities for each player"`
+	Iterations    int      `short:"i" help:"Number of Monte Carlo iterations for accuracy (more iterations = higher precision)" default:"100000"`
+	Seed          *int64   `help:"Random seed for deterministic/reproducible results (useful for testing)"`
 }
 
 var (
@@ -48,7 +48,17 @@ var (
 
 func main() {
 	var cli CLI
-	ctx := kong.Parse(&cli)
+	ctx := kong.Parse(&cli,
+		kong.Name("poker-odds"),
+		kong.Description("Texas Hold'em poker odds calculator using Monte Carlo simulation"),
+		kong.UsageOnError(),
+		kong.ConfigureHelp(kong.HelpOptions{
+			Summary: true,
+			Compact: true,
+		}),
+		kong.Vars{
+			"version": "1.0.0",
+		})
 
 	// Set up random seed
 	var seed int64

@@ -1,66 +1,100 @@
-# Poker for Bots
+# Poker for Bots ♠️♣️♦️♥️🤖
 
-A command-line Texas Hold'em poker game that simulates a PokerStars-style experience with AI opponents, plus a poker odds calculator tool.
+A client/server Texas Hold'em poker platform designed for bot development and testing, with human-playable interfaces and comprehensive poker tools.
 
 ## Features
 
-- **Professional CLI Interface**: Dynamic prompt showing your hand, position, and chips
-- **Complete Hand Narrative**: Full poker hand progression from deal to showdown with clear betting rounds
-- **Intelligent AI opponents**: Computer players with position-aware decision-making and hand evaluation
-- **Interactive gameplay**: Full command system (call, raise, fold, quit, stats, help, hand, pot, players)
-- **Flexible table sizes**: Support for 6-seat and 9-seat tables
-- **Beautiful styling**: Lipgloss-powered visual design with colored cards and clear action indicators
-- **Complete showdowns**: See all player hands, winners, and hand rankings at the end
-- **Authentic poker flow**: Community card reveals, betting round transitions, and pot tracking
-- **Test mode**: Automated gameplay for testing with `--test-mode` flag
-- **Clean architecture**: Separated presentation logic for maintainable code
-- **Fixed stakes**: $1/$2 No Limit Hold'em
+### Server Architecture
+- **WebSocket-based multiplayer**: Real-time game server supporting multiple concurrent tables
+- **Bot ecosystem**: Multiple AI strategies (chart-based, TAG, maniac, calling station)
+- **HCL configuration**: Flexible configuration for tables, bots, and server settings
+- **Docker support**: Complete containerized setup for easy deployment and testing
+
+### Client Interfaces
+- **Interactive CLI client**: Professional terminal interface for human players
+- **Automated bot clients**: Configurable AI players that connect and play autonomously
+- **TUI design**: Bubble Tea-powered interface with game log and action panels
+- **Real-time gameplay**: Live updates, hand progression, and showdown results
+
+### Game Features
+- **Complete poker simulation**: Full Texas Hold'em with all betting rounds
+- **Multiple table support**: Concurrent games with different stakes and configurations
+- **Position-aware gameplay**: Proper blinds, button rotation, and positional strategy
+- **Hand history tracking**: Complete game logs and hand records
+- **Professional poker rules**: Exact implementation of 6-max $1/$2 No Limit Hold'em
+
+### Developer Tools
+- **Poker odds calculator**: Monte Carlo simulation for hand equity analysis
+- **Testing framework**: Automated game testing with deterministic results
+- **Clean architecture**: Separated game logic, networking, and presentation layers
 
 ## Quick Start
 
-### Texas Hold'em Game
+### Server Setup
 
 ```bash
-# Normal gameplay
-go run cmd/holdem/main.go
+# Start server with default configuration
+./bin/holdem-server
 
-# Test mode (automated decisions for testing)
-go run cmd/holdem/main.go --test-mode
+# Or use Docker for complete setup
+./scripts/docker-test.sh test
 
-# Specify table size
-go run cmd/holdem/main.go --players 9
+# Custom configuration
+./bin/holdem-server --config holdem-server.hcl
+```
+
+### Client Connection
+
+```bash
+# Interactive human player
+./bin/holdem-client --player "YourName"
+
+# Connect to remote server
+./bin/holdem-client --server ws://remote:8080 --player "Alice"
+
+# Docker interactive client
+./scripts/docker-test.sh client Alice
+```
+
+### Development/Testing
+
+```bash
+# Complete integration test
+./scripts/docker-test.sh test
+
+# Bot vs bot action
+./scripts/docker-test.sh full
 ```
 
 ### Poker Odds Calculator
 
 ```bash
-# Calculate odds between two hands
-go run cmd/poker-odds/main.go "AcKh" "KdQs"
-
-# With community board
-go run cmd/poker-odds/main.go "AcKh" "KdQs" --board "Td7s8h"
-
-# Show detailed hand type probabilities
-go run cmd/poker-odds/main.go "AcKh" "KdQs" --board "Td7s8h" --possibilities
-
-# Multiple hands
-go run cmd/poker-odds/main.go "AcKh" "KdQs" "2h2c" "TsJs"
-
-# High accuracy with more iterations
-go run cmd/poker-odds/main.go "AcKh" "KdQs" --iterations 1000000
+# See comprehensive help and examples
+go run cmd/poker-odds/main.go --help
 ```
 
 ## Gameplay
 
-- Choose table size (6 or 9 seats)
-- Players start with $200 stacks
+### Game Commands
+- `/list` - List available tables
+- `/join <table_id>` - Join a table with configurable buy-in
+- `/leave` - Leave current table
+- `/quit` - Quit the game
+
+### Poker Actions
+- `call`, `c` - Call the current bet
+- `raise 50`, `r 50` - Raise to 50
+- `fold`, `f` - Fold hand
+- `check`, `k` - Check (when no bet)
+- `allin`, `a` - Go all-in
+
+### Game Features
+- Standard 6-max tables (2-10 players supported)
+- Configurable buy-ins (default: 50-500 big blinds)
 - Small blind: $1, Big blind: $2
-- Use commands like `call`, `raise 50`, `fold`, `quit`, `stats`
-- Full command history and tab completion
-- Beautiful card visualization with colors
 - Complete hand progression: Pre-flop → Flop → Turn → River → Showdown
-- See all players' hole cards and hand rankings at showdown
-- Clear betting round transitions and pot tracking
+- Real-time multiplayer with WebSocket communication
+- Hand history and game logs
 
 ## Game Rules
 
@@ -69,51 +103,69 @@ go run cmd/poker-odds/main.go "AcKh" "KdQs" --iterations 1000000
 - Blinds remain static throughout session
 - Bankrolls are ephemeral (reset each session)
 
-## Poker Odds Calculator
 
-The `poker-odds` tool calculates win probabilities for Texas Hold'em hands using Monte Carlo simulation or exhaustive calculation. It supports:
 
-- **Multiple hands**: Compare any number of hands against each other
-- **Board cards**: Specify 0-5 community cards using standard notation (e.g., "Td7s8h")
-- **Hand probabilities**: Show detailed breakdown of hand types with `--possibilities`
-- **High accuracy**: Configurable iterations with `--iterations N` for precision control
-- **Fast calculation**: Optimized Monte Carlo simulation using existing evaluator
-- **Reproducible results**: Use `--seed N` for deterministic output
-
-### Card Notation
-
-Cards use standard poker notation:
-- **Ranks**: A (Ace), K (King), Q (Queen), J (Jack), T (Ten), 9, 8, 7, 6, 5, 4, 3, 2
-- **Suits**: s (spades), h (hearts), d (diamonds), c (clubs)
-- **Examples**: "AcKh" (Ace of clubs, King of hearts), "2s2d" (pocket deuces)
-
-### Output
+## Architecture
 
 ```
-hand        win    tie
-A♣ K♥   71.4%   1.1%
-K♦ Q♠   27.5%   1.1%
-
-100000 iterations in 54ms
+┌─────────────────┐    WebSocket    ┌─────────────────┐
+│   Client 1      │◄──────────────► │                 │
+│   (Human/Bot)   │                 │                 │
+├─────────────────┤                 │  Holdem Server  │
+│   Client 2      │◄──────────────► │                 │
+│   (Human/Bot)   │                 │  - GameService  │
+├─────────────────┤                 │  - Tables       │
+│   Client N      │◄──────────────► │  - Bots         │
+│   (Human/Bot)   │                 │                 │
+└─────────────────┘                 └─────────────────┘
 ```
 
 ## Project Structure
 
 ```
-cmd/holdem/          # Main application entry point
-cmd/poker-odds/      # Poker odds calculator tool
-internal/game/       # Core game logic and display system
-internal/deck/       # Card and deck implementation
-internal/evaluator/  # Hand strength evaluation and equity calculation
-internal/bot/        # AI agents
-internal/tui/        # Terminal UI components
+cmd/
+├── holdem-server/   # WebSocket game server
+├── holdem-client/   # Interactive client
+└── poker-odds/      # Poker odds calculator tool
+
+internal/
+├── game/           # Core game logic and state management
+├── deck/           # Card and deck implementation
+├── evaluator/      # Hand strength evaluation and equity calculation
+├── bot/            # AI player strategies
+├── tui/            # Terminal UI components (Bubble Tea)
+├── server/         # WebSocket server and protocol
+└── client/         # Client networking and game interface
+
+docs/               # Protocol documentation and setup guides
+scripts/            # Docker and deployment scripts
 ```
+
+## Configuration
+
+The system uses HCL configuration files for flexible setup:
+
+- **`holdem-server.hcl`** - Server configuration (tables, bots, networking)
+- **`holdem-client.hcl`** - Client configuration (player settings, UI preferences)
+
+See [`docs/configuration.md`](docs/configuration.md) for complete configuration options.
 
 ## Development
 
-See [TODO.md](TODO.md) for planned features and current development status.
-
 ### Commands
 
-- Test: `go test ./...`
-- Run: `go run ./cmd/holdem`
+- **Server**: `./bin/holdem-server [--config server.hcl]`
+- **Client**: `./bin/holdem-client [--config client.hcl]`
+- **Tests**: `go test ./...` or `./bin/task test`
+- **Docker**: `./scripts/docker-test.sh [test|full|client]`
+
+### Contributing
+
+- **Commits**: Use conventional commits with prefixes `chore`, `feat`, `fix`, or area-specific like `fix(server)`, `feat(client)`, `chore(docs)`
+
+### Documentation
+
+- [WebSocket Protocol](docs/websocket-protocol.md) - Client/server communication
+- [Configuration Guide](docs/configuration.md) - HCL setup and options
+- [Docker Setup](docs/docker-setup.md) - Containerized deployment
+- [Poker Rules](docs/poker-rules.md) - Game implementation specification

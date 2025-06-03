@@ -1,15 +1,32 @@
 # Agent Instructions
 
 ## Project Overview
-This is a **Texas Hold'em CLI poker game** with AI opponents, built in Go. The game features:
-- Professional CLI interface with dynamic prompts
-- Position-aware AI players
-- Complete poker hand progression (pre-flop → flop → turn → river → showdown)
-- Clean architecture with separated presentation logic
-- Test mode for automated gameplay
+This is a **client/server Texas Hold'em poker platform** designed for bot development and testing, built in Go. The system features:
+- WebSocket-based multiplayer server supporting multiple concurrent tables
+- Interactive CLI clients for human players
+- Automated bot clients with configurable AI strategies
+- Real-time gameplay with proper poker rules implementation
+- HCL configuration system for flexible server and client setup
+- Docker support for easy deployment and testing
 
 ## Project Commands
-- Run: `go run cmd/holdem/main.go [--players N]` or `./bin/task run`
+
+### Server Commands
+- Run server: `./bin/holdem-server [--config holdem-server.hcl]`
+- Server with flags: `./bin/holdem-server --addr=0.0.0.0:8080 --log-level=debug`
+
+### Client Commands  
+- Interactive client: `./bin/holdem-client [--config holdem-client.hcl]`
+- Client with flags: `./bin/holdem-client --server=ws://localhost:8080 --player=Alice`
+
+### Docker Commands
+- Complete test: `./scripts/docker-test.sh test`
+- Start full system: `./scripts/docker-test.sh full`
+- Interactive client: `./scripts/docker-test.sh client PlayerName`
+- Show logs: `./scripts/docker-test.sh logs [service]`
+- Clean up: `./scripts/docker-test.sh clean`
+
+### Development Commands
 - Tests: `go test ./...` or `./bin/task test`
 - Test single file: `go test -run TestName ./path/to/package`
 - Lint: `golangci-lint run` or `./bin/task lint`
@@ -17,6 +34,10 @@ This is a **Texas Hold'em CLI poker game** with AI opponents, built in Go. The g
 - Clean: `./bin/task clean`
 - All checks: `./bin/task check` (test + lint + build)
 - Demo: `vhs demo.tape` to generate animated GIF demo of the TUI in demo.gif
+
+### Poker Odds Calculator
+- Help: `go run cmd/poker-odds/main.go --help`
+- Basic usage: `go run cmd/poker-odds/main.go "AcKh" "KdQs"`
 
 ## Code Style Guidelines
 - Language: Go (1.24.3)
@@ -28,12 +49,16 @@ This is a **Texas Hold'em CLI poker game** with AI opponents, built in Go. The g
 - Constants: Use `const` for constants, in CamelCase or camelCase style
 
 ## Project Structure
-- `cmd/holdem/` - Main application entry point
+- `cmd/holdem-server/` - WebSocket game server
+- `cmd/holdem-client/` - Interactive client application
+- `cmd/poker-odds/` - Poker odds calculator tool
 - `internal/game/` - Core game logic and game state
 - `internal/deck/` - Card and deck implementation
 - `internal/evaluator/` - Hand strength evaluation
 - `internal/tui/` - TUI presentation layer (Bubble Tea interface)
 - `internal/bot/` - AI agents
+- `internal/server/` - WebSocket server and protocol
+- `internal/client/` - Client networking and game interface
 
 ## Architecture Notes
 - **TUI Logic**: All presentation code is in `internal/tui/`
@@ -48,6 +73,7 @@ This is a **Texas Hold'em CLI poker game** with AI opponents, built in Go. The g
 - Go module: github.com/lox/pokerforbots
 - **Game IDs**: Random UUIDv7 IDs with base32 encoding (26 chars, TypeID-compatible)
 - **Deterministic Testing**: Use `rand.New` with fixed seed for reproducible game ID generation in tests
+- **Commits**: Use conventional commits with prefixes `chore`, `feat`, `fix`, or area-specific like `fix(server)`, `feat(client)`, `chore(docs)`
 
 ## Collaboration Guidelines
 
