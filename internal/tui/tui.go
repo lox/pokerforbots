@@ -25,6 +25,7 @@ type TUIModel struct {
 	// State
 	gameLog      []string
 	actionResult chan ActionResult
+	quitSignal   chan bool
 	quitting     bool
 	focusedPane  int // 0 = log, 1 = input
 
@@ -36,8 +37,9 @@ type TUIModel struct {
 	humanPlayer  *game.Player // Current human player info when it's their turn
 
 	// Dimensions
-	width  int
-	height int
+	width       int
+	height      int
+	initialized bool // Track if viewport has been properly sized
 }
 
 // ActionResult represents the result of a user action
@@ -47,6 +49,9 @@ type ActionResult struct {
 	Continue bool
 	Error    error
 }
+
+// QuitMsg is a custom message to signal quit
+type QuitMsg struct{}
 
 // NewTUIModel creates a new TUI model
 func NewTUIModel(table *game.Table, logger *log.Logger) *TUIModel {
@@ -72,13 +77,22 @@ func NewTUIModel(table *game.Table, logger *log.Logger) *TUIModel {
 		actionInput:  ti,
 		gameLog:      []string{},
 		actionResult: make(chan ActionResult, 1),
+		quitSignal:   make(chan bool, 1),
 		focusedPane:  1, // Start with input focused
 	}
 }
 
 // Init initializes the TUI model
 func (m *TUIModel) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, m.listenForQuit())
+}
+
+// listenForQuit returns a command that listens for quit signals
+func (m *TUIModel) listenForQuit() tea.Cmd {
+	return func() tea.Msg {
+		<-m.quitSignal
+		return QuitMsg{}
+	}
 }
 
 // Update handles messages in the TUI
@@ -86,12 +100,17 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case QuitMsg:
+		m.quitting = true
+		return m, tea.Sequence(tea.ClearScreen, tea.Quit)
+
 	case tea.WindowSizeMsg:
 		m.logger.Debug("Updating dimensions", "width", m.width, "height", m.height)
 		m.width = msg.Width
 		m.height = msg.Height
 
 	case tea.KeyMsg:
+		m.logger.Debug("KeyMsg", "key", msg.String())
 		switch msg.String() {
 		case "ctrl+c", "esc":
 			m.quitting = true
@@ -236,6 +255,12 @@ func (m *TUIModel) View() string {
 
 	m.logViewport.Width = calculatedLogWidth
 	m.logViewport.Height = calculatedLogHeight
+
+	// On first proper sizing, reset to top to avoid starting scrolled down
+	if !m.initialized && calculatedLogWidth > 1 && calculatedLogHeight > 1 {
+		m.logViewport.GotoTop()
+		m.initialized = true
+	}
 
 	logStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -524,7 +549,7 @@ func (m *TUIModel) processAction(input string) {
 	m.actionResult <- ActionResult{
 		Action:   action,
 		Args:     args,
-		Continue: action != "quit",
+		Continue: true, // Let the command handler decide whether to continue
 	}
 }
 
@@ -532,4 +557,13 @@ func (m *TUIModel) processAction(input string) {
 func (m *TUIModel) WaitForAction() (string, []string, bool, error) {
 	result := <-m.actionResult
 	return result.Action, result.Args, result.Continue, result.Error
+}
+
+// SendQuitSignal signals the TUI to quit gracefully
+func (m *TUIModel) SendQuitSignal() {
+	select {
+	case m.quitSignal <- true:
+	default:
+		// Channel is full, quit signal already sent
+	}
 }
