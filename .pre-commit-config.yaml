@@ -1,4 +1,13 @@
 repos:
+  # Conventional commit linting
+  - repo: https://github.com/espressif/conventional-precommit-linter
+    rev: v1.10.0
+    hooks:
+      - id: conventional-precommit-linter
+        stages: [commit-msg]
+        args:
+          - --types=feat,fix,chore
+
   # Go formatting and imports
   - repo: https://github.com/dnephin/pre-commit-golang
     rev: v0.5.1
