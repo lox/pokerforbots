@@ -75,7 +75,7 @@ This is a **client/server Texas Hold'em poker platform** designed for bot develo
 - **Game IDs**: Random UUIDv7 IDs with base32 encoding (26 chars, TypeID-compatible)
 - **Deterministic Testing**: Use `rand.New` with fixed seed for reproducible game ID generation in tests
 - **Commits**: Use conventional commits with prefixes `chore`, `feat`, `fix`, or area-specific like `fix(server)`, `feat(client)`, `chore(docs)`
-- **Git History**: ~78% of commits now follow conventional format (57/73). Remaining historical commits use older formats but all new commits should be conventional
+- **Git History**: 100% of commits now follow conventional format (74/74) after successful git-filter-repo rewrite. All commits use proper prefixes like `feat:`, `fix:`, `chore:`, `refactor:`, `perf:`
 
 ## Collaboration Guidelines
 
