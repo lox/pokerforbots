@@ -57,6 +57,15 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 			return
 		}
 
+		// Debug logging for player actions
+		tui.logger.Info("EVENT player_action",
+			"player", data.Player,
+			"action", data.Action,
+			"amount", data.Amount,
+			"potAfter", data.PotAfter,
+			"round", data.Round,
+			"reasoning", data.Reasoning)
+
 		tui.UpdatePot(data.PotAfter)
 
 		var actionEntry string
@@ -78,7 +87,7 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 				actionEntry = fmt.Sprintf("%s: checks", data.Player)
 			}
 		case "raise":
-			actionEntry = fmt.Sprintf("%s: raises to $%d (pot now: $%d)", data.Player, data.Amount, data.PotAfter)
+			actionEntry = fmt.Sprintf("%s: raises by $%d (pot now: $%d)", data.Player, data.Amount, data.PotAfter)
 		case "allin":
 			actionEntry = fmt.Sprintf("%s: goes all-in for $%d", data.Player, data.Amount)
 		default:
@@ -94,23 +103,29 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 			return
 		}
 
+		// Debug logging for street change
+		tui.logger.Info("EVENT street_change",
+			"round", data.Round,
+			"currentBet", data.CurrentBet,
+			"communityCards", len(data.CommunityCards))
+
 		tui.UpdateCurrentBet(data.CurrentBet)
 
 		switch data.Round {
-		case "flop":
+		case "Flop":
 			tui.AddLogEntry("*** FLOP ***")
 			if len(data.CommunityCards) >= 3 {
 				flop := data.CommunityCards[:3]
 				tui.AddLogEntry(fmt.Sprintf("Board: %s", formatCards(flop)))
 			}
-		case "turn":
+		case "Turn":
 			tui.AddLogEntry("*** TURN ***")
 			if len(data.CommunityCards) >= 4 {
 				tui.AddLogEntry(fmt.Sprintf("Board: %s [%s]",
 					formatCards(data.CommunityCards[:3]),
 					data.CommunityCards[3].String()))
 			}
-		case "river":
+		case "River":
 			tui.AddLogEntry("*** RIVER ***")
 			if len(data.CommunityCards) >= 5 {
 				tui.AddLogEntry(fmt.Sprintf("Board: %s [%s]",
@@ -144,6 +159,13 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
 		}
+
+		// Debug logging for action required
+		tui.logger.Info("EVENT action_required",
+			"player", data.PlayerName,
+			"currentBet", data.TableState.CurrentBet,
+			"pot", data.TableState.Pot,
+			"validActions", len(data.ValidActions))
 
 		// Convert server data to game types
 		validActions := make([]game.ValidAction, len(data.ValidActions))
@@ -180,6 +202,19 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		tui.UpdateCurrentBet(data.TableState.CurrentBet)
 		tui.SetHumanTurn(true, humanPlayer)
 
+		// Debug log the updated state and valid actions
+		tui.logger.Info("Updated TUI state",
+			"pot", data.TableState.Pot,
+			"currentBet", data.TableState.CurrentBet,
+			"humanPlayer.BetThisRound", humanPlayer.BetThisRound)
+		for i, action := range validActions {
+			tui.logger.Info("ValidAction",
+				"index", i,
+				"action", action.Action.String(),
+				"minAmount", action.MinAmount,
+				"maxAmount", action.MaxAmount)
+		}
+
 		// Player's turn is now active, actions will be handled by the main command loop
 	})
 
@@ -205,12 +240,19 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		}
 
 		client.SetTableID(data.TableID)
-		tui.AddLogEntry("")
-		tui.AddLogEntry(fmt.Sprintf("Joined table %s (seat %d)", data.TableID, data.SeatNumber))
-		tui.AddLogEntry("Players at table:")
+
+		// Add bold table joined message at the top
+		tui.AddBoldLogEntry(fmt.Sprintf("Joined table %s (seat %d)", data.TableID, data.SeatNumber))
+
+		// Convert players to PlayerInfo and set in sidebar
+		var players []PlayerInfo
 		for _, player := range data.Players {
-			tui.AddLogEntry(fmt.Sprintf("  %s: $%d", player.Name, player.Chips))
+			players = append(players, PlayerInfo{
+				Name:  player.Name,
+				Chips: player.Chips,
+			})
 		}
+		tui.SetTableInfo(data.TableID, data.SeatNumber, players)
 	})
 
 	client.AddEventHandler("table_left", func(msg *server.Message) {
@@ -273,7 +315,7 @@ func StartCommandHandler(client *client.Client, tui *TUIModel, defaultBuyIn int)
 
 			// Handle special commands
 			if strings.HasPrefix(action, "/") || action == "quit" {
-				handleCommand(client, tui, action, args, defaultBuyIn)
+				handleCommand(client, tui, action)
 			} else {
 				// Handle game actions (when it's the player's turn)
 				handleGameAction(client, tui, action, args)
@@ -282,32 +324,9 @@ func StartCommandHandler(client *client.Client, tui *TUIModel, defaultBuyIn int)
 	}()
 }
 
-// handleCommand processes special commands like /list, /join, etc.
-func handleCommand(client *client.Client, tui *TUIModel, action string, args []string, defaultBuyIn int) {
+// handleCommand processes simple TUI commands like /leave, /quit
+func handleCommand(client *client.Client, tui *TUIModel, action string) {
 	switch action {
-	case "/list":
-		err := client.ListTables()
-		if err != nil {
-			tui.AddLogEntry(fmt.Sprintf("Error listing tables: %v", err))
-		}
-
-	case "/join":
-		if len(args) < 1 {
-			tui.AddLogEntry("Usage: /join <table_id>")
-			return
-		}
-		tableID := args[0]
-		buyIn := defaultBuyIn
-		// TODO: Parse buy-in if provided as second argument
-		// if len(args) > 1 {
-		//     buyIn = parseBuyIn(args[1])
-		// }
-
-		err := client.JoinTable(tableID, buyIn)
-		if err != nil {
-			tui.AddLogEntry(fmt.Sprintf("Error joining table: %v", err))
-		}
-
 	case "/leave":
 		tableID := client.GetTableID()
 		if tableID == "" {
@@ -320,51 +339,12 @@ func handleCommand(client *client.Client, tui *TUIModel, action string, args []s
 			tui.AddLogEntry(fmt.Sprintf("Error leaving table: %v", err))
 		}
 
-	case "/addbot":
-		tableID := client.GetTableID()
-		if tableID == "" {
-			tui.AddLogEntry("You must be at a table to add bots")
-			return
-		}
-
-		count := 1 // Default to 1 bot
-		if len(args) > 0 {
-			if parsed, err := strconv.Atoi(args[0]); err == nil && parsed > 0 && parsed <= 5 {
-				count = parsed
-			} else {
-				tui.AddLogEntry("Usage: /addbot [count] (count must be 1-5)")
-				return
-			}
-		}
-
-		err := client.AddBots(tableID, count)
-		if err != nil {
-			tui.AddLogEntry(fmt.Sprintf("Error adding bots: %v", err))
-		}
-
-	case "/kickbot":
-		if len(args) < 1 {
-			tui.AddLogEntry("Usage: /kickbot <bot_name>")
-			return
-		}
-
-		tableID := client.GetTableID()
-		if tableID == "" {
-			tui.AddLogEntry("You must be at a table to kick bots")
-			return
-		}
-
-		botName := args[0]
-		err := client.KickBot(tableID, botName)
-		if err != nil {
-			tui.AddLogEntry(fmt.Sprintf("Error kicking bot: %v", err))
-		}
-
 	case "/quit", "quit":
 		tui.SendQuitSignal()
 
 	default:
 		tui.AddLogEntry(fmt.Sprintf("Unknown command: %s", action))
+		tui.AddLogEntry("Available commands: /leave, /quit")
 	}
 }
 

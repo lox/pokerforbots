@@ -18,7 +18,6 @@ type TableConfig struct {
 	// Optional
 	Seed              int64
 	HandHistoryWriter HandHistoryWriter
-	EventBus          EventBus
 }
 
 // BettingRound represents the current betting round
@@ -140,12 +139,17 @@ func NewTable(rng *rand.Rand, config TableConfig) *Table {
 		seed:              config.Seed,
 		rng:               rng,
 		handHistoryWriter: config.HandHistoryWriter,
-		eventBus:          config.EventBus,
+		eventBus:          NewEventBus(), // Table owns its own EventBus
 	}
 }
 
 func (t *Table) SetEventBus(eventBus EventBus) {
 	t.eventBus = eventBus
+}
+
+// GetEventBus returns the table's event bus for subscribing to events
+func (t *Table) GetEventBus() EventBus {
+	return t.eventBus
 }
 
 func (t *Table) BigBlind() int {
@@ -170,6 +174,10 @@ func (t *Table) Pot() int {
 
 func (t *Table) CurrentBet() int {
 	return t.currentBet
+}
+
+func (t *Table) MaxSeats() int {
+	return t.maxSeats
 }
 
 // AddPlayer adds a player to the table

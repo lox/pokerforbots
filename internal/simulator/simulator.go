@@ -153,9 +153,13 @@ func (s *Simulator) playHand(opponentType string, opponentMix []string, handSeed
 		}
 	}
 
-	// Create game engine and play hand (defaultAgent used as fallback only)
-	defaultAgent := bot.NewBotWithRNG(s.config.Logger, bot.DefaultBotConfig(), handRng)
-	engine := game.NewGameEngine(table, defaultAgent, s.config.Logger)
+	// Create game engine and play hand
+	engine := game.NewGameEngine(table, s.config.Logger)
+
+	// Add agents to table
+	for playerName, agent := range agents {
+		engine.AddAgent(playerName, agent)
+	}
 
 	// Record initial chips
 	initialChips := ourBot.Chips
@@ -166,7 +170,7 @@ func (s *Simulator) playHand(opponentType string, opponentMix []string, handSeed
 
 	// Play the hand
 	engine.StartNewHand()
-	handResult, err := engine.PlayHand(agents)
+	handResult, err := engine.PlayHand()
 	if err != nil {
 		s.config.Logger.Error("Failed to play hand", "error", err, "seed", handSeed)
 		// Return a losing result to continue simulation

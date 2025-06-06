@@ -60,7 +60,7 @@ func DefaultClientConfig() *ClientConfig {
 			RebuyThreshold: 50,
 		},
 		UI: UISettings{
-			LogLevel:        "info",
+			LogLevel:        "warn",
 			LogFile:         "holdem-client.log",
 			ShowHoleCards:   true,
 			ShowBotThinking: false,

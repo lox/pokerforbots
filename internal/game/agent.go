@@ -51,9 +51,3 @@ type Agent interface {
 	// MakeDecision analyzes immutable game state and returns a decision
 	MakeDecision(tableState TableState, validActions []ValidAction) Decision
 }
-
-// Bot represents a poker bot that can make decisions
-// This interface is kept for backward compatibility but now just aliases Agent
-type Bot interface {
-	Agent
-}

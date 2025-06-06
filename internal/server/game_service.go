@@ -11,13 +11,15 @@ import (
 	"github.com/lox/pokerforbots/internal/game"
 )
 
-// GameTable represents a poker table managed by the server
-type GameTable struct {
-	ID            string
-	Name          string
-	MaxPlayers    int
-	SmallBlind    int
-	BigBlind      int
+// ServerTable represents a poker table managed by the server
+type ServerTable struct {
+	*game.Table
+
+	ID   string
+	Name string
+	// MaxPlayers    int
+	// SmallBlind    int
+	// BigBlind      int
 	engine        *game.GameEngine
 	players       map[string]*game.Player  // playerName -> Player
 	networkAgents map[string]*NetworkAgent // playerName -> NetworkAgent for remote players
@@ -25,11 +27,13 @@ type GameTable struct {
 	status        string                   // "waiting", "active", "finished"
 	logger        *log.Logger
 	eventSub      *TableEventSubscriber
+	waitingLogged bool // Track if we've logged the waiting message
+	seed          int64
 }
 
 // TableEventSubscriber handles game events and forwards them to clients
 type TableEventSubscriber struct {
-	table  *GameTable
+	table  *ServerTable
 	server *Server
 	logger *log.Logger
 }
@@ -162,7 +166,7 @@ func (tes *TableEventSubscriber) handleHandEnd(event game.HandEndEvent) {
 	tes.server.BroadcastToTable(tes.table.ID, msg)
 }
 
-func (gt *GameTable) getDealerSeat() int {
+func (gt *ServerTable) getDealerSeat() int {
 	if gt.engine != nil && gt.engine.GetTable() != nil {
 		return gt.engine.GetTable().DealerPosition()
 	}
@@ -171,22 +175,25 @@ func (gt *GameTable) getDealerSeat() int {
 
 // GameService manages multiple poker tables
 type GameService struct {
-	tables       map[string]*GameTable // tableID -> GameTable
+	tables       map[string]*ServerTable // tableID -> GameTable
 	server       *Server
 	agentManager *NetworkAgentManager
 	logger       *log.Logger
 	mu           sync.RWMutex
+	tableCounter int // For shorter table IDs
+	seed         int64
 }
 
 // NewGameService creates a new game service
-func NewGameService(server *Server, logger *log.Logger) *GameService {
+func NewGameService(server *Server, logger *log.Logger, seed int64) *GameService {
 	agentManager := NewNetworkAgentManager(server, logger)
 
 	gs := &GameService{
-		tables:       make(map[string]*GameTable),
+		tables:       make(map[string]*ServerTable),
 		server:       server,
 		agentManager: agentManager,
 		logger:       logger.WithPrefix("game-service"),
+		seed:         seed,
 	}
 
 	// Set up connection handlers
@@ -202,40 +209,57 @@ func (gs *GameService) setupConnectionHandlers() {
 }
 
 // CreateTable creates a new poker table
-func (gs *GameService) CreateTable(name string, maxPlayers, smallBlind, bigBlind int) (*GameTable, error) {
+func (gs *GameService) CreateTable(name string, maxPlayers, smallBlind, bigBlind int) (*ServerTable, error) {
 	gs.mu.Lock()
 	defer gs.mu.Unlock()
 
-	tableID := fmt.Sprintf("table_%d", time.Now().UnixNano())
+	gs.tableCounter++
 
-	table := &GameTable{
+	tableID := fmt.Sprintf("table%d", gs.tableCounter)
+	tableSeed := gs.seed + (int64(gs.tableCounter) - 1)
+	rng := rand.New(rand.NewSource(tableSeed))
+	logger := gs.logger.WithPrefix("table").With("id", tableID)
+
+	table := game.NewTable(rng, game.TableConfig{
+		MaxSeats:   maxPlayers,
+		SmallBlind: smallBlind,
+		BigBlind:   bigBlind,
+		Seed:       tableSeed,
+	})
+
+	engine := game.NewGameEngine(table, logger)
+
+	serverTable := &ServerTable{
+		Table:         table,
 		ID:            tableID,
 		Name:          name,
-		MaxPlayers:    maxPlayers,
-		SmallBlind:    smallBlind,
-		BigBlind:      bigBlind,
+		engine:        engine,
 		players:       make(map[string]*game.Player),
 		networkAgents: make(map[string]*NetworkAgent),
 		botAgents:     make(map[string]game.Agent),
 		status:        "waiting",
-		logger:        gs.logger.WithPrefix("table").With("id", tableID),
+		logger:        logger,
+		seed:          tableSeed,
 	}
 
 	// Create event subscriber for this table
-	table.eventSub = &TableEventSubscriber{
-		table:  table,
+	serverTable.eventSub = &TableEventSubscriber{
+		table:  serverTable,
 		server: gs.server,
-		logger: table.logger.WithPrefix("events"),
+		logger: logger.WithPrefix("events"),
 	}
 
-	gs.tables[tableID] = table
+	// Subscribe to table events
+	table.GetEventBus().Subscribe(serverTable.eventSub)
+
+	gs.tables[tableID] = serverTable
 	gs.logger.Info("Created new table", "id", tableID, "name", name)
 
-	return table, nil
+	return serverTable, nil
 }
 
 // GetTable returns a table by ID
-func (gs *GameService) GetTable(tableID string) *GameTable {
+func (gs *GameService) GetTable(tableID string) *ServerTable {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 	return gs.tables[tableID]
@@ -252,8 +276,8 @@ func (gs *GameService) ListTables() []TableInfo {
 			ID:          table.ID,
 			Name:        table.Name,
 			PlayerCount: len(table.players),
-			MaxPlayers:  table.MaxPlayers,
-			Stakes:      fmt.Sprintf("%d/%d", table.SmallBlind, table.BigBlind),
+			MaxPlayers:  table.MaxSeats(),
+			Stakes:      fmt.Sprintf("%d/%d", table.SmallBlind(), table.BigBlind()),
 			Status:      table.status,
 		})
 	}
@@ -271,28 +295,12 @@ func (gs *GameService) JoinTable(tableID, playerName string, buyIn int) error {
 		return fmt.Errorf("table not found: %s", tableID)
 	}
 
-	if len(table.players) >= table.MaxPlayers {
+	if len(table.players) >= table.MaxSeats() {
 		return fmt.Errorf("table is full")
 	}
 
 	if _, exists := table.players[playerName]; exists {
 		return fmt.Errorf("player already at table")
-	}
-
-	// Create game engine if this is the first player
-	if table.engine == nil {
-		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-		gameTable := game.NewTable(rng, game.TableConfig{
-			MaxSeats:   table.MaxPlayers,
-			SmallBlind: table.SmallBlind,
-			BigBlind:   table.BigBlind,
-			Seed:       time.Now().UnixNano(),
-		})
-		defaultAgent := bot.NewChartBot(gs.logger) // Default bot for fallback
-		table.engine = game.NewGameEngine(gameTable, defaultAgent, table.logger)
-
-		// Subscribe to events
-		table.engine.GetEventBus().Subscribe(table.eventSub)
 	}
 
 	// Add player to game table
@@ -309,6 +317,7 @@ func (gs *GameService) JoinTable(tableID, playerName string, buyIn int) error {
 	// Create network agent for this player
 	agent := gs.agentManager.CreateAgent(playerName, tableID)
 	table.networkAgents[playerName] = agent
+	table.engine.AddAgent(playerName, agent)
 
 	table.logger.Info("Player joined table", "player", playerName, "buyIn", buyIn, "players", len(table.players))
 
@@ -350,21 +359,19 @@ func (gs *GameService) LeaveTable(tableID, playerName string) error {
 }
 
 // startTableGame starts the game loop for a table
-func (gs *GameService) startTableGame(table *GameTable) {
+func (gs *GameService) startTableGame(table *ServerTable) {
 	table.status = "active"
 	table.logger.Info("Starting game", "players", len(table.players))
 
-	// Create agents map for the game engine
-	agents := make(map[string]game.Agent)
-
+	// Register all agents with the game engine
 	// Add network agents for human players
 	for playerName, agent := range table.networkAgents {
-		agents[playerName] = agent
+		table.engine.AddAgent(playerName, agent)
 	}
 
 	// Add bot agents for AI players
 	for playerName, agent := range table.botAgents {
-		agents[playerName] = agent
+		table.engine.AddAgent(playerName, agent)
 	}
 
 	// Run the game loop
@@ -380,7 +387,10 @@ func (gs *GameService) startTableGame(table *GameTable) {
 		hasRemotePlayer := len(table.networkAgents) > 0
 
 		if !hasRemotePlayer {
-			table.logger.Info("No remote players connected, pausing game")
+			if !table.waitingLogged {
+				table.logger.Info("No remote players connected, pausing game")
+				table.waitingLogged = true
+			}
 			table.status = "waiting"
 
 			// Wait for a remote player to join before continuing
@@ -389,11 +399,14 @@ func (gs *GameService) startTableGame(table *GameTable) {
 			continue
 		}
 
+		// Reset waiting flag when we have remote players
+		table.waitingLogged = false
+
 		// Start a new hand
 		table.engine.StartNewHand()
 
 		// Play the hand
-		result, err := table.engine.PlayHand(agents)
+		result, err := table.engine.PlayHand()
 		if err != nil {
 			table.logger.Error("Error playing hand", "error", err)
 			break
@@ -426,7 +439,7 @@ func (gs *GameService) AddBots(tableID string, count int) ([]string, error) {
 	var botNames []string
 	for i := 0; i < count; i++ {
 		// Check if table is full
-		if len(table.players) >= table.MaxPlayers {
+		if len(table.players) >= table.MaxSeats() {
 			break
 		}
 
@@ -445,7 +458,7 @@ func (gs *GameService) AddBots(tableID string, count int) ([]string, error) {
 		// Create game player for the bot
 		botPlayer := &game.Player{
 			Name:       botName,
-			Chips:      2000,                 // Default buy-in for bots
+			Chips:      200,                  // Match typical human buy-in
 			Position:   game.UnknownPosition, // Will be assigned by engine
 			SeatNumber: -1,                   // Will be assigned
 			Type:       game.AI,
@@ -456,8 +469,9 @@ func (gs *GameService) AddBots(tableID string, count int) ([]string, error) {
 		table.players[botName] = botPlayer
 		table.botAgents[botName] = botAgent
 
-		// Add to game engine table
+		// Add to game engine table and register agent
 		table.engine.GetTable().AddPlayer(botPlayer)
+		table.engine.AddAgent(botName, botAgent)
 
 		botNames = append(botNames, botName)
 		table.logger.Info("Added bot to table", "botName", botName, "tableId", tableID)
@@ -468,7 +482,8 @@ func (gs *GameService) AddBots(tableID string, count int) ([]string, error) {
 	}
 
 	// Start game if we have enough players and table is waiting
-	if len(table.players) >= 2 && table.status == "waiting" {
+	// Only start if there's at least one human player (networkAgent)
+	if len(table.players) >= 2 && table.status == "waiting" && len(table.networkAgents) > 0 {
 		go gs.startTableGame(table)
 	}
 

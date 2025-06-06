@@ -16,8 +16,11 @@ This is a **client/server Texas Hold'em poker platform** designed for bot develo
 - Server with flags: `./bin/holdem-server --addr=0.0.0.0:8080 --log-level=debug`
 
 ### Client Commands
-- Interactive client: `./bin/holdem-client [--config holdem-client.hcl]`
-- Client with flags: `./bin/holdem-client --server=ws://localhost:8080 --player=Alice`
+- Join table: `./bin/holdem-client join <table-id> [--config holdem-client.hcl]`
+- Join with flags: `./bin/holdem-client join <table-id> --server=ws://localhost:8080 --player=Alice`
+- List tables: `./bin/holdem-client list-tables`
+- Add bots: `./bin/holdem-client add-bots <table-id> --count=3`
+- Kick bot: `./bin/holdem-client kick-bot <table-id> <bot-name>`
 
 ### Docker Commands
 - Complete test: `./scripts/docker-test.sh test`

@@ -27,7 +27,7 @@ func NewNetworkAgent(playerName, tableID string, server *Server, logger *log.Log
 		server:         server,
 		logger:         logger.WithPrefix("network-agent").With("player", playerName),
 		decisionChan:   make(chan game.Decision, 1),
-		timeoutSeconds: 30, // 30 second default timeout
+		timeoutSeconds: 120, // 2 minute timeout for testing
 	}
 }
 

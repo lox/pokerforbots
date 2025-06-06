@@ -103,16 +103,12 @@ func createTestPlayers() []*Player {
 
 func TestGameEngine_Creation(t *testing.T) {
 	table := createTestTable()
-	defaultAgent := &AlwaysFoldAgent{}
 	logger := log.New(io.Discard)
 
-	engine := NewGameEngine(table, defaultAgent, logger)
+	engine := NewGameEngine(table, logger)
 
 	if engine.table != table {
 		t.Error("Engine table not set correctly")
-	}
-	if engine.defaultAgent != defaultAgent {
-		t.Error("Engine default agent not set correctly")
 	}
 	if engine.logger != logger {
 		t.Error("Engine logger not set correctly")
@@ -135,15 +131,18 @@ func TestGameEngine_PlayHandWithFolds(t *testing.T) {
 		"Charlie": &AlwaysFoldAgent{},
 	}
 
-	defaultAgent := &AlwaysFoldAgent{}
 	logger := log.New(io.Discard)
-	engine := NewGameEngine(table, defaultAgent, logger)
+	engine := NewGameEngine(table, logger)
+
+	for playerName, agent := range agents {
+		engine.AddAgent(playerName, agent)
+	}
 
 	// Start a new hand
 	engine.StartNewHand()
 
 	// Play the hand
-	result, err := engine.PlayHand(agents)
+	result, err := engine.PlayHand()
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -175,16 +174,19 @@ func TestGameEngine_PlayHandToShowdown(t *testing.T) {
 		table.AddPlayer(player)
 	}
 
-	// All players call through to showdown
-	defaultAgent := &AlwaysCallAgent{}
 	logger := log.New(io.Discard)
-	engine := NewGameEngine(table, defaultAgent, logger)
+	engine := NewGameEngine(table, logger)
+
+	// Add agents to engine
+	for _, player := range players {
+		engine.AddAgent(player.Name, &AlwaysCallAgent{})
+	}
 
 	// Start a new hand
 	engine.StartNewHand()
 
 	// Play the hand
-	result, err := engine.PlayHand(nil) // Use default agent for all players
+	result, err := engine.PlayHand() // Use default agent for all players
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -219,18 +221,20 @@ func TestGameEngine_HandProgression(t *testing.T) {
 	// Track the betting rounds we see
 	var roundsSeen []BettingRound
 
-	// Create agent that tracks rounds and always calls
-	trackingAgent := NewTrackingAgent(&AlwaysCallAgent{}, &roundsSeen)
-
-	defaultAgent := trackingAgent
 	logger := log.New(io.Discard)
-	engine := NewGameEngine(table, defaultAgent, logger)
+	engine := NewGameEngine(table, logger)
+
+	// Add agents to engine
+	for _, player := range players {
+		// Create agent that tracks rounds and always calls
+		engine.AddAgent(player.Name, NewTrackingAgent(&AlwaysCallAgent{}, &roundsSeen))
+	}
 
 	// Start a new hand
 	engine.StartNewHand()
 
 	// Play the hand
-	result, err := engine.PlayHand(nil)
+	result, err := engine.PlayHand()
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -289,15 +293,19 @@ func TestGameEngine_ActionRecording(t *testing.T) {
 		"Charlie": NewMockAgent([]Decision{{Action: Fold, Amount: 0, Reasoning: "fold to raise"}}),
 	}
 
-	defaultAgent := &AlwaysFoldAgent{}
 	logger := log.New(io.Discard)
-	engine := NewGameEngine(table, defaultAgent, logger)
+	engine := NewGameEngine(table, logger)
+
+	// Add agents to engine
+	for _, player := range players {
+		engine.AddAgent(player.Name, agents[player.Name])
+	}
 
 	// Start a new hand
 	engine.StartNewHand()
 
 	// Play the hand
-	result, err := engine.PlayHand(agents)
+	result, err := engine.PlayHand()
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -362,15 +370,19 @@ func TestGameEngine_AllInScenario(t *testing.T) {
 		}),
 	}
 
-	defaultAgent := &AlwaysFoldAgent{}
 	logger := log.New(io.Discard)
-	engine := NewGameEngine(table, defaultAgent, logger)
+	engine := NewGameEngine(table, logger)
+
+	// Add agents to engine
+	for _, player := range players {
+		engine.AddAgent(player.Name, agents[player.Name])
+	}
 
 	// Start a new hand
 	engine.StartNewHand()
 
 	// Play the hand
-	result, err := engine.PlayHand(agents)
+	result, err := engine.PlayHand()
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -411,15 +423,19 @@ func TestGameEngine_NoAgentsUsesDefault(t *testing.T) {
 		table.AddPlayer(player)
 	}
 
-	defaultAgent := &AlwaysFoldAgent{}
 	logger := log.New(io.Discard)
-	engine := NewGameEngine(table, defaultAgent, logger)
+	engine := NewGameEngine(table, logger)
+
+	// Add agents to engine
+	for _, player := range players {
+		engine.AddAgent(player.Name, &AlwaysFoldAgent{})
+	}
 
 	// Start a new hand
 	engine.StartNewHand()
 
 	// Play the hand with no specific agents (should use default)
-	result, err := engine.PlayHand(nil)
+	result, err := engine.PlayHand()
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -437,9 +453,8 @@ func TestGameEngine_NoAgentsUsesDefault(t *testing.T) {
 
 func TestGameEngine_GetTable(t *testing.T) {
 	table := createTestTable()
-	defaultAgent := &AlwaysFoldAgent{}
 	logger := log.New(io.Discard)
-	engine := NewGameEngine(table, defaultAgent, logger)
+	engine := NewGameEngine(table, logger)
 
 	if engine.GetTable() != table {
 		t.Error("GetTable() should return the same table instance")
@@ -455,9 +470,13 @@ func TestGameEngine_StartNewHand(t *testing.T) {
 		table.AddPlayer(player)
 	}
 
-	defaultAgent := &AlwaysFoldAgent{}
 	logger := log.New(io.Discard)
-	engine := NewGameEngine(table, defaultAgent, logger)
+	engine := NewGameEngine(table, logger)
+
+	// Add agents to engine
+	for _, player := range players {
+		engine.AddAgent(player.Name, &AlwaysFoldAgent{})
+	}
 
 	// Start a new hand
 	engine.StartNewHand()
@@ -672,9 +691,13 @@ func TestAnalyticalAgent_BettingAnalysis(t *testing.T) {
 	}
 
 	// Create engine and set up event subscriptions
-	defaultAgent := &AlwaysFoldAgent{}
 	logger := log.New(io.Discard)
-	engine := NewGameEngine(table, defaultAgent, logger)
+	engine := NewGameEngine(table, logger)
+
+	// Add agents to engine
+	for _, player := range players {
+		engine.AddAgent(player.Name, &AlwaysFoldAgent{})
+	}
 
 	// Start a new hand
 	engine.StartNewHand()

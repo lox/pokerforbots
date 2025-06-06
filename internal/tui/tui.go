@@ -36,6 +36,11 @@ type TUIModel struct {
 	isHumansTurn bool
 	humanPlayer  *game.Player // Current human player info when it's their turn
 
+	// Table info for sidebar
+	tableID    string
+	seatNumber int
+	players    []PlayerInfo
+
 	// Dimensions
 	width       int
 	height      int
@@ -53,8 +58,14 @@ type ActionResult struct {
 // QuitMsg is a custom message to signal quit
 type QuitMsg struct{}
 
-// NewTUIModel creates a new TUI model
-func NewTUIModel(table *game.Table, logger *log.Logger) *TUIModel {
+// PlayerInfo holds basic player information for the sidebar
+type PlayerInfo struct {
+	Name  string
+	Chips int
+}
+
+// NewTUIModel creates a new TUI model for network mode
+func NewTUIModel(logger *log.Logger) *TUIModel {
 	// Create viewport for game log with minimal initial size
 	// Will be properly sized when WindowSizeMsg arrives
 	vp := viewport.New(10, 5)
@@ -71,7 +82,7 @@ func NewTUIModel(table *game.Table, logger *log.Logger) *TUIModel {
 	ti.Prompt = "> "
 
 	return &TUIModel{
-		table:        table,
+		table:        nil, // No local table - all state comes from network
 		logger:       logger.WithPrefix("tui"),
 		logViewport:  vp,
 		actionInput:  ti,
@@ -110,7 +121,6 @@ func (m *TUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case tea.KeyMsg:
-		m.logger.Debug("KeyMsg", "key", msg.String())
 		switch msg.String() {
 		case "ctrl+c", "esc":
 			m.quitting = true
@@ -288,78 +298,22 @@ func (m *TUIModel) renderLogPane() string {
 func (m *TUIModel) renderSidebarPane() string {
 	var content strings.Builder
 
-	// Get players in seat order
-	players := m.table.GetActivePlayers()
-	currentPlayer := m.table.GetCurrentPlayer()
-
-	for _, player := range players {
-		// Simple format: Name $chips [indicators]
-		var indicators []string
-
-		// Position indicators (only show the most important ones)
-		if m.table.DealerPosition() == player.SeatNumber {
-			indicators = append(indicators, "D")
-		}
-		if player.Position == game.SmallBlind {
-			indicators = append(indicators, "SB")
-		}
-		if player.Position == game.BigBlind {
-			indicators = append(indicators, "BB")
-		}
-
-		// State indicators
-		if player.IsFolded {
-			indicators = append(indicators, "FOLD")
-		} else if player.IsAllIn {
-			indicators = append(indicators, "ALL-IN")
-		}
-
-		// Current player arrow
-		prefix := "  "
-		if currentPlayer != nil && currentPlayer.Name == player.Name {
-			prefix = "▶ "
-		}
-
-		// Player name (shorter format)
-		name := player.Name
-		if player.Type == game.Human {
-			name = "You"
-		}
-
-		// Format: ▶ Name $200 [D,SB]
-		line := fmt.Sprintf("%s%s $%d", prefix, name, player.Chips)
-
-		// Add indicators if any
-		if len(indicators) > 0 {
-			line += " [" + strings.Join(indicators, ",") + "]"
-		}
-
-		// Add bet if player has bet this round
-		if player.BetThisRound > 0 {
-			line += fmt.Sprintf(" ($%d)", player.BetThisRound)
-		}
-
-		// Color coding
-		var style lipgloss.Style
-		if player.IsFolded {
-			style = InfoStyle // Dimmed for folded players
-		} else if currentPlayer != nil && currentPlayer.Name == player.Name {
-			style = SuccessStyle // Highlight current player
-		} else {
-			style = PlayerInfoStyle // Normal
-		}
-
-		content.WriteString(style.Render(line))
-		content.WriteString("\n")
-	}
-
-	// Add pot and bet info at bottom (more compact)
-	content.WriteString("\n")
+	// Show pot and bet info at top
 	content.WriteString(WarningStyle.Render(fmt.Sprintf("Pot: $%d", m.currentPot)))
-
 	if m.currentBet > 0 {
 		content.WriteString(" | ")
 		content.WriteString(WarningStyle.Render(fmt.Sprintf("Bet: $%d", m.currentBet)))
+	}
+	content.WriteString("\n\n")
+
+	// Show players list if we have table info
+	if m.tableID != "" && len(m.players) > 0 {
+		content.WriteString(InfoStyle.Render("Players at table:"))
+		content.WriteString("\n")
+		for _, player := range m.players {
+			content.WriteString(fmt.Sprintf("  %s: $%d", player.Name, player.Chips))
+			content.WriteString("\n")
+		}
 	}
 
 	return content.String()
@@ -376,7 +330,7 @@ func (m *TUIModel) renderActionPane() string {
 		content.WriteString("\n")
 
 		// Show available actions
-		actions := m.renderAvailableActions(m.humanPlayer)
+		actions := m.renderAvailableActions()
 		content.WriteString(actions)
 		content.WriteString("\n")
 	} else if !m.isHumansTurn {
@@ -428,7 +382,7 @@ func (m *TUIModel) renderHandInfo(player *game.Player) string {
 }
 
 // renderAvailableActions renders available action buttons based on engine's valid actions
-func (m *TUIModel) renderAvailableActions(player *game.Player) string {
+func (m *TUIModel) renderAvailableActions() string {
 	var actions []string
 
 	// Use the valid actions provided by the game engine
@@ -500,6 +454,24 @@ func (m *TUIModel) AddLogEntryAndScrollToShow(entry string) {
 		// Set the viewport position to show this line at the top
 		m.logViewport.SetYOffset(targetLine)
 	}
+}
+
+// SetTableInfo sets the table information for the sidebar
+func (m *TUIModel) SetTableInfo(tableID string, seatNumber int, players []PlayerInfo) {
+	m.tableID = tableID
+	m.seatNumber = seatNumber
+	m.players = players
+}
+
+// AddBoldLogEntry adds a bold entry to the top of the game log
+func (m *TUIModel) AddBoldLogEntry(entry string) {
+	// Use ANSI bold codes for the entry
+	boldEntry := fmt.Sprintf("\033[1m%s\033[0m", entry)
+	// Insert at the beginning of the log
+	m.gameLog = append([]string{boldEntry}, m.gameLog...)
+	content := strings.Join(m.gameLog, "\n")
+	m.logViewport.SetContent(content)
+	m.logViewport.GotoTop()
 }
 
 // ClearLog clears the game log

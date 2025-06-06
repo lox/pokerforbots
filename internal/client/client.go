@@ -197,11 +197,14 @@ func (c *Client) writePump() {
 
 // eventProcessor processes incoming messages and dispatches to handlers
 func (c *Client) eventProcessor() {
+	c.logger.Debug("Event processor started")
 	for {
 		select {
 		case msg := <-c.receive:
+			c.logger.Debug("Message received in event processor", "type", msg.Type)
 			c.handleMessage(msg)
 		case <-c.ctx.Done():
+			c.logger.Debug("Event processor stopping")
 			return
 		}
 	}
@@ -209,16 +212,19 @@ func (c *Client) eventProcessor() {
 
 // handleMessage dispatches messages to registered handlers
 func (c *Client) handleMessage(msg *server.Message) {
+	c.logger.Debug("Received message from server", "type", msg.Type, "timestamp", msg.Timestamp)
+
 	c.mu.RLock()
 	handlers, exists := c.eventHandlers[msg.Type]
 	c.mu.RUnlock()
 
 	if exists {
+		c.logger.Debug("Dispatching to handlers", "type", msg.Type, "handlerCount", len(handlers))
 		for _, handler := range handlers {
-			go handler(msg) // Handle asynchronously
+			handler(msg) // Handle synchronously to preserve event ordering
 		}
 	} else {
-		c.logger.Debug("No handler for message type", "type", msg.Type)
+		c.logger.Warn("No handler for message type", "type", msg.Type)
 	}
 }
 

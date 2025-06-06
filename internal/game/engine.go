@@ -8,36 +8,46 @@ import (
 	"github.com/lox/pokerforbots/internal/evaluator"
 )
 
-// GameEngine handles the core game loop logic that can be shared between
-// interactive play and simulation
+// GameEngine handles the core game loop logic
 type GameEngine struct {
 	table             *Table
-	defaultAgent      Agent
+	agents            map[string]Agent
 	logger            *log.Logger
-	eventBus          EventBus
 	startingChipTotal int // Track total chips when engine was created
 }
 
-// NewGameEngine creates a new game engine with a default agent
-func NewGameEngine(table *Table, defaultAgent Agent, logger *log.Logger) *GameEngine {
-	eventBus := NewEventBus()
-	table.SetEventBus(eventBus)
-
+// NewGameEngine creates a new game engine
+func NewGameEngine(table *Table, logger *log.Logger) *GameEngine {
 	// Calculate starting chip total for conservation validation
 	startingTotal := table.GetTotalChips()
 
-	return &GameEngine{
+	engine := &GameEngine{
 		table:             table,
-		defaultAgent:      defaultAgent,
 		logger:            logger,
-		eventBus:          eventBus,
 		startingChipTotal: startingTotal,
+		agents:            make(map[string]Agent),
 	}
+
+	// Subscribe to table events
+	table.GetEventBus().Subscribe(engine)
+
+	return engine
 }
 
-// GetEventBus returns the event bus for subscribing to game events
+func (ge *GameEngine) AddAgent(playerName string, agent Agent) {
+	ge.agents[playerName] = agent
+}
+
+// GetEventBus returns the table's event bus for subscribing to game events
 func (ge *GameEngine) GetEventBus() EventBus {
-	return ge.eventBus
+	return ge.table.GetEventBus()
+}
+
+// OnEvent implements EventSubscriber interface
+func (ge *GameEngine) OnEvent(event GameEvent) {
+	// GameEngine can react to events here if needed
+	// For now, we'll keep this empty as GameEngine primarily drives the game
+	// rather than reacting to events
 }
 
 // HandResult contains the results of a completed hand
@@ -59,7 +69,7 @@ type PlayerAction struct {
 }
 
 // PlayHand runs a complete hand from start to finish and returns the result
-func (ge *GameEngine) PlayHand(agents map[string]Agent) (*HandResult, error) {
+func (ge *GameEngine) PlayHand() (*HandResult, error) {
 	result := &HandResult{
 		HandID:  ge.table.handID,
 		Actions: make([]PlayerAction, 0),
@@ -76,10 +86,12 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) (*HandResult, error) {
 
 			// Handle any player type using the unified Agent interface
 			var selectedAgent Agent
-			if agents != nil && agents[currentPlayer.Name] != nil {
-				selectedAgent = agents[currentPlayer.Name]
+			if ge.agents != nil && ge.agents[currentPlayer.Name] != nil {
+				selectedAgent = ge.agents[currentPlayer.Name]
+				ge.logger.Debug("Using registered agent for player", "player", currentPlayer.Name, "agentType",
+					fmt.Sprintf("%T", selectedAgent))
 			} else {
-				selectedAgent = ge.defaultAgent
+				return nil, fmt.Errorf("no agent for player %s", currentPlayer)
 			}
 
 			// Use new clean architecture: agents only make decisions, engine handles state
@@ -140,7 +152,7 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) (*HandResult, error) {
 
 			// Publish player action event
 			event := NewPlayerActionEvent(currentPlayer, playerAction, currentPlayer.ActionAmount, ge.table.currentRound, reasoning, ge.table.pot)
-			ge.eventBus.Publish(event)
+			ge.table.GetEventBus().Publish(event)
 
 			ge.table.AdvanceAction()
 		}
@@ -176,19 +188,19 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) (*HandResult, error) {
 				ge.logger.Debug("Dealt flop", "flop", ge.table.communityCards[:3])
 				// Publish street change event
 				streetEvent := NewStreetChangeEvent(ge.table.currentRound, ge.table.communityCards, ge.table.currentBet)
-				ge.eventBus.Publish(streetEvent)
+				ge.table.GetEventBus().Publish(streetEvent)
 			case Flop:
 				ge.table.DealTurn()
 				ge.logger.Debug("Dealt turn", "turn", ge.table.communityCards[3])
 				// Publish street change event
 				streetEvent := NewStreetChangeEvent(ge.table.currentRound, ge.table.communityCards, ge.table.currentBet)
-				ge.eventBus.Publish(streetEvent)
+				ge.table.GetEventBus().Publish(streetEvent)
 			case Turn:
 				ge.table.DealRiver()
 				ge.logger.Debug("Dealt river", "river", ge.table.communityCards[4])
 				// Publish street change event
 				streetEvent := NewStreetChangeEvent(ge.table.currentRound, ge.table.communityCards, ge.table.currentBet)
-				ge.eventBus.Publish(streetEvent)
+				ge.table.GetEventBus().Publish(streetEvent)
 			case River:
 				// Go to showdown
 				ge.table.currentRound = Showdown
@@ -269,7 +281,7 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) (*HandResult, error) {
 		// Publish hand end event with detailed winner information and rich summary
 		handEndEvent := NewHandEndEvent(result.HandID, winners, result.PotSize, result.ShowdownType, ge.table.communityCards, summary)
 		ge.logger.Debug("Publishing HandEndEvent", "winners", len(winners), "showdownType", result.ShowdownType)
-		ge.eventBus.Publish(handEndEvent)
+		ge.table.GetEventBus().Publish(handEndEvent)
 	} else {
 		return nil, errors.New("hand completed but no winner found")
 	}
@@ -278,11 +290,15 @@ func (ge *GameEngine) PlayHand(agents map[string]Agent) (*HandResult, error) {
 
 // StartNewHand initializes a new hand on the table
 func (ge *GameEngine) StartNewHand() {
+	// Recalculate starting chip total at the start of each hand
+	// This ensures we account for players that joined after engine creation
+	ge.startingChipTotal = ge.table.GetTotalChips()
+
 	ge.table.StartNewHand() // This now publishes HandStartEvent internally
 
 	// Subscribe the hand history to events for this hand
 	if ge.table.handHistory != nil {
-		ge.eventBus.Subscribe(ge.table.handHistory)
+		ge.table.GetEventBus().Subscribe(ge.table.handHistory)
 	}
 }
 

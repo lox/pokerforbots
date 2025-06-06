@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/charmbracelet/log"
@@ -16,10 +17,17 @@ var CLI struct {
 	Addr     string `short:"a" long:"addr" help:"Server address to bind to (overrides config)"`
 	LogLevel string `short:"l" long:"log-level" help:"Log level (overrides config)"`
 	Tables   int    `short:"t" long:"tables" help:"Number of tables to create (legacy mode)"`
+	Bots     int    `short:"b" long:"bots" help:"Number of bots to add to each table"`
+	Seed     int64  `short:"s" long:"seed" help:"Random seed for deterministic table IDs"`
 }
 
 func main() {
 	ctx := kong.Parse(&CLI)
+
+	// Set seed from time
+	if CLI.Seed == 0 {
+		CLI.Seed = time.Now().Unix()
+	}
 
 	// Load configuration
 	cfg, err := server.LoadServerConfig(CLI.Config)
@@ -90,7 +98,7 @@ func main() {
 	wsServer := server.NewServer(cfg.GetServerAddress(), logger)
 
 	// Create game service
-	gameService := server.NewGameService(wsServer, logger)
+	gameService := server.NewGameService(wsServer, logger, CLI.Seed)
 
 	// Set game service in connection handlers
 	server.SetGameService(gameService)
@@ -115,6 +123,17 @@ func main() {
 			"name", tableConfig.Name,
 			"stakes", fmt.Sprintf("$%d/$%d", tableConfig.SmallBlind, tableConfig.BigBlind),
 			"maxPlayers", tableConfig.MaxPlayers)
+
+		// Auto-populate with bots if requested
+		if CLI.Bots > 0 {
+			logger.Info("Auto-populating table with bots", "tableId", table.ID, "count", CLI.Bots)
+			botNames, err := gameService.AddBots(table.ID, CLI.Bots)
+			if err != nil {
+				logger.Error("Failed to add bots", "error", err)
+			} else {
+				logger.Info("Added bots to table", "bots", botNames, "tableId", table.ID)
+			}
+		}
 	}
 
 	// Handle graceful shutdown
