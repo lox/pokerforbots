@@ -71,34 +71,24 @@ func (tes *TableEventSubscriber) handleHandStart(event game.HandStartEvent) {
 		DealerSeat: tes.table.getDealerSeat(),
 	}
 
-	msg, err := NewMessage("hand_start", data)
-	if err != nil {
-		tes.logger.Error("Failed to create hand start message", "error", err)
-		return
-	}
-
-	tes.server.BroadcastToTable(tes.table.ID, msg)
-
-	// Send hole cards to each player individually
+	// Send personalized hand_start message to each player with their hole cards
 	for _, p := range event.Players {
-		if len(p.HoleCards) > 0 {
-			// Create player-specific hand start with hole cards
-			playerData := data
-			for j, ps := range playerData.Players {
-				if ps.Name == p.Name {
-					playerData.Players[j].HoleCards = p.HoleCards
-					break
-				}
+		// Create player-specific hand start with hole cards
+		playerData := data
+		for j, ps := range playerData.Players {
+			if ps.Name == p.Name {
+				playerData.Players[j].HoleCards = p.HoleCards
+				break
 			}
-
-			playerMsg, err := NewMessage("hand_start", playerData)
-			if err != nil {
-				tes.logger.Error("Failed to create player-specific hand start message", "error", err)
-				continue
-			}
-
-			_ = tes.server.SendToPlayer(p.Name, playerMsg) // Ignore send errors
 		}
+
+		playerMsg, err := NewMessage("hand_start", playerData)
+		if err != nil {
+			tes.logger.Error("Failed to create player-specific hand start message", "error", err)
+			continue
+		}
+
+		_ = tes.server.SendToPlayer(p.Name, playerMsg) // Ignore send errors
 	}
 }
 
