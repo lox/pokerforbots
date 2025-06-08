@@ -201,6 +201,10 @@ func (c *Client) eventProcessor() {
 	for {
 		select {
 		case msg := <-c.receive:
+			if msg == nil {
+				c.logger.Error("Received nil message from channel")
+				continue
+			}
 			c.logger.Debug("Message received in event processor", "type", msg.Type)
 			c.handleMessage(msg)
 		case <-c.ctx.Done():

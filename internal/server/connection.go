@@ -13,27 +13,29 @@ import (
 
 // Connection represents a WebSocket connection to a client
 type Connection struct {
-	conn      *websocket.Conn
-	send      chan *Message
-	playerID  string
-	tableID   string
-	logger    *log.Logger
-	ctx       context.Context
-	cancel    context.CancelFunc
-	mu        sync.RWMutex
-	closeOnce sync.Once
+	conn        *websocket.Conn
+	send        chan *Message
+	playerID    string
+	tableID     string
+	logger      *log.Logger
+	ctx         context.Context
+	cancel      context.CancelFunc
+	mu          sync.RWMutex
+	closeOnce   sync.Once
+	gameService *GameService
 }
 
 // NewConnection creates a new connection wrapper
-func NewConnection(conn *websocket.Conn, logger *log.Logger) *Connection {
+func NewConnection(conn *websocket.Conn, logger *log.Logger, gameService *GameService) *Connection {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Connection{
-		conn:   conn,
-		send:   make(chan *Message, 256),
-		logger: logger.WithPrefix("conn"),
-		ctx:    ctx,
-		cancel: cancel,
+		conn:        conn,
+		send:        make(chan *Message, 256),
+		logger:      logger.WithPrefix("conn"),
+		ctx:         ctx,
+		cancel:      cancel,
+		gameService: gameService,
 	}
 }
 
@@ -56,6 +58,14 @@ func (c *Connection) Close() error {
 
 // SendMessage sends a message to the client
 func (c *Connection) SendMessage(msg *Message) error {
+	defer func() {
+		if r := recover(); r != nil {
+			// Channel was closed, this is expected during shutdown
+			// Log at debug level to avoid spam during tests
+			c.logger.Debug("Attempted to send message on closed connection", "error", r)
+		}
+	}()
+
 	select {
 	case c.send <- msg:
 		return nil
@@ -254,14 +264,6 @@ func (c *Connection) sendError(code, message string) {
 	_ = c.SendMessage(errorMsg) // Ignore send errors during error handling
 }
 
-// GameService reference - set by server
-var gameService *GameService
-
-// SetGameService sets the game service for handling game operations
-func SetGameService(gs *GameService) {
-	gameService = gs
-}
-
 func (c *Connection) handleAuth(data AuthData) {
 	c.logger.Info("Auth request", "playerName", data.PlayerName)
 
@@ -283,7 +285,7 @@ func (c *Connection) handleAuth(data AuthData) {
 func (c *Connection) handleJoinTable(data JoinTableData) {
 	c.logger.Info("Join table request", "tableId", data.TableID, "player", c.GetPlayer())
 
-	if gameService == nil {
+	if c.gameService == nil {
 		c.sendError("service_unavailable", "Game service not available")
 		return
 	}
@@ -294,7 +296,7 @@ func (c *Connection) handleJoinTable(data JoinTableData) {
 		return
 	}
 
-	err := gameService.JoinTable(data.TableID, playerName, data.BuyIn)
+	err := c.gameService.JoinTable(data.TableID, playerName, data.BuyIn)
 	if err != nil {
 		c.sendError("join_failed", err.Error())
 		return
@@ -304,7 +306,7 @@ func (c *Connection) handleJoinTable(data JoinTableData) {
 	c.SetTable(data.TableID)
 
 	// Get table info for response
-	table := gameService.GetTable(data.TableID)
+	table := c.gameService.GetTable(data.TableID)
 	if table == nil {
 		c.sendError("table_not_found", "Table not found after join")
 		return
@@ -327,7 +329,7 @@ func (c *Connection) handleJoinTable(data JoinTableData) {
 func (c *Connection) handleLeaveTable(data LeaveTableData) {
 	c.logger.Info("Leave table request", "tableId", data.TableID, "player", c.GetPlayer())
 
-	if gameService == nil {
+	if c.gameService == nil {
 		c.sendError("service_unavailable", "Game service not available")
 		return
 	}
@@ -338,7 +340,7 @@ func (c *Connection) handleLeaveTable(data LeaveTableData) {
 		return
 	}
 
-	err := gameService.LeaveTable(data.TableID, playerName)
+	err := c.gameService.LeaveTable(data.TableID, playerName)
 	if err != nil {
 		c.sendError("leave_failed", err.Error())
 		return
@@ -354,12 +356,12 @@ func (c *Connection) handleLeaveTable(data LeaveTableData) {
 func (c *Connection) handleListTables() {
 	c.logger.Info("List tables request", "player", c.GetPlayer())
 
-	if gameService == nil {
+	if c.gameService == nil {
 		c.sendError("service_unavailable", "Game service not available")
 		return
 	}
 
-	tables := gameService.ListTables()
+	tables := c.gameService.ListTables()
 	response, _ := NewMessage("table_list", TableListData{
 		Tables: tables,
 	})
@@ -369,7 +371,7 @@ func (c *Connection) handleListTables() {
 func (c *Connection) handlePlayerDecision(data PlayerDecisionData) {
 	c.logger.Info("Player decision", "player", c.GetPlayer(), "action", data.Action, "amount", data.Amount)
 
-	if gameService == nil {
+	if c.gameService == nil {
 		c.sendError("service_unavailable", "Game service not available")
 		return
 	}
@@ -380,7 +382,7 @@ func (c *Connection) handlePlayerDecision(data PlayerDecisionData) {
 		return
 	}
 
-	err := gameService.HandlePlayerDecision(playerName, data)
+	err := c.gameService.HandlePlayerDecision(playerName, data)
 	if err != nil {
 		c.sendError("decision_failed", err.Error())
 		return
@@ -392,7 +394,7 @@ func (c *Connection) handlePlayerDecision(data PlayerDecisionData) {
 func (c *Connection) handleAddBot(data AddBotData) {
 	c.logger.Info("Add bot request", "tableId", data.TableID, "count", data.Count, "player", c.GetPlayer())
 
-	if gameService == nil {
+	if c.gameService == nil {
 		c.sendError("service_unavailable", "Game service not available")
 		return
 	}
@@ -412,7 +414,7 @@ func (c *Connection) handleAddBot(data AddBotData) {
 		count = 5 // Limit to 5 bots max
 	}
 
-	botNames, err := gameService.AddBots(data.TableID, count)
+	botNames, err := c.gameService.AddBots(data.TableID, count)
 	if err != nil {
 		c.sendError("add_bot_failed", err.Error())
 		return
@@ -429,7 +431,7 @@ func (c *Connection) handleAddBot(data AddBotData) {
 func (c *Connection) handleKickBot(data KickBotData) {
 	c.logger.Info("Kick bot request", "tableId", data.TableID, "botName", data.BotName, "player", c.GetPlayer())
 
-	if gameService == nil {
+	if c.gameService == nil {
 		c.sendError("service_unavailable", "Game service not available")
 		return
 	}
@@ -440,7 +442,7 @@ func (c *Connection) handleKickBot(data KickBotData) {
 		return
 	}
 
-	err := gameService.KickBot(data.TableID, data.BotName)
+	err := c.gameService.KickBot(data.TableID, data.BotName)
 	if err != nil {
 		c.sendError("kick_bot_failed", err.Error())
 		return

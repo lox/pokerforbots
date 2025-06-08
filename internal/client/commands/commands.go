@@ -56,7 +56,7 @@ func SetupClientWithFileLogging(config *GlobalFlags) (*client.Client, *client.Cl
 	// Create client with file logger
 	wsClient, finalCfg, logger, err := setupClientConfigured(cfg, logFile)
 	if err != nil {
-		logFile.Close()
+		_ = logFile.Close()
 		return nil, nil, nil, nil, err
 	}
 

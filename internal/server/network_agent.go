@@ -20,14 +20,14 @@ type NetworkAgent struct {
 }
 
 // NewNetworkAgent creates a new network agent for a remote player
-func NewNetworkAgent(playerName, tableID string, server *Server, logger *log.Logger) *NetworkAgent {
+func NewNetworkAgent(playerName, tableID string, server *Server, logger *log.Logger, timeoutSeconds int) *NetworkAgent {
 	return &NetworkAgent{
 		playerName:     playerName,
 		tableID:        tableID,
 		server:         server,
 		logger:         logger.WithPrefix("network-agent").With("player", playerName),
 		decisionChan:   make(chan game.Decision, 1),
-		timeoutSeconds: 120, // 2 minute timeout for testing
+		timeoutSeconds: timeoutSeconds,
 	}
 }
 
@@ -86,9 +86,41 @@ func (na *NetworkAgent) MakeDecision(tableState game.TableState, validActions []
 		return decision
 
 	case <-ctx.Done():
-		na.logger.Warn("Decision timeout, folding player")
+		na.logger.Warn("Decision timeout, determining default action")
+
+		// Determine the timeout action based on valid actions
+		timeoutAction := game.Fold
+		timeoutActionStr := "fold"
+
+		// If folding is not a valid action, check instead
+		canFold := false
+		for _, action := range validActions {
+			if action.Action == game.Fold {
+				canFold = true
+				break
+			}
+		}
+
+		if !canFold {
+			timeoutAction = game.Check
+			timeoutActionStr = "check"
+		}
+
+		// Send timeout event to all players at the table
+		timeoutData := PlayerTimeoutData{
+			TableID:        na.tableID,
+			PlayerName:     na.playerName,
+			TimeoutSeconds: na.timeoutSeconds,
+			Action:         timeoutActionStr,
+		}
+
+		timeoutMsg, err := NewMessage("player_timeout", timeoutData)
+		if err == nil {
+			na.server.BroadcastToTable(na.tableID, timeoutMsg)
+		}
+
 		return game.Decision{
-			Action:    game.Fold,
+			Action:    timeoutAction,
 			Amount:    0,
 			Reasoning: "Decision timeout",
 		}
@@ -156,10 +188,10 @@ func NewNetworkAgentManager(server *Server, logger *log.Logger) *NetworkAgentMan
 }
 
 // CreateAgent creates a new network agent for a player
-func (nam *NetworkAgentManager) CreateAgent(playerName, tableID string) *NetworkAgent {
-	agent := NewNetworkAgent(playerName, tableID, nam.server, nam.logger)
+func (nam *NetworkAgentManager) CreateAgent(playerName, tableID string, timeoutSeconds int) *NetworkAgent {
+	agent := NewNetworkAgent(playerName, tableID, nam.server, nam.logger, timeoutSeconds)
 	nam.agents[playerName] = agent
-	nam.logger.Info("Created network agent", "player", playerName, "table", tableID)
+	nam.logger.Info("Created network agent", "player", playerName, "table", tableID, "timeout", timeoutSeconds)
 	return agent
 }
 

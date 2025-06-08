@@ -15,8 +15,9 @@ import (
 type ServerTable struct {
 	*game.Table
 
-	ID   string
-	Name string
+	ID             string
+	Name           string
+	TimeoutSeconds int // Timeout for player decisions in seconds
 	// MaxPlayers    int
 	// SmallBlind    int
 	// BigBlind      int
@@ -199,7 +200,7 @@ func (gs *GameService) setupConnectionHandlers() {
 }
 
 // CreateTable creates a new poker table
-func (gs *GameService) CreateTable(name string, maxPlayers, smallBlind, bigBlind int) (*ServerTable, error) {
+func (gs *GameService) CreateTable(name string, maxPlayers, smallBlind, bigBlind, timeoutSeconds int) (*ServerTable, error) {
 	gs.mu.Lock()
 	defer gs.mu.Unlock()
 
@@ -220,16 +221,17 @@ func (gs *GameService) CreateTable(name string, maxPlayers, smallBlind, bigBlind
 	engine := game.NewGameEngine(table, logger)
 
 	serverTable := &ServerTable{
-		Table:         table,
-		ID:            tableID,
-		Name:          name,
-		engine:        engine,
-		players:       make(map[string]*game.Player),
-		networkAgents: make(map[string]*NetworkAgent),
-		botAgents:     make(map[string]game.Agent),
-		status:        "waiting",
-		logger:        logger,
-		seed:          tableSeed,
+		Table:          table,
+		ID:             tableID,
+		Name:           name,
+		TimeoutSeconds: timeoutSeconds,
+		engine:         engine,
+		players:        make(map[string]*game.Player),
+		networkAgents:  make(map[string]*NetworkAgent),
+		botAgents:      make(map[string]game.Agent),
+		status:         "waiting",
+		logger:         logger,
+		seed:           tableSeed,
 	}
 
 	// Create event subscriber for this table
@@ -305,7 +307,7 @@ func (gs *GameService) JoinTable(tableID, playerName string, buyIn int) error {
 	table.players[playerName] = player
 
 	// Create network agent for this player
-	agent := gs.agentManager.CreateAgent(playerName, tableID)
+	agent := gs.agentManager.CreateAgent(playerName, tableID, table.TimeoutSeconds)
 	table.networkAgents[playerName] = agent
 	table.engine.AddAgent(playerName, agent)
 

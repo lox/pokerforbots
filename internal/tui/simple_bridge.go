@@ -49,6 +49,9 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		tui.AddLogEntry("")
 		tui.AddLogEntry("*** PRE-FLOP ***")
 		tui.UpdatePot(data.InitialPot)
+
+		// Notify test callback if in test mode
+		tui.notifyEventCallback("hand_start")
 	})
 
 	client.AddEventHandler("player_action", func(msg *server.Message) {
@@ -95,6 +98,9 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		}
 
 		tui.AddLogEntry(actionEntry)
+
+		// Notify test callback if in test mode
+		tui.notifyEventCallback("player_action")
 	})
 
 	client.AddEventHandler("street_change", func(msg *server.Message) {
@@ -136,6 +142,9 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 			tui.AddLogEntry("*** SHOWDOWN ***")
 			tui.AddLogEntry(fmt.Sprintf("Final Board: %s", formatCards(data.CommunityCards)))
 		}
+
+		// Notify test callback if in test mode
+		tui.notifyEventCallback("street_change")
 	})
 
 	// Add handlers for other events
@@ -152,6 +161,9 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 			tui.AddLogEntry(fmt.Sprintf("Winner: %s ($%d) - %s", winner.PlayerName, winner.Amount, winner.HandRank))
 		}
 		tui.AddLogEntry("")
+
+		// Notify test callback if in test mode
+		tui.notifyEventCallback("hand_end")
 	})
 
 	client.AddEventHandler("action_required", func(msg *server.Message) {
@@ -216,6 +228,9 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		}
 
 		// Player's turn is now active, actions will be handled by the main command loop
+
+		// Notify test callback if in test mode
+		tui.notifyEventCallback("action_required")
 	})
 
 	// Simple handlers for other events
@@ -298,6 +313,19 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 
 		tui.AddLogEntry(fmt.Sprintf("Server error [%s]: %s", data.Code, data.Message))
 	})
+
+	client.AddEventHandler("player_timeout", func(msg *server.Message) {
+		var data server.PlayerTimeoutData
+		if err := json.Unmarshal(msg.Data, &data); err != nil {
+			return
+		}
+
+		tui.AddLogEntry(fmt.Sprintf("⏰ %s timed out (%ds) and %ss",
+			data.PlayerName, data.TimeoutSeconds, data.Action))
+
+		// Notify test callback if in test mode
+		tui.notifyEventCallback("player_timeout")
+	})
 }
 
 // StartCommandHandler starts the command handling loop for the TUI
@@ -357,7 +385,7 @@ func handleGameAction(client *client.Client, tui *TUIModel, action string, args 
 	}
 
 	// Send decision to server
-	err := client.SendDecision(decision.Action.String(), decision.Amount, decision.Reasoning)
+	err := client.SendDecision(actionToNetworkString(decision.Action), decision.Amount, decision.Reasoning)
 	if err != nil {
 		tui.AddLogEntry(fmt.Sprintf("Error sending action: %s", err.Error()))
 		return
@@ -392,6 +420,24 @@ func processUserAction(action string, args []string, tui *TUIModel) game.Decisio
 	default:
 		tui.AddLogEntry(fmt.Sprintf("Unknown action: %s", action))
 		return game.Decision{Action: game.Check, Amount: 0, Reasoning: "Invalid input - try again"}
+	}
+}
+
+// actionToNetworkString converts game.Action to the string format expected by the network agent
+func actionToNetworkString(action game.Action) string {
+	switch action {
+	case game.Fold:
+		return "fold"
+	case game.Call:
+		return "call"
+	case game.Check:
+		return "check"
+	case game.Raise:
+		return "raise"
+	case game.AllIn:
+		return "allin" // Network expects "allin" not "all-in"
+	default:
+		return "check" // Default to check for invalid actions
 	}
 }
 

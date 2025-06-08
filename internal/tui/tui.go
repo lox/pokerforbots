@@ -45,6 +45,11 @@ type TUIModel struct {
 	width       int
 	height      int
 	initialized bool // Track if viewport has been properly sized
+
+	// Test mode
+	testMode      bool
+	capturedLog   []string               // For test assertions
+	eventCallback func(eventType string) // Callback for test event synchronization
 }
 
 // ActionResult represents the result of a user action
@@ -66,6 +71,11 @@ type PlayerInfo struct {
 
 // NewTUIModel creates a new TUI model for network mode
 func NewTUIModel(logger *log.Logger) *TUIModel {
+	return NewTUIModelWithOptions(logger, false)
+}
+
+// NewTUIModelWithOptions creates a new TUI model with test mode option
+func NewTUIModelWithOptions(logger *log.Logger, testMode bool) *TUIModel {
 	// Create viewport for game log with minimal initial size
 	// Will be properly sized when WindowSizeMsg arrives
 	vp := viewport.New(10, 5)
@@ -90,6 +100,8 @@ func NewTUIModel(logger *log.Logger) *TUIModel {
 		actionResult: make(chan ActionResult, 1),
 		quitSignal:   make(chan bool, 1),
 		focusedPane:  1, // Start with input focused
+		testMode:     testMode,
+		capturedLog:  []string{},
 	}
 }
 
@@ -431,6 +443,13 @@ func (m *TUIModel) formatCards(cards []deck.Card) string {
 // AddLogEntry adds an entry to the game log
 func (m *TUIModel) AddLogEntry(entry string) {
 	m.gameLog = append(m.gameLog, entry)
+
+	// In test mode, also capture the log entry
+	if m.testMode {
+		m.capturedLog = append(m.capturedLog, entry)
+		return // Skip UI updates in test mode
+	}
+
 	// Update content and auto-scroll to bottom
 	content := strings.Join(m.gameLog, "\n")
 	m.logViewport.SetContent(content)
@@ -444,6 +463,13 @@ func (m *TUIModel) AddLogEntry(entry string) {
 // AddLogEntryAndScrollToShow adds an entry and scrolls to show it at the top
 func (m *TUIModel) AddLogEntryAndScrollToShow(entry string) {
 	m.gameLog = append(m.gameLog, entry)
+
+	// In test mode, also capture the log entry
+	if m.testMode {
+		m.capturedLog = append(m.capturedLog, entry)
+		return // Skip UI updates in test mode
+	}
+
 	content := strings.Join(m.gameLog, "\n")
 	m.logViewport.SetContent(content)
 
@@ -467,6 +493,14 @@ func (m *TUIModel) SetTableInfo(tableID string, seatNumber int, players []Player
 func (m *TUIModel) AddBoldLogEntry(entry string) {
 	// Use ANSI bold codes for the entry
 	boldEntry := fmt.Sprintf("\033[1m%s\033[0m", entry)
+
+	// In test mode, capture without ANSI codes
+	if m.testMode {
+		m.capturedLog = append([]string{entry}, m.capturedLog...)
+		m.gameLog = append([]string{boldEntry}, m.gameLog...)
+		return // Skip UI updates in test mode
+	}
+
 	// Insert at the beginning of the log
 	m.gameLog = append([]string{boldEntry}, m.gameLog...)
 	content := strings.Join(m.gameLog, "\n")
@@ -537,5 +571,53 @@ func (m *TUIModel) SendQuitSignal() {
 	case m.quitSignal <- true:
 	default:
 		// Channel is full, quit signal already sent
+	}
+}
+
+// GetCapturedLog returns the captured log entries (test mode only)
+func (m *TUIModel) GetCapturedLog() []string {
+	if !m.testMode {
+		return nil
+	}
+	// Return a copy to prevent modification
+	result := make([]string, len(m.capturedLog))
+	copy(result, m.capturedLog)
+	return result
+}
+
+// InjectAction programmatically injects an action (test mode only)
+func (m *TUIModel) InjectAction(action string, args []string) error {
+	if !m.testMode {
+		return fmt.Errorf("action injection only available in test mode")
+	}
+
+	select {
+	case m.actionResult <- ActionResult{
+		Action:   action,
+		Args:     args,
+		Continue: true,
+	}:
+		return nil
+	default:
+		return fmt.Errorf("action channel full")
+	}
+}
+
+// IsTestMode returns whether the TUI is in test mode
+func (m *TUIModel) IsTestMode() bool {
+	return m.testMode
+}
+
+// SetEventCallback sets a callback function for test event synchronization
+func (m *TUIModel) SetEventCallback(callback func(eventType string)) {
+	if m.testMode {
+		m.eventCallback = callback
+	}
+}
+
+// notifyEventCallback calls the event callback if in test mode
+func (m *TUIModel) notifyEventCallback(eventType string) {
+	if m.testMode && m.eventCallback != nil {
+		m.eventCallback(eventType)
 	}
 }

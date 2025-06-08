@@ -21,6 +21,7 @@ type Server struct {
 	mu          sync.RWMutex
 	ctx         context.Context
 	cancel      context.CancelFunc
+	gameService *GameService
 }
 
 // NewServer creates a new WebSocket server
@@ -51,11 +52,13 @@ func NewServer(addr string, logger *log.Logger) *Server {
 func (s *Server) Start() error {
 	go s.run()
 
-	http.HandleFunc("/ws", s.handleWebSocket)
-	http.HandleFunc("/health", s.handleHealth)
+	// Create a dedicated mux for this server instance
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", s.handleWebSocket)
+	mux.HandleFunc("/health", s.handleHealth)
 
 	s.logger.Info("Starting WebSocket server", "addr", s.addr)
-	return http.ListenAndServe(s.addr, nil)
+	return http.ListenAndServe(s.addr, mux)
 }
 
 // Stop stops the WebSocket server
@@ -90,9 +93,9 @@ func (s *Server) run() {
 				// Clean up player from any tables they were in
 				playerID := conn.GetPlayer()
 				tableID := conn.GetTable()
-				if playerID != "" && tableID != "" && gameService != nil {
+				if playerID != "" && tableID != "" && s.gameService != nil {
 					s.logger.Info("Cleaning up disconnected player", "player", playerID, "table", tableID)
-					_ = gameService.LeaveTable(tableID, playerID) // Ignore errors during cleanup
+					_ = s.gameService.LeaveTable(tableID, playerID) // Ignore errors during cleanup
 				}
 
 				_ = conn.Close() // Ignore close errors during unregistration
@@ -114,7 +117,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := NewConnection(conn, s.logger)
+	client := NewConnection(conn, s.logger, s.gameService)
 	s.register <- client
 	client.Start()
 
@@ -192,4 +195,9 @@ func (s *Server) GetTablePlayers(tableID string) []string {
 	}
 
 	return players
+}
+
+// SetGameService sets the game service for the server
+func (s *Server) SetGameService(gameService *GameService) {
+	s.gameService = gameService
 }

@@ -32,6 +32,7 @@ type TestScenario struct {
 	Seed          int64
 	PlayerActions []string // Actions for the human player in order
 	ExpectedLog   []string // Expected log entries to be present
+	AllowTimeout  bool     // Allow real timeout instead of auto-fold
 }
 
 // TestServer wraps a running server instance
@@ -50,18 +51,23 @@ func (s *TestServer) Stop() {
 
 // TestClient wraps a client with action injection and event-driven synchronization
 type TestClient struct {
-	client      *client.Client
-	tui         *tui.TUIModel
-	actionQueue []string
-	actionIndex int
-	eventChan   chan string   // Single event channel for this client
-	handStarted chan struct{} // Signal when hand starts
-	handEnded   chan struct{} // Signal when hand ends
-	t           *testing.T    // For test logging
+	client       *client.Client
+	tui          *tui.TUIModel
+	actionQueue  []string
+	actionIndex  int
+	eventChan    chan string   // Single event channel for this client
+	handStarted  chan struct{} // Signal when hand starts
+	handEnded    chan struct{} // Signal when hand ends
+	allowTimeout bool          // Allow timeout instead of auto-fold
+	t            *testing.T    // For test logging
 }
 
 func (c *TestClient) QueueActions(actions []string) {
 	c.actionQueue = append(c.actionQueue, actions...)
+}
+
+func (c *TestClient) EnableTimeouts() {
+	c.allowTimeout = true
 }
 
 func (c *TestClient) JoinTable(tableID string) error {
@@ -98,11 +104,14 @@ func (c *TestClient) StartActionScript() {
 				// Try to inject next action if we have one
 				if c.actionIndex < len(c.actionQueue) {
 					c.injectNextAction()
-				} else {
+				} else if !c.allowTimeout {
 					// No more scripted actions - auto-fold to end the hand quickly
 					c.t.Logf("ACTION: Auto-folding (no more scripted actions)")
 					time.Sleep(50 * time.Millisecond)
 					_ = c.tui.InjectAction("fold", []string{})
+				} else {
+					// Allow timeout - don't inject any action
+					c.t.Logf("ACTION: Allowing timeout (no more scripted actions)")
 				}
 			}
 		}
@@ -153,13 +162,14 @@ func startTestServer(t *testing.T, port int, seed int64, bots int) *TestServer {
 		},
 		Tables: []server.TableConfig{
 			{
-				Name:       "table1",
-				MaxPlayers: 6,
-				SmallBlind: 1,
-				BigBlind:   2,
-				BuyInMin:   100,
-				BuyInMax:   1000,
-				AutoStart:  true,
+				Name:           "table1",
+				MaxPlayers:     6,
+				SmallBlind:     1,
+				BigBlind:       2,
+				BuyInMin:       100,
+				BuyInMax:       1000,
+				AutoStart:      true,
+				TimeoutSeconds: 30, // Short timeout for fast tests
 			},
 		},
 	}
@@ -183,6 +193,7 @@ func startTestServer(t *testing.T, port int, seed int64, bots int) *TestServer {
 			tableConfig.MaxPlayers,
 			tableConfig.SmallBlind,
 			tableConfig.BigBlind,
+			tableConfig.TimeoutSeconds,
 		)
 		require.NoError(t, err, "Failed to create table")
 
@@ -487,8 +498,11 @@ func runPokerScenario(t *testing.T, scenario TestScenario) {
 	testClient := connectTestClient(t, serverURL, tuiModel)
 	defer testClient.Disconnect()
 
-	// 4. Queue actions and start script
+	// 4. Queue actions and configure timeout behavior
 	testClient.QueueActions(scenario.PlayerActions)
+	if scenario.AllowTimeout {
+		testClient.EnableTimeouts()
+	}
 	testClient.StartActionScript()
 
 	// 5. Join table and wait for game to start

@@ -24,13 +24,14 @@ type ServerSettings struct {
 
 // TableConfig defines a poker table configuration
 type TableConfig struct {
-	Name       string `hcl:"name,label"`
-	MaxPlayers int    `hcl:"max_players,optional"`
-	SmallBlind int    `hcl:"small_blind"`
-	BigBlind   int    `hcl:"big_blind"`
-	BuyInMin   int    `hcl:"buy_in_min,optional"`
-	BuyInMax   int    `hcl:"buy_in_max,optional"`
-	AutoStart  bool   `hcl:"auto_start,optional"`
+	Name           string `hcl:"name,label"`
+	MaxPlayers     int    `hcl:"max_players,optional"`
+	SmallBlind     int    `hcl:"small_blind"`
+	BigBlind       int    `hcl:"big_blind"`
+	BuyInMin       int    `hcl:"buy_in_min,optional"`
+	BuyInMax       int    `hcl:"buy_in_max,optional"`
+	AutoStart      bool   `hcl:"auto_start,optional"`
+	TimeoutSeconds int    `hcl:"timeout_seconds,optional"`
 }
 
 // DefaultServerConfig returns default server configuration
@@ -44,13 +45,14 @@ func DefaultServerConfig() *ServerConfig {
 		},
 		Tables: []TableConfig{
 			{
-				Name:       "main",
-				MaxPlayers: 6,
-				SmallBlind: 1,
-				BigBlind:   2,
-				BuyInMin:   100,
-				BuyInMax:   1000,
-				AutoStart:  true,
+				Name:           "main",
+				MaxPlayers:     6,
+				SmallBlind:     1,
+				BigBlind:       2,
+				BuyInMin:       100,
+				BuyInMax:       1000,
+				AutoStart:      true,
+				TimeoutSeconds: 60,
 			},
 		},
 	}
@@ -100,6 +102,9 @@ func LoadServerConfig(filename string) (*ServerConfig, error) {
 		if config.Tables[i].BuyInMax == 0 {
 			config.Tables[i].BuyInMax = config.Tables[i].BigBlind * 500 // 500 big blinds maximum
 		}
+		if config.Tables[i].TimeoutSeconds == 0 {
+			config.Tables[i].TimeoutSeconds = 60 // 60 seconds default
+		}
 	}
 
 	return &config, nil
@@ -127,6 +132,9 @@ func (c *ServerConfig) Validate() error {
 		}
 		if table.BuyInMin >= table.BuyInMax {
 			return fmt.Errorf("table %s: buy-in minimum must be less than maximum", table.Name)
+		}
+		if table.TimeoutSeconds < 10 || table.TimeoutSeconds > 300 {
+			return fmt.Errorf("table %s: timeout must be between 10 and 300 seconds", table.Name)
 		}
 	}
 

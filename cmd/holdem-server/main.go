@@ -100,8 +100,8 @@ func main() {
 	// Create game service
 	gameService := server.NewGameService(wsServer, logger, CLI.Seed)
 
-	// Set game service in connection handlers
-	server.SetGameService(gameService)
+	// Set game service in server
+	wsServer.SetGameService(gameService)
 
 	// Create tables from configuration
 	tableIDMap := make(map[string]string) // name -> ID mapping
@@ -111,6 +111,7 @@ func main() {
 			tableConfig.MaxPlayers,
 			tableConfig.SmallBlind,
 			tableConfig.BigBlind,
+			tableConfig.TimeoutSeconds,
 		)
 		if err != nil {
 			logger.Error("Failed to create table", "error", err, "table", tableConfig.Name)

@@ -10,30 +10,33 @@ server {
 
 # Define poker tables
 table "microstakes" {
-  small_blind = 1
-  big_blind   = 2
-  max_players = 6
-  buy_in_min  = 100
-  buy_in_max  = 1000
-  auto_start  = true
+  small_blind     = 1
+  big_blind       = 2
+  max_players     = 6
+  buy_in_min      = 100
+  buy_in_max      = 1000
+  auto_start      = true
+  timeout_seconds = 60  # Player decision timeout (10-300 seconds)
 }
 
 table "lowstakes" {
-  small_blind = 5
-  big_blind   = 10
-  max_players = 6
-  buy_in_min  = 500
-  buy_in_max  = 5000
-  auto_start  = true
+  small_blind     = 5
+  big_blind       = 10
+  max_players     = 6
+  buy_in_min      = 500
+  buy_in_max      = 5000
+  auto_start      = true
+  timeout_seconds = 90  # Longer timeout for higher stakes
 }
 
 table "highstakes" {
-  small_blind = 25
-  big_blind   = 50
-  max_players = 6
-  buy_in_min  = 2500
-  buy_in_max  = 25000
-  auto_start  = false
+  small_blind     = 25
+  big_blind       = 50
+  max_players     = 6
+  buy_in_min      = 2500
+  buy_in_max      = 25000
+  auto_start      = false
+  timeout_seconds = 120  # Generous timeout for high stakes
 }
 
 # Poker bots can connect remotely using the holdem-client
