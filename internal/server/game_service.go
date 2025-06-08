@@ -335,11 +335,25 @@ func (gs *GameService) LeaveTable(tableID, playerName string) error {
 		return fmt.Errorf("player not at table")
 	}
 
-	// Remove player from game - for now just remove from maps
-	// TODO: Implement proper player removal from game table
-	// if table.engine != nil {
-	//     table.engine.GetTable().RemovePlayer(playerName)
-	// }
+	// Remove player from game table if engine is running
+	if table.engine != nil {
+		// Track removed chips before removing player
+		gameTable := table.engine.GetTable()
+		var removedChips int
+		for _, player := range gameTable.GetPlayers() {
+			if player.Name == playerName {
+				removedChips = player.Chips
+				break
+			}
+		}
+
+		if err := gameTable.RemovePlayer(playerName); err != nil {
+			table.logger.Warn("Failed to remove player from game table", "player", playerName, "error", err)
+		} else if removedChips > 0 {
+			// Track the chips that were removed from the system
+			table.engine.TrackRemovedChips(removedChips)
+		}
+	}
 
 	delete(table.players, playerName)
 	delete(table.networkAgents, playerName)

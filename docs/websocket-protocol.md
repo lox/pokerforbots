@@ -172,6 +172,49 @@ All messages are JSON with this structure:
     "summary": "formatted-hand-summary"
   }
 }
+
+{
+  "type": "player_timeout",
+  "data": {
+    "tableId": "string",
+    "playerName": "string",
+    "timeoutSeconds": "number",
+    "action": "fold|check"
+  }
+}
+
+{
+  "type": "player_left",
+  "data": {
+    "tableId": "string",
+    "playerName": "string",
+    "reason": "disconnected|quit"
+  }
+}
+
+{
+  "type": "table_left",
+  "data": {
+    "tableId": "string"
+  }
+}
+
+{
+  "type": "bot_added",
+  "data": {
+    "tableId": "string",
+    "botName": "string",
+    "seatNumber": "number"
+  }
+}
+
+{
+  "type": "bot_kicked",
+  "data": {
+    "tableId": "string",
+    "botName": "string"
+  }
+}
 ```
 
 ### Action Requests

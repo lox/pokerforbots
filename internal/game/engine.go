@@ -14,6 +14,7 @@ type GameEngine struct {
 	agents            map[string]Agent
 	logger            *log.Logger
 	startingChipTotal int // Track total chips when engine was created
+	removedChips      int // Track chips removed when players disconnect
 }
 
 // NewGameEngine creates a new game engine
@@ -309,7 +310,14 @@ func (ge *GameEngine) GetTable() *Table {
 
 // validateChipConservation checks that total chips haven't changed unexpectedly
 func (ge *GameEngine) validateChipConservation() error {
-	return ge.table.ValidateChipConservation(ge.startingChipTotal)
+	expectedTotal := ge.startingChipTotal - ge.removedChips
+	return ge.table.ValidateChipConservation(expectedTotal)
+}
+
+// TrackRemovedChips records chips removed when players disconnect
+func (ge *GameEngine) TrackRemovedChips(amount int) {
+	ge.removedChips += amount
+	ge.logger.Debug("Tracking removed chips", "amount", amount, "totalRemoved", ge.removedChips)
 }
 
 // createWinnerInfo creates detailed winner information for events
