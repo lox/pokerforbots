@@ -14,19 +14,12 @@ tasks:
   test:
     desc: Run all tests
     cmds:
-      - go test ./...
+      - bin/gotestsum --format testname -- ./...
 
   test-verbose:
     desc: Run tests with verbose output
     cmds:
-      - go test -v ./...
-
-  test-coverage:
-    desc: Run tests with coverage report
-    cmds:
-      - go test -coverprofile=coverage.out ./...
-      - go tool cover -html=coverage.out -o coverage.html
-      - echo "Coverage report generated at coverage.html"
+      - bin/gotestsum --format testname -- -v ./...
 
   lint:
     desc: Run linter (golangci-lint)
