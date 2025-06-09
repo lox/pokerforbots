@@ -37,9 +37,13 @@ type TUIModel struct {
 	humanPlayer  *game.Player // Current human player info when it's their turn
 
 	// Table info for sidebar
-	tableID    string
-	seatNumber int
-	players    []PlayerInfo
+	tableID        string
+	seatNumber     int
+	players        []PlayerInfo
+	currentRound   string      // Pre-flop, Flop, Turn, River, Showdown
+	communityCards []deck.Card // Community cards for display
+	currentPlayer  string      // Name of player currently acting
+	dealerPosition int         // Dealer button position
 
 	// Dimensions
 	width       int
@@ -47,9 +51,10 @@ type TUIModel struct {
 	initialized bool // Track if viewport has been properly sized
 
 	// Test mode
-	testMode      bool
-	capturedLog   []string               // For test assertions
-	eventCallback func(eventType string) // Callback for test event synchronization
+	testMode       bool
+	capturedLog    []string               // For test assertions
+	sidebarContent string                 // For test assertions
+	eventCallback  func(eventType string) // Callback for test event synchronization
 }
 
 // ActionResult represents the result of a user action
@@ -65,8 +70,11 @@ type QuitMsg struct{}
 
 // PlayerInfo holds basic player information for the sidebar
 type PlayerInfo struct {
-	Name  string
-	Chips int
+	Name       string
+	Chips      int
+	Position   string // D, SB, BB, or empty
+	SeatNumber int
+	IsActive   bool
 }
 
 // NewTUIModel creates a new TUI model for network mode
@@ -310,25 +318,64 @@ func (m *TUIModel) renderLogPane() string {
 func (m *TUIModel) renderSidebarPane() string {
 	var content strings.Builder
 
-	// Show pot and bet info at top
-	content.WriteString(WarningStyle.Render(fmt.Sprintf("Pot: $%d", m.currentPot)))
-	if m.currentBet > 0 {
-		content.WriteString(" | ")
-		content.WriteString(WarningStyle.Render(fmt.Sprintf("Bet: $%d", m.currentBet)))
+	// Game State Section
+	if m.currentRound != "" {
+		content.WriteString(InfoStyle.Render(fmt.Sprintf("Round: %s", m.currentRound)))
+		content.WriteString("\n")
 	}
+
+	// Community cards (only show if there are any)
+	if len(m.communityCards) > 0 {
+		content.WriteString("Board: [")
+		for i, card := range m.communityCards {
+			if i > 0 {
+				content.WriteString(" ")
+			}
+			content.WriteString(card.String())
+		}
+		content.WriteString("]")
+		content.WriteString("\n")
+	}
+
+	// Pot info
+	content.WriteString(WarningStyle.Render(fmt.Sprintf("Pot: $%d", m.currentPot)))
 	content.WriteString("\n\n")
 
-	// Show players list if we have table info
+	// Players Section
 	if m.tableID != "" && len(m.players) > 0 {
 		content.WriteString(InfoStyle.Render("Players at table:"))
 		content.WriteString("\n")
 		for _, player := range m.players {
-			content.WriteString(fmt.Sprintf("  %s: $%d", player.Name, player.Chips))
+			// Format player line with position and action indicator
+			playerLine := player.Name
+			if player.Position != "" {
+				playerLine += fmt.Sprintf(" (%s)", player.Position)
+			}
+
+			// Pad to align chips
+			for len(playerLine) < 20 {
+				playerLine += " "
+			}
+			playerLine += fmt.Sprintf("$%d", player.Chips)
+
+			// Add action indicator for current player
+			if player.Name == m.currentPlayer {
+				playerLine += "  ◀"
+			}
+
+			content.WriteString(playerLine)
 			content.WriteString("\n")
 		}
 	}
 
-	return content.String()
+	result := content.String()
+
+	// Capture sidebar content in test mode
+	if m.testMode {
+		m.sidebarContent = result
+	}
+
+	return result
 }
 
 // renderActionPane renders the action input pane
@@ -489,6 +536,13 @@ func (m *TUIModel) SetTableInfo(tableID string, seatNumber int, players []Player
 	m.players = players
 }
 
+func (m *TUIModel) UpdateGameState(round string, communityCards []deck.Card, currentPlayer string) {
+	m.currentRound = round
+	m.communityCards = make([]deck.Card, len(communityCards))
+	copy(m.communityCards, communityCards)
+	m.currentPlayer = currentPlayer
+}
+
 // AddBoldLogEntry adds a bold entry to the top of the game log
 func (m *TUIModel) AddBoldLogEntry(entry string) {
 	// Use ANSI bold codes for the entry
@@ -583,6 +637,14 @@ func (m *TUIModel) GetCapturedLog() []string {
 	result := make([]string, len(m.capturedLog))
 	copy(result, m.capturedLog)
 	return result
+}
+
+// GetSidebarContent returns the captured sidebar content (test mode only)
+func (m *TUIModel) GetSidebarContent() string {
+	if !m.testMode {
+		return ""
+	}
+	return m.sidebarContent
 }
 
 // InjectAction programmatically injects an action (test mode only)

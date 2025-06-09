@@ -38,9 +38,9 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		for _, player := range data.Players {
 			if player.BetThisRound > 0 {
 				switch player.Position {
-				case "small_blind":
+				case "Small Blind":
 					tui.AddLogEntry(fmt.Sprintf("%s: posts small blind $%d", player.Name, player.BetThisRound))
-				case "big_blind":
+				case "Big Blind":
 					tui.AddLogEntry(fmt.Sprintf("%s: posts big blind $%d", player.Name, player.BetThisRound))
 				}
 			}
@@ -49,6 +49,32 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		tui.AddLogEntry("")
 		tui.AddLogEntry("*** PRE-FLOP ***")
 		tui.UpdatePot(data.InitialPot)
+
+		// Update sidebar with game state and players
+		tui.UpdateGameState("Pre-flop", []deck.Card{}, "")
+
+		// Convert players to PlayerInfo with positions
+		var players []PlayerInfo
+		for _, player := range data.Players {
+			position := ""
+			switch player.Position {
+			case "Small Blind":
+				position = "SB"
+			case "Big Blind":
+				position = "BB"
+			case "Button":
+				position = "D"
+			}
+
+			players = append(players, PlayerInfo{
+				Name:       player.Name,
+				Chips:      player.Chips,
+				Position:   position,
+				SeatNumber: player.SeatNumber,
+				IsActive:   true,
+			})
+		}
+		tui.SetTableInfo(tui.tableID, tui.seatNumber, players)
 
 		// Notify test callback if in test mode
 		tui.notifyEventCallback("hand_start")
@@ -143,6 +169,9 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 			tui.AddLogEntry(fmt.Sprintf("Final Board: %s", formatCards(data.CommunityCards)))
 		}
 
+		// Update sidebar with new round and community cards
+		tui.UpdateGameState(data.Round, data.CommunityCards, "")
+
 		// Notify test callback if in test mode
 		tui.notifyEventCallback("street_change")
 	})
@@ -214,6 +243,9 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		tui.UpdateCurrentBet(data.TableState.CurrentBet)
 		tui.SetHumanTurn(true, humanPlayer)
 
+		// Update current player in sidebar
+		tui.UpdateGameState(tui.currentRound, tui.communityCards, data.PlayerName)
+
 		// Debug log the updated state and valid actions
 		tui.logger.Info("Updated TUI state",
 			"pot", data.TableState.Pot,
@@ -263,8 +295,11 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		var players []PlayerInfo
 		for _, player := range data.Players {
 			players = append(players, PlayerInfo{
-				Name:  player.Name,
-				Chips: player.Chips,
+				Name:       player.Name,
+				Chips:      player.Chips,
+				Position:   "", // Will be updated in hand_start
+				SeatNumber: player.SeatNumber,
+				IsActive:   true,
 			})
 		}
 		tui.SetTableInfo(data.TableID, data.SeatNumber, players)

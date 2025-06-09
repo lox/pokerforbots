@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,11 +29,12 @@ import (
 
 // TestScenario defines a complete test scenario
 type TestScenario struct {
-	Name          string
-	Seed          int64
-	PlayerActions []string // Actions for the human player in order
-	ExpectedLog   []string // Expected log entries to be present
-	AllowTimeout  bool     // Allow real timeout instead of auto-fold
+	Name            string
+	Seed            int64
+	PlayerActions   []string // Actions for the human player in order
+	ExpectedLog     []string // Expected log entries to be present
+	ExpectedSidebar []string // Expected sidebar content to be present
+	AllowTimeout    bool     // Allow real timeout instead of auto-fold
 }
 
 // TestServer wraps a running server instance
@@ -68,6 +70,19 @@ func (c *TestClient) QueueActions(actions []string) {
 
 func (c *TestClient) EnableTimeouts() {
 	c.allowTimeout = true
+}
+
+func (c *TestClient) GetSidebarContent() string {
+	return c.tui.GetSidebarContent()
+}
+
+func (c *TestClient) AssertSidebar(t *testing.T, expectedContent []string) {
+	sidebar := c.GetSidebarContent()
+	for _, expected := range expectedContent {
+		assert.Contains(t, sidebar, expected,
+			"Expected sidebar content not found: %s\nActual sidebar:\n%s",
+			expected, sidebar)
+	}
 }
 
 func (c *TestClient) JoinTable(tableID string) error {
@@ -406,6 +421,40 @@ func TestPokerScenarios(t *testing.T) {
 			},
 		},
 		{
+			Name:          "sidebar shows correct game state and positions",
+			Seed:          11111,
+			PlayerActions: []string{"call", "fold"},
+			ExpectedSidebar: []string{
+				"Round:",            // Round info is shown
+				"Board:",            // Board is displayed
+				"Pot: $",            // Pot amount
+				"Players at table:", // Players section
+				"TestPlayer",        // Our player is listed
+				"Bot_1",             // Other players listed
+			},
+		},
+		{
+			Name:          "sidebar updates after player actions",
+			Seed:          22222,
+			PlayerActions: []string{"raise 10", "fold"},
+			ExpectedSidebar: []string{
+				"Pot: $",            // Pot updates
+				"TestPlayer",        // Player in list
+				"Players at table:", // Players section
+			},
+		},
+		{
+			Name:          "sidebar shows street progression",
+			Seed:          33333,
+			PlayerActions: []string{"call", "check", "fold"},
+			ExpectedSidebar: []string{
+				"Round:",            // Round progression shown
+				"Board:",            // Community cards
+				"Players at table:", // Players section
+				"TestPlayer",        // Our player
+			},
+		},
+		{
 			Name:          "preflop call and flop fold",
 			Seed:          23456,
 			PlayerActions: []string{"c", "f"},
@@ -529,11 +578,29 @@ func runPokerScenario(t *testing.T, scenario TestScenario) {
 	// Should have some events
 	assert.Greater(t, len(capturedLog), 0, "Should have captured some log entries")
 
-	// Check for expected patterns
-	logText := strings.Join(capturedLog, " ")
-	for _, expectedEntry := range scenario.ExpectedLog {
-		assert.Contains(t, logText, expectedEntry,
-			"Expected log entry not found: %s\nScenario: %s\nActions: %v",
-			expectedEntry, scenario.Name, scenario.PlayerActions)
+	// Check for expected log patterns
+	if len(scenario.ExpectedLog) > 0 {
+		logText := strings.Join(capturedLog, " ")
+		for _, expectedEntry := range scenario.ExpectedLog {
+			assert.Contains(t, logText, expectedEntry,
+				"Expected log entry not found: %s\nScenario: %s\nActions: %v",
+				expectedEntry, scenario.Name, scenario.PlayerActions)
+		}
+	}
+
+	// 8. Assert sidebar content
+	if len(scenario.ExpectedSidebar) > 0 {
+		// Force a UI refresh to ensure sidebar is rendered
+		tuiModel.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+		// Force view rendering to trigger sidebar capture
+		_ = tuiModel.View()
+
+		// Debug: Print the actual sidebar content
+		sidebarContent := testClient.GetSidebarContent()
+		t.Logf("DEBUG: Sidebar content: '%s'", sidebarContent)
+		t.Logf("DEBUG: Sidebar length: %d", len(sidebarContent))
+
+		testClient.AssertSidebar(t, scenario.ExpectedSidebar)
 	}
 }
