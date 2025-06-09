@@ -30,6 +30,7 @@ type ServerTable struct {
 	eventSub      *TableEventSubscriber
 	waitingLogged bool // Track if we've logged the waiting message
 	seed          int64
+	playerReturn  chan struct{} // Signal when a player returns from sitting out
 }
 
 // TableEventSubscriber handles game events and forwards them to clients
@@ -110,6 +111,15 @@ func (tes *TableEventSubscriber) handlePlayerAction(event game.PlayerActionEvent
 	}
 
 	tes.server.BroadcastToTable(tes.table.ID, msg)
+
+	// Signal game loop when a player returns from sitting out
+	if event.Action == game.SitIn {
+		select {
+		case tes.table.playerReturn <- struct{}{}:
+		default:
+			// Channel already has a signal, no need to block
+		}
+	}
 }
 
 func (tes *TableEventSubscriber) handleStreetChange(event game.StreetChangeEvent) {
@@ -232,6 +242,7 @@ func (gs *GameService) CreateTable(name string, maxPlayers, smallBlind, bigBlind
 		status:         "waiting",
 		logger:         logger,
 		seed:           tableSeed,
+		playerReturn:   make(chan struct{}, 1), // Buffered to avoid blocking
 	}
 
 	// Create event subscriber for this table
@@ -389,19 +400,24 @@ func (gs *GameService) startTableGame(table *ServerTable) {
 			return
 		}
 
-		// Check if we have at least one remote player (not just server-local bots)
-		hasRemotePlayer := len(table.networkAgents) > 0
+		// Check if we have at least one available remote player (not sitting out)
+		hasAvailableRemotePlayer := false
+		for playerName := range table.networkAgents {
+			if player, exists := table.players[playerName]; exists && !player.IsSittingOut {
+				hasAvailableRemotePlayer = true
+				break
+			}
+		}
 
-		if !hasRemotePlayer {
+		if !hasAvailableRemotePlayer {
 			if !table.waitingLogged {
-				table.logger.Info("No remote players connected, pausing game")
+				table.logger.Info("No available remote players (all sitting out), pausing game")
 				table.waitingLogged = true
 			}
 			table.status = "waiting"
 
-			// Wait for a remote player to join before continuing
-			// This prevents endless server-local bot-vs-bot games
-			time.Sleep(1 * time.Second)
+			// Wait for a remote player to return from sitting out
+			<-table.playerReturn
 			continue
 		}
 

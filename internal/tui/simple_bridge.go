@@ -387,7 +387,7 @@ func StartCommandHandler(client *client.Client, tui *TUIModel, defaultBuyIn int)
 	}()
 }
 
-// handleCommand processes simple TUI commands like /leave, /quit
+// handleCommand processes simple TUI commands like /leave, /quit, /back
 func handleCommand(client *client.Client, tui *TUIModel, action string) {
 	switch action {
 	case "/leave":
@@ -402,12 +402,21 @@ func handleCommand(client *client.Client, tui *TUIModel, action string) {
 			tui.AddLogEntry(fmt.Sprintf("Error leaving table: %v", err))
 		}
 
+	case "/back":
+		// Send sit-in action to return from sitting out
+		err := client.SendDecision("sit-in", 0, "Player returned from sitting out")
+		if err != nil {
+			tui.AddLogEntry(fmt.Sprintf("Error returning to play: %v", err))
+		} else {
+			tui.AddLogEntry("Returning to play - you'll be included in the next hand")
+		}
+
 	case "/quit", "quit":
 		tui.SendQuitSignal()
 
 	default:
 		tui.AddLogEntry(fmt.Sprintf("Unknown command: %s", action))
-		tui.AddLogEntry("Available commands: /leave, /quit")
+		tui.AddLogEntry("Available commands: /leave, /quit, /back")
 	}
 }
 

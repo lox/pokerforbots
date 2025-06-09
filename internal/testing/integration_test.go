@@ -407,6 +407,47 @@ func TestBasicConnection(t *testing.T) {
 	})
 }
 
+func TestSittingOutScenarios(t *testing.T) {
+	scenarios := []TestScenario{
+		{
+			Name:          "timeout puts player in sitting out state",
+			Seed:          99999,
+			PlayerActions: []string{}, // No actions - let it timeout
+			AllowTimeout:  true,       // Allow real timeout
+			ExpectedLog: []string{
+				"timed out",
+				"sit-out", // Should see sit-out message
+			},
+		},
+		{
+			Name:          "player returns from sitting out with /back",
+			Seed:          88888,
+			PlayerActions: []string{"/back"}, // Use /back command after timing out
+			AllowTimeout:  true,              // Allow initial timeout
+			ExpectedLog: []string{
+				"Returning to play",
+				"included in the next hand",
+			},
+		},
+		{
+			Name:          "game pauses when all humans sitting out",
+			Seed:          77777,
+			PlayerActions: []string{}, // Timeout and don't return
+			AllowTimeout:  true,
+			ExpectedLog: []string{
+				"all sitting out",
+				"pausing game",
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		t.Run(scenario.Name, func(t *testing.T) {
+			runSittingOutScenario(t, scenario)
+		})
+	}
+}
+
 func TestPokerScenarios(t *testing.T) {
 	scenarios := []TestScenario{
 		{
@@ -602,5 +643,135 @@ func runPokerScenario(t *testing.T, scenario TestScenario) {
 		t.Logf("DEBUG: Sidebar length: %d", len(sidebarContent))
 
 		testClient.AssertSidebar(t, scenario.ExpectedSidebar)
+	}
+}
+
+// runSittingOutScenario executes a sitting out test scenario
+func runSittingOutScenario(t *testing.T, scenario TestScenario) {
+	logger := log.NewWithOptions(io.Discard, log.Options{Level: log.ErrorLevel})
+
+	// 1. Start server on random port with shorter timeout for faster tests
+	port := findFreePort(t)
+	server := startTestServerWithTimeout(t, port, scenario.Seed, 3, 5) // 5 second timeout
+	defer server.Stop()
+
+	// 2. Create TUI in test mode
+	tuiModel := tui.NewTUIModelWithOptions(logger, true)
+	require.True(t, tuiModel.IsTestMode())
+
+	// 3. Connect test client
+	serverURL := fmt.Sprintf("ws://127.0.0.1:%d", port)
+	testClient := connectTestClient(t, serverURL, tuiModel)
+	defer testClient.Disconnect()
+
+	// 4. Queue actions and configure timeout behavior
+	testClient.QueueActions(scenario.PlayerActions)
+	testClient.EnableTimeouts() // Always allow timeouts for sitting out tests
+	testClient.StartActionScript()
+
+	// 5. Join table and wait for game to start
+	err := testClient.JoinTable("table1")
+	require.NoError(t, err, "Failed to join table")
+
+	// Wait for hand to start
+	waitForHandStart(t, testClient)
+
+	// 6. For timeout tests, wait longer to allow timeout + potential recovery
+	time.Sleep(12 * time.Second) // Wait for timeout (5s) + some buffer + potential /back command
+
+	// 7. Get captured log and assert
+	capturedLog := tuiModel.GetCapturedLog()
+	t.Logf("Sitting Out Scenario: %s", scenario.Name)
+	t.Logf("Actions: %v", scenario.PlayerActions)
+	t.Logf("Captured %d log entries:", len(capturedLog))
+
+	// Log the captured entries for easier debugging
+	for _, entry := range capturedLog {
+		t.Log(entry)
+	}
+
+	// Should have some events
+	assert.Greater(t, len(capturedLog), 0, "Should have captured some log entries")
+
+	// Check for expected log patterns
+	if len(scenario.ExpectedLog) > 0 {
+		logText := strings.Join(capturedLog, " ")
+		for _, expectedEntry := range scenario.ExpectedLog {
+			assert.Contains(t, logText, expectedEntry,
+				"Expected log entry not found: %s\nScenario: %s\nActions: %v",
+				expectedEntry, scenario.Name, scenario.PlayerActions)
+		}
+	}
+}
+
+// startTestServerWithTimeout creates a test server with custom timeout
+func startTestServerWithTimeout(t *testing.T, port int, seed int64, bots int, timeoutSeconds int) *TestServer {
+	// Create server config with custom timeout
+	cfg := &server.ServerConfig{
+		Server: server.ServerSettings{
+			Address:  "127.0.0.1",
+			Port:     port,
+			LogLevel: "error", // Quiet logs during tests
+		},
+		Tables: []server.TableConfig{
+			{
+				Name:           "table1",
+				MaxPlayers:     6,
+				SmallBlind:     1,
+				BigBlind:       2,
+				BuyInMin:       100,
+				BuyInMax:       1000,
+				AutoStart:      true,
+				TimeoutSeconds: timeoutSeconds, // Custom timeout
+			},
+		},
+	}
+
+	// Setup logger
+	logger := log.NewWithOptions(io.Discard, log.Options{Level: log.ErrorLevel})
+
+	// Create WebSocket server
+	wsServer := server.NewServer(cfg.GetServerAddress(), logger)
+
+	// Create game service
+	gameService := server.NewGameService(wsServer, logger, seed)
+
+	// Set game service in server
+	wsServer.SetGameService(gameService)
+
+	// Create tables from configuration
+	for _, tableConfig := range cfg.Tables {
+		table, err := gameService.CreateTable(
+			tableConfig.Name,
+			tableConfig.MaxPlayers,
+			tableConfig.SmallBlind,
+			tableConfig.BigBlind,
+			tableConfig.TimeoutSeconds,
+		)
+		require.NoError(t, err, "Failed to create table")
+
+		// Auto-populate with bots if requested
+		if bots > 0 {
+			_, err := gameService.AddBots(table.ID, bots)
+			require.NoError(t, err, "Failed to add bots")
+		}
+	}
+
+	// Start server in background
+	go func() {
+		err := wsServer.Start()
+		if err != nil {
+			logger.Error("Server failed", "error", err)
+		}
+	}()
+
+	// Wait for server to be ready
+	serverURL := fmt.Sprintf("ws://127.0.0.1:%d", port)
+	waitForServerReady(t, serverURL, 5*time.Second)
+
+	return &TestServer{
+		wsServer:    wsServer,
+		gameService: gameService,
+		port:        port,
 	}
 }

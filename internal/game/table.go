@@ -396,13 +396,15 @@ func (t *Table) dealHoleCards() {
 func (t *Table) postBlinds() {
 	var smallBlindPlayer, bigBlindPlayer *Player
 
-	// Find blind players
-	for _, player := range t.activePlayers {
-		switch player.Position {
-		case SmallBlind:
-			smallBlindPlayer = player
-		case BigBlind:
-			bigBlindPlayer = player
+	// Find blind players (include sitting out players for blind posting)
+	for _, player := range t.players {
+		if player.Chips > 0 { // Only consider players with chips
+			switch player.Position {
+			case SmallBlind:
+				smallBlindPlayer = player
+			case BigBlind:
+				bigBlindPlayer = player
+			}
 		}
 	}
 
@@ -1000,9 +1002,9 @@ func (t *Table) ApplyDecision(decision Decision) (string, error) {
 		return "Player cannot act", nil
 	}
 
-	// Validate decision against valid actions (Quit is always valid)
+	// Validate decision against valid actions (Quit and SitOut/SitIn are always valid)
 	validActions := t.GetValidActions()
-	valid := decision.Action == Quit // Quit is always valid
+	valid := decision.Action == Quit || decision.Action == SitOut || decision.Action == SitIn
 
 	if !valid {
 		for _, validAction := range validActions {
@@ -1074,6 +1076,28 @@ func (t *Table) ApplyDecision(decision Decision) (string, error) {
 		// Player wants to quit - this will be handled at the engine level
 		// For now, just set the action on the player
 		currentPlayer.LastAction = Quit
+		return decision.Reasoning, nil
+	case SitOut:
+		// Player wants to sit out - fold current hand and mark as sitting out
+		currentPlayer.SitOut()
+
+		// Publish sit-out event
+		if t.eventBus != nil {
+			event := NewPlayerActionEvent(currentPlayer, SitOut, 0, t.currentRound, decision.Reasoning, t.pot)
+			t.eventBus.Publish(event)
+		}
+
+		return decision.Reasoning, nil
+	case SitIn:
+		// Player wants to return from sitting out
+		currentPlayer.SitIn()
+
+		// Publish sit-in event
+		if t.eventBus != nil {
+			event := NewPlayerActionEvent(currentPlayer, SitIn, 0, t.currentRound, decision.Reasoning, t.pot)
+			t.eventBus.Publish(event)
+		}
+
 		return decision.Reasoning, nil
 	}
 

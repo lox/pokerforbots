@@ -77,6 +77,8 @@ const (
 	Check
 	AllIn
 	Quit
+	SitOut
+	SitIn
 )
 
 // String returns the string representation of an action
@@ -94,6 +96,10 @@ func (a Action) String() string {
 		return "all-in"
 	case Quit:
 		return "quit"
+	case SitOut:
+		return "sit-out"
+	case SitIn:
+		return "sit-in"
 	default:
 		return "no action"
 	}
@@ -113,6 +119,7 @@ type Player struct {
 	IsActive     bool // Still in the hand
 	IsFolded     bool // Has folded this hand
 	IsAllIn      bool // Is all-in
+	IsSittingOut bool // Player is sitting out (away but holding seat)
 	BetThisRound int  // Amount bet in current betting round
 	TotalBet     int  // Total amount bet this hand
 
@@ -133,6 +140,7 @@ func NewPlayer(id int, name string, playerType PlayerType, startingChips int) *P
 		IsActive:     true,
 		IsFolded:     false,
 		IsAllIn:      false,
+		IsSittingOut: false,
 		BetThisRound: 0,
 		TotalBet:     0,
 		LastAction:   NoAction,
@@ -224,19 +232,20 @@ func (p *Player) AllIn() bool {
 
 // CanAct returns true if the player can take an action
 func (p *Player) CanAct() bool {
-	return p.IsActive && !p.IsFolded && !p.IsAllIn
+	return p.IsActive && !p.IsFolded && !p.IsAllIn && !p.IsSittingOut
 }
 
 // ResetForNewHand resets player state for a new hand
 func (p *Player) ResetForNewHand() {
 	p.HoleCards = p.HoleCards[:0]
-	p.IsActive = true
+	p.IsActive = !p.IsSittingOut // Only active if not sitting out
 	p.IsFolded = false
 	p.IsAllIn = false
 	p.BetThisRound = 0
 	p.TotalBet = 0
 	p.LastAction = NoAction
 	p.ActionAmount = 0
+	// Note: IsSittingOut persists across hands
 }
 
 // ResetForNewRound resets player state for a new betting round
@@ -273,4 +282,25 @@ func (p *Player) HasActed() bool {
 // GetEffectiveStack returns the effective stack (current chips + any bets this hand)
 func (p *Player) GetEffectiveStack() int {
 	return p.Chips + p.TotalBet
+}
+
+// SitOut puts the player in sitting out state
+func (p *Player) SitOut() {
+	p.IsSittingOut = true
+	p.IsActive = false
+	// If player is in a hand, fold them
+	if !p.IsFolded {
+		p.Fold()
+	}
+}
+
+// SitIn brings the player back from sitting out state
+func (p *Player) SitIn() {
+	p.IsSittingOut = false
+	// Player will become active at the start of next hand
+}
+
+// IsAvailableToPlay returns true if player is not sitting out and can participate
+func (p *Player) IsAvailableToPlay() bool {
+	return !p.IsSittingOut
 }

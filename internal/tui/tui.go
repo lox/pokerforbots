@@ -43,7 +43,6 @@ type TUIModel struct {
 	currentRound   string      // Pre-flop, Flop, Turn, River, Showdown
 	communityCards []deck.Card // Community cards for display
 	currentPlayer  string      // Name of player currently acting
-	dealerPosition int         // Dealer button position
 
 	// Dimensions
 	width       int

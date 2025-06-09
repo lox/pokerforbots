@@ -86,32 +86,14 @@ func (na *NetworkAgent) MakeDecision(tableState game.TableState, validActions []
 		return decision
 
 	case <-ctx.Done():
-		na.logger.Warn("Decision timeout, determining default action")
-
-		// Determine the timeout action based on valid actions
-		timeoutAction := game.Fold
-		timeoutActionStr := "fold"
-
-		// If folding is not a valid action, check instead
-		canFold := false
-		for _, action := range validActions {
-			if action.Action == game.Fold {
-				canFold = true
-				break
-			}
-		}
-
-		if !canFold {
-			timeoutAction = game.Check
-			timeoutActionStr = "check"
-		}
+		na.logger.Warn("Decision timeout, putting player in sitting out state")
 
 		// Send timeout event to all players at the table
 		timeoutData := PlayerTimeoutData{
 			TableID:        na.tableID,
 			PlayerName:     na.playerName,
 			TimeoutSeconds: na.timeoutSeconds,
-			Action:         timeoutActionStr,
+			Action:         "sit-out",
 		}
 
 		timeoutMsg, err := NewMessage("player_timeout", timeoutData)
@@ -120,9 +102,9 @@ func (na *NetworkAgent) MakeDecision(tableState game.TableState, validActions []
 		}
 
 		return game.Decision{
-			Action:    timeoutAction,
+			Action:    game.SitOut,
 			Amount:    0,
-			Reasoning: "Decision timeout",
+			Reasoning: "Decision timeout - sitting out",
 		}
 	}
 }
@@ -147,6 +129,10 @@ func (na *NetworkAgent) HandleDecision(data PlayerDecisionData) error {
 		action = game.Raise
 	case "allin":
 		action = game.AllIn
+	case "sit-out":
+		action = game.SitOut
+	case "sit-in":
+		action = game.SitIn
 	default:
 		return fmt.Errorf("invalid action: %s", data.Action)
 	}
