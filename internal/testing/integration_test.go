@@ -53,15 +53,16 @@ func (s *TestServer) Stop() {
 
 // TestClient wraps a client with action injection and event-driven synchronization
 type TestClient struct {
-	client       *client.Client
-	tui          *tui.TUIModel
-	actionQueue  []string
-	actionIndex  int
-	eventChan    chan string   // Single event channel for this client
-	handStarted  chan struct{} // Signal when hand starts
-	handEnded    chan struct{} // Signal when hand ends
-	allowTimeout bool          // Allow timeout instead of auto-fold
-	t            *testing.T    // For test logging
+	client        *client.Client
+	tui           *tui.TUIModel
+	actionQueue   []string
+	actionIndex   int
+	eventChan     chan string   // Single event channel for this client
+	handStarted   chan struct{} // Signal when hand starts
+	handEnded     chan struct{} // Signal when hand ends
+	streetChanged chan struct{} // Signal when street changes
+	allowTimeout  bool          // Allow timeout instead of auto-fold
+	t             *testing.T    // For test logging
 }
 
 func (c *TestClient) QueueActions(actions []string) {
@@ -113,6 +114,12 @@ func (c *TestClient) StartActionScript() {
 				// Signal hand ended
 				select {
 				case c.handEnded <- struct{}{}:
+				default:
+				}
+			case "street_change":
+				// Signal street changed
+				select {
+				case c.streetChanged <- struct{}{}:
 				default:
 				}
 			case "action_required":
@@ -271,12 +278,13 @@ func connectTestClient(t *testing.T, serverURL string, tuiModel *tui.TUIModel) *
 
 	// Create test client with event channels
 	testClient := &TestClient{
-		client:      wsClient,
-		tui:         tuiModel,
-		eventChan:   make(chan string, 100), // Large buffer to prevent blocking
-		handStarted: make(chan struct{}, 1), // Buffered to prevent blocking
-		handEnded:   make(chan struct{}, 1), // Buffered to prevent blocking
-		t:           t,
+		client:        wsClient,
+		tui:           tuiModel,
+		eventChan:     make(chan string, 100), // Large buffer to prevent blocking
+		handStarted:   make(chan struct{}, 1), // Buffered to prevent blocking
+		handEnded:     make(chan struct{}, 1), // Buffered to prevent blocking
+		streetChanged: make(chan struct{}, 1), // Buffered to prevent blocking
+		t:             t,
 	}
 
 	// Set up TUI bridge and command handler
@@ -322,6 +330,14 @@ func (c *TestClient) waitForEvent(eventType string) bool {
 			return true
 		case <-timeout:
 			c.t.Logf("TIMEOUT: No hand_end event received within 10 seconds")
+			return false
+		}
+	case "street_change":
+		select {
+		case <-c.streetChanged:
+			return true
+		case <-timeout:
+			c.t.Logf("TIMEOUT: No street_change event received within 10 seconds")
 			return false
 		}
 	default:
@@ -602,8 +618,17 @@ func runPokerScenario(t *testing.T, scenario TestScenario) {
 	// Wait for hand to start before beginning action script
 	waitForHandStart(t, testClient)
 
-	// 6. Wait for hand to complete - now event-driven without timeouts
-	waitForHandComplete(t, testClient)
+	// 6. Wait for appropriate game state based on test type
+	if len(scenario.ExpectedSidebar) > 0 {
+		// For sidebar tests, wait for flop (when board is visible) instead of hand completion
+		if testClient.waitForEvent("street_change") {
+			// Give a brief moment for UI to update after street change
+			time.Sleep(100 * time.Millisecond)
+		}
+	} else {
+		// For non-sidebar tests, wait for hand to complete
+		waitForHandComplete(t, testClient)
+	}
 
 	// 7. Get captured log and assert
 	capturedLog := tuiModel.GetCapturedLog()
@@ -652,7 +677,14 @@ func runSittingOutScenario(t *testing.T, scenario TestScenario) {
 
 	// 1. Start server on random port with shorter timeout for faster tests
 	port := findFreePort(t)
-	server := startTestServerWithTimeout(t, port, scenario.Seed, 3, 5) // 5 second timeout
+
+	// Use different bot counts based on scenario
+	botCount := 3 // Default for most scenarios
+	if scenario.Name == "game pauses when all humans sitting out" {
+		botCount = 1 // Use 1 bot so game can start, then pause when human sits out
+	}
+
+	server := startTestServerWithTimeout(t, port, scenario.Seed, botCount, 1) // 1 second timeout for fast tests
 	defer server.Stop()
 
 	// 2. Create TUI in test mode
@@ -677,7 +709,7 @@ func runSittingOutScenario(t *testing.T, scenario TestScenario) {
 	waitForHandStart(t, testClient)
 
 	// 6. For timeout tests, wait longer to allow timeout + potential recovery
-	time.Sleep(12 * time.Second) // Wait for timeout (5s) + some buffer + potential /back command
+	time.Sleep(3 * time.Second) // Wait for timeout (1s) + some buffer + potential /back command
 
 	// 7. Get captured log and assert
 	capturedLog := tuiModel.GetCapturedLog()

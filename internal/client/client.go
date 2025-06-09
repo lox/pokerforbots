@@ -93,13 +93,13 @@ func (c *Client) Disconnect() error {
 		c.cancel()
 
 		c.mu.Lock()
-		defer c.mu.Unlock()
-
+		c.connected = false // Set this first to prevent new sends
 		if c.conn != nil {
 			_ = c.conn.Close() // Ignore close errors during shutdown
-			c.connected = false
 		}
+		c.mu.Unlock()
 
+		// Close channels after marking as disconnected
 		close(c.send)
 		close(c.receive)
 
@@ -117,6 +117,11 @@ func (c *Client) IsConnected() bool {
 
 // SendMessage sends a message to the server
 func (c *Client) SendMessage(msg *server.Message) error {
+	// Check if client is connected before attempting to send
+	if !c.IsConnected() {
+		return fmt.Errorf("client not connected")
+	}
+
 	select {
 	case c.send <- msg:
 		return nil

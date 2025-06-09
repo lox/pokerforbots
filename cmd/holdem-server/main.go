@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,6 +10,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/charmbracelet/log"
 	"github.com/lox/pokerforbots/internal/server"
+	"github.com/muesli/termenv"
 )
 
 var CLI struct {
@@ -21,6 +21,55 @@ var CLI struct {
 	Tables   int    `short:"t" long:"tables" help:"Number of tables to create (legacy mode)"`
 	Bots     int    `short:"b" long:"bots" help:"Number of bots to add to each table"`
 	Seed     int64  `short:"s" long:"seed" help:"Random seed for deterministic table IDs"`
+}
+
+// stripANSIWriter is a writer that strips ANSI color codes before writing to the underlying writer
+type stripANSIWriter struct {
+	writer *os.File
+}
+
+func (s *stripANSIWriter) Write(p []byte) (n int, err error) {
+	// Simple ANSI escape sequence regex pattern
+	// This strips color codes but keeps the basic text
+	stripped := make([]byte, 0, len(p))
+	inEscape := false
+	for i := 0; i < len(p); i++ {
+		if p[i] == '\x1b' && i+1 < len(p) && p[i+1] == '[' {
+			inEscape = true
+			i++ // Skip the '['
+			continue
+		}
+		if inEscape {
+			if (p[i] >= 'A' && p[i] <= 'Z') || (p[i] >= 'a' && p[i] <= 'z') {
+				inEscape = false
+			}
+			continue
+		}
+		stripped = append(stripped, p[i])
+	}
+	return s.writer.Write(stripped)
+}
+
+// multiTargetWriter writes to both terminal and file, with different processing
+type multiTargetWriter struct {
+	termWriter *os.File
+	fileWriter *stripANSIWriter
+}
+
+func (m *multiTargetWriter) Write(p []byte) (n int, err error) {
+	// Write to terminal with colors
+	_, err1 := m.termWriter.Write(p)
+	// Write to file without colors
+	_, err2 := m.fileWriter.Write(p)
+
+	// Return the length and any error
+	if err1 != nil {
+		return len(p), err1
+	}
+	if err2 != nil {
+		return len(p), err2
+	}
+	return len(p), nil
 }
 
 func main() {
@@ -81,11 +130,11 @@ func main() {
 		ctx.Exit(1)
 	}
 
-	// Setup logging
-	var logOutput io.Writer = os.Stderr
+	// Setup logging with colors for terminal and plain text for file
+	var logger *log.Logger
 
-	// If log file is specified, write to both stderr and file
 	if cfg.Server.LogFile != "" {
+		// Open log file
 		logFile, err := os.OpenFile(cfg.Server.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			fmt.Printf("Error opening log file: %v\n", err)
@@ -96,10 +145,24 @@ func main() {
 				fmt.Printf("Error closing log file: %v\n", err)
 			}
 		}()
-		logOutput = io.MultiWriter(os.Stderr, logFile)
+
+		// Create a writer that strips ANSI codes for the file
+		fileWriter := &stripANSIWriter{writer: logFile}
+
+		// Use MultiWriter to write to both stderr (with colors) and file (without colors)
+		dualWriter := &multiTargetWriter{
+			termWriter: os.Stderr,
+			fileWriter: fileWriter,
+		}
+		logger = log.New(dualWriter)
+		logger.SetColorProfile(termenv.TrueColor)
+	} else {
+		// Just use stderr with colors
+		logger = log.New(os.Stderr)
+		logger.SetColorProfile(termenv.TrueColor)
 	}
 
-	logger := log.New(logOutput)
+	// Set log level
 	switch cfg.Server.LogLevel {
 	case "debug":
 		logger.SetLevel(log.DebugLevel)

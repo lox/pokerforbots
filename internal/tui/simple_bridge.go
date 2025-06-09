@@ -361,6 +361,18 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		// Notify test callback if in test mode
 		tui.notifyEventCallback("player_timeout")
 	})
+
+	client.AddEventHandler("game_pause", func(msg *server.Message) {
+		var data server.GamePauseData
+		if err := json.Unmarshal(msg.Data, &data); err != nil {
+			return
+		}
+
+		tui.AddLogEntry(fmt.Sprintf("⏸️  Game paused: %s", data.Message))
+
+		// Notify test callback if in test mode
+		tui.notifyEventCallback("game_pause")
+	})
 }
 
 // StartCommandHandler starts the command handling loop for the TUI

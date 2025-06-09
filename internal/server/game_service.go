@@ -53,6 +53,8 @@ func (tes *TableEventSubscriber) OnEvent(event game.GameEvent) {
 		tes.handleStreetChange(e)
 	case game.HandEndEvent:
 		tes.handleHandEnd(e)
+	case game.GamePauseEvent:
+		tes.handleGamePause(e)
 	}
 }
 
@@ -161,6 +163,22 @@ func (tes *TableEventSubscriber) handleHandEnd(event game.HandEndEvent) {
 	msg, err := NewMessage("hand_end", data)
 	if err != nil {
 		tes.logger.Error("Failed to create hand end message", "error", err)
+		return
+	}
+
+	tes.server.BroadcastToTable(tes.table.ID, msg)
+}
+
+func (tes *TableEventSubscriber) handleGamePause(event game.GamePauseEvent) {
+	data := GamePauseData{
+		TableID: tes.table.ID,
+		Reason:  event.Reason,
+		Message: event.Message,
+	}
+
+	msg, err := NewMessage("game_pause", data)
+	if err != nil {
+		tes.logger.Error("Failed to create game pause message", "error", err)
 		return
 	}
 
@@ -412,6 +430,9 @@ func (gs *GameService) startTableGame(table *ServerTable) {
 		if !hasAvailableRemotePlayer {
 			if !table.waitingLogged {
 				table.logger.Info("No available remote players (all sitting out), pausing game")
+				// Publish game pause event to inform clients
+				pauseEvent := game.NewGamePauseEvent("all_humans_sitting_out", "No available remote players (all sitting out), pausing game")
+				table.engine.GetEventBus().Publish(pauseEvent)
 				table.waitingLogged = true
 			}
 			table.status = "waiting"

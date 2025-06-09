@@ -192,6 +192,12 @@ type PlayerTimeoutData struct {
 	Action         string `json:"action"` // The action taken due to timeout (fold/check)
 }
 
+type GamePauseData struct {
+	TableID string `json:"tableId"`
+	Reason  string `json:"reason"`
+	Message string `json:"message"`
+}
+
 // Helper functions to convert between internal types and message types
 
 func PlayerStateFromGame(p *game.Player, includeHoleCards bool) PlayerState {

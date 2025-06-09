@@ -116,6 +116,25 @@ func NewHandEndEvent(handID string, winners []WinnerInfo, potSize int, showdownT
 	}
 }
 
+// GamePauseEvent is published when the game is paused due to no available players
+type GamePauseEvent struct {
+	Reason    string
+	Message   string
+	timestamp time.Time
+}
+
+func (e GamePauseEvent) EventType() string    { return "game_pause" }
+func (e GamePauseEvent) Timestamp() time.Time { return e.timestamp }
+
+// NewGamePauseEvent creates a new game pause event
+func NewGamePauseEvent(reason string, message string) GamePauseEvent {
+	return GamePauseEvent{
+		Reason:    reason,
+		Message:   message,
+		timestamp: time.Now(),
+	}
+}
+
 // EventSubscriber can subscribe to game events
 type EventSubscriber interface {
 	OnEvent(event GameEvent)
