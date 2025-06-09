@@ -1,11 +1,11 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/coder/quartz"
 	"github.com/lox/pokerforbots/internal/game"
 )
 
@@ -17,10 +17,11 @@ type NetworkAgent struct {
 	logger         *log.Logger
 	decisionChan   chan game.Decision
 	timeoutSeconds int
+	clock          quartz.Clock
 }
 
 // NewNetworkAgent creates a new network agent for a remote player
-func NewNetworkAgent(playerName, tableID string, server *Server, logger *log.Logger, timeoutSeconds int) *NetworkAgent {
+func NewNetworkAgent(playerName, tableID string, server *Server, logger *log.Logger, timeoutSeconds int, clock quartz.Clock) *NetworkAgent {
 	return &NetworkAgent{
 		playerName:     playerName,
 		tableID:        tableID,
@@ -28,6 +29,7 @@ func NewNetworkAgent(playerName, tableID string, server *Server, logger *log.Log
 		logger:         logger.WithPrefix("network-agent").With("player", playerName),
 		decisionChan:   make(chan game.Decision, 1),
 		timeoutSeconds: timeoutSeconds,
+		clock:          clock,
 	}
 }
 
@@ -73,9 +75,14 @@ func (na *NetworkAgent) MakeDecision(tableState game.TableState, validActions []
 		}
 	}
 
-	// Wait for decision or timeout
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(na.timeoutSeconds)*time.Second)
-	defer cancel()
+	// Wait for decision or timeout using quartz clock
+	timeoutDuration := time.Duration(na.timeoutSeconds) * time.Second
+	timeoutFired := make(chan struct{})
+
+	timer := na.clock.AfterFunc(timeoutDuration, func() {
+		close(timeoutFired)
+	})
+	defer timer.Stop()
 
 	select {
 	case decision := <-na.decisionChan:
@@ -85,7 +92,7 @@ func (na *NetworkAgent) MakeDecision(tableState game.TableState, validActions []
 			"reasoning", decision.Reasoning)
 		return decision
 
-	case <-ctx.Done():
+	case <-timeoutFired:
 		na.logger.Warn("Decision timeout, putting player in sitting out state")
 
 		// Send timeout event to all players at the table
@@ -162,20 +169,22 @@ type NetworkAgentManager struct {
 	agents map[string]*NetworkAgent // playerName -> agent
 	server *Server
 	logger *log.Logger
+	clock  quartz.Clock
 }
 
 // NewNetworkAgentManager creates a new network agent manager
-func NewNetworkAgentManager(server *Server, logger *log.Logger) *NetworkAgentManager {
+func NewNetworkAgentManager(server *Server, logger *log.Logger, clock quartz.Clock) *NetworkAgentManager {
 	return &NetworkAgentManager{
 		agents: make(map[string]*NetworkAgent),
 		server: server,
 		logger: logger.WithPrefix("agent-manager"),
+		clock:  clock,
 	}
 }
 
 // CreateAgent creates a new network agent for a player
 func (nam *NetworkAgentManager) CreateAgent(playerName, tableID string, timeoutSeconds int) *NetworkAgent {
-	agent := NewNetworkAgent(playerName, tableID, nam.server, nam.logger, timeoutSeconds)
+	agent := NewNetworkAgent(playerName, tableID, nam.server, nam.logger, timeoutSeconds, nam.clock)
 	nam.agents[playerName] = agent
 	nam.logger.Info("Created network agent", "player", playerName, "table", tableID, "timeout", timeoutSeconds)
 	return agent

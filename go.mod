@@ -8,6 +8,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.5
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/log v0.4.2
+	github.com/coder/quartz v0.2.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/hcl/v2 v2.23.0
 	github.com/muesli/termenv v0.16.0

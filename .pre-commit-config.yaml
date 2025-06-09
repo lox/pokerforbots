@@ -24,21 +24,21 @@ repos:
         language: system
         types: [go]
 
-  # Go linting with local golangci-lint (warning mode until all issues fixed)
+  # Go linting with local golangci-lint
   - repo: local
     hooks:
       - id: golangci-lint
         name: golangci-lint
-        entry: ./bin/golangci-lint run --issues-exit-code=0
+        entry: ./bin/golangci-lint run
         language: system
         types: [go]
         pass_filenames: false
 
-  # Go tests (commented out for now - enable after fixing linting issues)
-  # - repo: https://github.com/dnephin/pre-commit-golang
-  #   rev: v0.5.1
-  #   hooks:
-  #     - id: go-unit-tests
+  #Go tests (commented out for now - enable after fixing linting issues)
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-unit-tests
 
   # General file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks

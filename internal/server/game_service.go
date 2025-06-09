@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/coder/quartz"
 	"github.com/lox/pokerforbots/internal/bot"
 	"github.com/lox/pokerforbots/internal/game"
 )
@@ -201,11 +202,12 @@ type GameService struct {
 	mu           sync.RWMutex
 	tableCounter int // For shorter table IDs
 	seed         int64
+	clock        quartz.Clock
 }
 
 // NewGameService creates a new game service
-func NewGameService(server *Server, logger *log.Logger, seed int64) *GameService {
-	agentManager := NewNetworkAgentManager(server, logger)
+func NewGameService(server *Server, logger *log.Logger, seed int64, clock quartz.Clock) *GameService {
+	agentManager := NewNetworkAgentManager(server, logger, clock)
 
 	gs := &GameService{
 		tables:       make(map[string]*ServerTable),
@@ -213,6 +215,7 @@ func NewGameService(server *Server, logger *log.Logger, seed int64) *GameService
 		agentManager: agentManager,
 		logger:       logger.WithPrefix("game-service"),
 		seed:         seed,
+		clock:        clock,
 	}
 
 	// Set up connection handlers

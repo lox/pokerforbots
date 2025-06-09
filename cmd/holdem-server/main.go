@@ -9,6 +9,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/charmbracelet/log"
+	"github.com/coder/quartz"
 	"github.com/lox/pokerforbots/internal/server"
 	"github.com/muesli/termenv"
 )
@@ -183,8 +184,8 @@ func main() {
 	// Create WebSocket server
 	wsServer := server.NewServer(cfg.GetServerAddress(), logger)
 
-	// Create game service
-	gameService := server.NewGameService(wsServer, logger, CLI.Seed)
+	// Create game service with real clock for production
+	gameService := server.NewGameService(wsServer, logger, CLI.Seed, quartz.NewReal())
 
 	// Set game service in server
 	wsServer.SetGameService(gameService)

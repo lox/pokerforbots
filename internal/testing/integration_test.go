@@ -10,6 +10,7 @@
 package testing
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -19,6 +20,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
+	"github.com/coder/quartz"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -62,6 +64,7 @@ type TestClient struct {
 	handEnded     chan struct{} // Signal when hand ends
 	streetChanged chan struct{} // Signal when street changes
 	playerTimeout chan struct{} // Signal when player times out
+	gamePause     chan struct{} // Signal when game is paused
 	allowTimeout  bool          // Allow timeout instead of auto-fold
 	t             *testing.T    // For test logging
 }
@@ -127,6 +130,12 @@ func (c *TestClient) StartActionScript() {
 				// Signal player timeout
 				select {
 				case c.playerTimeout <- struct{}{}:
+				default:
+				}
+			case "game_pause":
+				// Signal game pause
+				select {
+				case c.gamePause <- struct{}{}:
 				default:
 				}
 			case "action_required":
@@ -209,8 +218,8 @@ func startTestServer(t *testing.T, port int, seed int64, bots int) *TestServer {
 	// Create WebSocket server
 	wsServer := server.NewServer(cfg.GetServerAddress(), logger)
 
-	// Create game service
-	gameService := server.NewGameService(wsServer, logger, seed)
+	// Create game service with real clock
+	gameService := server.NewGameService(wsServer, logger, seed, quartz.NewReal())
 
 	// Set game service in server
 	wsServer.SetGameService(gameService)
@@ -238,6 +247,78 @@ func startTestServer(t *testing.T, port int, seed int64, bots int) *TestServer {
 		err := wsServer.Start()
 		if err != nil {
 			logger.Error("Server failed", "error", err)
+		}
+	}()
+
+	// Wait for server to be ready
+	serverURL := fmt.Sprintf("ws://127.0.0.1:%d", port)
+	waitForServerReady(t, serverURL, 5*time.Second)
+
+	return &TestServer{
+		wsServer:    wsServer,
+		gameService: gameService,
+		port:        port,
+	}
+}
+
+// startTestServerWithClock creates a test server with custom clock for time mocking
+func startTestServerWithClock(t *testing.T, port int, seed int64, bots int, clock quartz.Clock) *TestServer {
+	// Create server config
+	cfg := &server.ServerConfig{
+		Server: server.ServerSettings{
+			Address:  "127.0.0.1",
+			Port:     port,
+			LogLevel: "error", // Quiet logs during tests
+		},
+		Tables: []server.TableConfig{
+			{
+				Name:           "table1",
+				MaxPlayers:     6,
+				SmallBlind:     1,
+				BigBlind:       2,
+				BuyInMin:       100,
+				BuyInMax:       1000,
+				AutoStart:      true,
+				TimeoutSeconds: 1, // 1 second timeout for fast mock time tests
+			},
+		},
+	}
+
+	// Setup logger
+	logger := log.NewWithOptions(io.Discard, log.Options{Level: log.ErrorLevel})
+
+	// Create WebSocket server
+	wsServer := server.NewServer(cfg.GetServerAddress(), logger)
+
+	// Create game service with provided clock (real or mock)
+	gameService := server.NewGameService(wsServer, logger, seed, clock)
+
+	// Set game service in server
+	wsServer.SetGameService(gameService)
+
+	// Create tables from configuration
+	for _, tableConfig := range cfg.Tables {
+		table, err := gameService.CreateTable(
+			tableConfig.Name,
+			tableConfig.MaxPlayers,
+			tableConfig.SmallBlind,
+			tableConfig.BigBlind,
+			tableConfig.TimeoutSeconds,
+		)
+		require.NoError(t, err, "Failed to create table")
+
+		// Add bots if requested
+		if bots > 0 {
+			_, err := gameService.AddBots(table.ID, bots)
+			require.NoError(t, err, "Failed to add bots")
+		}
+	}
+
+	// Start server in background
+	go func() {
+		err := wsServer.Start()
+		if err != nil {
+			t.Logf("Server start failed: %v", err)
 		}
 	}()
 
@@ -292,6 +373,7 @@ func connectTestClient(t *testing.T, serverURL string, tuiModel *tui.TUIModel) *
 		handEnded:     make(chan struct{}, 1), // Buffered to prevent blocking
 		streetChanged: make(chan struct{}, 1), // Buffered to prevent blocking
 		playerTimeout: make(chan struct{}, 1), // Buffered to prevent blocking
+		gamePause:     make(chan struct{}, 1), // Buffered to prevent blocking
 		t:             t,
 	}
 
@@ -356,6 +438,14 @@ func (c *TestClient) waitForEvent(eventType string) bool {
 			c.t.Logf("TIMEOUT: No player_timeout event received within 2 seconds")
 			return false
 		}
+	case "game_pause":
+		select {
+		case <-c.gamePause:
+			return true
+		case <-timeout:
+			c.t.Logf("TIMEOUT: No game_pause event received within 2 seconds")
+			return false
+		}
 	default:
 		c.t.Logf("UNKNOWN EVENT TYPE: %s", eventType)
 		return false
@@ -381,6 +471,67 @@ func waitForHandStart(t *testing.T, testClient *TestClient) {
 		return // Hand started
 	}
 	t.Logf("Hand did not start")
+}
+
+func TestSittingOutWithMockTime(t *testing.T) {
+	t.Run("timeout puts player in sitting out state with instant mock time", func(t *testing.T) {
+		// Create mock clock
+		mockClock := quartz.NewMock(t)
+
+		logger := log.NewWithOptions(io.Discard, log.Options{Level: log.ErrorLevel})
+
+		// 1. Start server with mock clock
+		port := findFreePort(t)
+		server := startTestServerWithClock(t, port, 99999, 3, mockClock) // 3 bots
+		defer server.Stop()
+
+		// 2. Create TUI in test mode
+		tuiModel := tui.NewTUIModelWithOptions(logger, true)
+		require.True(t, tuiModel.IsTestMode())
+
+		// 3. Connect test client
+		serverURL := fmt.Sprintf("ws://127.0.0.1:%d", port)
+		testClient := connectTestClient(t, serverURL, tuiModel)
+		defer testClient.Disconnect()
+
+		// 4. Enable timeouts and start action script
+		testClient.EnableTimeouts() // Allow real timeout instead of auto-fold
+		testClient.StartActionScript()
+
+		// 5. Join table and wait for game to start
+		err := testClient.JoinTable("table1")
+		require.NoError(t, err, "Failed to join table")
+
+		// Wait for hand to start
+		waitForHandStart(t, testClient)
+
+		// Give a tiny bit of time for the action to be required
+		time.Sleep(50 * time.Millisecond)
+
+		// Advance mock clock to trigger timeout instantly!
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		mockClock.Advance(1 * time.Second).MustWait(ctx)
+
+		// Timeout should have fired instantly
+		require.True(t, testClient.waitForEvent("player_timeout"), "Player timeout should fire")
+
+		// Get captured log and assert timeout behavior
+		capturedLog := tuiModel.GetCapturedLog()
+		t.Logf("Mock Time Test - Captured %d log entries:", len(capturedLog))
+		for _, entry := range capturedLog {
+			t.Log(entry)
+		}
+
+		// Should have timeout messages
+		logText := strings.Join(capturedLog, " ")
+		assert.Contains(t, logText, "timed out", "Should contain timeout message")
+		assert.Contains(t, logText, "sit-out", "Should contain sit-out message")
+
+		// Success! Mock time worked - timeout was instant instead of 1 real second
+		t.Log("🎉 SUCCESS: Mock time made 1-second timeout instant!")
+	})
 }
 
 func TestBasicConnection(t *testing.T) {
@@ -423,6 +574,7 @@ func TestBasicConnection(t *testing.T) {
 			handEnded:     make(chan struct{}, 1),
 			streetChanged: make(chan struct{}, 1),
 			playerTimeout: make(chan struct{}, 1),
+			gamePause:     make(chan struct{}, 1),
 			t:             t,
 		}
 		tempClient.setupEventCallback()
@@ -730,6 +882,15 @@ func runSittingOutScenario(t *testing.T, scenario TestScenario) {
 		t.Logf("No timeout event received, test may need adjustment")
 	}
 
+	// 6b. For the "game pauses when all humans sitting out" test, also wait for game_pause event
+	if scenario.Name == "game pauses when all humans sitting out" {
+		if !testClient.waitForEvent("game_pause") {
+			t.Logf("No game_pause event received for pause test")
+		}
+		// Give a bit more time for the pause message to propagate to the UI
+		time.Sleep(100 * time.Millisecond)
+	}
+
 	// 7. Get captured log and assert
 	capturedLog := tuiModel.GetCapturedLog()
 	t.Logf("Sitting Out Scenario: %s", scenario.Name)
@@ -784,8 +945,8 @@ func startTestServerWithTimeout(t *testing.T, port int, seed int64, bots int, ti
 	// Create WebSocket server
 	wsServer := server.NewServer(cfg.GetServerAddress(), logger)
 
-	// Create game service
-	gameService := server.NewGameService(wsServer, logger, seed)
+	// Create game service with real clock (will be replaced with mock clock later)
+	gameService := server.NewGameService(wsServer, logger, seed, quartz.NewReal())
 
 	// Set game service in server
 	wsServer.SetGameService(gameService)
