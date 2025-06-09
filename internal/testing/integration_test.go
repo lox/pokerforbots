@@ -61,6 +61,7 @@ type TestClient struct {
 	handStarted   chan struct{} // Signal when hand starts
 	handEnded     chan struct{} // Signal when hand ends
 	streetChanged chan struct{} // Signal when street changes
+	playerTimeout chan struct{} // Signal when player times out
 	allowTimeout  bool          // Allow timeout instead of auto-fold
 	t             *testing.T    // For test logging
 }
@@ -120,6 +121,12 @@ func (c *TestClient) StartActionScript() {
 				// Signal street changed
 				select {
 				case c.streetChanged <- struct{}{}:
+				default:
+				}
+			case "player_timeout":
+				// Signal player timeout
+				select {
+				case c.playerTimeout <- struct{}{}:
 				default:
 				}
 			case "action_required":
@@ -284,6 +291,7 @@ func connectTestClient(t *testing.T, serverURL string, tuiModel *tui.TUIModel) *
 		handStarted:   make(chan struct{}, 1), // Buffered to prevent blocking
 		handEnded:     make(chan struct{}, 1), // Buffered to prevent blocking
 		streetChanged: make(chan struct{}, 1), // Buffered to prevent blocking
+		playerTimeout: make(chan struct{}, 1), // Buffered to prevent blocking
 		t:             t,
 	}
 
@@ -313,7 +321,7 @@ func (c *TestClient) setupEventCallback() {
 
 // waitForEvent waits for a specific event, blocking until it arrives
 func (c *TestClient) waitForEvent(eventType string) bool {
-	timeout := time.After(10 * time.Second)
+	timeout := time.After(2 * time.Second)
 
 	switch eventType {
 	case "hand_start":
@@ -321,7 +329,7 @@ func (c *TestClient) waitForEvent(eventType string) bool {
 		case <-c.handStarted:
 			return true
 		case <-timeout:
-			c.t.Logf("TIMEOUT: No hand_start event received within 10 seconds")
+			c.t.Logf("TIMEOUT: No hand_start event received within 2 seconds")
 			return false
 		}
 	case "hand_end":
@@ -329,7 +337,7 @@ func (c *TestClient) waitForEvent(eventType string) bool {
 		case <-c.handEnded:
 			return true
 		case <-timeout:
-			c.t.Logf("TIMEOUT: No hand_end event received within 10 seconds")
+			c.t.Logf("TIMEOUT: No hand_end event received within 2 seconds")
 			return false
 		}
 	case "street_change":
@@ -337,7 +345,15 @@ func (c *TestClient) waitForEvent(eventType string) bool {
 		case <-c.streetChanged:
 			return true
 		case <-timeout:
-			c.t.Logf("TIMEOUT: No street_change event received within 10 seconds")
+			c.t.Logf("TIMEOUT: No street_change event received within 2 seconds")
+			return false
+		}
+	case "player_timeout":
+		select {
+		case <-c.playerTimeout:
+			return true
+		case <-timeout:
+			c.t.Logf("TIMEOUT: No player_timeout event received within 2 seconds")
 			return false
 		}
 	default:
@@ -400,14 +416,17 @@ func TestBasicConnection(t *testing.T) {
 
 		// Create a temporary test client to wait for events
 		tempClient := &TestClient{
-			client:      wsClient,
-			tui:         tuiModel,
-			eventChan:   make(chan string, 100),
-			handStarted: make(chan struct{}, 1),
-			handEnded:   make(chan struct{}, 1),
-			t:           t,
+			client:        wsClient,
+			tui:           tuiModel,
+			eventChan:     make(chan string, 100),
+			handStarted:   make(chan struct{}, 1),
+			handEnded:     make(chan struct{}, 1),
+			streetChanged: make(chan struct{}, 1),
+			playerTimeout: make(chan struct{}, 1),
+			t:             t,
 		}
 		tempClient.setupEventCallback()
+		tempClient.StartActionScript() // Start processing events
 
 		// Wait for some game events
 		waitForHandStart(t, tempClient)
@@ -503,7 +522,7 @@ func TestPokerScenarios(t *testing.T) {
 		{
 			Name:          "sidebar shows street progression",
 			Seed:          33333,
-			PlayerActions: []string{"call", "check", "fold"},
+			PlayerActions: []string{"call", "call", "call"},
 			ExpectedSidebar: []string{
 				"Round:",            // Round progression shown
 				"Board:",            // Community cards
@@ -620,11 +639,9 @@ func runPokerScenario(t *testing.T, scenario TestScenario) {
 
 	// 6. Wait for appropriate game state based on test type
 	if len(scenario.ExpectedSidebar) > 0 {
-		// For sidebar tests, wait for flop (when board is visible) instead of hand completion
-		if testClient.waitForEvent("street_change") {
-			// Give a brief moment for UI to update after street change
-			time.Sleep(100 * time.Millisecond)
-		}
+		// For sidebar tests, wait for street change to ensure board is visible
+		// First street change is Pre-flop to Flop
+		testClient.waitForEvent("street_change")
 	} else {
 		// For non-sidebar tests, wait for hand to complete
 		waitForHandComplete(t, testClient)
@@ -708,8 +725,10 @@ func runSittingOutScenario(t *testing.T, scenario TestScenario) {
 	// Wait for hand to start
 	waitForHandStart(t, testClient)
 
-	// 6. For timeout tests, wait longer to allow timeout + potential recovery
-	time.Sleep(3 * time.Second) // Wait for timeout (1s) + some buffer + potential /back command
+	// 6. Wait for player timeout event instead of sleeping
+	if !testClient.waitForEvent("player_timeout") {
+		t.Logf("No timeout event received, test may need adjustment")
+	}
 
 	// 7. Get captured log and assert
 	capturedLog := tuiModel.GetCapturedLog()

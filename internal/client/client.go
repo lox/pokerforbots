@@ -158,6 +158,11 @@ func (c *Client) readPump() {
 
 		c.logger.Debug("Received message", "type", msg.Type)
 
+		// Check if we're still connected before sending
+		if !c.IsConnected() {
+			return
+		}
+
 		select {
 		case c.receive <- &msg:
 		case <-c.ctx.Done():
