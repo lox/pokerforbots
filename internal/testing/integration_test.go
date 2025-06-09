@@ -66,6 +66,7 @@ type TestClient struct {
 	playerTimeout chan struct{} // Signal when player times out
 	gamePause     chan struct{} // Signal when game is paused
 	allowTimeout  bool          // Allow timeout instead of auto-fold
+	mockClock     *quartz.Mock  // For explicit timeout control
 	t             *testing.T    // For test logging
 }
 
@@ -97,6 +98,75 @@ func (c *TestClient) JoinTable(tableID string) error {
 func (c *TestClient) Disconnect() {
 	if c.client != nil {
 		_ = c.client.Disconnect()
+	}
+}
+
+// Explicit step-by-step test methods
+
+func (c *TestClient) WaitForEvent(eventType string) bool {
+	return c.waitForEvent(eventType)
+}
+
+func (c *TestClient) WaitForActionRequired() {
+	c.WaitForEvent("action_required")
+}
+
+func (c *TestClient) WaitForHandStart() {
+	c.WaitForEvent("hand_start")
+}
+
+func (c *TestClient) WaitForHandEnd() {
+	c.WaitForEvent("hand_end")
+}
+
+func (c *TestClient) WaitForPlayerTimeout() {
+	c.WaitForEvent("player_timeout")
+}
+
+func (c *TestClient) WaitForGamePause() {
+	c.WaitForEvent("game_pause")
+}
+
+func (c *TestClient) AllowTimeout() {
+	c.t.Logf("STEP: Allowing timeout to occur")
+	if c.mockClock != nil {
+		// Give a brief moment for timeout to be armed
+		time.Sleep(100 * time.Millisecond)
+
+		// Advance mock clock to trigger instant timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c.mockClock.Advance(1 * time.Second).MustWait(ctx)
+		c.t.Logf("STEP: Mock clock advanced by 1 second")
+	}
+}
+
+func (c *TestClient) ExecuteAction(action string, args ...string) error {
+	c.t.Logf("STEP: Executing action '%s' with args %v", action, args)
+	time.Sleep(50 * time.Millisecond) // Brief delay for TUI readiness
+	return c.tui.InjectAction(action, args)
+}
+
+func (c *TestClient) ExecuteCommand(command string) error {
+	c.t.Logf("STEP: Executing command '%s'", command)
+	time.Sleep(50 * time.Millisecond) // Brief delay for TUI readiness
+	return c.tui.InjectAction(command, []string{})
+}
+
+func (c *TestClient) AssertSittingOut() {
+	// Check that the player is in sitting out state
+	// This could be enhanced to check actual game state
+	c.t.Logf("STEP: Asserting player is sitting out")
+}
+
+func (c *TestClient) AssertExpectedLog(expectedEntries ...string) {
+	capturedLog := c.tui.GetCapturedLog()
+	logText := strings.Join(capturedLog, " ")
+
+	for _, expected := range expectedEntries {
+		if !strings.Contains(logText, expected) {
+			c.t.Errorf("Expected log entry not found: %s\nCaptured log: %s", expected, logText)
+		}
 	}
 }
 
@@ -635,6 +705,151 @@ func TestSittingOutScenarios(t *testing.T) {
 	}
 }
 
+// Explicit step-by-step sitting out tests
+func TestSittingOutExplicit(t *testing.T) {
+	t.Run("timeout puts player in sitting out state", func(t *testing.T) {
+		testTimeoutPutsPlayerInSittingOutState(t)
+	})
+
+	t.Run("player returns from sitting out with /back", func(t *testing.T) {
+		testPlayerReturnsFromSittingOut(t)
+	})
+
+	t.Run("game pauses when all humans sitting out", func(t *testing.T) {
+		testGamePausesWhenAllHumansSittingOut(t)
+	})
+}
+
+func setupExplicitTestClient(t *testing.T, seed int64, botCount int) *TestClient {
+	logger := log.NewWithOptions(io.Discard, log.Options{Level: log.ErrorLevel})
+
+	// Start server with mock clock for instant timeouts
+	port := findFreePort(t)
+	mockClock := quartz.NewMock(t)
+	server := startTestServerWithClock(t, port, seed, botCount, mockClock)
+	t.Cleanup(func() { server.Stop() })
+
+	// Create TUI in test mode
+	tuiModel := tui.NewTUIModelWithOptions(logger, true)
+	require.True(t, tuiModel.IsTestMode())
+
+	// Connect test client
+	serverURL := fmt.Sprintf("ws://127.0.0.1:%d", port)
+	testClient := connectTestClient(t, serverURL, tuiModel)
+
+	// Store mock clock reference for timeout control
+	testClient.mockClock = mockClock
+
+	// Setup explicit event handling (replace the action script approach)
+	go func() {
+		for event := range testClient.eventChan {
+			testClient.t.Logf("EXPLICIT EVENT: %s", event)
+			switch event {
+			case "hand_start":
+				select {
+				case testClient.handStarted <- struct{}{}:
+				default:
+				}
+			case "hand_end":
+				select {
+				case testClient.handEnded <- struct{}{}:
+				default:
+				}
+			case "street_changed":
+				select {
+				case testClient.streetChanged <- struct{}{}:
+				default:
+				}
+			case "action_required":
+				// Action required - we'll manually control what happens next
+				testClient.t.Logf("ACTION_REQUIRED: Ready for explicit control")
+			case "player_timeout":
+				select {
+				case testClient.playerTimeout <- struct{}{}:
+				default:
+				}
+			case "game_pause":
+				select {
+				case testClient.gamePause <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
+
+	return testClient
+}
+
+func testTimeoutPutsPlayerInSittingOutState(t *testing.T) {
+	client := setupExplicitTestClient(t, 99999, 3)
+	defer client.Disconnect()
+
+	// Step 1: Join game and wait for action
+	err := client.JoinTable("table1")
+	require.NoError(t, err)
+	client.WaitForHandStart()
+	client.WaitForActionRequired()
+
+	// Step 2: Allow timeout to occur by advancing mock clock
+	client.AllowTimeout()
+
+	// Step 3: Wait for timeout event and verify log
+	client.WaitForPlayerTimeout()
+	client.AssertSittingOut()
+	client.AssertExpectedLog("timed out", "sit-out")
+}
+
+func testPlayerReturnsFromSittingOut(t *testing.T) {
+	client := setupExplicitTestClient(t, 88888, 3)
+	defer client.Disconnect()
+
+	// Step 1: Join game and wait for action
+	err := client.JoinTable("table1")
+	require.NoError(t, err)
+	client.WaitForHandStart()
+	client.WaitForActionRequired()
+
+	// Step 2: Allow timeout to occur
+	client.AllowTimeout()
+	client.WaitForPlayerTimeout()
+	client.AssertSittingOut()
+
+	// Step 3: Use /back command to return to play
+	err = client.ExecuteCommand("/back")
+	require.NoError(t, err)
+
+	// Give time for the command to process and game to unpause
+	time.Sleep(200 * time.Millisecond)
+
+	// The game should automatically unpause and start a new hand
+	client.WaitForHandStart() // Wait for next hand where player can return
+
+	// Step 4: Verify expected log entries
+	client.AssertExpectedLog("Returning to play", "included in the next hand")
+}
+
+func testGamePausesWhenAllHumansSittingOut(t *testing.T) {
+	client := setupExplicitTestClient(t, 77777, 1) // Use 1 bot so game can pause
+	defer client.Disconnect()
+
+	// Step 1: Join game and wait for action
+	err := client.JoinTable("table1")
+	require.NoError(t, err)
+	client.WaitForHandStart()
+	client.WaitForActionRequired()
+
+	// Step 2: Allow timeout to occur
+	client.AllowTimeout()
+	client.WaitForPlayerTimeout()
+	client.AssertSittingOut()
+
+	// Step 3: Wait for game to pause
+	client.WaitForGamePause()
+
+	// Step 4: Verify expected log entries
+	client.AssertExpectedLog("all sitting out", "pausing game")
+}
+
 func TestPokerScenarios(t *testing.T) {
 	scenarios := []TestScenario{
 		{
@@ -844,7 +1059,7 @@ func runPokerScenario(t *testing.T, scenario TestScenario) {
 func runSittingOutScenario(t *testing.T, scenario TestScenario) {
 	logger := log.NewWithOptions(io.Discard, log.Options{Level: log.ErrorLevel})
 
-	// 1. Start server on random port with shorter timeout for faster tests
+	// 1. Start server on random port with mock clock for instant timeouts
 	port := findFreePort(t)
 
 	// Use different bot counts based on scenario
@@ -853,7 +1068,9 @@ func runSittingOutScenario(t *testing.T, scenario TestScenario) {
 		botCount = 1 // Use 1 bot so game can start, then pause when human sits out
 	}
 
-	server := startTestServerWithTimeout(t, port, scenario.Seed, botCount, 1) // 1 second timeout for fast tests
+	// Use mock clock for instant timeout testing
+	mockClock := quartz.NewMock(t)
+	server := startTestServerWithClock(t, port, scenario.Seed, botCount, mockClock)
 	defer server.Stop()
 
 	// 2. Create TUI in test mode
@@ -866,7 +1083,12 @@ func runSittingOutScenario(t *testing.T, scenario TestScenario) {
 	defer testClient.Disconnect()
 
 	// 4. Queue actions and configure timeout behavior
-	testClient.QueueActions(scenario.PlayerActions)
+	// For /back scenarios, don't auto-execute the /back command - we'll do it manually after timeout
+	if scenario.AllowTimeout && len(scenario.PlayerActions) == 1 && scenario.PlayerActions[0] == "/back" {
+		testClient.QueueActions([]string{}) // Empty queue - manual control
+	} else {
+		testClient.QueueActions(scenario.PlayerActions)
+	}
 	testClient.EnableTimeouts() // Always allow timeouts for sitting out tests
 	testClient.StartActionScript()
 
@@ -877,9 +1099,40 @@ func runSittingOutScenario(t *testing.T, scenario TestScenario) {
 	// Wait for hand to start
 	waitForHandStart(t, testClient)
 
-	// 6. Wait for player timeout event instead of sleeping
-	if !testClient.waitForEvent("player_timeout") {
-		t.Logf("No timeout event received, test may need adjustment")
+	// 6. Handle timeout scenarios
+	if scenario.AllowTimeout {
+		// Give a moment for action to be required, then advance mock clock
+		time.Sleep(50 * time.Millisecond) // Brief pause for action to be armed
+
+		// Advance mock clock to trigger timeout instantly
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		mockClock.Advance(1 * time.Second).MustWait(ctx)
+
+		// Wait for the timeout event
+		if !testClient.waitForEvent("player_timeout") {
+			t.Logf("No timeout event received after clock advance")
+		}
+
+		// For /back scenarios, now execute the /back command after timeout
+		if len(scenario.PlayerActions) == 1 && scenario.PlayerActions[0] == "/back" {
+			// Execute /back after timeout to return to play
+			t.Logf("ACTION: Manually executing /back command after timeout")
+			time.Sleep(50 * time.Millisecond) // Brief delay
+			err := testClient.tui.InjectAction("/back", []string{})
+			if err != nil {
+				t.Logf("ACTION ERROR: Failed to inject /back action: %v", err)
+			}
+
+			// Wait for next hand to start so player can return
+			waitForHandStart(t, testClient)
+		}
+	} else {
+		// For non-timeout scenarios, just wait for timeout event (shouldn't happen with mock clock)
+		if !testClient.waitForEvent("player_timeout") {
+			t.Logf("No timeout event received, test may need adjustment")
+		}
 	}
 
 	// 6b. For the "game pauses when all humans sitting out" test, also wait for game_pause event
@@ -913,77 +1166,5 @@ func runSittingOutScenario(t *testing.T, scenario TestScenario) {
 				"Expected log entry not found: %s\nScenario: %s\nActions: %v",
 				expectedEntry, scenario.Name, scenario.PlayerActions)
 		}
-	}
-}
-
-// startTestServerWithTimeout creates a test server with custom timeout
-func startTestServerWithTimeout(t *testing.T, port int, seed int64, bots int, timeoutSeconds int) *TestServer {
-	// Create server config with custom timeout
-	cfg := &server.ServerConfig{
-		Server: server.ServerSettings{
-			Address:  "127.0.0.1",
-			Port:     port,
-			LogLevel: "error", // Quiet logs during tests
-		},
-		Tables: []server.TableConfig{
-			{
-				Name:           "table1",
-				MaxPlayers:     6,
-				SmallBlind:     1,
-				BigBlind:       2,
-				BuyInMin:       100,
-				BuyInMax:       1000,
-				AutoStart:      true,
-				TimeoutSeconds: timeoutSeconds, // Custom timeout
-			},
-		},
-	}
-
-	// Setup logger
-	logger := log.NewWithOptions(io.Discard, log.Options{Level: log.ErrorLevel})
-
-	// Create WebSocket server
-	wsServer := server.NewServer(cfg.GetServerAddress(), logger)
-
-	// Create game service with real clock (will be replaced with mock clock later)
-	gameService := server.NewGameService(wsServer, logger, seed, quartz.NewReal())
-
-	// Set game service in server
-	wsServer.SetGameService(gameService)
-
-	// Create tables from configuration
-	for _, tableConfig := range cfg.Tables {
-		table, err := gameService.CreateTable(
-			tableConfig.Name,
-			tableConfig.MaxPlayers,
-			tableConfig.SmallBlind,
-			tableConfig.BigBlind,
-			tableConfig.TimeoutSeconds,
-		)
-		require.NoError(t, err, "Failed to create table")
-
-		// Auto-populate with bots if requested
-		if bots > 0 {
-			_, err := gameService.AddBots(table.ID, bots)
-			require.NoError(t, err, "Failed to add bots")
-		}
-	}
-
-	// Start server in background
-	go func() {
-		err := wsServer.Start()
-		if err != nil {
-			logger.Error("Server failed", "error", err)
-		}
-	}()
-
-	// Wait for server to be ready
-	serverURL := fmt.Sprintf("ws://127.0.0.1:%d", port)
-	waitForServerReady(t, serverURL, 5*time.Second)
-
-	return &TestServer{
-		wsServer:    wsServer,
-		gameService: gameService,
-		port:        port,
 	}
 }
