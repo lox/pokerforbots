@@ -419,9 +419,6 @@ func (gs *GameService) startTableGame(table *ServerTable) {
 		}
 
 		table.logger.Info("Hand completed", "winner", result.Winner.Name, "pot", result.PotSize)
-
-		// Small delay between hands
-		time.Sleep(2 * time.Second)
 	}
 
 	table.status = "finished"
