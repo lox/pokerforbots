@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,6 +17,7 @@ var CLI struct {
 	Config   string `short:"c" long:"config" default:"holdem-server.hcl" help:"Path to HCL configuration file"`
 	Addr     string `short:"a" long:"addr" help:"Server address to bind to (overrides config)"`
 	LogLevel string `short:"l" long:"log-level" help:"Log level (overrides config)"`
+	LogFile  string `short:"f" long:"log-file" help:"Log file path (overrides config)"`
 	Tables   int    `short:"t" long:"tables" help:"Number of tables to create (legacy mode)"`
 	Bots     int    `short:"b" long:"bots" help:"Number of bots to add to each table"`
 	Seed     int64  `short:"s" long:"seed" help:"Random seed for deterministic table IDs"`
@@ -44,6 +46,9 @@ func main() {
 	if CLI.LogLevel != "" {
 		cfg.Server.LogLevel = CLI.LogLevel
 	}
+	if CLI.LogFile != "" {
+		cfg.Server.LogFile = CLI.LogFile
+	}
 
 	// Handle legacy mode (command line tables)
 	if CLI.Tables > 0 {
@@ -58,13 +63,14 @@ func main() {
 		for i := 0; i < tables; i++ {
 			tableName := fmt.Sprintf("table%d", i+1)
 			cfg.Tables = append(cfg.Tables, server.TableConfig{
-				Name:       tableName,
-				MaxPlayers: 6,
-				SmallBlind: 1,
-				BigBlind:   2,
-				BuyInMin:   100,
-				BuyInMax:   1000,
-				AutoStart:  true,
+				Name:           tableName,
+				MaxPlayers:     6,
+				SmallBlind:     1,
+				BigBlind:       2,
+				BuyInMin:       100,
+				BuyInMax:       1000,
+				AutoStart:      true,
+				TimeoutSeconds: 60,
 			})
 		}
 	}
@@ -76,7 +82,24 @@ func main() {
 	}
 
 	// Setup logging
-	logger := log.New(os.Stderr)
+	var logOutput io.Writer = os.Stderr
+
+	// If log file is specified, write to both stderr and file
+	if cfg.Server.LogFile != "" {
+		logFile, err := os.OpenFile(cfg.Server.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			fmt.Printf("Error opening log file: %v\n", err)
+			ctx.Exit(1)
+		}
+		defer func() {
+			if err := logFile.Close(); err != nil {
+				fmt.Printf("Error closing log file: %v\n", err)
+			}
+		}()
+		logOutput = io.MultiWriter(os.Stderr, logFile)
+	}
+
+	logger := log.New(logOutput)
 	switch cfg.Server.LogLevel {
 	case "debug":
 		logger.SetLevel(log.DebugLevel)
