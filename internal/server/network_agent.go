@@ -18,6 +18,7 @@ type NetworkAgent struct {
 	decisionChan   chan game.Decision
 	timeoutSeconds int
 	clock          quartz.Clock
+	validActions   []game.ValidAction // Current valid actions for validation
 }
 
 // NewNetworkAgent creates a new network agent for a remote player
@@ -35,6 +36,9 @@ func NewNetworkAgent(playerName, tableID string, server *Server, logger *log.Log
 
 // MakeDecision implements the Agent interface by requesting a decision from the remote client
 func (na *NetworkAgent) MakeDecision(tableState game.TableState, validActions []game.ValidAction) game.Decision {
+	// Store valid actions for validation in HandleDecision
+	na.validActions = validActions
+
 	na.logger.Info("Requesting decision from remote player",
 		"currentBet", tableState.CurrentBet,
 		"pot", tableState.Pot,
@@ -144,6 +148,11 @@ func (na *NetworkAgent) HandleDecision(data PlayerDecisionData) error {
 		return fmt.Errorf("invalid action: %s", data.Action)
 	}
 
+	// Validate action against current valid actions (defense in depth)
+	if !na.isActionValid(action, data.Amount) {
+		return fmt.Errorf("action '%s' is not valid in current game state", data.Action)
+	}
+
 	decision := game.Decision{
 		Action:    action,
 		Amount:    data.Amount,
@@ -157,6 +166,23 @@ func (na *NetworkAgent) HandleDecision(data PlayerDecisionData) error {
 	default:
 		return fmt.Errorf("decision channel full or no pending request")
 	}
+}
+
+// isActionValid checks if the action is valid against stored validActions
+func (na *NetworkAgent) isActionValid(action game.Action, amount int) bool {
+	// Find matching valid action
+	for _, validAction := range na.validActions {
+		if validAction.Action == action {
+			// For non-raise actions, amount constraints are automatically satisfied
+			if action != game.Raise {
+				return true
+			}
+			// For raises, check amount is within valid range
+			return amount >= validAction.MinAmount && amount <= validAction.MaxAmount
+		}
+	}
+
+	return false
 }
 
 // SetTimeout sets the decision timeout for this agent

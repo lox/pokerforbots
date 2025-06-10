@@ -473,32 +473,104 @@ func (b *Bridge) handleGameAction(action string, args []string) {
 	b.tui.SetHumanTurn(false, nil)
 }
 
-// processUserAction converts user input to game decision
+// processUserAction converts user input to game decision with validation
 func processUserAction(action string, args []string, tui *TUIModel) game.Decision {
+	// First, parse the intended action
+	var intendedAction game.Action
+	var amount int
+	var reasoning string
+
 	switch action {
 	case "f", "fold":
-		return game.Decision{Action: game.Fold, Amount: 0, Reasoning: "Player folded"}
+		intendedAction = game.Fold
+		reasoning = "Player folded"
 	case "c", "call":
-		return game.Decision{Action: game.Call, Amount: 0, Reasoning: "Player called"}
+		intendedAction = game.Call
+		reasoning = "Player called"
 	case "k", "check":
-		return game.Decision{Action: game.Check, Amount: 0, Reasoning: "Player checked"}
+		intendedAction = game.Check
+		reasoning = "Player checked"
 	case "r", "raise":
 		if len(args) == 0 {
 			tui.AddLogEntry("Error: Specify raise amount: 'raise <amount>'")
 			return game.Decision{Action: game.Check, Amount: 0, Reasoning: "Invalid input - try again"}
 		}
-		amount, err := strconv.Atoi(args[0])
+		var err error
+		amount, err = strconv.Atoi(args[0])
 		if err != nil {
 			tui.AddLogEntry(fmt.Sprintf("Error: Invalid amount: %s", args[0]))
 			return game.Decision{Action: game.Check, Amount: 0, Reasoning: "Invalid input - try again"}
 		}
-		return game.Decision{Action: game.Raise, Amount: amount, Reasoning: "Player raised"}
+		intendedAction = game.Raise
+		reasoning = "Player raised"
 	case "a", "allin", "all":
-		return game.Decision{Action: game.AllIn, Amount: 0, Reasoning: "Player went all-in"}
+		intendedAction = game.AllIn
+		reasoning = "Player went all-in"
 	default:
 		tui.AddLogEntry(fmt.Sprintf("Unknown action: %s", action))
 		return game.Decision{Action: game.Check, Amount: 0, Reasoning: "Invalid input - try again"}
 	}
+
+	// Validate the intended action against valid actions
+	validAction := findValidAction(intendedAction, tui.validActions)
+	if validAction == nil {
+		// Action is not valid - show helpful error message
+		validActionsStr := formatValidActions(tui.validActions)
+		tui.AddLogEntry(fmt.Sprintf("Invalid action '%s'. Valid actions: %s", action, validActionsStr))
+		return game.Decision{Action: game.Check, Amount: 0, Reasoning: "Invalid input - try again"}
+	}
+
+	// For raises, validate the amount is within valid range
+	if intendedAction == game.Raise {
+		if amount < validAction.MinAmount || amount > validAction.MaxAmount {
+			tui.AddLogEntry(fmt.Sprintf("Invalid raise amount $%d. Must be between $%d and $%d",
+				amount, validAction.MinAmount, validAction.MaxAmount))
+			return game.Decision{Action: game.Check, Amount: 0, Reasoning: "Invalid input - try again"}
+		}
+	} else {
+		// For non-raise actions, use the valid amount from the server
+		amount = validAction.MinAmount
+	}
+
+	return game.Decision{Action: intendedAction, Amount: amount, Reasoning: reasoning}
+}
+
+// findValidAction searches for a valid action matching the requested action
+func findValidAction(action game.Action, validActions []game.ValidAction) *game.ValidAction {
+	for _, validAction := range validActions {
+		if validAction.Action == action {
+			return &validAction
+		}
+	}
+	return nil
+}
+
+// formatValidActions creates a human-readable string of valid actions
+func formatValidActions(validActions []game.ValidAction) string {
+	if len(validActions) == 0 {
+		return "none"
+	}
+
+	var actions []string
+	for _, va := range validActions {
+		switch va.Action {
+		case game.Fold:
+			actions = append(actions, "fold")
+		case game.Call:
+			actions = append(actions, fmt.Sprintf("call $%d", va.MinAmount))
+		case game.Check:
+			actions = append(actions, "check")
+		case game.Raise:
+			if va.MinAmount == va.MaxAmount {
+				actions = append(actions, fmt.Sprintf("raise $%d", va.MinAmount))
+			} else {
+				actions = append(actions, fmt.Sprintf("raise $%d-$%d", va.MinAmount, va.MaxAmount))
+			}
+		case game.AllIn:
+			actions = append(actions, fmt.Sprintf("allin $%d", va.MinAmount))
+		}
+	}
+	return strings.Join(actions, ", ")
 }
 
 // actionToNetworkString converts game.Action to the string format expected by the network agent

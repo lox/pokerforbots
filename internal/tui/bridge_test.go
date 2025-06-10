@@ -97,6 +97,16 @@ func TestProcessUserAction(t *testing.T) {
 	logger := log.NewWithOptions(io.Discard, log.Options{Level: log.ErrorLevel})
 	tui := NewTUIModelWithOptions(logger, true)
 
+	// Set up comprehensive valid actions for testing basic parsing
+	validActions := []game.ValidAction{
+		{Action: game.Fold, MinAmount: 0, MaxAmount: 0},
+		{Action: game.Call, MinAmount: 0, MaxAmount: 100},
+		{Action: game.Check, MinAmount: 0, MaxAmount: 0},
+		{Action: game.Raise, MinAmount: 1, MaxAmount: 1000},
+		{Action: game.AllIn, MinAmount: 0, MaxAmount: 1000},
+	}
+	tui.UpdateValidActions(validActions)
+
 	tests := []struct {
 		name           string
 		action         string
@@ -340,5 +350,43 @@ func TestBridgeEventHandling(t *testing.T) {
 			}
 		}
 		assert.True(t, found, "Expected hand completion entry in log")
+	})
+}
+
+func TestProcessUserActionWithValidation(t *testing.T) {
+	logger := log.NewWithOptions(io.Discard, log.Options{Level: log.ErrorLevel})
+	tui := NewTUIModelWithOptions(logger, true)
+
+	t.Run("respects valid actions when set", func(t *testing.T) {
+		// Setup: facing a bet, so only fold/call/raise are valid
+		validActions := []game.ValidAction{
+			{Action: game.Fold, MinAmount: 0, MaxAmount: 0},
+			{Action: game.Call, MinAmount: 10, MaxAmount: 10},
+			{Action: game.Raise, MinAmount: 20, MaxAmount: 200},
+		}
+		tui.UpdateValidActions(validActions)
+
+		// Valid actions should work
+		decision := processUserAction("call", []string{}, tui)
+		assert.Equal(t, game.Call, decision.Action, "Valid call should be accepted")
+		assert.Equal(t, 10, decision.Amount, "Should use amount from valid action")
+
+		decision = processUserAction("fold", []string{}, tui)
+		assert.Equal(t, game.Fold, decision.Action, "Valid fold should be accepted")
+
+		decision = processUserAction("raise", []string{"50"}, tui)
+		assert.Equal(t, game.Raise, decision.Action, "Valid raise should be accepted")
+		assert.Equal(t, 50, decision.Amount, "Should use specified amount")
+
+		// Invalid actions should be rejected
+		decision = processUserAction("check", []string{}, tui)
+		assert.Contains(t, decision.Reasoning, "Invalid input - try again", "Invalid check should be rejected")
+
+		// Invalid raise amounts should be rejected
+		decision = processUserAction("raise", []string{"5"}, tui)
+		assert.Contains(t, decision.Reasoning, "Invalid input - try again", "Raise below minimum should be rejected")
+
+		decision = processUserAction("raise", []string{"300"}, tui)
+		assert.Contains(t, decision.Reasoning, "Invalid input - try again", "Raise above maximum should be rejected")
 	})
 }

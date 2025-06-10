@@ -191,3 +191,53 @@ func TestEventDrivenTiming(t *testing.T) {
 		}
 	})
 }
+
+func TestNetworkAgentActionValidation(t *testing.T) {
+	t.Run("validates actions against stored valid actions", func(t *testing.T) {
+		// Mock NetworkAgent with stored valid actions
+		agent := &NetworkAgent{
+			validActions: []game.ValidAction{
+				{Action: game.Fold, MinAmount: 0, MaxAmount: 0},
+				{Action: game.Call, MinAmount: 10, MaxAmount: 10},
+				{Action: game.Raise, MinAmount: 20, MaxAmount: 200},
+			},
+		}
+
+		// Valid actions should pass validation
+		assert.True(t, agent.isActionValid(game.Fold, 0), "Fold should be valid")
+		assert.True(t, agent.isActionValid(game.Call, 10), "Call with correct amount should be valid")
+		assert.True(t, agent.isActionValid(game.Raise, 50), "Raise within range should be valid")
+		assert.True(t, agent.isActionValid(game.Raise, 20), "Raise at minimum should be valid")
+		assert.True(t, agent.isActionValid(game.Raise, 200), "Raise at maximum should be valid")
+
+		// Invalid actions should fail validation
+		assert.False(t, agent.isActionValid(game.Check, 0), "Check should be invalid when not in valid actions")
+		assert.False(t, agent.isActionValid(game.Raise, 5), "Raise below minimum should be invalid")
+		assert.False(t, agent.isActionValid(game.Raise, 300), "Raise above maximum should be invalid")
+	})
+
+	t.Run("validates different game contexts", func(t *testing.T) {
+		// Test no-bet scenario (check/fold valid)
+		agentNoBet := &NetworkAgent{
+			validActions: []game.ValidAction{
+				{Action: game.Check, MinAmount: 0, MaxAmount: 0},
+				{Action: game.Fold, MinAmount: 0, MaxAmount: 0},
+			},
+		}
+
+		assert.True(t, agentNoBet.isActionValid(game.Check, 0), "Check should be valid with no bet")
+		assert.True(t, agentNoBet.isActionValid(game.Fold, 0), "Fold should always be valid")
+		assert.False(t, agentNoBet.isActionValid(game.Call, 10), "Call should be invalid with no bet to call")
+
+		// Test all-in scenario
+		agentAllIn := &NetworkAgent{
+			validActions: []game.ValidAction{
+				{Action: game.Fold, MinAmount: 0, MaxAmount: 0},
+				{Action: game.AllIn, MinAmount: 150, MaxAmount: 150},
+			},
+		}
+
+		assert.True(t, agentAllIn.isActionValid(game.AllIn, 150), "All-in should be valid")
+		assert.False(t, agentAllIn.isActionValid(game.Raise, 50), "Regular raise should be invalid when only all-in allowed")
+	})
+}
