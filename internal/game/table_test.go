@@ -33,11 +33,11 @@ func TestNewTable(t *testing.T) {
 
 func TestAddPlayer(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	player1 := NewPlayer(1, "Alice", Human, 200)
 	player2 := NewPlayer(2, "Bob", AI, 200)
@@ -66,11 +66,11 @@ func TestAddPlayer(t *testing.T) {
 
 func TestTableFull(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
 		MaxSeats:   2, // Set to 2 seats so it's full after 2 players
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	player1 := NewPlayer(1, "Alice", Human, 200)
 	player2 := NewPlayer(2, "Bob", AI, 200)
@@ -87,11 +87,11 @@ func TestTableFull(t *testing.T) {
 
 func TestStartNewHand(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	// Add players
 	player1 := NewPlayer(1, "Alice", Human, 200)
@@ -129,11 +129,11 @@ func TestStartNewHand(t *testing.T) {
 
 func TestPositionsHeadsUp(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	player1 := NewPlayer(1, "Alice", Human, 200)
 	player2 := NewPlayer(2, "Bob", AI, 200)
@@ -225,11 +225,11 @@ func TestPlayerActions(t *testing.T) {
 
 func TestBettingRounds(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	player1 := NewPlayer(1, "Alice", Human, 200)
 	player2 := NewPlayer(2, "Bob", AI, 200)
@@ -278,11 +278,11 @@ func TestBettingRounds(t *testing.T) {
 
 func TestButtonRotation(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	// Add 3 players - AddPlayer will assign seats 1, 2, 3 automatically
 	for i := 1; i <= 3; i++ {
@@ -311,11 +311,11 @@ func TestButtonRotation(t *testing.T) {
 // Test pot distribution functionality
 func TestPotDistribution(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	// Add players
 	player1 := NewPlayer(1, "Alice", Human, 200)
@@ -377,11 +377,11 @@ func TestPotDistribution(t *testing.T) {
 // TestFindWinnerEvaluatesHandStrength tests that FindWinners correctly evaluates hand strength
 func TestFindWinnerEvaluatesHandStrength(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	// Add players - player1 will be first in ActivePlayers
 	player1 := NewPlayer(1, "WeakHand", Human, 200)
@@ -424,11 +424,11 @@ func TestFindWinnerEvaluatesHandStrength(t *testing.T) {
 // TestPotAmountPreservedForSummary tests that pot amount is available for summary display
 func TestPotAmountPreservedForSummary(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	// Add players
 	player1 := NewPlayer(1, "Alice", Human, 200)
@@ -500,12 +500,12 @@ func TestPotAmountPreservedForSummary(t *testing.T) {
 func TestBettingRoundCompleteWhenAllCheck(t *testing.T) {
 	// This test reproduces the infinite checking loop bug
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	// Add 3 players to test checking around
 	player1 := NewPlayer(1, "Alice", AI, 200)
@@ -602,11 +602,11 @@ func TestBettingRoundCompleteWhenAllCheck(t *testing.T) {
 func TestPostFlopCheckingRoundBug(t *testing.T) {
 	// Test the post-flop scenario where CurrentBet = 0 and everyone checks
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	// Add 3 players
 	player1 := NewPlayer(1, "Alice", AI, 200)
@@ -692,11 +692,11 @@ func TestPostFlopCheckingRoundBug(t *testing.T) {
 func TestBettingRoundPlayerActionOrder(t *testing.T) {
 	// Test that prevents players from acting twice in same round unless responding to raise
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	// Add 4 players to test the scenario from the bug report
 	player1 := NewPlayer(1, "Player1", AI, 200)
@@ -799,11 +799,11 @@ func TestBettingRoundPlayerActionOrder(t *testing.T) {
 func TestBettingRoundRaiseResponse(t *testing.T) {
 	// Test that players who have acted CAN act again when facing a raise
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(123)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(123)), eventBus, TableConfig{
 		MaxSeats:   3,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	// Add 3 players for simpler scenario
 	player1 := NewPlayer(1, "SB", AI, 200)  // Small blind
@@ -873,11 +873,11 @@ func TestBettingRoundRaiseResponse(t *testing.T) {
 func TestPotAwardingBug(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	eventBus := NewEventBus()
-	table := NewTable(rng, TableConfig{
+	table := NewTable(rng, eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	// Add 6 players with 200 chips each
 	players := []*Player{
@@ -994,11 +994,11 @@ func TestPotAwardingBug(t *testing.T) {
 func TestChipConservation(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	eventBus := NewEventBus()
-	table := NewTable(rng, TableConfig{
+	table := NewTable(rng, eventBus, TableConfig{
 		MaxSeats:   3,
 		SmallBlind: 1,
 		BigBlind:   2,
-	}, eventBus)
+	})
 
 	// Add 3 players with 100 chips each
 	players := []*Player{

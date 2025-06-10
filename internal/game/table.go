@@ -114,7 +114,7 @@ type Table struct {
 }
 
 // NewTable creates a new poker table with custom configuration
-func NewTable(rng *rand.Rand, config TableConfig, eventBus EventBus) *Table {
+func NewTable(rng *rand.Rand, eventBus EventBus, config TableConfig) *Table {
 	if config.HandHistoryWriter == nil {
 		config.HandHistoryWriter = &NoOpHandHistoryWriter{}
 	}

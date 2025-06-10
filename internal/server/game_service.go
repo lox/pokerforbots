@@ -234,12 +234,12 @@ func (gs *GameService) CreateTable(name string, maxPlayers, smallBlind, bigBlind
 	logger := gs.logger.WithPrefix("table").With("id", tableID)
 
 	eventBus := game.NewEventBus()
-	table := game.NewTable(rng, game.TableConfig{
+	table := game.NewTable(rng, eventBus, game.TableConfig{
 		MaxSeats:   maxPlayers,
 		SmallBlind: smallBlind,
 		BigBlind:   bigBlind,
 		Seed:       tableSeed,
-	}, eventBus)
+	})
 
 	engine := game.NewGameEngine(table, logger)
 

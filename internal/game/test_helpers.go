@@ -63,7 +63,7 @@ func NewTestTable(opts ...TestTableOption) *Table {
 	}
 
 	rng := rand.New(rand.NewSource(builder.seed))
-	table := NewTable(rng, builder.config, builder.eventBus)
+	table := NewTable(rng, builder.eventBus, builder.config)
 
 	// Add players if specified
 	for i, name := range builder.players {

@@ -14,12 +14,12 @@ import (
 // TestSixMaxPositions tests that we properly name and assign 6-max positions according to poker rules
 func TestSixMaxPositions(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	// Add 6 players to test full 6-max position assignment
 	players := []*Player{
@@ -79,12 +79,12 @@ func TestSixMaxPositions(t *testing.T) {
 // TestPostFlopActionOrder tests that post-flop action starts with first active seat left of button
 func TestPostFlopActionOrder(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	// Add 4 players to test action order
 	alice := NewPlayer(1, "Alice", AI, 200)
@@ -170,12 +170,12 @@ func TestMinimumRaiseRules(t *testing.T) {
 	// Test that minimum raise follows Texas Hold'em rules:
 	// The minimum raise must be at least the size of the last raise
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	// Add players
 	alice := NewPlayer(1, "Alice", AI, 1000)
@@ -259,12 +259,12 @@ func TestMinimumRaiseRules(t *testing.T) {
 func TestMinimumRaiseAcrossRounds(t *testing.T) {
 	// Test that minimum raise resets to big blind on new betting rounds
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	// Add players
 	alice := NewPlayer(1, "Alice", AI, 1000)
@@ -304,12 +304,12 @@ func TestMinimumRaiseAcrossRounds(t *testing.T) {
 // TestMinimumOpeningBet tests that minimum opening bet equals big blind
 func TestMinimumOpeningBet(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	alice := NewPlayer(1, "Alice", AI, 200)
 	bob := NewPlayer(2, "Bob", AI, 200)
@@ -390,12 +390,12 @@ func TestMinimumOpeningBet(t *testing.T) {
 func TestRaiseValidation(t *testing.T) {
 	// Test that invalid raises are rejected
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	// Add players
 	alice := NewPlayer(1, "Alice", AI, 1000)
@@ -426,12 +426,12 @@ func TestRaiseValidation(t *testing.T) {
 func TestBettingRoundComplete_WithRaises(t *testing.T) {
 	// Test that betting round completion works correctly with raises
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	// Add players
 	alice := NewPlayer(1, "Alice", AI, 1000)
@@ -494,12 +494,12 @@ func TestBettingRoundComplete_WithRaises(t *testing.T) {
 func TestAllInRaiseRules(t *testing.T) {
 	// Test that all-ins properly update minimum raise
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	// Add players with different stack sizes
 	alice := NewPlayer(1, "Alice", AI, 45)       // Small stack
@@ -551,12 +551,12 @@ func TestInsufficientRaiseAllIn(t *testing.T) {
 	// Test scenario where player doesn't have enough chips for minimum raise
 	// but goes all-in - this should not increase the minimum raise for others
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	// Add players
 	alice := NewPlayer(1, "Alice", AI, 1000)
@@ -602,12 +602,12 @@ func TestInsufficientRaiseAllIn(t *testing.T) {
 // TestAllInDoesNotReopenBetting tests that insufficient all-ins don't reopen betting
 func TestAllInDoesNotReopenBetting(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	// Create specific scenario:
 	// Alice raises, Bob calls, Charlie (short stack) goes all-in for less than minimum raise
@@ -713,12 +713,12 @@ func TestAllInDoesNotReopenBetting(t *testing.T) {
 func TestValidActionsMinRaise(t *testing.T) {
 	// Test that GetValidActions respects minimum raise rules
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	// Add players
 	alice := NewPlayer(1, "Alice", AI, 1000)
@@ -817,12 +817,12 @@ func TestValidActionsMinRaise(t *testing.T) {
 // TestShowdownLastAggressor tests that last aggressor shows first (docs/poker-rules.md §6)
 func TestShowdownLastAggressor(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	alice := NewPlayer(1, "Alice", AI, 200)
 	bob := NewPlayer(2, "Bob", AI, 200)
@@ -909,12 +909,12 @@ func TestShowdownLastAggressor(t *testing.T) {
 // TestOddChipDistribution tests that odd chips in split pots go to the player closest clockwise to button
 func TestOddChipDistribution(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	// Add 3 players so we can test odd chip distribution
 	alice := NewPlayer(1, "Alice", AI, 200)
@@ -1049,12 +1049,12 @@ func TestOddChipDistribution(t *testing.T) {
 // TestDealerButtonAdvancement tests button rotation (docs/poker-rules.md §8)
 func TestDealerButtonAdvancement(t *testing.T) {
 	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
+	table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 5,
 		BigBlind:   10,
 		Seed:       42,
-	}, eventBus)
+	})
 
 	// Add 3 players
 	alice := NewPlayer(1, "Alice", AI, 200)

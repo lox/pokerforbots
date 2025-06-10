@@ -117,12 +117,12 @@ func (s *Simulator) playHand(opponentType string, opponentMix []string, handSeed
 	// Setup 6-max table with controlled RNG
 	const STARTING_CHIPS = 200 // 100bb at $1/$2
 	eventBus := game.NewEventBus()
-	table := game.NewTable(handRng, game.TableConfig{
+	table := game.NewTable(handRng, eventBus, game.TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 1,
 		BigBlind:   2,
 		Seed:       handSeed,
-	}, eventBus)
+	})
 
 	// Add our bot at specified position
 	ourBot := game.NewPlayer(ourPosition, "OurBot", game.AI, STARTING_CHIPS)
