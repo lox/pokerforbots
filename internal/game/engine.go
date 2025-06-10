@@ -188,21 +188,12 @@ func (ge *GameEngine) PlayHand() (*HandResult, error) {
 			case PreFlop:
 				ge.table.DealFlop()
 				ge.logger.Debug("Dealt flop", "flop", ge.table.communityCards[:3])
-				// Publish street change event
-				streetEvent := NewStreetChangeEvent(ge.table.currentRound, ge.table.communityCards, ge.table.currentBet)
-				ge.table.GetEventBus().Publish(streetEvent)
 			case Flop:
 				ge.table.DealTurn()
 				ge.logger.Debug("Dealt turn", "turn", ge.table.communityCards[3])
-				// Publish street change event
-				streetEvent := NewStreetChangeEvent(ge.table.currentRound, ge.table.communityCards, ge.table.currentBet)
-				ge.table.GetEventBus().Publish(streetEvent)
 			case Turn:
 				ge.table.DealRiver()
 				ge.logger.Debug("Dealt river", "river", ge.table.communityCards[4])
-				// Publish street change event
-				streetEvent := NewStreetChangeEvent(ge.table.currentRound, ge.table.communityCards, ge.table.currentBet)
-				ge.table.GetEventBus().Publish(streetEvent)
 			case River:
 				// Go to showdown
 				ge.table.currentRound = Showdown

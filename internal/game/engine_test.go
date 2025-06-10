@@ -46,6 +46,25 @@ func (a *AlwaysFoldAgent) MakeDecision(tableState TableState, validActions []Val
 	return Decision{Action: Fold, Amount: 0, Reasoning: "always fold"}
 }
 
+// EventCapturingAgent captures all events published to verify no duplicates
+type EventCapturingAgent struct {
+	*AlwaysFoldAgent
+	events []GameEvent
+}
+
+func (e *EventCapturingAgent) CaptureEvent(event GameEvent) {
+	e.events = append(e.events, event)
+}
+
+// testEventSubscriber captures events for testing
+type testEventSubscriber struct {
+	events *[]GameEvent
+}
+
+func (t *testEventSubscriber) OnEvent(event GameEvent) {
+	*t.events = append(*t.events, event)
+}
+
 // AlwaysCallAgent always calls or checks
 type AlwaysCallAgent struct{}
 
@@ -765,5 +784,56 @@ func TestAnalyticalAgent_BettingAnalysis(t *testing.T) {
 	roundSummary := tableState.HandHistory.GetBettingRoundSummary(tableState.CurrentRound)
 	if roundSummary.NumRaises == 0 {
 		t.Error("Expected to detect the raise in betting summary")
+	}
+}
+
+func TestGameEngine_NoDuplicateStreetChangeEvents(t *testing.T) {
+	// Create a table with event capturing capability using test helper
+	_, engine := NewTestGameEngine(
+		WithPlayers("Alice", "Bob"),
+	)
+
+	// Create event capturer
+	capturedEvents := []GameEvent{}
+	eventSubscriber := &testEventSubscriber{events: &capturedEvents}
+	engine.table.GetEventBus().Subscribe(eventSubscriber)
+
+	// Add call agents that will let hand go to showdown
+	agents := map[string]Agent{
+		"Alice": &AlwaysCallAgent{},
+		"Bob":   &AlwaysCallAgent{},
+	}
+
+	for playerName, agent := range agents {
+		engine.AddAgent(playerName, agent)
+	}
+
+	// Start a hand that will go through multiple streets
+	engine.StartNewHand()
+	_, err := engine.PlayHand()
+	if err != nil {
+		t.Fatalf("Failed to play hand: %v", err)
+	}
+
+	// Count street change events
+	streetChangeCount := 0
+	for _, event := range capturedEvents {
+		if event.EventType() == EventTypeStreetChange {
+			streetChangeCount++
+		}
+	}
+
+	// We should have exactly 3 street change events: Flop, Turn, River
+	// (Not 6 due to duplicates)
+	if streetChangeCount != 3 {
+		t.Errorf("Expected exactly 3 street change events (Flop, Turn, River), got %d", streetChangeCount)
+
+		// Debug: log all street change events
+		for i, event := range capturedEvents {
+			if event.EventType() == EventTypeStreetChange {
+				streetEvent := event.(StreetChangeEvent)
+				t.Logf("Event %d: StreetChange to %s", i, streetEvent.Round)
+			}
+		}
 	}
 }
