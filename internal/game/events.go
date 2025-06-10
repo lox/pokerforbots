@@ -285,30 +285,30 @@ func (ef *EventFormatter) FormatStreetChange(event StreetChangeEvent) string {
 	case Flop:
 		if len(event.CommunityCards) >= 3 {
 			flop := event.CommunityCards[:3]
-			return fmt.Sprintf("*** FLOP *** [%s]", ef.formatCards(flop))
+			return fmt.Sprintf("\n\033[1m*** FLOP ***\033[0m %s", ef.formatCardsWithColor(flop))
 		}
-		return "*** FLOP ***"
+		return "\n\033[1m*** FLOP ***\033[0m"
 	case Turn:
 		if len(event.CommunityCards) >= 4 {
-			board := ef.formatCards(event.CommunityCards[:3])
-			turn := event.CommunityCards[3].String()
-			return fmt.Sprintf("*** TURN *** [%s] [%s]", board, turn)
+			board := ef.formatCardsWithColor(event.CommunityCards[:3])
+			turn := ef.formatCardWithColor(event.CommunityCards[3])
+			return fmt.Sprintf("\n\033[1m*** TURN ***\033[0m %s %s", board, turn)
 		}
-		return "*** TURN ***"
+		return "\n\033[1m*** TURN ***\033[0m"
 	case River:
 		if len(event.CommunityCards) >= 5 {
-			board := ef.formatCards(event.CommunityCards[:4])
-			river := event.CommunityCards[4].String()
-			return fmt.Sprintf("*** RIVER *** [%s] [%s]", board, river)
+			board := ef.formatCardsWithColor(event.CommunityCards[:4])
+			river := ef.formatCardWithColor(event.CommunityCards[4])
+			return fmt.Sprintf("\n\033[1m*** RIVER ***\033[0m %s %s", board, river)
 		}
-		return "*** RIVER ***"
+		return "\n\033[1m*** RIVER ***\033[0m"
 	case Showdown:
 		if len(event.CommunityCards) > 0 {
-			return fmt.Sprintf("*** SHOWDOWN *** [%s]", ef.formatCards(event.CommunityCards))
+			return fmt.Sprintf("\n\033[1m*** SHOWDOWN ***\033[0m %s", ef.formatCardsWithColor(event.CommunityCards))
 		}
-		return "*** SHOWDOWN ***"
+		return "\n\033[1m*** SHOWDOWN ***\033[0m"
 	default:
-		return fmt.Sprintf("*** %s ***", event.Round.String())
+		return fmt.Sprintf("\n\033[1m*** %s ***\033[0m", event.Round.String())
 	}
 }
 
@@ -353,7 +353,7 @@ func (ef *EventFormatter) FormatHoleCards(playerName string, cards []deck.Card) 
 		return "" // Hidden
 	}
 
-	return fmt.Sprintf("Dealt to %s: [%s]", playerName, ef.formatCards(cards))
+	return fmt.Sprintf("Dealt to %s: %s", playerName, ef.formatCardsWithColor(cards))
 }
 
 // formatCards formats a slice of cards with appropriate styling
@@ -368,6 +368,29 @@ func (ef *EventFormatter) formatCards(cards []deck.Card) string {
 	}
 
 	return strings.Join(formatted, " ")
+}
+
+// formatCardsWithColor formats a slice of cards with color styling
+func (ef *EventFormatter) formatCardsWithColor(cards []deck.Card) string {
+	if len(cards) == 0 {
+		return ""
+	}
+
+	var formatted []string
+	for _, card := range cards {
+		formatted = append(formatted, ef.formatCardWithColor(card))
+	}
+
+	return "[" + strings.Join(formatted, " ") + "]"
+}
+
+// formatCardWithColor formats a single card with color styling
+func (ef *EventFormatter) formatCardWithColor(card deck.Card) string {
+	if card.IsRed() {
+		return fmt.Sprintf("\033[31m%s\033[0m", card.String())
+	} else {
+		return fmt.Sprintf("\033[30m%s\033[0m", card.String())
+	}
 }
 
 // isBlindPosting determines if a call action is actually a blind posting

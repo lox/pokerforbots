@@ -209,7 +209,7 @@ func TestEventFormatter_FormatStreetChange(t *testing.T) {
 				CurrentBet:     0,
 				timestamp:      time.Now(),
 			},
-			expected: "*** FLOP *** [A♥ K♠ Q♦]",
+			expected: "\n\033[1m*** FLOP ***\033[0m [\033[31mA♥\033[0m \033[30mK♠\033[0m \033[31mQ♦\033[0m]",
 		},
 		{
 			name: "turn with cards",
@@ -219,7 +219,7 @@ func TestEventFormatter_FormatStreetChange(t *testing.T) {
 				CurrentBet:     0,
 				timestamp:      time.Now(),
 			},
-			expected: "*** TURN *** [A♥ K♠ Q♦] [J♣]",
+			expected: "\n\033[1m*** TURN ***\033[0m [\033[31mA♥\033[0m \033[30mK♠\033[0m \033[31mQ♦\033[0m] \033[30mJ♣\033[0m",
 		},
 		{
 			name: "river with cards",
@@ -229,7 +229,7 @@ func TestEventFormatter_FormatStreetChange(t *testing.T) {
 				CurrentBet:     0,
 				timestamp:      time.Now(),
 			},
-			expected: "*** RIVER *** [A♥ K♠ Q♦ J♣] [T♥]",
+			expected: "\n\033[1m*** RIVER ***\033[0m [\033[31mA♥\033[0m \033[30mK♠\033[0m \033[31mQ♦\033[0m \033[30mJ♣\033[0m] \033[31mT♥\033[0m",
 		},
 		{
 			name: "showdown with cards",
@@ -239,7 +239,7 @@ func TestEventFormatter_FormatStreetChange(t *testing.T) {
 				CurrentBet:     0,
 				timestamp:      time.Now(),
 			},
-			expected: "*** SHOWDOWN *** [A♥ K♠ Q♦ J♣ T♥]",
+			expected: "\n\033[1m*** SHOWDOWN ***\033[0m [\033[31mA♥\033[0m \033[30mK♠\033[0m \033[31mQ♦\033[0m \033[30mJ♣\033[0m \033[31mT♥\033[0m]",
 		},
 		{
 			name: "flop without cards",
@@ -249,7 +249,7 @@ func TestEventFormatter_FormatStreetChange(t *testing.T) {
 				CurrentBet:     0,
 				timestamp:      time.Now(),
 			},
-			expected: "*** FLOP ***",
+			expected: "\n\033[1m*** FLOP ***\033[0m",
 		},
 	}
 
@@ -399,7 +399,7 @@ func TestEventFormatter_FormatHoleCards(t *testing.T) {
 			opts:       FormattingOptions{Perspective: "Alice"},
 			playerName: "Alice",
 			cards:      holeCards,
-			expected:   "Dealt to Alice: [A♥ K♠]",
+			expected:   "Dealt to Alice: [\033[31mA♥\033[0m \033[30mK♠\033[0m]",
 		},
 		{
 			name:       "hide cards for non-perspective player",
@@ -413,7 +413,7 @@ func TestEventFormatter_FormatHoleCards(t *testing.T) {
 			opts:       FormattingOptions{ShowHoleCards: true, Perspective: "Alice"},
 			playerName: "Bob",
 			cards:      holeCards,
-			expected:   "Dealt to Bob: [A♥ K♠]",
+			expected:   "Dealt to Bob: [\033[31mA♥\033[0m \033[30mK♠\033[0m]",
 		},
 		{
 			name:       "empty cards",
