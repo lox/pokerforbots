@@ -8,7 +8,7 @@ import (
 )
 
 // =============================================================================
-// POSITION AND SEATING RULES (RULES.md §1)
+// POSITION AND SEATING RULES (docs/poker-rules.md §1)
 // =============================================================================
 
 // TestSixMaxPositions tests that we properly name and assign 6-max positions according to poker rules
@@ -161,7 +161,7 @@ func TestPostFlopActionOrder(t *testing.T) {
 }
 
 // =============================================================================
-// BETTING STRUCTURE AND MINIMUM RAISE RULES (RULES.md §3)
+// BETTING STRUCTURE AND MINIMUM RAISE RULES (docs/poker-rules.md §3)
 // =============================================================================
 
 func TestMinimumRaiseRules(t *testing.T) {
@@ -481,7 +481,7 @@ func TestBettingRoundComplete_WithRaises(t *testing.T) {
 }
 
 // =============================================================================
-// ALL-IN RULES AND SIDE POTS (RULES.md §4, §5)
+// ALL-IN RULES AND SIDE POTS (docs/poker-rules.md §4, §5)
 // =============================================================================
 
 func TestAllInRaiseRules(t *testing.T) {
@@ -800,10 +800,10 @@ func TestValidActionsMinRaise(t *testing.T) {
 }
 
 // =============================================================================
-// SHOWDOWN AND POT DISTRIBUTION (RULES.md §6, §7)
+// SHOWDOWN AND POT DISTRIBUTION (docs/poker-rules.md §6, §7)
 // =============================================================================
 
-// TestShowdownLastAggressor tests that last aggressor shows first (RULES.md §6)
+// TestShowdownLastAggressor tests that last aggressor shows first (docs/poker-rules.md §6)
 func TestShowdownLastAggressor(t *testing.T) {
 	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
 		MaxSeats:   6,
@@ -1030,10 +1030,10 @@ func TestOddChipDistribution(t *testing.T) {
 }
 
 // =============================================================================
-// HAND COMPLETION AND BUTTON ROTATION (RULES.md §8)
+// HAND COMPLETION AND BUTTON ROTATION (docs/poker-rules.md §8)
 // =============================================================================
 
-// TestDealerButtonAdvancement tests button rotation (RULES.md §8)
+// TestDealerButtonAdvancement tests button rotation (docs/poker-rules.md §8)
 func TestDealerButtonAdvancement(t *testing.T) {
 	table := NewTable(rand.New(rand.NewSource(42)), TableConfig{
 		MaxSeats:   6,
