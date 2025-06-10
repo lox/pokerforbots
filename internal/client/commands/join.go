@@ -29,8 +29,9 @@ func (cmd *JoinTableCommand) Run(flags *GlobalFlags) error {
 	// Create TUI model
 	tuiModel := tui.NewTUIModel(logger)
 
-	// Set up simple bridge between client and TUI
-	tui.SetupSimpleNetworkHandlers(wsClient, tuiModel)
+	// Create bridge between client and TUI
+	bridge := tui.NewBridge(wsClient, tuiModel, cfg.Player.DefaultBuyIn)
+	bridge.Start()
 
 	// Join the specified table
 	err = wsClient.JoinTable(cmd.Table, cfg.Player.DefaultBuyIn)
@@ -40,9 +41,6 @@ func (cmd *JoinTableCommand) Run(flags *GlobalFlags) error {
 
 	// Start TUI
 	program := tea.NewProgram(tuiModel, tea.WithAltScreen())
-
-	// Start command handler in TUI package
-	tui.StartCommandHandler(wsClient, tuiModel, cfg.Player.DefaultBuyIn)
 
 	// Run TUI
 	if _, err := program.Run(); err != nil {

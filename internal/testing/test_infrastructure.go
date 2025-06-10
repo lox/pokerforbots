@@ -431,9 +431,8 @@ func connectTestClient(t *testing.T, serverURL string, tuiModel *tui.TUIModel) *
 		t:             t,
 	}
 
-	// Set up TUI bridge and command handler
+	// Set up TUI bridge
 	setupTUIBridge(wsClient, tuiModel)
-	tui.StartCommandHandler(wsClient, tuiModel, 200)
 
 	// Set up test message synchronization via TUI callback
 	testClient.setupMessageCallback()
@@ -509,6 +508,7 @@ func (c *TestClient) waitForMessage(messageType server.MessageType) bool {
 }
 
 func setupTUIBridge(wsClient *client.Client, tuiModel *tui.TUIModel) {
-	// Use the real bridge from simple_bridge.go
-	tui.SetupSimpleNetworkHandlers(wsClient, tuiModel)
+	// Use the unified bridge
+	bridge := tui.NewBridge(wsClient, tuiModel, 200)
+	bridge.Start()
 }

@@ -35,9 +35,8 @@ func TestBasicConnection(t *testing.T) {
 	err = wsClient.Auth("TestPlayer")
 	require.NoError(t, err, "Failed to authenticate")
 
-	// Set up real bridge and command handler
+	// Set up real bridge
 	setupTUIBridge(wsClient, tuiModel)
-	tui.StartCommandHandler(wsClient, tuiModel, 200)
 
 	// Try to join table
 	err = wsClient.JoinTable("table1", 200)
