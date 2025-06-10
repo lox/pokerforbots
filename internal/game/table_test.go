@@ -9,12 +9,10 @@ import (
 )
 
 func TestNewTable(t *testing.T) {
-	eventBus := NewEventBus()
-	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
-		MaxSeats:   6,
-		SmallBlind: 1,
-		BigBlind:   2,
-	}, eventBus)
+	table := NewTestTable(
+		WithSeed(0),
+		WithBlinds(1, 2),
+	)
 
 	if table.maxSeats != 6 {
 		t.Errorf("Expected 6 seats, got %d", table.maxSeats)

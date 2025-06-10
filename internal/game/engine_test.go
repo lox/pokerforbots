@@ -3,7 +3,6 @@ package game
 import (
 	"fmt"
 	"io"
-	"math/rand"
 	"strings"
 	"testing"
 
@@ -85,13 +84,7 @@ func (t *TrackingAgent) MakeDecision(tableState TableState, validActions []Valid
 }
 
 func createTestTable() *Table {
-	rng := rand.New(rand.NewSource(42)) // Fixed seed for deterministic tests
-	eventBus := NewEventBus()
-	return NewTable(rng, TableConfig{
-		MaxSeats:   6,
-		SmallBlind: 10,
-		BigBlind:   20,
-	}, eventBus)
+	return NewTestTable() // Uses all defaults: seed 42, 6 seats, 10/20 blinds
 }
 
 func createTestPlayers() []*Player {
@@ -117,13 +110,10 @@ func TestGameEngine_Creation(t *testing.T) {
 }
 
 func TestGameEngine_PlayHandWithFolds(t *testing.T) {
-	table := createTestTable()
-	players := createTestPlayers()
-
-	// Add players to table
-	for _, player := range players {
-		table.AddPlayer(player)
-	}
+	// Create table with players using new helper
+	_, engine := NewTestGameEngine(
+		WithPlayers("Alice", "Bob", "Charlie"),
+	)
 
 	// Set up agents - first player calls, others fold
 	agents := map[string]Agent{
@@ -131,9 +121,6 @@ func TestGameEngine_PlayHandWithFolds(t *testing.T) {
 		"Bob":     &AlwaysFoldAgent{},
 		"Charlie": &AlwaysFoldAgent{},
 	}
-
-	logger := log.New(io.Discard)
-	engine := NewGameEngine(table, logger)
 
 	for playerName, agent := range agents {
 		engine.AddAgent(playerName, agent)
