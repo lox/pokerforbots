@@ -278,31 +278,44 @@ func (hh *HandHistory) GenerateHistoryText() string {
 	return history
 }
 
-// formatAction creates a human-readable string for an action
+// formatAction creates a human-readable string for an action using EventFormatter
 func (hh *HandHistory) formatAction(action HandAction) string {
-	switch action.Action {
-	case Fold:
-		return fmt.Sprintf("%s: folds", action.PlayerName)
-	case Call:
-		// Check if this is a blind posting (first actions in preflop with specific amounts)
-		if action.Round == PreFlop && hh.isBlindPosting(action) {
-			switch action.Amount {
-			case hh.SmallBlind:
-				return fmt.Sprintf("%s: posts small blind $%d", action.PlayerName, action.Amount)
-			case hh.BigBlind:
-				return fmt.Sprintf("%s: posts big blind $%d", action.PlayerName, action.Amount)
-			}
-		}
-		return fmt.Sprintf("%s: calls $%d (pot now: $%d)", action.PlayerName, action.Amount, action.PotAfter)
-	case Check:
-		return fmt.Sprintf("%s: checks", action.PlayerName)
-	case Raise:
-		return fmt.Sprintf("%s: raises $%d (pot now: $%d)", action.PlayerName, action.Amount, action.PotAfter)
-	case AllIn:
-		return fmt.Sprintf("%s: goes all-in for $%d (pot now: $%d)", action.PlayerName, action.Amount, action.PotAfter)
-	default:
-		return fmt.Sprintf("%s: %s $%d", action.PlayerName, action.Action.String(), action.Amount)
+	// Create a temporary player for the action (needed for position-based blind detection)
+	player := &Player{
+		Name: action.PlayerName,
+		// Determine position from the action context if it's a blind posting
+		Position: hh.getPlayerPositionForAction(action),
 	}
+
+	// Convert HandAction to PlayerActionEvent for the formatter
+	event := PlayerActionEvent{
+		Player:    player,
+		Action:    action.Action,
+		Amount:    action.Amount,
+		Round:     action.Round,
+		Reasoning: action.Thinking,
+		PotAfter:  action.PotAfter,
+		timestamp: action.Timestamp,
+	}
+
+	// Use EventFormatter to format the action
+	formatter := NewEventFormatter(FormattingOptions{
+		ShowReasonings: false, // Don't show AI thinking in hand history by default
+		ShowTimeouts:   false, // Hand history tracks timeouts differently
+	})
+
+	return formatter.FormatPlayerAction(event)
+}
+
+// getPlayerPositionForAction determines a player's position for action formatting
+func (hh *HandHistory) getPlayerPositionForAction(action HandAction) Position {
+	// Find the player in the snapshot to get their position
+	for _, player := range hh.Players {
+		if player.Name == action.PlayerName {
+			return player.Position
+		}
+	}
+	return UnknownPosition
 }
 
 // isBlindPosting determines if a call action is actually a blind posting

@@ -20,8 +20,16 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 			return
 		}
 
-		tui.AddLogEntryAndScrollToShow(fmt.Sprintf("Hand %s • %d players • $%d/$%d",
-			data.HandID, len(data.Players), data.SmallBlind, data.BigBlind))
+		// Use EventFormatter for consistent hand start formatting
+		event := game.HandStartEvent{
+			HandID:     data.HandID,
+			Players:    convertPlayersFromServer(data.Players),
+			SmallBlind: data.SmallBlind,
+			BigBlind:   data.BigBlind,
+		}
+		formatter := game.NewEventFormatter(game.FormattingOptions{})
+		handStartText := formatter.FormatHandStart(event)
+		tui.AddLogEntryAndScrollToShow(handStartText)
 		tui.AddLogEntry("")
 		tui.AddLogEntry("*** HOLE CARDS ***")
 
@@ -97,32 +105,27 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 
 		tui.UpdatePot(data.PotAfter)
 
-		var actionEntry string
-		isTimeout := strings.Contains(data.Reasoning, "timeout") || strings.Contains(data.Reasoning, "Decision timeout")
-
-		switch data.Action {
-		case "fold":
-			if isTimeout {
-				actionEntry = fmt.Sprintf("%s: times out and folds", data.Player)
-			} else {
-				actionEntry = fmt.Sprintf("%s: folds", data.Player)
-			}
-		case "call":
-			actionEntry = fmt.Sprintf("%s: calls $%d (pot now: $%d)", data.Player, data.Amount, data.PotAfter)
-		case "check":
-			if isTimeout {
-				actionEntry = fmt.Sprintf("%s: times out and checks", data.Player)
-			} else {
-				actionEntry = fmt.Sprintf("%s: checks", data.Player)
-			}
-		case "raise":
-			actionEntry = fmt.Sprintf("%s: raises by $%d (pot now: $%d)", data.Player, data.Amount, data.PotAfter)
-		case "allin":
-			actionEntry = fmt.Sprintf("%s: goes all-in for $%d", data.Player, data.Amount)
-		default:
-			actionEntry = fmt.Sprintf("%s: %s", data.Player, data.Action)
+		// Create a game event from the server data
+		player := &game.Player{
+			Name:     data.Player,
+			Position: game.UnknownPosition, // Position not available in server message
 		}
 
+		event := game.PlayerActionEvent{
+			Player:    player,
+			Action:    parseActionFromString(data.Action),
+			Amount:    data.Amount,
+			Round:     parseRoundFromString(data.Round),
+			Reasoning: data.Reasoning,
+			PotAfter:  data.PotAfter,
+		}
+
+		// Use EventFormatter to format the action
+		formatter := game.NewEventFormatter(game.FormattingOptions{
+			ShowTimeouts: true, // TUI shows timeout information
+		})
+
+		actionEntry := formatter.FormatPlayerAction(event)
 		tui.AddLogEntry(actionEntry)
 
 		// Notify test callback if in test mode
@@ -143,31 +146,17 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 
 		tui.UpdateCurrentBet(data.CurrentBet)
 
-		switch data.Round {
-		case "Flop":
-			tui.AddLogEntry("*** FLOP ***")
-			if len(data.CommunityCards) >= 3 {
-				flop := data.CommunityCards[:3]
-				tui.AddLogEntry(fmt.Sprintf("Board: %s", formatCards(flop)))
-			}
-		case "Turn":
-			tui.AddLogEntry("*** TURN ***")
-			if len(data.CommunityCards) >= 4 {
-				tui.AddLogEntry(fmt.Sprintf("Board: %s [%s]",
-					formatCards(data.CommunityCards[:3]),
-					data.CommunityCards[3].String()))
-			}
-		case "River":
-			tui.AddLogEntry("*** RIVER ***")
-			if len(data.CommunityCards) >= 5 {
-				tui.AddLogEntry(fmt.Sprintf("Board: %s [%s]",
-					formatCards(data.CommunityCards[:4]),
-					data.CommunityCards[4].String()))
-			}
-		case "showdown":
-			tui.AddLogEntry("*** SHOWDOWN ***")
-			tui.AddLogEntry(fmt.Sprintf("Final Board: %s", formatCards(data.CommunityCards)))
+		// Create a game event from the server data
+		event := game.StreetChangeEvent{
+			Round:          parseRoundFromString(data.Round),
+			CommunityCards: data.CommunityCards,
+			CurrentBet:     data.CurrentBet,
 		}
+
+		// Use EventFormatter to format the street change
+		formatter := game.NewEventFormatter(game.FormattingOptions{})
+		streetText := formatter.FormatStreetChange(event)
+		tui.AddLogEntry(streetText)
 
 		// Update sidebar with new round and community cards
 		tui.UpdateGameState(data.Round, data.CommunityCards, "")
@@ -549,4 +538,40 @@ func parsePositionFromString(posStr string) game.Position {
 	default:
 		return game.MiddlePosition
 	}
+}
+
+func parseRoundFromString(roundStr string) game.BettingRound {
+	switch roundStr {
+	case "Pre-flop":
+		return game.PreFlop
+	case "Flop":
+		return game.Flop
+	case "Turn":
+		return game.Turn
+	case "River":
+		return game.River
+	case "Showdown":
+		return game.Showdown
+	default:
+		return game.PreFlop
+	}
+}
+
+func convertPlayersFromServer(serverPlayers []server.PlayerState) []*game.Player {
+	players := make([]*game.Player, len(serverPlayers))
+	for i, sp := range serverPlayers {
+		players[i] = &game.Player{
+			Name:         sp.Name,
+			Chips:        sp.Chips,
+			Position:     parsePositionFromString(sp.Position),
+			BetThisRound: sp.BetThisRound,
+			TotalBet:     sp.TotalBet,
+			HoleCards:    sp.HoleCards,
+			IsActive:     sp.IsActive,
+			IsFolded:     sp.IsFolded,
+			IsAllIn:      sp.IsAllIn,
+			SeatNumber:   sp.SeatNumber,
+		}
+	}
+	return players
 }
