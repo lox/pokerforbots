@@ -89,10 +89,10 @@ type PlayerSnapshot struct {
 
 // WinnerInfo captures winner information
 type WinnerInfo struct {
-	PlayerName string
-	Amount     int
-	HoleCards  []deck.Card
-	HandRank   string
+	PlayerName string      `json:"playerName"`
+	Amount     int         `json:"amount"`
+	HoleCards  []deck.Card `json:"holeCards"`
+	HandRank   string      `json:"handRank"`
 }
 
 // NewHandHistory creates a new hand history for a hand

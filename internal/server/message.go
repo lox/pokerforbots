@@ -134,20 +134,13 @@ type StreetChangeData struct {
 	CurrentBet     int         `json:"currentBet"`
 }
 
-type WinnerInfo struct {
-	PlayerName string      `json:"playerName"`
-	Amount     int         `json:"amount"`
-	HandRank   string      `json:"handRank"`
-	HoleCards  []deck.Card `json:"holeCards"`
-}
-
 type HandEndData struct {
-	HandID       string       `json:"handId"`
-	Winners      []WinnerInfo `json:"winners"`
-	PotSize      int          `json:"potSize"`
-	ShowdownType string       `json:"showdownType"`
-	FinalBoard   []deck.Card  `json:"finalBoard"`
-	Summary      string       `json:"summary"`
+	HandID       string            `json:"handId"`
+	Winners      []game.WinnerInfo `json:"winners"`
+	PotSize      int               `json:"potSize"`
+	ShowdownType string            `json:"showdownType"`
+	FinalBoard   []deck.Card       `json:"finalBoard"`
+	Summary      string            `json:"summary"`
 }
 
 type ValidActionInfo struct {

@@ -86,11 +86,12 @@ func (t *TrackingAgent) MakeDecision(tableState TableState, validActions []Valid
 
 func createTestTable() *Table {
 	rng := rand.New(rand.NewSource(42)) // Fixed seed for deterministic tests
+	eventBus := NewEventBus()
 	return NewTable(rng, TableConfig{
 		MaxSeats:   6,
 		SmallBlind: 10,
 		BigBlind:   20,
-	})
+	}, eventBus)
 }
 
 func createTestPlayers() []*Player {
@@ -320,7 +321,7 @@ func TestGameEngine_ActionRecording(t *testing.T) {
 	}
 
 	// Find the raise action
-	var raiseAction *PlayerAction
+	var raiseAction *HandAction
 	for i := range result.Actions {
 		if result.Actions[i].Action == Raise {
 			raiseAction = &result.Actions[i]
@@ -337,8 +338,8 @@ func TestGameEngine_ActionRecording(t *testing.T) {
 		if raiseAction.Amount != 20 { // Amount actually bet (raise total - current bet)
 			t.Errorf("Expected raise amount 20, got %d", raiseAction.Amount)
 		}
-		if raiseAction.Reasoning != "raise to 40" {
-			t.Errorf("Expected reasoning 'raise to 40', got '%s'", raiseAction.Reasoning)
+		if raiseAction.Thinking != "raise to 40" {
+			t.Errorf("Expected reasoning 'raise to 40', got '%s'", raiseAction.Thinking)
 		}
 	}
 }

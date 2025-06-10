@@ -114,7 +114,7 @@ type Table struct {
 }
 
 // NewTable creates a new poker table with custom configuration
-func NewTable(rng *rand.Rand, config TableConfig) *Table {
+func NewTable(rng *rand.Rand, config TableConfig, eventBus EventBus) *Table {
 	if config.HandHistoryWriter == nil {
 		config.HandHistoryWriter = &NoOpHandHistoryWriter{}
 	}
@@ -139,12 +139,8 @@ func NewTable(rng *rand.Rand, config TableConfig) *Table {
 		seed:              config.Seed,
 		rng:               rng,
 		handHistoryWriter: config.HandHistoryWriter,
-		eventBus:          NewEventBus(), // Table owns its own EventBus
+		eventBus:          eventBus, // Table receives EventBus as dependency
 	}
-}
-
-func (t *Table) SetEventBus(eventBus EventBus) {
-	t.eventBus = eventBus
 }
 
 // GetEventBus returns the table's event bus for subscribing to events

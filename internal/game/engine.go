@@ -3,6 +3,7 @@ package game
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/lox/pokerforbots/internal/evaluator"
@@ -57,23 +58,14 @@ type HandResult struct {
 	Winner       *Player
 	PotSize      int
 	ShowdownType string // "fold" or "showdown"
-	Actions      []PlayerAction
-}
-
-// PlayerAction represents an action taken by a player during the hand
-type PlayerAction struct {
-	PlayerName string
-	Round      BettingRound
-	Action     Action
-	Amount     int
-	Reasoning  string
+	Actions      []HandAction
 }
 
 // PlayHand runs a complete hand from start to finish and returns the result
 func (ge *GameEngine) PlayHand() (*HandResult, error) {
 	result := &HandResult{
 		HandID:  ge.table.handID,
-		Actions: make([]PlayerAction, 0),
+		Actions: make([]HandAction, 0),
 	}
 
 	ge.logger.Debug("Starting hand", "handID", ge.table.handID)
@@ -137,12 +129,14 @@ func (ge *GameEngine) PlayHand() (*HandResult, error) {
 			}
 
 			// Record the action
-			result.Actions = append(result.Actions, PlayerAction{
+			result.Actions = append(result.Actions, HandAction{
 				PlayerName: currentPlayer.Name,
 				Round:      ge.table.currentRound,
 				Action:     playerAction,
 				Amount:     currentPlayer.ActionAmount,
-				Reasoning:  reasoning,
+				Thinking:   reasoning,
+				PotAfter:   ge.table.pot,
+				Timestamp:  time.Now(),
 			})
 
 			ge.logger.Debug("Player action",

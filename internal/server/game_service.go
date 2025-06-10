@@ -142,19 +142,10 @@ func (tes *TableEventSubscriber) handleStreetChange(event game.StreetChangeEvent
 }
 
 func (tes *TableEventSubscriber) handleHandEnd(event game.HandEndEvent) {
-	winners := make([]WinnerInfo, len(event.Winners))
-	for i, w := range event.Winners {
-		winners[i] = WinnerInfo{
-			PlayerName: w.PlayerName,
-			Amount:     w.Amount,
-			HandRank:   w.HandRank,
-			HoleCards:  w.HoleCards,
-		}
-	}
 
 	data := HandEndData{
 		HandID:       event.HandID,
-		Winners:      winners,
+		Winners:      event.Winners,
 		PotSize:      event.PotSize,
 		ShowdownType: event.ShowdownType,
 		FinalBoard:   event.FinalBoard,
@@ -242,12 +233,13 @@ func (gs *GameService) CreateTable(name string, maxPlayers, smallBlind, bigBlind
 	rng := rand.New(rand.NewSource(tableSeed))
 	logger := gs.logger.WithPrefix("table").With("id", tableID)
 
+	eventBus := game.NewEventBus()
 	table := game.NewTable(rng, game.TableConfig{
 		MaxSeats:   maxPlayers,
 		SmallBlind: smallBlind,
 		BigBlind:   bigBlind,
 		Seed:       tableSeed,
-	})
+	}, eventBus)
 
 	engine := game.NewGameEngine(table, logger)
 
