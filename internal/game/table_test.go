@@ -991,6 +991,340 @@ func TestPotAwardingBug(t *testing.T) {
 
 // TestChipConservation demonstrates the chip conservation validation
 // This assertion can be used in any test to ensure chips aren't created or destroyed
+// TestFlopBettingRoundCompleteness reproduces the bug where only one player acts on flop
+// before the betting round completes, when all players should get a chance to act
+func TestFlopBettingRoundCompleteness(t *testing.T) {
+	eventBus := NewEventBus()
+	table := NewTable(rand.New(rand.NewSource(12345)), eventBus, TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
+
+	// Add 6 players to match the scenario from the logs
+	players := []*Player{
+		NewPlayer(1, "Bot_4", AI, 200),
+		NewPlayer(2, "Bot_5", AI, 200),
+		NewPlayer(3, "Lox", Human, 200),
+		NewPlayer(4, "Bot_1", AI, 200),
+		NewPlayer(5, "Bot_2", AI, 200),
+		NewPlayer(6, "Bot_3", AI, 200),
+	}
+
+	for _, player := range players {
+		table.AddPlayer(player)
+	}
+
+	// Set positions to match the original scenario
+	players[0].Position = SmallBlind     // Bot_4
+	players[1].Position = BigBlind       // Bot_5
+	players[2].Position = UnderTheGun    // Lox
+	players[3].Position = MiddlePosition // Bot_1
+	players[4].Position = Cutoff         // Bot_2
+	players[5].Position = Button         // Bot_3
+
+	// Start hand
+	table.StartNewHand()
+
+	// Simulate pre-flop: Bot_3 folds, others call
+	actionCount := 0
+	maxPreFlopActions := 10
+	for !table.IsBettingRoundComplete() && actionCount < maxPreFlopActions {
+		currentPlayer := table.GetCurrentPlayer()
+		if currentPlayer == nil {
+			t.Fatal("No current player during pre-flop")
+		}
+
+		var decision Decision
+		if currentPlayer.Name == "Bot_3" {
+			decision = Decision{Action: Fold, Amount: 0, Reasoning: "Folding on button"}
+		} else {
+			// Check what action is needed - if player hasn't bet enough, call; otherwise check
+			if currentPlayer.BetThisRound < table.currentBet {
+				callAmount := table.currentBet - currentPlayer.BetThisRound
+				decision = Decision{Action: Call, Amount: callAmount, Reasoning: "Calling to see flop"}
+			} else {
+				decision = Decision{Action: Check, Amount: 0, Reasoning: "Checking"}
+			}
+		}
+
+		_, err := table.ApplyDecision(decision)
+		if err != nil {
+			t.Fatalf("Failed to apply decision for %s: %v", currentPlayer.Name, err)
+		}
+
+		table.AdvanceAction()
+		actionCount++
+	}
+
+	if !table.IsBettingRoundComplete() {
+		t.Fatal("Pre-flop should be complete")
+	}
+
+	// Count players still in hand after pre-flop
+	playersInHandPreFlop := 0
+	for _, player := range table.activePlayers {
+		if player.IsInHand() {
+			playersInHandPreFlop++
+		}
+	}
+
+	// Should have 5 players in hand (all except Bot_3 who folded)
+	if playersInHandPreFlop != 5 {
+		t.Fatalf("Expected 5 players in hand after pre-flop, got %d", playersInHandPreFlop)
+	}
+
+	// Move to flop
+	table.DealFlop()
+
+	// Verify flop state
+	if table.currentRound != Flop {
+		t.Errorf("Expected Flop round, got %s", table.currentRound)
+	}
+
+	if table.currentBet != 0 {
+		t.Errorf("Expected current bet to be 0 on flop, got %d", table.currentBet)
+	}
+
+	// Count players who can act on flop
+	playersCanActFlop := 0
+	for _, player := range table.activePlayers {
+		if player.IsInHand() && player.CanAct() {
+			playersCanActFlop++
+		}
+	}
+
+	t.Logf("Players who can act on flop: %d", playersCanActFlop)
+
+	// Track flop actions - this is where the bug manifests
+	flopActionCount := 0
+	playersWhoActedOnFlop := make(map[string]bool)
+	maxFlopActions := 10 // Safety limit
+
+	// Before we start, verify the betting round is not already complete
+	if table.IsBettingRoundComplete() {
+		t.Fatal("BUG REPRODUCED: Flop betting round is already complete before any player acts!")
+	}
+
+	for !table.IsBettingRoundComplete() && flopActionCount < maxFlopActions {
+		currentPlayer := table.GetCurrentPlayer()
+		if currentPlayer == nil {
+			t.Fatal("No current player on flop")
+		}
+
+		// Track which players act
+		playersWhoActedOnFlop[currentPlayer.Name] = true
+
+		t.Logf("Flop action %d: %s acting", flopActionCount+1, currentPlayer.Name)
+
+		// Everyone checks on flop
+		decision := Decision{Action: Check, Amount: 0, Reasoning: "Checking flop"}
+		_, err := table.ApplyDecision(decision)
+		if err != nil {
+			t.Fatalf("Failed to apply check for %s: %v", currentPlayer.Name, err)
+		}
+
+		table.AdvanceAction()
+		flopActionCount++
+
+		// Log state after each action for debugging
+		t.Logf("After %s acted: IsBettingRoundComplete=%v", currentPlayer.Name, table.IsBettingRoundComplete())
+	}
+
+	t.Logf("Flop completed after %d actions", flopActionCount)
+	t.Logf("Players who acted on flop: %v", playersWhoActedOnFlop)
+
+	// THE BUG: Only Bot_4 acts on flop before round completes
+	// This should be fixed by our changes to IsBettingRoundComplete()
+	expectedFlopActions := playersInHandPreFlop // All 5 players should act
+	if flopActionCount < expectedFlopActions {
+		t.Errorf("BUG REPRODUCED: Only %d players acted on flop, expected %d", flopActionCount, expectedFlopActions)
+
+		// Debug information
+		t.Logf("Debug info:")
+		t.Logf("  Current round: %v", table.GetCurrentRound())
+		t.Logf("  Current bet: %d", table.GetCurrentBet())
+		t.Logf("  Action on: %d", table.GetActionOn())
+		t.Logf("  Active players: %d", len(table.GetActivePlayers()))
+
+		playersInHand := 0
+		playersCanAct := 0
+		for i, player := range table.GetActivePlayers() {
+			inHand := player.IsInHand()
+			canAct := player.CanAct()
+			if inHand {
+				playersInHand++
+			}
+			if canAct {
+				playersCanAct++
+			}
+			t.Logf("  [%d] %s: InHand=%v, CanAct=%v, Active=%v, Folded=%v",
+				i, player.Name, inHand, canAct, player.IsActive, player.IsFolded)
+		}
+		t.Logf("  Players in hand: %d, can act: %d", playersInHand, playersCanAct)
+	}
+
+	// Verify that ALL players who were in hand got to act
+	if len(playersWhoActedOnFlop) != expectedFlopActions {
+		t.Errorf("Expected %d different players to act on flop, but %d acted", expectedFlopActions, len(playersWhoActedOnFlop))
+	}
+
+	// Verify specific players acted (all except Bot_3 who folded pre-flop)
+	expectedPlayers := []string{"Bot_4", "Bot_5", "Lox", "Bot_1", "Bot_2"}
+	for _, expectedPlayer := range expectedPlayers {
+		if !playersWhoActedOnFlop[expectedPlayer] {
+			t.Errorf("Player %s should have acted on flop but didn't", expectedPlayer)
+		}
+	}
+
+	// Bot_3 should NOT have acted (folded pre-flop)
+	if playersWhoActedOnFlop["Bot_3"] {
+		t.Errorf("Bot_3 should not have acted on flop (folded pre-flop)")
+	}
+}
+
+// TestIsBettingRoundComplete tests the edge cases of betting round completion logic
+func TestIsBettingRoundComplete(t *testing.T) {
+	eventBus := NewEventBus()
+
+	t.Run("should not complete early with multiple players who can act", func(t *testing.T) {
+		table := NewTable(rand.New(rand.NewSource(42)), eventBus, TableConfig{
+			MaxSeats:   6,
+			SmallBlind: 1,
+			BigBlind:   2,
+		})
+
+		// Add multiple active players
+		for i := 1; i <= 5; i++ {
+			player := NewPlayer(i, fmt.Sprintf("Player%d", i), AI, 200)
+			table.AddPlayer(player)
+		}
+
+		table.StartNewHand()
+
+		// Move to flop (currentBet = 0, everyone can check)
+		table.DealFlop()
+
+		// Initially, no one has acted - round should NOT be complete
+		if table.IsBettingRoundComplete() {
+			t.Error("Betting round should not be complete when no one has acted")
+		}
+
+		// After first player acts, round should still NOT be complete
+		firstPlayer := table.GetCurrentPlayer()
+		if firstPlayer != nil {
+			table.playersActed[firstPlayer.ID] = true
+			firstPlayer.BetThisRound = 0 // Check
+		}
+
+		if table.IsBettingRoundComplete() {
+			t.Error("Betting round should not be complete after only one player acts")
+		}
+	})
+
+	t.Run("should complete when all players have acted", func(t *testing.T) {
+		table := NewTable(rand.New(rand.NewSource(43)), eventBus, TableConfig{
+			MaxSeats:   3,
+			SmallBlind: 1,
+			BigBlind:   2,
+		})
+
+		// Add 3 players
+		for i := 1; i <= 3; i++ {
+			player := NewPlayer(i, fmt.Sprintf("Player%d", i), AI, 200)
+			table.AddPlayer(player)
+		}
+
+		table.StartNewHand()
+		table.DealFlop()
+
+		// Mark all players as having acted (checked)
+		for _, player := range table.activePlayers {
+			if player.IsInHand() {
+				table.playersActed[player.ID] = true
+				player.BetThisRound = 0 // Everyone checked
+			}
+		}
+
+		// Now round should be complete
+		if !table.IsBettingRoundComplete() {
+			t.Error("Betting round should be complete when all players have acted")
+		}
+	})
+
+	t.Run("should complete when only one player can act", func(t *testing.T) {
+		table := NewTable(rand.New(rand.NewSource(44)), eventBus, TableConfig{
+			MaxSeats:   3,
+			SmallBlind: 1,
+			BigBlind:   2,
+		})
+
+		// Add 3 players
+		players := []*Player{
+			NewPlayer(1, "Player1", AI, 200),
+			NewPlayer(2, "Player2", AI, 200),
+			NewPlayer(3, "Player3", AI, 200),
+		}
+
+		for _, player := range players {
+			table.AddPlayer(player)
+		}
+
+		table.StartNewHand()
+		table.DealFlop()
+
+		// Make two players all-in (can't act) - they should be marked as having acted
+		players[0].IsAllIn = true
+		players[1].IsAllIn = true
+		table.playersActed[players[0].ID] = true
+		table.playersActed[players[1].ID] = true
+		// Player 3 can still act
+
+		// Player 3 acts
+		table.playersActed[players[2].ID] = true
+		players[2].BetThisRound = 0
+
+		// Round should complete since only one player could act and they acted
+		if !table.IsBettingRoundComplete() {
+			t.Error("Betting round should be complete when only one player can act and they have acted")
+		}
+	})
+
+	t.Run("should not complete when only one player can act but hasn't acted yet", func(t *testing.T) {
+		table := NewTable(rand.New(rand.NewSource(45)), eventBus, TableConfig{
+			MaxSeats:   3,
+			SmallBlind: 1,
+			BigBlind:   2,
+		})
+
+		// Add 3 players
+		players := []*Player{
+			NewPlayer(1, "Player1", AI, 200),
+			NewPlayer(2, "Player2", AI, 200),
+			NewPlayer(3, "Player3", AI, 200),
+		}
+
+		for _, player := range players {
+			table.AddPlayer(player)
+		}
+
+		table.StartNewHand()
+		table.DealFlop()
+
+		// Make two players all-in (can't act) - they should be marked as having acted
+		players[0].IsAllIn = true
+		players[1].IsAllIn = true
+		table.playersActed[players[0].ID] = true
+		table.playersActed[players[1].ID] = true
+		// Player 3 can still act but hasn't yet
+
+		// Round should NOT complete since the one player who can act hasn't acted
+		if table.IsBettingRoundComplete() {
+			t.Error("Betting round should not be complete when one player can act but hasn't acted yet")
+		}
+	})
+}
+
 func TestChipConservation(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	eventBus := NewEventBus()

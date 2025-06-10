@@ -571,6 +571,26 @@ func (t *Table) GetCurrentPlayer() *Player {
 	return nil
 }
 
+// GetCurrentRound returns the current betting round
+func (t *Table) GetCurrentRound() BettingRound {
+	return t.currentRound
+}
+
+// GetCurrentBet returns the current bet amount
+func (t *Table) GetCurrentBet() int {
+	return t.currentBet
+}
+
+// GetActionOn returns the current action index
+func (t *Table) GetActionOn() int {
+	return t.actionOn
+}
+
+// GetPot returns the current pot size
+func (t *Table) GetPot() int {
+	return t.pot
+}
+
 // AdvanceAction moves to the next player
 func (t *Table) AdvanceAction() {
 	if t.actionOn == -1 {
@@ -889,12 +909,16 @@ func (t *Table) IsBettingRoundComplete() bool {
 	playersInHand := 0
 	playersActed := 0
 	playersAllIn := 0
+	playersCanAct := 0
 
 	for _, player := range t.activePlayers {
 		if player.IsInHand() {
 			playersInHand++
 			if player.IsAllIn {
 				playersAllIn++
+			}
+			if player.CanAct() {
+				playersCanAct++
 			}
 
 			// A player has "acted properly" if:
@@ -908,7 +932,13 @@ func (t *Table) IsBettingRoundComplete() bool {
 		}
 	}
 
-	return playersActed == playersInHand || playersInHand <= 1 || playersInHand-playersAllIn <= 1
+	// Betting round is complete when:
+	// 1. All players in hand have acted properly, OR
+	// 2. Only one or fewer players remain in hand
+	allActed := playersActed == playersInHand
+	onlyOneInHand := playersInHand <= 1
+
+	return allActed || onlyOneInHand
 }
 
 // startNewBettingRound initializes a new betting round
