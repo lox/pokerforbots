@@ -47,15 +47,15 @@ type TestClient struct {
 	tui           *tui.TUIModel
 	actionQueue   []string
 	actionIndex   int
-	eventChan     chan string   // Single event channel for this client
-	handStarted   chan struct{} // Signal when hand starts
-	handEnded     chan struct{} // Signal when hand ends
-	streetChanged chan struct{} // Signal when street changes
-	playerTimeout chan struct{} // Signal when player times out
-	gamePause     chan struct{} // Signal when game is paused
-	allowTimeout  bool          // Allow timeout instead of auto-fold
-	mockClock     *quartz.Mock  // For explicit timeout control
-	t             *testing.T    // For test logging
+	messageChan   chan server.MessageType // Single message channel for this client
+	handStarted   chan struct{}           // Signal when hand starts
+	handEnded     chan struct{}           // Signal when hand ends
+	streetChanged chan struct{}           // Signal when street changes
+	playerTimeout chan struct{}           // Signal when player times out
+	gamePause     chan struct{}           // Signal when game is paused
+	allowTimeout  bool                    // Allow timeout instead of auto-fold
+	mockClock     *quartz.Mock            // For explicit timeout control
+	t             *testing.T              // For test logging
 }
 
 func (c *TestClient) QueueActions(actions []string) {
@@ -86,8 +86,8 @@ func (c *TestClient) JoinTable(tableID string) error {
 
 func (c *TestClient) Disconnect() {
 	if c.client != nil {
-		// Clear the event callback first to prevent further event processing
-		c.tui.SetEventCallback(nil)
+		// Clear the message callback first to prevent further message processing
+		c.tui.SetMessageCallback(nil)
 
 		// Disconnect the client which signals goroutines to stop
 		_ = c.client.Disconnect()
@@ -100,34 +100,34 @@ func (c *TestClient) Disconnect() {
 
 // Explicit step-by-step test methods
 
-func (c *TestClient) WaitForEvent(eventType string) bool {
+func (c *TestClient) WaitForMessage(messageType server.MessageType) bool {
 	c.t.Helper()
-	return c.waitForEvent(eventType)
+	return c.waitForMessage(messageType)
 }
 
 func (c *TestClient) WaitForActionRequired() {
 	c.t.Helper()
-	c.WaitForEvent("action_required")
+	c.WaitForMessage(server.MessageTypeActionRequired)
 }
 
 func (c *TestClient) WaitForHandStart() {
 	c.t.Helper()
-	c.WaitForEvent("hand_start")
+	c.WaitForMessage(server.MessageTypeHandStart)
 }
 
 func (c *TestClient) WaitForHandEnd() {
 	c.t.Helper()
-	c.WaitForEvent("hand_end")
+	c.WaitForMessage(server.MessageTypeHandEnd)
 }
 
 func (c *TestClient) WaitForPlayerTimeout() {
 	c.t.Helper()
-	c.WaitForEvent("player_timeout")
+	c.WaitForMessage(server.MessageTypePlayerTimeout)
 }
 
 func (c *TestClient) WaitForGamePause() {
 	c.t.Helper()
-	c.WaitForEvent("game_pause")
+	c.WaitForMessage(server.MessageTypeGamePause)
 }
 
 func (c *TestClient) AllowTimeout() {
@@ -205,42 +205,42 @@ func (c *TestClient) AssertExpectedLog(expectedEntries ...string) {
 // StartActionScript starts providing queued actions when needed
 func (c *TestClient) StartActionScript() {
 	go func() {
-		// Process events and inject actions when needed
-		for event := range c.eventChan {
-			c.t.Logf("STATE: Processing event %s", event)
+		// Process messages and inject actions when needed
+		for message := range c.messageChan {
+			c.t.Logf("STATE: Processing message %s", message)
 
-			switch event {
-			case "hand_start":
+			switch message {
+			case server.MessageTypeHandStart:
 				// Signal hand started
 				select {
 				case c.handStarted <- struct{}{}:
 				default:
 				}
-			case "hand_end":
+			case server.MessageTypeHandEnd:
 				// Signal hand ended
 				select {
 				case c.handEnded <- struct{}{}:
 				default:
 				}
-			case "street_change":
+			case server.MessageTypeStreetChange:
 				// Signal street changed
 				select {
 				case c.streetChanged <- struct{}{}:
 				default:
 				}
-			case "player_timeout":
+			case server.MessageTypePlayerTimeout:
 				// Signal player timeout
 				select {
 				case c.playerTimeout <- struct{}{}:
 				default:
 				}
-			case "game_pause":
+			case server.MessageTypeGamePause:
 				// Signal game pause
 				select {
 				case c.gamePause <- struct{}{}:
 				default:
 				}
-			case "action_required":
+			case server.MessageTypeActionRequired:
 				// Try to inject next action if we have one
 				if c.actionIndex < len(c.actionQueue) {
 					c.injectNextAction()
@@ -418,16 +418,16 @@ func connectTestClient(t *testing.T, serverURL string, tuiModel *tui.TUIModel) *
 	err = wsClient.Auth("TestPlayer")
 	require.NoError(t, err, "Failed to authenticate test client")
 
-	// Create test client with event channels
+	// Create test client with message channels
 	testClient := &TestClient{
 		client:        wsClient,
 		tui:           tuiModel,
-		eventChan:     make(chan string, 100), // Large buffer to prevent blocking
-		handStarted:   make(chan struct{}, 1), // Buffered to prevent blocking
-		handEnded:     make(chan struct{}, 1), // Buffered to prevent blocking
-		streetChanged: make(chan struct{}, 1), // Buffered to prevent blocking
-		playerTimeout: make(chan struct{}, 1), // Buffered to prevent blocking
-		gamePause:     make(chan struct{}, 1), // Buffered to prevent blocking
+		messageChan:   make(chan server.MessageType, 100), // Large buffer to prevent blocking
+		handStarted:   make(chan struct{}, 1),             // Buffered to prevent blocking
+		handEnded:     make(chan struct{}, 1),             // Buffered to prevent blocking
+		streetChanged: make(chan struct{}, 1),             // Buffered to prevent blocking
+		playerTimeout: make(chan struct{}, 1),             // Buffered to prevent blocking
+		gamePause:     make(chan struct{}, 1),             // Buffered to prevent blocking
 		t:             t,
 	}
 
@@ -435,33 +435,33 @@ func connectTestClient(t *testing.T, serverURL string, tuiModel *tui.TUIModel) *
 	setupTUIBridge(wsClient, tuiModel)
 	tui.StartCommandHandler(wsClient, tuiModel, 200)
 
-	// Set up test event synchronization via TUI callback
-	testClient.setupEventCallback()
+	// Set up test message synchronization via TUI callback
+	testClient.setupMessageCallback()
 
 	return testClient
 }
 
-// setupEventCallback configures TUI event callback for test synchronization
-func (c *TestClient) setupEventCallback() {
-	// Set up callback to receive events from TUI bridge handlers
-	c.tui.SetEventCallback(func(eventType string) {
-		c.t.Logf("EVENT: %s", eventType)
+// setupMessageCallback configures TUI message callback for test synchronization
+func (c *TestClient) setupMessageCallback() {
+	// Set up callback to receive messages from TUI bridge handlers
+	c.tui.SetMessageCallback(func(messageType server.MessageType) {
+		c.t.Logf("MESSAGE: %s", messageType)
 		select {
-		case c.eventChan <- eventType:
-			// Event sent successfully
+		case c.messageChan <- messageType:
+			// Message sent successfully
 		default:
-			// Channel full, skip this event
+			// Channel full, skip this message
 		}
 	})
 }
 
-// waitForEvent waits for a specific event, blocking until it arrives
-func (c *TestClient) waitForEvent(eventType string) bool {
+// waitForMessage waits for a specific message, blocking until it arrives
+func (c *TestClient) waitForMessage(messageType server.MessageType) bool {
 	c.t.Helper()
 	timeout := time.After(EventTimeoutSecs * time.Second)
 
-	switch eventType {
-	case "hand_start":
+	switch messageType {
+	case server.MessageTypeHandStart:
 		select {
 		case <-c.handStarted:
 			return true
@@ -469,7 +469,7 @@ func (c *TestClient) waitForEvent(eventType string) bool {
 			c.t.Logf("TIMEOUT: No hand_start event received within 2 seconds")
 			return false
 		}
-	case "hand_end":
+	case server.MessageTypeHandEnd:
 		select {
 		case <-c.handEnded:
 			return true
@@ -477,7 +477,7 @@ func (c *TestClient) waitForEvent(eventType string) bool {
 			c.t.Logf("TIMEOUT: No hand_end event received within 2 seconds")
 			return false
 		}
-	case "street_change":
+	case server.MessageTypeStreetChange:
 		select {
 		case <-c.streetChanged:
 			return true
@@ -485,7 +485,7 @@ func (c *TestClient) waitForEvent(eventType string) bool {
 			c.t.Logf("TIMEOUT: No street_change event received within 2 seconds")
 			return false
 		}
-	case "player_timeout":
+	case server.MessageTypePlayerTimeout:
 		select {
 		case <-c.playerTimeout:
 			return true
@@ -493,7 +493,7 @@ func (c *TestClient) waitForEvent(eventType string) bool {
 			c.t.Logf("TIMEOUT: No player_timeout event received within 2 seconds")
 			return false
 		}
-	case "game_pause":
+	case server.MessageTypeGamePause:
 		select {
 		case <-c.gamePause:
 			return true
@@ -503,7 +503,7 @@ func (c *TestClient) waitForEvent(eventType string) bool {
 		}
 
 	default:
-		c.t.Logf("UNKNOWN EVENT TYPE: %s", eventType)
+		c.t.Logf("UNKNOWN MESSAGE TYPE: %s", messageType)
 		return false
 	}
 }

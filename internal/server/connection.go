@@ -194,7 +194,7 @@ func (c *Connection) handleMessage(msg *Message) {
 	c.logger.Debug("Received message", "type", msg.Type, "player", c.GetPlayer())
 
 	switch msg.Type {
-	case "auth":
+	case MessageTypeAuth:
 		var data AuthData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			c.sendError("invalid_message", "Failed to parse auth data")
@@ -202,7 +202,7 @@ func (c *Connection) handleMessage(msg *Message) {
 		}
 		c.handleAuth(data)
 
-	case "join_table":
+	case MessageTypeJoinTable:
 		var data JoinTableData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			c.sendError("invalid_message", "Failed to parse join table data")
@@ -210,7 +210,7 @@ func (c *Connection) handleMessage(msg *Message) {
 		}
 		c.handleJoinTable(data)
 
-	case "leave_table":
+	case MessageTypeLeaveTable:
 		var data LeaveTableData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			c.sendError("invalid_message", "Failed to parse leave table data")
@@ -218,10 +218,10 @@ func (c *Connection) handleMessage(msg *Message) {
 		}
 		c.handleLeaveTable(data)
 
-	case "list_tables":
+	case MessageTypeListTables:
 		c.handleListTables()
 
-	case "player_decision":
+	case MessageTypePlayerDecision:
 		var data PlayerDecisionData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			c.sendError("invalid_message", "Failed to parse player decision data")
@@ -229,7 +229,7 @@ func (c *Connection) handleMessage(msg *Message) {
 		}
 		c.handlePlayerDecision(data)
 
-	case "add_bot":
+	case MessageTypeAddBot:
 		var data AddBotData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			c.sendError("invalid_message", "Failed to parse add bot data")
@@ -237,7 +237,7 @@ func (c *Connection) handleMessage(msg *Message) {
 		}
 		c.handleAddBot(data)
 
-	case "kick_bot":
+	case MessageTypeKickBot:
 		var data KickBotData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			c.sendError("invalid_message", "Failed to parse kick bot data")
@@ -246,13 +246,13 @@ func (c *Connection) handleMessage(msg *Message) {
 		c.handleKickBot(data)
 
 	default:
-		c.sendError("unknown_message_type", "Unknown message type: "+msg.Type)
+		c.sendError("unknown_message_type", "Unknown message type: "+msg.Type.String())
 	}
 }
 
 // sendError sends an error message to the client
 func (c *Connection) sendError(code, message string) {
-	errorMsg, err := NewMessage("error", ErrorData{
+	errorMsg, err := NewMessage(MessageTypeError, ErrorData{
 		Code:    code,
 		Message: message,
 	})
@@ -275,7 +275,7 @@ func (c *Connection) handleAuth(data AuthData) {
 
 	c.SetPlayer(data.PlayerName)
 
-	response, _ := NewMessage("auth_response", AuthResponseData{
+	response, _ := NewMessage(MessageTypeAuthResponse, AuthResponseData{
 		Success:  true,
 		PlayerID: data.PlayerName,
 	})
@@ -318,7 +318,7 @@ func (c *Connection) handleJoinTable(data JoinTableData) {
 		players = append(players, PlayerStateFromGame(player, false))
 	}
 
-	response, _ := NewMessage("table_joined", TableJoinedData{
+	response, _ := NewMessage(MessageTypeTableJoined, TableJoinedData{
 		TableID:    data.TableID,
 		SeatNumber: table.players[playerName].SeatNumber,
 		Players:    players,
@@ -349,7 +349,7 @@ func (c *Connection) handleLeaveTable(data LeaveTableData) {
 	// Clear table association
 	c.SetTable("")
 
-	response, _ := NewMessage("table_left", map[string]string{"tableId": data.TableID})
+	response, _ := NewMessage(MessageTypeTableLeft, map[string]string{"tableId": data.TableID})
 	_ = c.SendMessage(response) // Ignore send errors
 }
 
@@ -362,7 +362,7 @@ func (c *Connection) handleListTables() {
 	}
 
 	tables := c.gameService.ListTables()
-	response, _ := NewMessage("table_list", TableListData{
+	response, _ := NewMessage(MessageTypeTableList, TableListData{
 		Tables: tables,
 	})
 	_ = c.SendMessage(response) // Ignore send errors
@@ -420,7 +420,7 @@ func (c *Connection) handleAddBot(data AddBotData) {
 		return
 	}
 
-	response, _ := NewMessage("bot_added", BotAddedData{
+	response, _ := NewMessage(MessageTypeBotAdded, BotAddedData{
 		TableID:  data.TableID,
 		BotNames: botNames,
 		Message:  fmt.Sprintf("Added %d bot(s) to table", len(botNames)),
@@ -448,7 +448,7 @@ func (c *Connection) handleKickBot(data KickBotData) {
 		return
 	}
 
-	response, _ := NewMessage("bot_kicked", BotKickedData{
+	response, _ := NewMessage(MessageTypeBotKicked, BotKickedData{
 		TableID: data.TableID,
 		BotName: data.BotName,
 		Message: fmt.Sprintf("Kicked bot %s from table", data.BotName),

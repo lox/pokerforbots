@@ -55,7 +55,7 @@ func (na *NetworkAgent) MakeDecision(tableState game.TableState, validActions []
 		TimeoutSeconds: na.timeoutSeconds,
 	}
 
-	msg, err := NewMessage("action_required", actionData)
+	msg, err := NewMessage(MessageTypeActionRequired, actionData)
 	if err != nil {
 		na.logger.Error("Failed to create action required message", "error", err)
 		return game.Decision{
@@ -103,7 +103,7 @@ func (na *NetworkAgent) MakeDecision(tableState game.TableState, validActions []
 			Action:         "sit-out",
 		}
 
-		timeoutMsg, err := NewMessage("player_timeout", timeoutData)
+		timeoutMsg, err := NewMessage(MessageTypePlayerTimeout, timeoutData)
 		if err == nil {
 			na.server.BroadcastToTable(na.tableID, timeoutMsg)
 		}

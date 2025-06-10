@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	serverpkg "github.com/lox/pokerforbots/internal/server"
 	"github.com/lox/pokerforbots/internal/tui"
 )
 
@@ -45,7 +46,7 @@ func TestSittingOut(t *testing.T) {
 		defer cancel()
 		mockClock.Advance(1 * time.Second).MustWait(ctx)
 
-		require.True(t, testClient.waitForEvent("player_timeout"))
+		require.True(t, testClient.waitForMessage(serverpkg.MessageTypePlayerTimeout))
 
 		capturedLog := tuiModel.GetCapturedLog()
 		logText := strings.Join(capturedLog, " ")
@@ -69,14 +70,14 @@ func TestSittingOut(t *testing.T) {
 
 		// Setup explicit event handling
 		go func() {
-			for event := range testClient.eventChan {
+			for event := range testClient.messageChan {
 				switch event {
-				case "hand_start":
+				case serverpkg.MessageTypeHandStart:
 					select {
 					case testClient.handStarted <- struct{}{}:
 					default:
 					}
-				case "player_timeout":
+				case serverpkg.MessageTypePlayerTimeout:
 					select {
 					case testClient.playerTimeout <- struct{}{}:
 					default:
@@ -116,19 +117,19 @@ func TestSittingOut(t *testing.T) {
 
 		// Setup explicit event handling
 		go func() {
-			for event := range testClient.eventChan {
+			for event := range testClient.messageChan {
 				switch event {
-				case "hand_start":
+				case serverpkg.MessageTypeHandStart:
 					select {
 					case testClient.handStarted <- struct{}{}:
 					default:
 					}
-				case "player_timeout":
+				case serverpkg.MessageTypePlayerTimeout:
 					select {
 					case testClient.playerTimeout <- struct{}{}:
 					default:
 					}
-				case "game_pause":
+				case serverpkg.MessageTypeGamePause:
 					select {
 					case testClient.gamePause <- struct{}{}:
 					default:
@@ -177,19 +178,19 @@ func TestSittingOut(t *testing.T) {
 
 		// Setup explicit event handling
 		go func() {
-			for event := range testClient.eventChan {
+			for event := range testClient.messageChan {
 				switch event {
-				case "hand_start":
+				case serverpkg.MessageTypeHandStart:
 					select {
 					case testClient.handStarted <- struct{}{}:
 					default:
 					}
-				case "player_timeout":
+				case serverpkg.MessageTypePlayerTimeout:
 					select {
 					case testClient.playerTimeout <- struct{}{}:
 					default:
 					}
-				case "game_pause":
+				case serverpkg.MessageTypeGamePause:
 					select {
 					case testClient.gamePause <- struct{}{}:
 					default:
@@ -250,7 +251,7 @@ func TestSittingOutMockTime(t *testing.T) {
 		mockClock.Advance(1 * time.Second).MustWait(ctx)
 		elapsed := time.Since(start)
 
-		require.True(t, testClient.waitForEvent("player_timeout"), "Player timeout should fire")
+		require.True(t, testClient.waitForMessage(serverpkg.MessageTypePlayerTimeout), "Player timeout should fire")
 
 		// Should have timeout messages
 		capturedLog := tuiModel.GetCapturedLog()

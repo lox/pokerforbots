@@ -28,7 +28,7 @@ type Client struct {
 	closeOnce  sync.Once
 
 	// Event handlers
-	eventHandlers map[string][]EventHandler
+	eventHandlers map[server.MessageType][]EventHandler
 }
 
 // EventHandler is a function that handles incoming events
@@ -45,7 +45,7 @@ func NewClient(serverURL string, logger *log.Logger) *Client {
 		logger:        logger.WithPrefix("client"),
 		ctx:           ctx,
 		cancel:        cancel,
-		eventHandlers: make(map[string][]EventHandler),
+		eventHandlers: make(map[server.MessageType][]EventHandler),
 	}
 }
 
@@ -243,7 +243,7 @@ func (c *Client) handleMessage(msg *server.Message) {
 }
 
 // AddEventHandler adds an event handler for a specific message type
-func (c *Client) AddEventHandler(messageType string, handler EventHandler) {
+func (c *Client) AddEventHandler(messageType server.MessageType, handler EventHandler) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -254,7 +254,7 @@ func (c *Client) AddEventHandler(messageType string, handler EventHandler) {
 func (c *Client) Auth(playerName string) error {
 	c.playerName = playerName
 
-	authMsg, err := server.NewMessage("auth", server.AuthData{
+	authMsg, err := server.NewMessage(server.MessageTypeAuth, server.AuthData{
 		PlayerName: playerName,
 	})
 	if err != nil {
@@ -266,7 +266,7 @@ func (c *Client) Auth(playerName string) error {
 
 // JoinTable joins a poker table
 func (c *Client) JoinTable(tableID string, buyIn int) error {
-	joinMsg, err := server.NewMessage("join_table", server.JoinTableData{
+	joinMsg, err := server.NewMessage(server.MessageTypeJoinTable, server.JoinTableData{
 		TableID: tableID,
 		BuyIn:   buyIn,
 	})
@@ -279,7 +279,7 @@ func (c *Client) JoinTable(tableID string, buyIn int) error {
 
 // LeaveTable leaves the current poker table
 func (c *Client) LeaveTable(tableID string) error {
-	leaveMsg, err := server.NewMessage("leave_table", server.LeaveTableData{
+	leaveMsg, err := server.NewMessage(server.MessageTypeLeaveTable, server.LeaveTableData{
 		TableID: tableID,
 	})
 	if err != nil {
@@ -291,7 +291,7 @@ func (c *Client) LeaveTable(tableID string) error {
 
 // ListTables requests a list of available tables
 func (c *Client) ListTables() error {
-	listMsg, err := server.NewMessage("list_tables", map[string]interface{}{})
+	listMsg, err := server.NewMessage(server.MessageTypeListTables, map[string]interface{}{})
 	if err != nil {
 		return err
 	}
@@ -301,7 +301,7 @@ func (c *Client) ListTables() error {
 
 // SendDecision sends a player decision to the server
 func (c *Client) SendDecision(action string, amount int, reasoning string) error {
-	decisionMsg, err := server.NewMessage("player_decision", server.PlayerDecisionData{
+	decisionMsg, err := server.NewMessage(server.MessageTypePlayerDecision, server.PlayerDecisionData{
 		TableID:   c.tableID,
 		Action:    action,
 		Amount:    amount,
@@ -316,7 +316,7 @@ func (c *Client) SendDecision(action string, amount int, reasoning string) error
 
 // AddBots adds bots to the current table
 func (c *Client) AddBots(tableID string, count int) error {
-	addBotMsg, err := server.NewMessage("add_bot", server.AddBotData{
+	addBotMsg, err := server.NewMessage(server.MessageTypeAddBot, server.AddBotData{
 		TableID: tableID,
 		Count:   count,
 	})
@@ -329,7 +329,7 @@ func (c *Client) AddBots(tableID string, count int) error {
 
 // KickBot removes a bot from the current table
 func (c *Client) KickBot(tableID string, botName string) error {
-	kickBotMsg, err := server.NewMessage("kick_bot", server.KickBotData{
+	kickBotMsg, err := server.NewMessage(server.MessageTypeKickBot, server.KickBotData{
 		TableID: tableID,
 		BotName: botName,
 	})
@@ -362,7 +362,7 @@ func (c *Client) GetPlayerName() string {
 }
 
 // WaitForMessage waits for a specific message type with timeout
-func (c *Client) WaitForMessage(messageType string, timeout time.Duration) (*server.Message, error) {
+func (c *Client) WaitForMessage(messageType server.MessageType, timeout time.Duration) (*server.Message, error) {
 	responseChan := make(chan *server.Message, 1)
 
 	// Add temporary handler

@@ -87,7 +87,7 @@ func (tes *TableEventSubscriber) handleHandStart(event game.HandStartEvent) {
 			}
 		}
 
-		playerMsg, err := NewMessage("hand_start", playerData)
+		playerMsg, err := NewMessage(MessageTypeHandStart, playerData)
 		if err != nil {
 			tes.logger.Error("Failed to create player-specific hand start message", "error", err)
 			continue
@@ -107,7 +107,7 @@ func (tes *TableEventSubscriber) handlePlayerAction(event game.PlayerActionEvent
 		Reasoning: event.Reasoning,
 	}
 
-	msg, err := NewMessage("player_action", data)
+	msg, err := NewMessage(MessageTypePlayerAction, data)
 	if err != nil {
 		tes.logger.Error("Failed to create player action message", "error", err)
 		return
@@ -132,7 +132,7 @@ func (tes *TableEventSubscriber) handleStreetChange(event game.StreetChangeEvent
 		CurrentBet:     event.CurrentBet,
 	}
 
-	msg, err := NewMessage("street_change", data)
+	msg, err := NewMessage(MessageTypeStreetChange, data)
 	if err != nil {
 		tes.logger.Error("Failed to create street change message", "error", err)
 		return
@@ -161,7 +161,7 @@ func (tes *TableEventSubscriber) handleHandEnd(event game.HandEndEvent) {
 		Summary:      event.Summary,
 	}
 
-	msg, err := NewMessage("hand_end", data)
+	msg, err := NewMessage(MessageTypeHandEnd, data)
 	if err != nil {
 		tes.logger.Error("Failed to create hand end message", "error", err)
 		return
@@ -177,7 +177,7 @@ func (tes *TableEventSubscriber) handleGamePause(event game.GamePauseEvent) {
 		Message: event.Message,
 	}
 
-	msg, err := NewMessage("game_pause", data)
+	msg, err := NewMessage(MessageTypeGamePause, data)
 	if err != nil {
 		tes.logger.Error("Failed to create game pause message", "error", err)
 		return

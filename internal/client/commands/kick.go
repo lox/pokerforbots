@@ -23,7 +23,7 @@ func (cmd *KickBotCommand) Run(flags *GlobalFlags) error {
 
 	// Set up response handler
 	responseChan := make(chan bool, 1)
-	wsClient.AddEventHandler("error", func(msg *server.Message) {
+	wsClient.AddEventHandler(server.MessageTypeError, func(msg *server.Message) {
 		var data server.ErrorData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			fmt.Printf("Error parsing error message: %v\n", err)
@@ -33,7 +33,7 @@ func (cmd *KickBotCommand) Run(flags *GlobalFlags) error {
 		responseChan <- false
 	})
 
-	wsClient.AddEventHandler("bot_kicked", func(msg *server.Message) {
+	wsClient.AddEventHandler(server.MessageTypeBotKicked, func(msg *server.Message) {
 		fmt.Printf("Successfully kicked bot %s from table %s\n", cmd.Bot, cmd.Table)
 		responseChan <- true
 	})

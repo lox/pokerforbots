@@ -14,7 +14,7 @@ import (
 
 // SetupSimpleNetworkHandlers sets up direct event handlers between client and TUI
 func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
-	client.AddEventHandler("hand_start", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypeHandStart, func(msg *server.Message) {
 		var data server.HandStartData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
@@ -77,10 +77,10 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		tui.SetTableInfo(tui.tableID, tui.seatNumber, players)
 
 		// Notify test callback if in test mode
-		tui.notifyEventCallback("hand_start")
+		tui.notifyMessageCallback(server.MessageTypeHandStart)
 	})
 
-	client.AddEventHandler("player_action", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypePlayerAction, func(msg *server.Message) {
 		var data server.PlayerActionData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
@@ -126,10 +126,10 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		tui.AddLogEntry(actionEntry)
 
 		// Notify test callback if in test mode
-		tui.notifyEventCallback("player_action")
+		tui.notifyMessageCallback(server.MessageTypePlayerAction)
 	})
 
-	client.AddEventHandler("street_change", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypeStreetChange, func(msg *server.Message) {
 		var data server.StreetChangeData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
@@ -173,11 +173,11 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		tui.UpdateGameState(data.Round, data.CommunityCards, "")
 
 		// Notify test callback if in test mode
-		tui.notifyEventCallback("street_change")
+		tui.notifyMessageCallback(server.MessageTypeStreetChange)
 	})
 
 	// Add handlers for other events
-	client.AddEventHandler("hand_end", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypeHandEnd, func(msg *server.Message) {
 		var data server.HandEndData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
@@ -192,10 +192,10 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		tui.AddLogEntry("")
 
 		// Notify test callback if in test mode
-		tui.notifyEventCallback("hand_end")
+		tui.notifyMessageCallback(server.MessageTypeHandEnd)
 	})
 
-	client.AddEventHandler("action_required", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypeActionRequired, func(msg *server.Message) {
 		var data server.ActionRequiredData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
@@ -262,11 +262,11 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		// Player's turn is now active, actions will be handled by the main command loop
 
 		// Notify test callback if in test mode
-		tui.notifyEventCallback("action_required")
+		tui.notifyMessageCallback(server.MessageTypeActionRequired)
 	})
 
 	// Simple handlers for other events
-	client.AddEventHandler("table_list", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypeTableList, func(msg *server.Message) {
 		var data server.TableListData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
@@ -280,7 +280,7 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		}
 	})
 
-	client.AddEventHandler("table_joined", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypeTableJoined, func(msg *server.Message) {
 		var data server.TableJoinedData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
@@ -305,12 +305,12 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		tui.SetTableInfo(data.TableID, data.SeatNumber, players)
 	})
 
-	client.AddEventHandler("table_left", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypeTableLeft, func(msg *server.Message) {
 		client.SetTableID("")
 		tui.AddLogEntry("Left table")
 	})
 
-	client.AddEventHandler("bot_added", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypeBotAdded, func(msg *server.Message) {
 		var data server.BotAddedData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
@@ -320,7 +320,7 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		tui.AddLogEntry(fmt.Sprintf("Added bots: %s", botList))
 	})
 
-	client.AddEventHandler("bot_kicked", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypeBotKicked, func(msg *server.Message) {
 		var data server.BotKickedData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
@@ -329,7 +329,7 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		tui.AddLogEntry(fmt.Sprintf("Kicked bot: %s", data.BotName))
 	})
 
-	client.AddEventHandler("auth_response", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypeAuthResponse, func(msg *server.Message) {
 		var data server.AuthResponseData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
@@ -340,7 +340,7 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		}
 	})
 
-	client.AddEventHandler("error", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypeError, func(msg *server.Message) {
 		var data server.ErrorData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
@@ -349,7 +349,7 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		tui.AddLogEntry(fmt.Sprintf("Server error [%s]: %s", data.Code, data.Message))
 	})
 
-	client.AddEventHandler("player_timeout", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypePlayerTimeout, func(msg *server.Message) {
 		var data server.PlayerTimeoutData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
@@ -359,10 +359,10 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 			data.PlayerName, data.TimeoutSeconds, data.Action))
 
 		// Notify test callback if in test mode
-		tui.notifyEventCallback("player_timeout")
+		tui.notifyMessageCallback(server.MessageTypePlayerTimeout)
 	})
 
-	client.AddEventHandler("game_pause", func(msg *server.Message) {
+	client.AddEventHandler(server.MessageTypeGamePause, func(msg *server.Message) {
 		var data server.GamePauseData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			return
@@ -371,7 +371,7 @@ func SetupSimpleNetworkHandlers(client *client.Client, tui *TUIModel) {
 		tui.AddLogEntry(fmt.Sprintf("⏸️  Game paused: %s", data.Message))
 
 		// Notify test callback if in test mode
-		tui.notifyEventCallback("game_pause")
+		tui.notifyMessageCallback(server.MessageTypeGamePause)
 	})
 }
 

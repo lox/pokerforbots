@@ -22,7 +22,7 @@ func (cmd *ListTablesCommand) Run(flags *GlobalFlags) error {
 	// Set up a channel to capture table list responses
 	responseChan := make(chan bool, 1)
 
-	wsClient.AddEventHandler("table_list", func(msg *server.Message) {
+	wsClient.AddEventHandler(server.MessageTypeTableList, func(msg *server.Message) {
 		var data server.TableListData
 		if err := json.Unmarshal(msg.Data, &data); err != nil {
 			fmt.Printf("Error parsing table list: %v\n", err)

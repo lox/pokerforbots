@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	serverpkg "github.com/lox/pokerforbots/internal/server"
 	"github.com/lox/pokerforbots/internal/tui"
 )
 
@@ -55,19 +56,19 @@ func testBasicHandFlow(t *testing.T) {
 
 	// Setup explicit event handling without action script
 	go func() {
-		for event := range client.eventChan {
+		for event := range client.messageChan {
 			switch event {
-			case "hand_start":
+			case serverpkg.MessageTypeHandStart:
 				select {
 				case client.handStarted <- struct{}{}:
 				default:
 				}
-			case "hand_end":
+			case serverpkg.MessageTypeHandEnd:
 				select {
 				case client.handEnded <- struct{}{}:
 				default:
 				}
-			case "action_required":
+			case serverpkg.MessageTypeActionRequired:
 				// Don't auto-inject actions - let test control them explicitly
 				t.Logf("EXPLICIT: Action required - test will handle manually")
 			}
@@ -99,19 +100,19 @@ func testPreflopActions(t *testing.T) {
 
 	// Setup explicit event handling without action script
 	go func() {
-		for event := range client.eventChan {
+		for event := range client.messageChan {
 			switch event {
-			case "hand_start":
+			case serverpkg.MessageTypeHandStart:
 				select {
 				case client.handStarted <- struct{}{}:
 				default:
 				}
-			case "hand_end":
+			case serverpkg.MessageTypeHandEnd:
 				select {
 				case client.handEnded <- struct{}{}:
 				default:
 				}
-			case "action_required":
+			case serverpkg.MessageTypeActionRequired:
 				t.Logf("EXPLICIT: Action required - test will handle manually")
 			}
 		}
@@ -138,19 +139,19 @@ func testSidebarGameState(t *testing.T) {
 
 	// Setup explicit event handling without action script
 	go func() {
-		for event := range client.eventChan {
+		for event := range client.messageChan {
 			switch event {
-			case "hand_start":
+			case serverpkg.MessageTypeHandStart:
 				select {
 				case client.handStarted <- struct{}{}:
 				default:
 				}
-			case "hand_end":
+			case serverpkg.MessageTypeHandEnd:
 				select {
 				case client.handEnded <- struct{}{}:
 				default:
 				}
-			case "action_required":
+			case serverpkg.MessageTypeActionRequired:
 				t.Logf("EXPLICIT: Action required - test will handle manually")
 			}
 		}

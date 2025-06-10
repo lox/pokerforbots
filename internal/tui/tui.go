@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/lox/pokerforbots/internal/deck"
 	"github.com/lox/pokerforbots/internal/game"
+	"github.com/lox/pokerforbots/internal/server"
 )
 
 // TUIModel represents the Bubble Tea model for the poker game
@@ -50,10 +51,10 @@ type TUIModel struct {
 	initialized bool // Track if viewport has been properly sized
 
 	// Test mode
-	testMode       bool
-	capturedLog    []string               // For test assertions
-	sidebarContent string                 // For test assertions
-	eventCallback  func(eventType string) // Callback for test event synchronization
+	testMode        bool
+	capturedLog     []string                             // For test assertions
+	sidebarContent  string                               // For test assertions
+	messageCallback func(messageType server.MessageType) // Callback for test message synchronization
 }
 
 // ActionResult represents the result of a user action
@@ -669,16 +670,16 @@ func (m *TUIModel) IsTestMode() bool {
 	return m.testMode
 }
 
-// SetEventCallback sets a callback function for test event synchronization
-func (m *TUIModel) SetEventCallback(callback func(eventType string)) {
+// SetMessageCallback sets a callback function for test message synchronization
+func (m *TUIModel) SetMessageCallback(callback func(messageType server.MessageType)) {
 	if m.testMode {
-		m.eventCallback = callback
+		m.messageCallback = callback
 	}
 }
 
-// notifyEventCallback calls the event callback if in test mode
-func (m *TUIModel) notifyEventCallback(eventType string) {
-	if m.testMode && m.eventCallback != nil {
-		m.eventCallback(eventType)
+// notifyMessageCallback calls the message callback if in test mode
+func (m *TUIModel) notifyMessageCallback(messageType server.MessageType) {
+	if m.testMode && m.messageCallback != nil {
+		m.messageCallback(messageType)
 	}
 }

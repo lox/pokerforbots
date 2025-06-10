@@ -10,14 +10,14 @@ import (
 
 // Message represents the base WebSocket message structure
 type Message struct {
-	Type      string          `json:"type"`
+	Type      MessageType     `json:"type"`
 	Data      json.RawMessage `json:"data"`
 	Timestamp time.Time       `json:"timestamp"`
 	RequestID string          `json:"requestId,omitempty"`
 }
 
 // NewMessage creates a new message with the current timestamp
-func NewMessage(messageType string, data interface{}) (*Message, error) {
+func NewMessage(messageType MessageType, data interface{}) (*Message, error) {
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
 		return nil, err

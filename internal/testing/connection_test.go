@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/lox/pokerforbots/internal/client"
+	serverpkg "github.com/lox/pokerforbots/internal/server"
 	"github.com/lox/pokerforbots/internal/tui"
 )
 
@@ -46,7 +47,7 @@ func TestBasicConnection(t *testing.T) {
 	tempClient := &TestClient{
 		client:        wsClient,
 		tui:           tuiModel,
-		eventChan:     make(chan string, 100),
+		messageChan:   make(chan serverpkg.MessageType, 100),
 		handStarted:   make(chan struct{}, 1),
 		handEnded:     make(chan struct{}, 1),
 		streetChanged: make(chan struct{}, 1),
@@ -54,7 +55,7 @@ func TestBasicConnection(t *testing.T) {
 		gamePause:     make(chan struct{}, 1),
 		t:             t,
 	}
-	tempClient.setupEventCallback()
+	tempClient.setupMessageCallback()
 	tempClient.StartActionScript() // Start processing events
 
 	// Wait for some game events
