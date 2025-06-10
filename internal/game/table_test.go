@@ -345,7 +345,11 @@ func TestPotDistribution(t *testing.T) {
 	finalPot := table.pot
 
 	// Find winner and award pot
-	winner := table.FindWinner()
+	winners := table.FindWinners()
+	if len(winners) != 1 {
+		t.Fatalf("Expected exactly 1 winner, got %d", len(winners))
+	}
+	winner := winners[0]
 	if winner == nil {
 		t.Fatal("Should have a winner")
 	}
@@ -364,7 +368,7 @@ func TestPotDistribution(t *testing.T) {
 	}
 }
 
-// TestFindWinnerEvaluatesHandStrength tests that FindWinner correctly evaluates hand strength
+// TestFindWinnerEvaluatesHandStrength tests that FindWinners correctly evaluates hand strength
 func TestFindWinnerEvaluatesHandStrength(t *testing.T) {
 	table := NewTable(rand.New(rand.NewSource(0)), TableConfig{
 		MaxSeats:   6,
@@ -391,7 +395,11 @@ func TestFindWinnerEvaluatesHandStrength(t *testing.T) {
 	table.communityCards = deck.MustParseCards("3dAh6h9cQd")
 
 	// Now with proper hand evaluation: Player2 should win with pair of Aces
-	winner := table.FindWinner()
+	winners := table.FindWinners()
+	if len(winners) != 1 {
+		t.Fatalf("Expected exactly 1 winner, got %d", len(winners))
+	}
+	winner := winners[0]
 
 	// Player2 should win because they have pair of Aces vs player1's Jack high
 	if winner != player2 {
@@ -451,7 +459,11 @@ func TestPotAmountPreservedForSummary(t *testing.T) {
 	}
 
 	// Find winner
-	winner := table.FindWinner()
+	winners := table.FindWinners()
+	if len(winners) != 1 {
+		t.Fatalf("Expected exactly 1 winner, got %d", len(winners))
+	}
+	winner := winners[0]
 	if winner == nil {
 		t.Fatal("Should have a winner")
 	}

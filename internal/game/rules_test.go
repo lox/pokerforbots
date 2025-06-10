@@ -874,8 +874,12 @@ func TestShowdownLastAggressor(t *testing.T) {
 
 	// At showdown, the game should track who was the last aggressor
 	// This is implementation-specific but the rule states last aggressor shows first
-	// In our implementation, FindWinner() handles this automatically by hand evaluation
-	winner := table.FindWinner()
+	// In our implementation, FindWinners() handles this automatically by hand evaluation
+	winners := table.FindWinners()
+	if len(winners) != 1 {
+		t.Fatalf("Expected exactly 1 winner, got %d", len(winners))
+	}
+	winner := winners[0]
 	if winner == nil {
 		t.Fatal("Should have a winner at showdown")
 	}

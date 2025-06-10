@@ -162,8 +162,15 @@ func (ge *GameEngine) PlayHand() (*HandResult, error) {
 		if ge.table.IsBettingRoundComplete() {
 			ge.logger.Debug("Betting round complete", "round", ge.table.currentRound)
 
-			activePlayers := len(ge.table.GetActivePlayers())
-			if activePlayers <= 1 {
+			// Count players still in the hand (not folded)
+			playersInHand := 0
+			for _, p := range ge.table.GetActivePlayers() {
+				if p.IsInHand() {
+					playersInHand++
+				}
+			}
+
+			if playersInHand <= 1 {
 				// Hand over, someone won by everyone else folding
 				potBeforeAwarding := ge.table.pot
 				winners := ge.table.FindWinners()
@@ -174,7 +181,7 @@ func (ge *GameEngine) PlayHand() (*HandResult, error) {
 					ge.logger.Debug("Hand won by fold", "winner", winners[0].Name, "pot", potBeforeAwarding)
 					ge.table.AwardPot()
 				} else {
-					ge.logger.Error("No winner found after fold", "activePlayers", activePlayers)
+					ge.logger.Error("No winner found after fold", "playersInHand", playersInHand)
 					result.Winner = nil
 					result.PotSize = potBeforeAwarding
 					result.ShowdownType = "no_winner"
