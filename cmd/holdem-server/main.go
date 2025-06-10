@@ -185,7 +185,7 @@ func main() {
 	wsServer := server.NewServer(cfg.GetServerAddress(), logger)
 
 	// Create game service with real clock for production
-	gameService := server.NewGameService(wsServer, logger, CLI.Seed, quartz.NewReal())
+	gameService := server.NewGameService(wsServer, logger, CLI.Seed, quartz.NewReal(), cfg)
 
 	// Set game service in server
 	wsServer.SetGameService(gameService)

@@ -194,10 +194,11 @@ type GameService struct {
 	tableCounter int // For shorter table IDs
 	seed         int64
 	clock        quartz.Clock
+	config       *ServerConfig
 }
 
 // NewGameService creates a new game service
-func NewGameService(server *Server, logger *log.Logger, seed int64, clock quartz.Clock) *GameService {
+func NewGameService(server *Server, logger *log.Logger, seed int64, clock quartz.Clock, config *ServerConfig) *GameService {
 	agentManager := NewNetworkAgentManager(server, logger, clock)
 
 	gs := &GameService{
@@ -207,6 +208,7 @@ func NewGameService(server *Server, logger *log.Logger, seed int64, clock quartz
 		logger:       logger.WithPrefix("game-service"),
 		seed:         seed,
 		clock:        clock,
+		config:       config,
 	}
 
 	// Set up connection handlers
@@ -235,10 +237,11 @@ func (gs *GameService) CreateTable(name string, maxPlayers, smallBlind, bigBlind
 
 	eventBus := game.NewEventBus()
 	table := game.NewTable(rng, eventBus, game.TableConfig{
-		MaxSeats:   maxPlayers,
-		SmallBlind: smallBlind,
-		BigBlind:   bigBlind,
-		Seed:       tableSeed,
+		MaxSeats:          maxPlayers,
+		SmallBlind:        smallBlind,
+		BigBlind:          bigBlind,
+		Seed:              tableSeed,
+		HandHistoryWriter: game.NewFileHandHistoryWriter(gs.config.Server.HandHistoryDir),
 	})
 
 	engine := game.NewGameEngine(table, logger)

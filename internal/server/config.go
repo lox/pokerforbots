@@ -16,10 +16,11 @@ type ServerConfig struct {
 
 // ServerSettings contains server-level configuration
 type ServerSettings struct {
-	Address  string `hcl:"address,optional"`
-	Port     int    `hcl:"port,optional"`
-	LogLevel string `hcl:"log_level,optional"`
-	LogFile  string `hcl:"log_file,optional"`
+	Address        string `hcl:"address,optional"`
+	Port           int    `hcl:"port,optional"`
+	LogLevel       string `hcl:"log_level,optional"`
+	LogFile        string `hcl:"log_file,optional"`
+	HandHistoryDir string `hcl:"hand_history_dir,optional"`
 }
 
 // TableConfig defines a poker table configuration
@@ -38,10 +39,11 @@ type TableConfig struct {
 func DefaultServerConfig() *ServerConfig {
 	return &ServerConfig{
 		Server: ServerSettings{
-			Address:  "localhost",
-			Port:     8080,
-			LogLevel: "info",
-			LogFile:  "holdem-server.log",
+			Address:        "localhost",
+			Port:           8080,
+			LogLevel:       "info",
+			LogFile:        "holdem-server.log",
+			HandHistoryDir: "handhistory",
 		},
 		Tables: []TableConfig{
 			{
@@ -89,6 +91,9 @@ func LoadServerConfig(filename string) (*ServerConfig, error) {
 	}
 	if config.Server.LogFile == "" {
 		config.Server.LogFile = "holdem-server.log"
+	}
+	if config.Server.HandHistoryDir == "" {
+		config.Server.HandHistoryDir = "handhistory"
 	}
 
 	// Apply defaults to tables

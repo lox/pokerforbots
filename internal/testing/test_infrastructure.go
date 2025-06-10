@@ -343,7 +343,7 @@ func startTestServer(t *testing.T, port int, seed int64, bots int, clock ...quar
 	wsServer := server.NewServer(cfg.GetServerAddress(), logger)
 
 	// Create game service with provided clock
-	gameService := server.NewGameService(wsServer, logger, seed, gameClock)
+	gameService := server.NewGameService(wsServer, logger, seed, gameClock, cfg)
 
 	// Set game service in server
 	wsServer.SetGameService(gameService)
