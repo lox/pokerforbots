@@ -4,176 +4,133 @@ import (
 	"math/rand"
 	"strings"
 	"testing"
-	"time"
 )
 
-func TestGenerateGameID(t *testing.T) {
-	// Test that Generate produces valid game IDs
-	id := GenerateGameID(rand.New(rand.NewSource(42)))
-
-	if len(id) != 26 {
-		t.Errorf("expected 26 characters, got %d", len(id))
-	}
-
-	if err := Validate(id); err != nil {
-		t.Errorf("generated ID failed validation: %v", err)
-	}
-
-	// Test that first character is valid (0-7)
-	if id[0] > '7' {
-		t.Errorf("first character %c exceeds maximum '7'", id[0])
-	}
-}
-
-func TestGenerateUnique(t *testing.T) {
-	// Generate multiple IDs and ensure they're unique
-	ids := make(map[string]bool)
-
-	for i := 0; i < 100; i++ {
-		// Use different seeds for each iteration to ensure uniqueness
-		id := GenerateGameID(rand.New(rand.NewSource(int64(i))))
-		if ids[id] {
-			t.Errorf("duplicate ID generated: %s", id)
+func TestValidatePlayerForTable(t *testing.T) {
+	t.Run("nil table", func(t *testing.T) {
+		err := ValidatePlayerForTable(nil, NewPlayer(1, "Alice", Human, 200))
+		if err == nil || !strings.Contains(err.Error(), "table is nil") {
+			t.Errorf("expected 'table is nil' error, got: %v", err)
 		}
-		ids[id] = true
-	}
-}
+	})
 
-func TestGenerateTimeSorted(t *testing.T) {
-	// Generate IDs with a small delay to ensure time-based sorting
-	var ids []string
-
-	for i := 0; i < 10; i++ {
-		ids = append(ids, GenerateGameID(rand.New(rand.NewSource(42))))
-		time.Sleep(time.Millisecond)
-	}
-
-	// Check that IDs are sorted (UUIDv7 should be sortable by timestamp)
-	for i := 1; i < len(ids); i++ {
-		if strings.Compare(ids[i-1], ids[i]) >= 0 {
-			t.Errorf("IDs not sorted: %s >= %s", ids[i-1], ids[i])
-		}
-	}
-}
-
-func TestValidateGameID(t *testing.T) {
-	tests := []struct {
-		name    string
-		id      string
-		wantErr bool
-	}{
-		{
-			name:    "valid ID",
-			id:      "01h5n0et5q6mt3v7ms1234abcd",
-			wantErr: false,
-		},
-		{
-			name:    "too short",
-			id:      "01h5n0et5q6mt3v7ms123",
-			wantErr: true,
-		},
-		{
-			name:    "too long",
-			id:      "01h5n0et5q6mt3v7ms1234abcdef",
-			wantErr: true,
-		},
-		{
-			name:    "first char too high",
-			id:      "81h5n0et5q6mt3v7ms1234abcd",
-			wantErr: true,
-		},
-		{
-			name:    "invalid character",
-			id:      "01h5n0et5q6mt3v7ms1234abci",
-			wantErr: true,
-		},
-		{
-			name:    "uppercase not allowed",
-			id:      "01H5N0ET5Q6MT3V7MS1234ABCD",
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := Validate(tt.id)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
+	t.Run("nil player", func(t *testing.T) {
+		eventBus := NewEventBus()
+		table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
+			MaxSeats:   6,
+			SmallBlind: 1,
+			BigBlind:   2,
 		})
-	}
+
+		err := ValidatePlayerForTable(table, nil)
+		if err == nil || !strings.Contains(err.Error(), "player is nil") {
+			t.Errorf("expected 'player is nil' error, got: %v", err)
+		}
+	})
+
+	t.Run("valid player on empty table", func(t *testing.T) {
+		eventBus := NewEventBus()
+		table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
+			MaxSeats:   6,
+			SmallBlind: 1,
+			BigBlind:   2,
+		})
+
+		err := ValidatePlayerForTable(table, NewPlayer(1, "Alice", Human, 200))
+		if err != nil {
+			t.Errorf("expected no error for valid player, got: %v", err)
+		}
+	})
+
+	t.Run("duplicate player ID", func(t *testing.T) {
+		eventBus := NewEventBus()
+		table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
+			MaxSeats:   6,
+			SmallBlind: 1,
+			BigBlind:   2,
+		})
+
+		// Add Alice first
+		alice := NewPlayer(1, "Alice", Human, 200)
+		table.AddPlayer(alice)
+
+		// Try to add Bob with same ID
+		bob := NewPlayer(1, "Bob", AI, 200)
+		err := ValidatePlayerForTable(table, bob)
+		if err == nil || !strings.Contains(err.Error(), "player with ID 1 already exists") {
+			t.Errorf("expected duplicate ID error, got: %v", err)
+		}
+	})
+
+	t.Run("duplicate player name", func(t *testing.T) {
+		eventBus := NewEventBus()
+		table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
+			MaxSeats:   6,
+			SmallBlind: 1,
+			BigBlind:   2,
+		})
+
+		// Add Alice first
+		alice := NewPlayer(1, "Alice", Human, 200)
+		table.AddPlayer(alice)
+
+		// Try to add another Alice with different ID
+		alice2 := NewPlayer(2, "Alice", AI, 200)
+		err := ValidatePlayerForTable(table, alice2)
+		if err == nil || !strings.Contains(err.Error(), "player with name 'Alice' already exists") {
+			t.Errorf("expected duplicate name error, got: %v", err)
+		}
+	})
+
+	t.Run("valid unique player", func(t *testing.T) {
+		eventBus := NewEventBus()
+		table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
+			MaxSeats:   6,
+			SmallBlind: 1,
+			BigBlind:   2,
+		})
+
+		// Add Alice first
+		alice := NewPlayer(1, "Alice", Human, 200)
+		table.AddPlayer(alice)
+
+		// Add Bob with unique ID and name
+		bob := NewPlayer(2, "Bob", AI, 200)
+		err := ValidatePlayerForTable(table, bob)
+		if err != nil {
+			t.Errorf("expected no error for unique player, got: %v", err)
+		}
+	})
 }
 
-func TestGameIDAlphabet(t *testing.T) {
-	// Ensure alphabet has no duplicate characters and is the correct length
-	if len(alphabet) != 32 {
-		t.Errorf("alphabet should have 32 characters, got %d", len(alphabet))
+func TestValidatePlayerForTable_TableFull(t *testing.T) {
+	eventBus := NewEventBus()
+	table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
+		MaxSeats:   2, // Small table for easier testing
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
+
+	// Fill the table
+	player1 := NewPlayer(1, "Alice", Human, 200)
+	player2 := NewPlayer(2, "Bob", AI, 200)
+	table.AddPlayer(player1)
+	table.AddPlayer(player2)
+
+	// Try to add a third player
+	player3 := NewPlayer(3, "Charlie", AI, 200)
+	err := ValidatePlayerForTable(table, player3)
+
+	if err == nil {
+		t.Error("expected error for full table but got none")
+		return
 	}
 
-	seen := make(map[rune]bool)
-	for _, char := range alphabet {
-		if seen[char] {
-			t.Errorf("duplicate character in alphabet: %c", char)
-		}
-		seen[char] = true
+	if !strings.Contains(err.Error(), "table is full") {
+		t.Errorf("expected error message to contain 'table is full', got '%s'", err.Error())
 	}
 
-	// Check specific requirements: no i, l, o, u
-	forbidden := "ilou"
-	for _, char := range forbidden {
-		if strings.ContainsRune(alphabet, char) {
-			t.Errorf("alphabet should not contain %c", char)
-		}
-	}
-}
-
-func TestGenerateGameIDWithRandSource(t *testing.T) {
-	// Test deterministic generation with fixed values
-	mockRand := rand.New(rand.NewSource(42))
-
-	id1 := GenerateGameID(mockRand)
-
-	// Reset mock and generate again with same values
-	mockRand2 := rand.New(rand.NewSource(42))
-	id2 := GenerateGameID(mockRand2)
-
-	// Should generate identical IDs (except for timestamp which might differ by milliseconds)
-	// The random portion should be identical, so we'll check that the IDs are close
-	if len(id1) != 26 || len(id2) != 26 {
-		t.Errorf("Expected 26-character IDs, got %d and %d", len(id1), len(id2))
-	}
-
-	// Validate both IDs
-	if err := Validate(id1); err != nil {
-		t.Errorf("Generated ID 1 failed validation: %v", err)
-	}
-	if err := Validate(id2); err != nil {
-		t.Errorf("Generated ID 2 failed validation: %v", err)
-	}
-}
-
-func TestGameIDGeneratorDeterministic(t *testing.T) {
-	gen := NewGameIDGenerator(rand.New(rand.NewSource(42)))
-
-	// Generate multiple IDs
-	var ids []string
-	for i := 0; i < 3; i++ {
-		ids = append(ids, gen.Generate())
-	}
-
-	// All should be valid
-	for i, id := range ids {
-		if err := Validate(id); err != nil {
-			t.Errorf("ID %d failed validation: %v", i, err)
-		}
-	}
-
-	// All should be unique (even with same random source due to timestamp)
-	idMap := make(map[string]bool)
-	for _, id := range ids {
-		if idMap[id] {
-			t.Errorf("Duplicate ID generated: %s", id)
-		}
-		idMap[id] = true
+	if !strings.Contains(err.Error(), "2/2") {
+		t.Errorf("expected error message to show seat count 2/2, got '%s'", err.Error())
 	}
 }

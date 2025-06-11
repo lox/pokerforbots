@@ -130,3 +130,37 @@ func Validate(id string) error {
 
 	return nil
 }
+
+// ValidatePlayerForTable checks if a player can be added to a table
+// Returns an error describing why the player cannot be added, or nil if valid
+func ValidatePlayerForTable(table *Table, player *Player) error {
+	if table == nil {
+		return fmt.Errorf("table is nil")
+	}
+
+	if player == nil {
+		return fmt.Errorf("player is nil")
+	}
+
+	// Check table capacity
+	if len(table.players) >= table.maxSeats {
+		return fmt.Errorf("table is full (%d/%d seats occupied)", len(table.players), table.maxSeats)
+	}
+
+	// Check for duplicate player ID
+	for _, existingPlayer := range table.players {
+		if existingPlayer.ID == player.ID {
+			return fmt.Errorf("player with ID %d already exists at table (existing player: %s, new player: %s)",
+				player.ID, existingPlayer.Name, player.Name)
+		}
+	}
+
+	// Check for duplicate player name (additional safety check)
+	for _, existingPlayer := range table.players {
+		if existingPlayer.Name == player.Name {
+			return fmt.Errorf("player with name '%s' already exists at table", player.Name)
+		}
+	}
+
+	return nil
+}

@@ -322,13 +322,11 @@ func (gs *GameService) JoinTable(tableID, playerName string, buyIn int) error {
 		return fmt.Errorf("player already at table")
 	}
 
-	// Add player to game table
-	player := &game.Player{
-		Name:       playerName,
-		Chips:      buyIn,
-		Type:       game.Human,             // Assume human for network players
-		SeatNumber: len(table.players) + 1, // Simple seat assignment
-	}
+	// Add player to game table with unique ID
+	// Use simple incrementing ID starting from 1 for human players
+	humanID := len(table.players) + 1
+	player := game.NewPlayer(humanID, playerName, game.Human, buyIn)
+	player.SeatNumber = len(table.players) + 1 // Simple seat assignment
 
 	table.engine.GetTable().AddPlayer(player)
 	table.players[playerName] = player
@@ -493,15 +491,13 @@ func (gs *GameService) AddBots(tableID string, count int) ([]string, error) {
 		botConfig.Name = botName
 		botAgent := bot.NewBotWithConfig(rng, gs.logger, botConfig)
 
-		// Create game player for the bot
-		botPlayer := &game.Player{
-			Name:       botName,
-			Chips:      200,                  // Match typical human buy-in
-			Position:   game.UnknownPosition, // Will be assigned by engine
-			SeatNumber: -1,                   // Will be assigned
-			Type:       game.AI,
-			IsActive:   true,
-		}
+		// Create game player for the bot with unique ID
+		// Use bot count as ID (starting from 1000 to avoid conflicts with human players)
+		botID := 1000 + len(table.botAgents) + i + 1
+		botPlayer := game.NewPlayer(botID, botName, game.AI, 200)
+		botPlayer.Position = game.UnknownPosition // Will be assigned by engine
+		botPlayer.SeatNumber = -1                 // Will be assigned
+		botPlayer.IsActive = true
 
 		// Add to table
 		table.players[botName] = botPlayer

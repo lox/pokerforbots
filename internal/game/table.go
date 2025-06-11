@@ -190,6 +190,13 @@ func (t *Table) AddPlayer(player *Player) bool {
 		return false // Table is full
 	}
 
+	// Check for duplicate player ID
+	for _, p := range t.players {
+		if p.ID == player.ID {
+			return false // Player with this ID already exists
+		}
+	}
+
 	// Find first available seat
 	seatTaken := make(map[int]bool)
 	for _, p := range t.players {

@@ -201,11 +201,12 @@ func (b *Bridge) handleStreetChange(msg *server.Message) {
 		return
 	}
 
-	// Debug logging for street change
+	// Enhanced debug logging for street change
 	b.tui.logger.Info("EVENT street_change",
 		"round", data.Round,
 		"currentBet", data.CurrentBet,
-		"communityCards", len(data.CommunityCards))
+		"communityCards", len(data.CommunityCards),
+		"cardDetails", fmt.Sprintf("%v", data.CommunityCards))
 
 	b.tui.UpdateCurrentBet(data.CurrentBet)
 
@@ -252,12 +253,28 @@ func (b *Bridge) handleActionRequired(msg *server.Message) {
 		return
 	}
 
-	// Debug logging for action required
+	// Enhanced debug logging for action required
+	actionDetails := make([]string, len(data.ValidActions))
+	for i, va := range data.ValidActions {
+		actionDetails[i] = fmt.Sprintf("%s(%d-%d)", va.Action, va.MinAmount, va.MaxAmount)
+	}
+
+	// Log all player states for debugging
+	playerStates := make([]string, len(data.TableState.Players))
+	for i, p := range data.TableState.Players {
+		playerStates[i] = fmt.Sprintf("%s(chips:%d,bet:%d,pos:%s)", p.Name, p.Chips, p.BetThisRound, p.Position)
+	}
+
 	b.tui.logger.Info("EVENT action_required",
 		"player", data.PlayerName,
+		"round", data.TableState.CurrentRound,
 		"currentBet", data.TableState.CurrentBet,
 		"pot", data.TableState.Pot,
-		"validActions", len(data.ValidActions))
+		"validActions", len(data.ValidActions),
+		"actionDetails", fmt.Sprintf("[%s]", strings.Join(actionDetails, ", ")),
+		"actingPlayerIdx", data.TableState.ActingPlayerIdx,
+		"totalPlayers", len(data.TableState.Players),
+		"allPlayers", fmt.Sprintf("[%s]", strings.Join(playerStates, ", ")))
 
 	// Convert server data to game types
 	validActions := make([]game.ValidAction, len(data.ValidActions))

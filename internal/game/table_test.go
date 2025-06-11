@@ -64,6 +64,35 @@ func TestAddPlayer(t *testing.T) {
 	}
 }
 
+func TestAddPlayerDuplicateID(t *testing.T) {
+	eventBus := NewEventBus()
+	table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
+		MaxSeats:   6,
+		SmallBlind: 1,
+		BigBlind:   2,
+	})
+
+	player1 := NewPlayer(1, "Alice", Human, 200)
+	player2 := NewPlayer(1, "Bob", AI, 200) // Same ID as player1
+
+	if !table.AddPlayer(player1) {
+		t.Error("Should be able to add first player")
+	}
+
+	if table.AddPlayer(player2) {
+		t.Error("Should not be able to add player with duplicate ID")
+	}
+
+	if len(table.players) != 1 {
+		t.Errorf("Expected 1 player, got %d", len(table.players))
+	}
+
+	// Verify the first player is still there
+	if table.players[0].Name != "Alice" {
+		t.Errorf("Expected first player to be Alice, got %s", table.players[0].Name)
+	}
+}
+
 func TestTableFull(t *testing.T) {
 	eventBus := NewEventBus()
 	table := NewTable(rand.New(rand.NewSource(0)), eventBus, TableConfig{
