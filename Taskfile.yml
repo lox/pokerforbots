@@ -40,6 +40,7 @@ tasks:
       - go build -o {{.DIST_DIR}}/holdem-server ./cmd/holdem-server
       - go build -o {{.DIST_DIR}}/holdem-client ./cmd/holdem-client
       - go build -o {{.DIST_DIR}}/poker-odds ./cmd/poker-odds
+      - go build -o {{.DIST_DIR}}/benchmark ./cmd/benchmark
 
   build-all:
     desc: Build for multiple platforms
@@ -88,3 +89,8 @@ tasks:
   dev:
     desc: Development setup - format, test, lint
     deps: [fmt, test, lint]
+
+  bench:
+    desc: Run benchmark
+    cmds:
+      - go run ./cmd/benchmark

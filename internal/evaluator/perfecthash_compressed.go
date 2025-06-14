@@ -34,24 +34,6 @@ var compressedHashReady bool
 
 var chdCompressedInitOnce sync.Once
 
-// packHandRank packs a 32-bit HandRank into 24 bits for table generation
-// Format: [4-bit type][20-bit tiebreaker]
-// This function is used by the generator but kept here for documentation
-func packHandRank(hr HandRank) [3]byte { //nolint:unused // Used by generator
-	val := uint32(hr)
-	handType := (val >> 20) & 0xF // Extract 4-bit hand type
-	tiebreaker := val & 0xFFFFF   // Extract 20-bit tiebreaker
-
-	// Pack into 24 bits: [4-bit type][20-bit tiebreaker]
-	packed := (handType << 20) | tiebreaker
-
-	return [3]byte{
-		byte(packed),       // Lower 8 bits
-		byte(packed >> 8),  // Middle 8 bits
-		byte(packed >> 16), // Upper 8 bits (includes type)
-	}
-}
-
 // unpackHandRank unpacks a 24-bit value back to HandRank
 //
 //go:inline
@@ -80,7 +62,7 @@ func ensureCHDCompressedLoaded() {
 }
 
 // unsuitedLookupCHDCompressed performs minimal perfect hash lookup using compressed CHD.
-// Target performance: 6-7ns (2 table reads, 1 multiply, unpack overhead)
+// Target performance: optimized lookups (2 table reads, 1 multiply, unpack overhead)
 //
 //go:noinline
 func unsuitedLookupCHDCompressed(primeProd uint64) HandRank {
@@ -105,7 +87,7 @@ func unsuitedLookupCHDCompressed(primeProd uint64) HandRank {
 }
 
 // Evaluate7Compressed evaluates a 7-card hand using compressed CHD minimal perfect hash.
-// This implementation targets 6-7ns for unsuited hands via compressed CHD lookup.
+// This implementation provides optimized performance for unsuited hands via compressed CHD lookup.
 //
 // Memory usage: ~250KB (25% reduction from 333KB baseline)
 // - flushTableCompressed: ~10KB (vs 13.3KB)

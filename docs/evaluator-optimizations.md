@@ -2,23 +2,23 @@
 
 ## Overview
 
-This document chronicles the optimization journey for the 7-card poker hand evaluator in `internal/evaluator/`. The goal was to achieve single-digit nanosecond evaluation times for Monte Carlo simulations.
+This document chronicles the optimization journey for the 7-card poker hand evaluator in `internal/evaluator/`. The goal was to achieve optimal evaluation performance for Monte Carlo simulations.
 
 ## Performance Timeline
 
-| Implementation | Performance | Memory | Notes |
-|----------------|-------------|---------|-------|
-| Basic evaluator | ~72ns | ~1KB | Original implementation using basic logic |
-| **Compressed CHD** | **~25ns** | **279KB** | **LATEST CHAMPION** - 24-bit packing, 17.5% faster, 20.5% smaller |
-| CHD Minimal Perfect Hash | ~30ns | 351KB | Fixed uint64 overflow, 17% faster than map |
-| Map-based Perfect Hash | ~35ns | ~1.5MB | Go's built-in map optimization |
-| Optimized Bucketed Linear Scan | ~40ns | ~200KB | **Improved implementation** - 1.8x faster than basic |
-| Binary search arrays | ~105ns | ~1MB | Cache misses hurt performance |
-| Bucketed linear scan (initial) | ~58ns | ~200KB | Overhead from bucket computation and loops |
+| Implementation | Memory | Notes |
+|----------------|---------|-------|
+| Basic evaluator | ~1KB | Original implementation using basic logic |
+| **Compressed CHD** | **279KB** | **LATEST CHAMPION** - 24-bit packing, faster and smaller |
+| CHD Minimal Perfect Hash | 351KB | Fixed uint64 overflow, faster than map |
+| Map-based Perfect Hash | ~1.5MB | Go's built-in map optimization |
+| Optimized Bucketed Linear Scan | ~200KB | **Improved implementation** - faster than basic |
+| Binary search arrays | ~1MB | Cache misses hurt performance |
+| Bucketed linear scan (initial) | ~200KB | Overhead from bucket computation and loops |
 
 ## Approaches Tested
 
-### 1. Compressed CHD Minimal Perfect Hash (~25ns) ✅ **LATEST CHAMPION**
+### 1. Compressed CHD Minimal Perfect Hash ✅ **LATEST CHAMPION**
 
 **Implementation**: 24-bit packed CHD values with cache-optimized memory layout
 
@@ -40,19 +40,19 @@ func unpackHandRank(packed [3]byte) HandRank {
 ```
 
 **Why it won**:
-- **~25ns** (17.5% faster than CHD baseline)
+- **Faster than CHD baseline** (17.5% improvement)
 - **279KB memory footprint** (20.5% smaller than CHD)
 - **Better cache utilization** - more data fits in L1/L2 cache
 - **Minimal unpacking overhead** - 24→32 bit conversion nearly free
 - **Zero allocations** at runtime
 - **100% correctness** after extensive validation
 
-**Performance breakdown**:
-- Random hands: ~25ns average (real-world workload)
-- Flush hands: ~17ns (13.3% faster due to compressed flush table)
-- Non-flush hands: ~17ns (slight unpacking overhead vs original CHD)
+**Performance characteristics**:
+- Consistent performance across all hand types
+- Faster flush detection due to compressed flush table
+- Minimal overhead for non-flush hands from unpacking
 
-### 2. CHD Minimal Perfect Hash (~30ns) ✅ **PREVIOUS CHAMPION**
+### 2. CHD Minimal Perfect Hash ✅ **PREVIOUS CHAMPION**
 
 **Implementation**: CHD (Compress, Hash, Displace) using `github.com/opencoff/go-chd`
 
@@ -69,18 +69,18 @@ func unsuitedLookupCHD(primeProd uint64) HandRank {
 - Different keys collided → CHD returned uninitialized values → wrong hand types
 
 **Why it won**:
-- **~30ns** (17% faster than Go's map)
+- **Faster than Go's map** (17% improvement)
 - **64KB memory footprint** vs 1.5MB+ for other approaches
 - **2 table reads, 1 multiply** - minimal CPU overhead
 - **Zero allocations** at runtime
 - **100% correctness** after uint64 fix
 
-**Performance breakdown**:
-- Flush hands: ~19ns (array lookup)
-- Unsuited hands: ~16.5ns (CHD lookup)
-- Average: ~30ns across all hand types
+**Performance characteristics**:
+- Fast flush hands (array lookup)
+- Fast unsuited hands (CHD lookup)
+- Consistent performance across all hand types
 
-### 2. Map-Based Perfect Hash (~35ns) ✅
+### 2. Map-Based Perfect Hash ✅
 
 **Implementation**: Simple `map[int]HandRank` lookup using prime product as key.
 
@@ -97,7 +97,7 @@ if v, ok := unsuitedTable[primeProd]; ok {
 - Branch prediction optimization
 - No overhead from manual bucket computation
 
-### 2. Optimized Bucketed Linear Scan (~40ns) ✅ **SIGNIFICANT IMPROVEMENT**
+### 2. Optimized Bucketed Linear Scan ✅ **SIGNIFICANT IMPROVEMENT**
 
 **Final Implementation**: Fused linear scan with optimized 1024-bucket distribution.
 
@@ -114,7 +114,7 @@ for i := 0; i < bucketLengths[bucket]; i++ {
 ```
 
 **Achieved Results**:
-- **40ns/op** (~25M evaluations/sec) - **1.8x faster than basic**
+- **Significantly faster than basic** (1.8x improvement)
 - **95.2% of buckets ≤64 keys** - excellent distribution
 - Sequential memory access within small buckets for cache efficiency
 - 100% correctness across all test cases
@@ -125,7 +125,7 @@ for i := 0; i < bucketLengths[bucket]; i++ {
 - Excellent bucket size distribution (most buckets very small)
 - Cache-friendly sequential access patterns
 
-### 3. Bucketed Linear Scan (Initial Attempt) (~58ns) ❌
+### 3. Bucketed Linear Scan (Initial Attempt) ❌
 
 **Early Implementation**: Basic bucketed approach with suboptimal distribution.
 
@@ -136,7 +136,7 @@ for i := 0; i < bucketLengths[bucket]; i++ {
 - Cache pressure from multiple parallel arrays
 - Suboptimal bucket distribution
 
-### 4. Binary Search Parallel Arrays (~105ns) ❌
+### 4. Binary Search Parallel Arrays ❌
 
 **Implementation**: Sorted keys array with binary search.
 
@@ -185,7 +185,7 @@ After deep research using state-of-the-art optimization techniques from HFT, dat
 
 **Revised Realistic Targets** (based on 40ns bucketed scan baseline):
 
-### 1. Two-Level Minimal Perfect Hash (15-25ns) ⭐ **RECOMMENDED**
+### 1. Two-Level Minimal Perfect Hash ⭐ **RECOMMENDED**
 
 **Implementation**: CHD/BBHash style with compile-time generation
 ```go
@@ -209,7 +209,7 @@ func phLookup(k uint32) HandRank {
 3. Emit Go arrays in `gen_perfect_hash.go`
 4. Memory: page-aligned to avoid false sharing
 
-### 2. Direct Rank Multiset Indexing (20-30ns)
+### 2. Direct Rank Multiset Indexing
 
 **Core Insight**: Only 4,901 unique rank patterns exist for 7-card hands
 
@@ -227,7 +227,7 @@ idx := C(n0+...+n12, 7) + ... // precomputed combination table
 return unsuited_table[idx]     // zero hash collisions
 ```
 
-### 3. Bit-Parallel SWAR Classification (25-35ns)
+### 3. Bit-Parallel SWAR Classification
 
 **Approach**: Encode 7 ranks in 64-bit register, use SWAR population-count
 - Fully branchless, no memory accesses
@@ -235,7 +235,7 @@ return unsuited_table[idx]     // zero hash collisions
 - ~12ns on Ice Lake in C, likely 25-35ns in Go due to runtime overhead
 - Requires hand-tuned intrinsics or assembly - may not beat simpler approaches
 
-### 4. SIMD Batch Evaluation (2-4ns amortized)
+### 4. SIMD Batch Evaluation
 
 **Concept**: Evaluate 8 hands simultaneously with AVX2/NEON
 - Per-hand cost amortized to 2-4ns
@@ -354,7 +354,7 @@ go test -bench=BenchmarkEvaluate7_RandomHands -memprofile=mem.prof
 
 ## CHD Success Story
 
-After extensive research with o3-pro, we successfully implemented CHD minimal perfect hash achieving **~30ns performance** - a 17% improvement over the map baseline and 2.4x faster than the original basic evaluator.
+After extensive research with o3-pro, we successfully implemented CHD minimal perfect hash achieving **excellent performance** - a 17% improvement over the map baseline and 2.4x faster than the original basic evaluator.
 
 ### Key Breakthrough: uint32 Overflow Bug
 
@@ -366,9 +366,9 @@ The critical discovery was a **32-bit overflow issue**:
 
 ### Final Results
 
-**Performance**: ~30ns average (vs 72ns basic, 35ns map)
-- **Flush detection**: ~19ns (direct array access)
-- **CHD lookup**: ~16.5ns (2 table reads + multiply)
+**Performance**: Excellent performance across all hand types
+- **Flush detection**: Fast direct array access
+- **CHD lookup**: Efficient 2 table reads + multiply
 - **Memory**: Only 64KB vs 1.5MB+ for other approaches
 
 **Architecture**:

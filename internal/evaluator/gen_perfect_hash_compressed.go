@@ -69,7 +69,7 @@ func main() {
 	var comb func(int, int, int)
 	comb = func(start, depth, k int) {
 		if depth == k {
-			rank := evaluator.Evaluate7Legacy(cards[:])
+			rank := evaluator.Evaluate7(cards[:])
 
 			// Accumulate suit counts and rank bitmap/product
 			var suitCounts [4]int

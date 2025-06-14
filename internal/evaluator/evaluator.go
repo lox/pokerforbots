@@ -31,7 +31,7 @@
 //
 // # Benchmarks
 //
-// On Apple M1: ~75ns per evaluation, 13.3M hands/sec, 0 allocations
+// High performance evaluation with zero allocations.
 // Perfect for Monte Carlo simulations and real-time equity calculations.
 package evaluator
 
