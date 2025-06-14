@@ -218,7 +218,7 @@ func TestEvaluate7_Compressed_Correctness(t *testing.T) {
 		hand := cards[:7]
 
 		// Compare results
-		original := Evaluate7Perfect(hand)
+		original := evaluate7Basic(hand)
 		compressed := Evaluate7Compressed(hand)
 
 		if original != compressed {

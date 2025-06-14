@@ -35,7 +35,7 @@
 // Perfect for Monte Carlo simulations and real-time equity calculations.
 package evaluator
 
-//go:generate go run gen_perfect_hash.go
+//go:generate go run gen_perfect_hash_compressed.go
 
 import "github.com/lox/pokerforbots/internal/deck"
 
@@ -289,12 +289,12 @@ func encodeMultipleRanksReverse(ranks []int) int {
 }
 
 // Evaluate7 dispatches to the fastest available evaluator implementation.
-// At runtime it chooses the perfect-hash powered evaluator when its lookup
-// tables have been generated (see gen_perfect_hash.go).  Otherwise it falls
+// At runtime it chooses the compressed perfect-hash powered evaluator when its lookup
+// tables have been generated (see gen_perfect_hash_compressed.go).  Otherwise it falls
 // back to the pure algorithmic implementation.
 func Evaluate7(cards []deck.Card) HandRank {
-	if perfectHashReady {
-		return Evaluate7Perfect(cards)
+	if compressedHashReady {
+		return Evaluate7Compressed(cards)
 	}
 	return evaluate7Basic(cards)
 }

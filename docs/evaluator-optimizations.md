@@ -1,4 +1,4 @@
-# Perfect Hash Evaluator Optimization Journey
+# Evaluator Optimization Journey
 
 ## Overview
 
