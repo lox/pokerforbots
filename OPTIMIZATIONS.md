@@ -350,3 +350,11 @@ The critical discovery was a **32-bit overflow issue**:
 5. **Correctness First**: Performance means nothing with wrong results
 
 This optimization journey demonstrates that achieving single-digit nanosecond performance targets, while ambitious, led to significant real-world improvements. The 30ns CHD implementation provides an excellent balance of performance, memory efficiency, and maintainability.
+
+## Inlined CHD Micro-Optimization Experiment (June 2025)
+
+**Result**: Successfully implemented inlined CHD lookup achieving 6.4ns vs 7.1ns (10% improvement, 700ps faster), but **concluded this crossed into over-optimization territory**.
+
+**Key Learning**: While technically sound, the optimization added significant complexity (~200 lines of CHD binary parsing, dual implementation paths, feature flags) for minimal real-world benefit. The 700 picosecond improvement is essentially noise level and doesn't meaningfully impact Monte Carlo simulation performance.
+
+**Recommendation**: The CHD library implementation remains the optimal sweet spot - excellent ~30ns performance with proven correctness and maintainability. Sometimes the best optimization is knowing when to stop.
