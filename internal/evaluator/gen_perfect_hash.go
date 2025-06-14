@@ -19,18 +19,26 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"log"
 	"os"
-	"sort"
 
 	"github.com/lox/pokerforbots/internal/deck"
 	"github.com/lox/pokerforbots/internal/evaluator"
+	"github.com/opencoff/go-chd"
 )
 
 var primeRank = [...]int{
 	0, 0, // 0,1 unused
 	2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41,
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func main() {
@@ -130,27 +138,117 @@ func main() {
 	}
 	fmt.Fprintln(w, "    }\n")
 
-	// Now emit unsuitedTable as a map (sparse key space)
-	//
-	// OPTIMIZATION NOTE: We use Go's built-in map rather than custom data structures
-	// because benchmarks showed maps outperform manual optimizations:
-	// - Map lookup: ~35ns (current implementation)
-	// - Bucketed linear scan: ~58ns (stashed in git)
-	// - Binary search: ~105ns (cache misses)
-	// Go's map implementation benefits from hardware acceleration and years of optimization.
+	// Build CHD (Compress, Hash, Displace) minimal perfect hash
+	// This replaces the map with ~150KB of tables targeting 5-6ns lookups
+	log.Println("Building CHD minimal perfect hash...")
 
-	// Emit unsuitedTable as a map
-	unsKeys := make([]int, 0, len(unsuitedTable))
+	// Extract keys and build CHD
+	unsKeys := make([]uint64, 0, len(unsuitedTable))
 	for k := range unsuitedTable {
-		unsKeys = append(unsKeys, k)
+		unsKeys = append(unsKeys, uint64(k))
 	}
-	sort.Ints(unsKeys)
 
-	fmt.Fprintf(w, "    unsuitedTable = map[int]HandRank{\n")
-	for _, k := range unsKeys {
-		fmt.Fprintf(w, "        %d: %d,\n", k, unsuitedTable[k])
+	// Build CHD with optimal load factor
+	builder, err := chd.New()
+	if err != nil {
+		log.Fatalf("Failed to create CHD builder: %v", err)
 	}
-	fmt.Fprintln(w, "    }\n")
+
+	for _, key := range unsKeys {
+		builder.Add(key)
+	}
+
+	mph, err := builder.Freeze(0.90) // High load factor for space efficiency
+	if err != nil {
+		log.Fatalf("Failed to build CHD: %v", err)
+	}
+
+	// CHD might return indices up to some larger range, not just len(keys)
+	// Let's find the maximum index first
+	maxIndex := uint64(0)
+	for _, key := range unsKeys {
+		mphIndex := mph.Find(key)
+		if mphIndex > maxIndex {
+			maxIndex = mphIndex
+		}
+	}
+
+	log.Printf("CHD: %d keys, max index: %d", len(unsKeys), maxIndex)
+
+	// Create value array sized to accommodate max index
+	unsuitedValues := make([]evaluator.HandRank, maxIndex+1)
+
+	// Track which indices are used to detect collisions
+	usedIndices := make(map[uint64]bool)
+
+	for _, key := range unsKeys {
+		intKey := int(key)
+		mphIndex := mph.Find(key)
+
+		if usedIndices[mphIndex] {
+			log.Fatalf("CHD collision: index %d used by multiple keys", mphIndex)
+		}
+		usedIndices[mphIndex] = true
+
+		unsuitedValues[mphIndex] = unsuitedTable[intKey]
+	}
+
+	// Validate the CHD mapping by checking a few random keys
+	log.Printf("Validating CHD mapping...")
+	for i, key := range unsKeys[:min(10, len(unsKeys))] {
+		intKey := int(key)
+		mphIndex := mph.Find(key)
+		originalRank := unsuitedTable[intKey]
+		chdRank := unsuitedValues[mphIndex]
+
+		if originalRank != chdRank {
+			log.Fatalf("CHD validation failed for key %d: original=%d, chd=%d", intKey, originalRank, chdRank)
+		}
+		if i < 3 {
+			log.Printf("CHD validation OK: key=%d -> index=%d -> rank=%d", intKey, mphIndex, chdRank)
+		}
+	}
+	log.Printf("CHD validation passed")
+
+	// Serialize CHD for code generation
+	var chdBuffer bytes.Buffer
+	_, err = mph.MarshalBinary(&chdBuffer)
+	if err != nil {
+		log.Fatalf("Failed to serialize CHD: %v", err)
+	}
+	chdBytes := chdBuffer.Bytes()
+
+	// Emit CHD tables
+	fmt.Fprintf(w, "    // CHD minimal perfect hash tables (targeting 5-6ns lookups)\n")
+	fmt.Fprintf(w, "    unsuitedCHDData = []byte{\n")
+	for i, b := range chdBytes {
+		if i%16 == 0 {
+			fmt.Fprintf(w, "        ")
+		}
+		fmt.Fprintf(w, "0x%02x, ", b)
+		if i%16 == 15 {
+			fmt.Fprintf(w, "\n")
+		}
+	}
+	if len(chdBytes)%16 != 0 {
+		fmt.Fprintf(w, "\n")
+	}
+	fmt.Fprintf(w, "    }\n\n")
+
+	fmt.Fprintf(w, "    unsuitedValues = []HandRank{\n")
+	for i, v := range unsuitedValues {
+		if i%8 == 0 {
+			fmt.Fprintf(w, "        ")
+		}
+		fmt.Fprintf(w, "%d, ", v)
+		if i%8 == 7 {
+			fmt.Fprintf(w, "\n")
+		}
+	}
+	if len(unsuitedValues)%8 != 0 {
+		fmt.Fprintf(w, "\n")
+	}
+	fmt.Fprintf(w, "    }\n\n")
 
 	fmt.Fprintln(w, "    perfectHashReady = true\n}")
 
@@ -158,5 +256,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Println("Generated ph_tables.go with", len(flushTable), "flush entries and", len(unsuitedTable), "unsuited entries.")
+	log.Printf("Generated ph_tables.go with %d flush entries, %d unsuited CHD entries (~%d KB)",
+		len(flushTable), len(unsuitedTable), len(chdBytes)/1024)
 }
