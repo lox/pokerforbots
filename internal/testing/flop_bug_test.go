@@ -22,25 +22,22 @@ func TestFlopBugReproduction(t *testing.T) {
 
 	// Set up message monitoring
 	go func() {
-		for {
-			select {
-			case msgType := <-testClient.messageChan:
-				switch msgType {
-				case serverpkg.MessageTypeHandStart:
-					select {
-					case testClient.handStarted <- struct{}{}:
-					default:
-					}
-				case serverpkg.MessageTypeHandEnd:
-					select {
-					case testClient.handEnded <- struct{}{}:
-					default:
-					}
-				case serverpkg.MessageTypeStreetChange:
-					select {
-					case testClient.streetChanged <- struct{}{}:
-					default:
-					}
+		for msgType := range testClient.messageChan {
+			switch msgType {
+			case serverpkg.MessageTypeHandStart:
+				select {
+				case testClient.handStarted <- struct{}{}:
+				default:
+				}
+			case serverpkg.MessageTypeHandEnd:
+				select {
+				case testClient.handEnded <- struct{}{}:
+				default:
+				}
+			case serverpkg.MessageTypeStreetChange:
+				select {
+				case testClient.streetChanged <- struct{}{}:
+				default:
 				}
 			}
 		}

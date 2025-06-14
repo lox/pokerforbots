@@ -236,10 +236,10 @@ func (b *Bridge) handleHandEnd(msg *server.Message) {
 	}
 
 	b.tui.AddLogEntry("")
-	b.tui.AddLogEntry(fmt.Sprintf("=== Hand %s Complete ===", data.HandID))
-	b.tui.AddLogEntry(fmt.Sprintf("Pot: $%d", data.PotSize))
-	for _, winner := range data.Winners {
-		b.tui.AddLogEntry(fmt.Sprintf("Winner: %s ($%d) - %s", winner.PlayerName, winner.Amount, winner.HandRank))
+	// Use the rich summary from HandHistory
+	lines := strings.Split(strings.TrimSpace(data.Summary), "\n")
+	for _, line := range lines {
+		b.tui.AddLogEntry(line)
 	}
 	b.tui.AddLogEntry("")
 

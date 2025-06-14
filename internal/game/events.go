@@ -314,8 +314,10 @@ func (ef *EventFormatter) FormatStreetChange(event StreetChangeEvent) string {
 
 // FormatHandStart formats a hand start event into a human-readable string
 func (ef *EventFormatter) FormatHandStart(event HandStartEvent) string {
-	return fmt.Sprintf("Hand %s • %d players • $%d/$%d",
-		event.HandID, len(event.Players), event.SmallBlind, event.BigBlind)
+	line1 := fmt.Sprintf("\033[1mHand %s\033[0m", event.HandID)
+	line2 := fmt.Sprintf("%d players • $%d/$%d", len(event.Players), event.SmallBlind, event.BigBlind)
+
+	return fmt.Sprintf("%s\n%s", line1, line2)
 }
 
 // FormatHandEnd formats a hand end event into a human-readable string

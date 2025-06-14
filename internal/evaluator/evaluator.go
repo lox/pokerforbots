@@ -35,14 +35,17 @@
 // Perfect for Monte Carlo simulations and real-time equity calculations.
 package evaluator
 
-//go:generate go run gen_luts.go
+//go:generate go run gen_perfect_hash.go
 
 import "github.com/lox/pokerforbots/internal/deck"
 
-// Evaluate7 evaluates 7 cards and returns a HandRank where lower = stronger
-func Evaluate7(cards []deck.Card) HandRank {
+// evaluate7Basic is the original evaluator implementation that does not rely on
+// the perfect-hash lookup tables.  It is kept unexported so that callers go
+// through Evaluate7, which will automatically switch to the fastest available
+// implementation at run-time.
+func evaluate7Basic(cards []deck.Card) HandRank {
 	if len(cards) != 7 {
-		panic("Evaluate7 requires exactly 7 cards")
+		panic("evaluate7Basic requires exactly 7 cards")
 	}
 
 	// Preprocessing: count ranks, suits, and build rank bitmap
@@ -80,8 +83,8 @@ func Evaluate7(cards []deck.Card) HandRank {
 			}
 		}
 
-		// Check for straight flush using LUT
-		straightHigh := int(straightLUT[flushRankBits>>2])
+		// Check for straight flush
+		straightHigh := findStraightInBitmap(flushRankBits)
 		if straightHigh > 0 {
 			// Royal flush: A-K-Q-J-10
 			if straightHigh == 14 && (flushRankBits&(1<<13)) != 0 {
@@ -132,8 +135,8 @@ func Evaluate7(cards []deck.Card) HandRank {
 		return HandRank((FullHouseType << 20) | (threeRank << 4) | pairRank)
 	}
 
-	// Check for straight using LUT
-	straightHigh := int(straightLUT[rankBits>>2])
+	// Check for straight
+	straightHigh := findStraightInBitmap(rankBits)
 	if straightHigh > 0 {
 		return HandRank((StraightType << 20) | straightHigh)
 	}
@@ -189,8 +192,6 @@ func Evaluate7(cards []deck.Card) HandRank {
 
 // findStraightInBitmap checks for 5 consecutive bits in rank bitmap
 // Returns the high card of the straight, or 0 if no straight
-// REPLACED BY LUT for performance - kept for reference
-/*
 func findStraightInBitmap(rankBits uint32) int {
 	// Check for wheel straight (A-2-3-4-5)
 	wheel := uint32(1<<14 | 1<<5 | 1<<4 | 1<<3 | 1<<2)
@@ -208,26 +209,26 @@ func findStraightInBitmap(rankBits uint32) int {
 
 	return 0
 }
-*/
 
 // findHighestKicker finds the highest single card excluding given ranks
-// Optimized with LUT to eliminate map allocation
 func findHighestKicker(rankCounts [15]int, excludeRanks ...int) int {
-	// Build bitmask of available kickers (ranks with count=1)
-	var availableMask int
-	for rank := 2; rank <= 14; rank++ {
+	// Find highest rank with count=1 that's not excluded
+	for rank := 14; rank >= 2; rank-- {
 		if rankCounts[rank] == 1 {
-			availableMask |= 1 << rank
+			// Check if this rank is excluded
+			excluded := false
+			for _, excludeRank := range excludeRanks {
+				if rank == excludeRank {
+					excluded = true
+					break
+				}
+			}
+			if !excluded {
+				return rank
+			}
 		}
 	}
-
-	// Remove excluded ranks from available mask
-	for _, rank := range excludeRanks {
-		availableMask &^= 1 << rank // Clear bit for excluded rank
-	}
-
-	// Use LUT for O(1) lookup instead of loop
-	return int(kickerLUT[availableMask])
+	return 0 // No kicker found
 }
 
 // We inlined this function for a 35% speedup
@@ -285,4 +286,15 @@ func encodeMultipleRanksReverse(ranks []int) int {
 		result |= (15 - rank) << uint(4*i)
 	}
 	return result
+}
+
+// Evaluate7 dispatches to the fastest available evaluator implementation.
+// At runtime it chooses the perfect-hash powered evaluator when its lookup
+// tables have been generated (see gen_perfect_hash.go).  Otherwise it falls
+// back to the pure algorithmic implementation.
+func Evaluate7(cards []deck.Card) HandRank {
+	if perfectHashReady {
+		return Evaluate7Perfect(cards)
+	}
+	return evaluate7Basic(cards)
 }

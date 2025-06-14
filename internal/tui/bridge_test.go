@@ -324,6 +324,7 @@ func TestBridgeEventHandling(t *testing.T) {
 					HandRank:   "Pair of Aces",
 				},
 			},
+			Summary: "*** SUMMARY ***\nTotal pot $100\nSeat 1: Alice won ($100) with Pair of Aces",
 		}
 
 		msgData, err := json.Marshal(handEndData)
@@ -341,15 +342,15 @@ func TestBridgeEventHandling(t *testing.T) {
 		captured := tui.GetCapturedLog()
 		assert.NotEmpty(t, captured)
 
-		// Should contain hand completion info
+		// Should contain hand completion summary
 		found := false
 		for _, entry := range captured {
-			if entry == "=== Hand hand123 Complete ===" {
+			if strings.Contains(entry, "SUMMARY") {
 				found = true
 				break
 			}
 		}
-		assert.True(t, found, "Expected hand completion entry in log")
+		assert.True(t, found, "Expected hand summary in log")
 	})
 }
 

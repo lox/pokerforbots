@@ -283,10 +283,24 @@ func TestEventFormatter_FormatHandStart(t *testing.T) {
 
 	formatter := NewEventFormatter(FormattingOptions{})
 	result := formatter.FormatHandStart(event)
-	expected := "Hand test-hand-123 • 3 players • $5/$10"
 
-	if result != expected {
-		t.Errorf("FormatHandStart() = %q, expected %q", result, expected)
+	// Check that the result contains the expected information
+	if !strings.Contains(result, "Hand test-hand-123") {
+		t.Errorf("FormatHandStart() should contain hand ID, got %q", result)
+	}
+	if !strings.Contains(result, "3 players • $5/$10") {
+		t.Errorf("FormatHandStart() should contain player count and stakes, got %q", result)
+	}
+
+	// Check that it has the simple structure
+	lines := strings.Split(result, "\n")
+	if len(lines) != 2 {
+		t.Errorf("FormatHandStart() should have 2 lines (hand, details), got %d", len(lines))
+	}
+
+	// Check that the hand line includes bold formatting
+	if !strings.Contains(result, "\033[1m") || !strings.Contains(result, "\033[0m") {
+		t.Errorf("FormatHandStart() should include bold formatting for Hand, got %q", result)
 	}
 }
 
