@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lox/pokerforbots/internal/deck"
+	"github.com/lox/pokerforbots/sdk/deck"
 )
 
 func TestNewHandHistory(t *testing.T) {

@@ -5,7 +5,8 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/lox/pokerforbots/internal/deck"
+	"github.com/lox/pokerforbots/internal/evaluator"
+	"github.com/lox/pokerforbots/sdk/deck"
 )
 
 func TestNewTable(t *testing.T) {
@@ -432,6 +433,18 @@ func TestFindWinnerEvaluatesHandStrength(t *testing.T) {
 
 	// Now with proper hand evaluation: Player2 should win with pair of Aces
 	winners := table.FindWinners()
+
+	// Debug: check hand evaluations
+	cards1 := append(player1.HoleCards, table.communityCards...)
+	cards2 := append(player2.HoleCards, table.communityCards...)
+	hand1 := evaluator.Evaluate7(cards1)
+	hand2 := evaluator.Evaluate7(cards2)
+	e := evaluator.NewEvaluator()
+
+	t.Logf("Player1 hand: %s, rank: %d, class: %s", cards1, hand1, e.GetHandClass(int(hand1)))
+	t.Logf("Player2 hand: %s, rank: %d, class: %s", cards2, hand2, e.GetHandClass(int(hand2)))
+	t.Logf("Compare result: %d (positive means hand2 is better)", hand1.Compare(hand2))
+
 	if len(winners) != 1 {
 		t.Fatalf("Expected exactly 1 winner, got %d", len(winners))
 	}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lox/pokerforbots/internal/deck"
+	"github.com/lox/pokerforbots/sdk/deck"
 )
 
 // EventType represents a game event type with type safety

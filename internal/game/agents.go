@@ -3,7 +3,7 @@ package game
 import (
 	"fmt"
 
-	"github.com/lox/pokerforbots/internal/deck"
+	"github.com/lox/pokerforbots/sdk/deck"
 )
 
 // Decision represents a player's decision with reasoning

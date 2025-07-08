@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
-	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/coder/quartz"
-	"github.com/lox/pokerforbots/internal/bot"
 	"github.com/lox/pokerforbots/internal/game"
 )
 
@@ -25,8 +23,8 @@ type ServerTable struct {
 	engine        *game.GameEngine
 	players       map[string]*game.Player  // playerName -> Player
 	networkAgents map[string]*NetworkAgent // playerName -> NetworkAgent for remote players
-	botAgents     map[string]game.Agent    // playerName -> Bot agent for AI players
-	status        string                   // "waiting", "active", "finished"
+	// botAgents     map[string]game.Agent    // playerName -> Bot agent for AI players (REMOVED - bots should use SDK)
+	status        string // "waiting", "active", "finished"
 	logger        *log.Logger
 	eventSub      *TableEventSubscriber
 	waitingLogged bool // Track if we've logged the waiting message
@@ -254,11 +252,11 @@ func (gs *GameService) CreateTable(name string, maxPlayers, smallBlind, bigBlind
 		engine:         engine,
 		players:        make(map[string]*game.Player),
 		networkAgents:  make(map[string]*NetworkAgent),
-		botAgents:      make(map[string]game.Agent),
-		status:         "waiting",
-		logger:         logger,
-		seed:           tableSeed,
-		playerReturn:   make(chan struct{}, 1), // Buffered to avoid blocking
+		// botAgents:      make(map[string]game.Agent), // REMOVED - bots should use SDK
+		status:       "waiting",
+		logger:       logger,
+		seed:         tableSeed,
+		playerReturn: make(chan struct{}, 1), // Buffered to avoid blocking
 	}
 
 	// Create event subscriber for this table
@@ -400,10 +398,7 @@ func (gs *GameService) startTableGame(table *ServerTable) {
 		table.engine.AddAgent(playerName, agent)
 	}
 
-	// Add bot agents for AI players
-	for playerName, agent := range table.botAgents {
-		table.engine.AddAgent(playerName, agent)
-	}
+	// Bot agents removed - bots should connect as external clients using the SDK
 
 	// Run the game loop
 	for {
@@ -462,92 +457,12 @@ func (gs *GameService) HandlePlayerDecision(playerName string, data PlayerDecisi
 	return gs.agentManager.HandlePlayerDecision(playerName, data)
 }
 
-// AddBots adds AI bots to the specified table
+// AddBots is deprecated - bots should connect as external clients using the SDK
 func (gs *GameService) AddBots(tableID string, count int) ([]string, error) {
-	gs.mu.Lock()
-	defer gs.mu.Unlock()
-
-	table, exists := gs.tables[tableID]
-	if !exists {
-		return nil, fmt.Errorf("table not found: %s", tableID)
-	}
-
-	var botNames []string
-	for i := 0; i < count; i++ {
-		// Check if table is full
-		if len(table.players) >= table.MaxSeats() {
-			break
-		}
-
-		// Generate unique bot name
-		botName := fmt.Sprintf("Bot_%d", len(table.botAgents)+1)
-		for table.players[botName] != nil {
-			botName = fmt.Sprintf("Bot_%d", len(table.botAgents)+len(botNames)+i+1)
-		}
-
-		// Create bot with sophisticated AI
-		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-		botConfig := bot.DefaultBotConfig()
-		botConfig.Name = botName
-		botAgent := bot.NewBotWithConfig(rng, gs.logger, botConfig)
-
-		// Create game player for the bot with unique ID
-		// Use bot count as ID (starting from 1000 to avoid conflicts with human players)
-		botID := 1000 + len(table.botAgents) + i + 1
-		botPlayer := game.NewPlayer(botID, botName, game.AI, 200)
-		botPlayer.Position = game.UnknownPosition // Will be assigned by engine
-		botPlayer.SeatNumber = -1                 // Will be assigned
-		botPlayer.IsActive = true
-
-		// Add to table
-		table.players[botName] = botPlayer
-		table.botAgents[botName] = botAgent
-
-		// Add to game engine table and register agent
-		table.engine.GetTable().AddPlayer(botPlayer)
-		table.engine.AddAgent(botName, botAgent)
-
-		botNames = append(botNames, botName)
-		table.logger.Info("Added bot to table", "botName", botName, "tableId", tableID)
-	}
-
-	if len(botNames) == 0 {
-		return nil, fmt.Errorf("could not add any bots (table may be full)")
-	}
-
-	// Start game if we have enough players and table is waiting
-	// Only start if there's at least one human player (networkAgent)
-	if len(table.players) >= 2 && table.status == "waiting" && len(table.networkAgents) > 0 {
-		go gs.startTableGame(table)
-	}
-
-	return botNames, nil
+	return nil, fmt.Errorf("bot creation has been disabled - bots should connect as external clients using the pokerforbots SDK")
 }
 
-// KickBot removes a bot from the specified table
+// KickBot is deprecated - bots should connect as external clients using the SDK
 func (gs *GameService) KickBot(tableID string, botName string) error {
-	gs.mu.Lock()
-	defer gs.mu.Unlock()
-
-	table, exists := gs.tables[tableID]
-	if !exists {
-		return fmt.Errorf("table not found: %s", tableID)
-	}
-
-	// Check if the player is actually a bot
-	if _, isBot := table.botAgents[botName]; !isBot {
-		return fmt.Errorf("player %s is not a bot or does not exist", botName)
-	}
-
-	// Mark bot as inactive first
-	if botPlayer := table.players[botName]; botPlayer != nil {
-		botPlayer.IsActive = false
-	}
-
-	// Remove from table maps
-	delete(table.players, botName)
-	delete(table.botAgents, botName)
-
-	table.logger.Info("Kicked bot from table", "botName", botName, "tableId", tableID)
-	return nil
+	return fmt.Errorf("bot management has been disabled - bots should connect as external clients using the pokerforbots SDK")
 }

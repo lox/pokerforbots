@@ -5,8 +5,8 @@ import (
 	"math/rand"
 	"sort"
 
-	"github.com/lox/pokerforbots/internal/deck"
 	"github.com/lox/pokerforbots/internal/evaluator"
+	"github.com/lox/pokerforbots/sdk/deck"
 )
 
 // TableConfig holds configuration for creating a table

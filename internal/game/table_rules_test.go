@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/lox/pokerforbots/internal/deck"
+	"github.com/lox/pokerforbots/sdk/deck"
 )
 
 // =============================================================================

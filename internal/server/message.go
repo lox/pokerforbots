@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/lox/pokerforbots/internal/deck"
 	"github.com/lox/pokerforbots/internal/game"
+	"github.com/lox/pokerforbots/sdk/deck"
 )
 
 // Message represents the base WebSocket message structure

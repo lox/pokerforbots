@@ -1,16 +1,11 @@
-/dist/
 /*.log
 /*.prof
-/handhistory
+
+# Build artifacts
+/dist/
 
 # Binaries
-/main
-/simulate
-/holdem
-/holdem-client
 /holdem-server
-/poker-odds
 
 # Configs
 /holdem-server.hcl
-/holdem-client.hcl

@@ -20,8 +20,8 @@ var CLI struct {
 	LogLevel string `short:"l" long:"log-level" help:"Log level (overrides config)"`
 	LogFile  string `short:"f" long:"log-file" help:"Log file path (overrides config)"`
 	Tables   int    `short:"t" long:"tables" help:"Number of tables to create (legacy mode)"`
-	Bots     int    `short:"b" long:"bots" help:"Number of bots to add to each table"`
-	Seed     int64  `short:"s" long:"seed" help:"Random seed for deterministic table IDs"`
+	// Bots     int    `short:"b" long:"bots" help:"Number of bots to add to each table"` // REMOVED - bots should use SDK
+	Seed int64 `short:"s" long:"seed" help:"Random seed for deterministic table IDs"`
 }
 
 // stripANSIWriter is a writer that strips ANSI color codes before writing to the underlying writer
@@ -212,16 +212,7 @@ func main() {
 			"stakes", fmt.Sprintf("$%d/$%d", tableConfig.SmallBlind, tableConfig.BigBlind),
 			"maxPlayers", tableConfig.MaxPlayers)
 
-		// Auto-populate with bots if requested
-		if CLI.Bots > 0 {
-			logger.Info("Auto-populating table with bots", "tableId", table.ID, "count", CLI.Bots)
-			botNames, err := gameService.AddBots(table.ID, CLI.Bots)
-			if err != nil {
-				logger.Error("Failed to add bots", "error", err)
-			} else {
-				logger.Info("Added bots to table", "bots", botNames, "tableId", table.ID)
-			}
-		}
+		// Bot auto-population removed - bots should connect as external clients using the SDK
 	}
 
 	// Handle graceful shutdown

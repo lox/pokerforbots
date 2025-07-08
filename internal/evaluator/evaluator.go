@@ -1,300 +1,444 @@
-// Package evaluator implements a high-performance Texas Hold'em hand evaluator.
-//
-// The core algorithm follows the time-tested approach used by poker engines
-// worldwide, inspired by classic evaluators like Cactus Kev's and TwoPlusTwo's
-// lookup tables, but optimized for modern CPUs and Go's strengths:
-//
-// 1. **Preprocessing**: Count each rank (2-A) and suit occurrence, build rank bitmap
-// 2. **Flush Detection**: Check if any suit appears ≥5 times
-// 3. **Straight Flush**: If flush exists, check for consecutive ranks in flush suit
-// 4. **Hand Classification**: Process from strongest to weakest hands:
-//   - Four of a kind, Full house, Flush, Straight, Three of a kind, etc.
-//     5. **Encoding**: Pack hand type and tiebreakers into a single integer where
-//     lower values = stronger hands
-//
-// # Performance Secrets
-//
-// The magic happens in the details:
-//
-// - **Zero Allocations**: All slices replaced with fixed-size arrays
-// - **Inlined Hot Paths**: Critical functions inlined to eliminate call overhead
-// - **Bit Manipulation**: Precomputed masks avoid shifts in tight loops
-// - **Cache-Friendly**: Dense data structures, minimal pointer chasing
-// - **Order Matters**: Most common hands (pairs, high card) checked efficiently
-//
-// # Encoding Scheme
-//
-// Results are encoded as: (handType << 20) | tiebreaker_info
-//
-// This allows direct integer comparison for hand strength, with special handling
-// for reverse-encoding where higher card values should rank lower (pairs, two-pair).
-//
-// # Benchmarks
-//
-// High performance evaluation with zero allocations.
-// Perfect for Monte Carlo simulations and real-time equity calculations.
 package evaluator
 
-//go:generate go run gen_perfect_hash_compressed.go
+// Simple 7-card hand evaluator - ported from Zig implementation
+// Lower rank values are better hands (0 = Royal Flush)
 
-import "github.com/lox/pokerforbots/internal/deck"
+import (
+	"math/bits"
 
-// evaluate7Basic is the original evaluator implementation that does not rely on
-// the perfect-hash lookup tables.  It is kept unexported so that callers go
-// through Evaluate7, which will automatically switch to the fastest available
-// implementation at run-time.
-func evaluate7Basic(cards []deck.Card) HandRank {
-	if len(cards) != 7 {
-		panic("evaluate7Basic requires exactly 7 cards")
-	}
+	"github.com/lox/pokerforbots/sdk/deck"
+)
 
-	// Preprocessing: count ranks, suits, and build rank bitmap
-	var rankCounts [15]int // index 0 unused, 2-14 for card ranks
-	var suitCounts [4]int
-	var rankBits uint32
+// HandRank represents the strength of a poker hand (lower is better)
+type HandRank uint16
 
-	for _, card := range cards {
-		rankCounts[card.Rank]++
-		suitCounts[card.Suit]++
-		rankBits |= 1 << uint(card.Rank)
-	}
-
-	// Check for flush
-	flushSuit := -1
-	for suit := 0; suit < 4; suit++ {
-		if suitCounts[suit] >= 5 {
-			flushSuit = suit
-			break
-		}
-	}
-
-	// If flush exists, check for straight flush
-	if flushSuit != -1 {
-		var flushRankBits uint32
-		var flushCards [7]int // Fixed array instead of slice allocation
-		flushCount := 0
-
-		// Collect all cards of flush suit and build flush rank bitmap
-		for _, card := range cards {
-			if card.Suit == flushSuit {
-				flushRankBits |= 1 << uint(card.Rank)
-				flushCards[flushCount] = card.Rank
-				flushCount++
-			}
-		}
-
-		// Check for straight flush
-		straightHigh := findStraightInBitmap(flushRankBits)
-		if straightHigh > 0 {
-			// Royal flush: A-K-Q-J-10
-			if straightHigh == 14 && (flushRankBits&(1<<13)) != 0 {
-				return HandRank((RoyalFlushType << 20) | 14)
-			}
-			// Straight flush
-			return HandRank((StraightFlushType << 20) | straightHigh)
-		}
-
-		// Regular flush - use 5 highest cards
-		flushRanks := getHighestRanks(flushCards[:flushCount], 5)
-		return HandRank((FlushType << 20) | encodeMultipleRanks(flushRanks))
-	}
-
-	// Find groups (4-of-a-kind, 3-of-a-kind, pairs)
-	var fours, threes, pairs [4]int // Fixed size arrays
-	var fourCount, threeCount, pairCount int
-
-	for rank := 14; rank >= 2; rank-- {
-		count := rankCounts[rank]
-		if count == 4 && fourCount < 4 {
-			fours[fourCount] = rank
-			fourCount++
-		} else if count == 3 && threeCount < 4 {
-			threes[threeCount] = rank
-			threeCount++
-		} else if count == 2 && pairCount < 4 {
-			pairs[pairCount] = rank
-			pairCount++
-		}
-	}
-
-	// Four of a kind
-	if fourCount > 0 {
-		kicker := findHighestKicker(rankCounts, fours[0])
-		return HandRank((FourOfAKindType << 20) | (fours[0] << 4) | kicker)
-	}
-
-	// Full house
-	if threeCount > 0 && (pairCount > 0 || threeCount > 1) {
-		threeRank := threes[0]
-		var pairRank int
-		if threeCount > 1 {
-			pairRank = threes[1] // Two three-of-a-kinds, use lower as pair
-		} else {
-			pairRank = pairs[0]
-		}
-		return HandRank((FullHouseType << 20) | (threeRank << 4) | pairRank)
-	}
-
-	// Check for straight
-	straightHigh := findStraightInBitmap(rankBits)
-	if straightHigh > 0 {
-		return HandRank((StraightType << 20) | straightHigh)
-	}
-
-	// Three of a kind
-	if threeCount > 0 {
-		// Inline findHighestKickers for 2 kickers
-		var kickers [2]int
-		kickerCount := 0
-		for rank := 14; rank >= 2 && kickerCount < 2; rank-- {
-			if rankCounts[rank] == 1 && rank != threes[0] {
-				kickers[kickerCount] = rank
-				kickerCount++
-			}
-		}
-		return HandRank((ThreeOfAKindType << 20) | (threes[0] << 8) | (kickers[0] << 4) | kickers[1])
-	}
-
-	// Two pair
-	if pairCount >= 2 {
-		kicker := findHighestKicker(rankCounts, pairs[0], pairs[1])
-		// Use reverse encoding so higher pairs have lower scores
-		return HandRank((TwoPairType << 20) | ((15 - pairs[0]) << 8) | ((15 - pairs[1]) << 4) | (15 - kicker))
-	}
-
-	// One pair
-	if pairCount == 1 {
-		// Inline findHighestKickers for 3 kickers
-		var kickers [3]int
-		kickerCount := 0
-		for rank := 14; rank >= 2 && kickerCount < 3; rank-- {
-			if rankCounts[rank] == 1 && rank != pairs[0] {
-				kickers[kickerCount] = rank
-				kickerCount++
-			}
-		}
-		// Use reverse encoding for pair rank so higher pairs have lower scores
-		return HandRank((OnePairType << 20) | ((15 - pairs[0]) << 12) | ((15 - kickers[0]) << 8) | ((15 - kickers[1]) << 4) | (15 - kickers[2]))
-	}
-
-	// High card
-	// Inline findHighestKickers for 5 kickers (no exclusions)
-	var highCards [5]int
-	kickerCount := 0
-	for rank := 14; rank >= 2 && kickerCount < 5; rank-- {
-		if rankCounts[rank] == 1 {
-			highCards[kickerCount] = rank
-			kickerCount++
-		}
-	}
-	return HandRank((HighCardType << 20) | encodeMultipleRanksReverse(highCards[:]))
+// String returns a description of the hand rank
+func (h HandRank) String() string {
+	e := NewEvaluator()
+	return e.GetHandClass(int(h))
 }
 
-// findStraightInBitmap checks for 5 consecutive bits in rank bitmap
-// Returns the high card of the straight, or 0 if no straight
-func findStraightInBitmap(rankBits uint32) int {
-	// Check for wheel straight (A-2-3-4-5)
-	wheel := uint32(1<<14 | 1<<5 | 1<<4 | 1<<3 | 1<<2)
-	if (rankBits & wheel) == wheel {
-		return 5 // In wheel, 5 is high card
+// Compare compares two HandRank values (returns 1 if h is better, -1 if other is better, 0 if equal)
+func (h HandRank) Compare(other HandRank) int {
+	if h < other {
+		return 1 // h is better (lower rank wins)
+	} else if h > other {
+		return -1 // other is better
+	}
+	return 0 // equal
+}
+
+// Hand ranking constants
+const (
+	HandCategoryHighCard = iota
+	HandCategoryPair
+	HandCategoryTwoPair
+	HandCategoryThreeOfAKind
+	HandCategoryStraight
+	HandCategoryFlush
+	HandCategoryFullHouse
+	HandCategoryFourOfAKind
+	HandCategoryStraightFlush
+)
+
+// Card suits
+const (
+	Clubs = iota
+	Diamonds
+	Hearts
+	Spades
+)
+
+// Card represents a playing card
+// Encoded as uint64 with bit position = suit * 13 + rank
+// Rank: 0=2, 1=3, ..., 11=K, 12=A
+type Card uint64
+
+// Hand is a bitfield representing up to 7 cards
+type Hand uint64
+
+// MakeCard creates a card from suit (0-3) and rank (0-12)
+func MakeCard(suit, rank int) Card {
+	return Card(1) << (suit*13 + rank)
+}
+
+// Evaluator provides poker hand evaluation
+type Evaluator struct{}
+
+// NewEvaluator creates a new evaluator
+func NewEvaluator() *Evaluator {
+	return &Evaluator{}
+}
+
+// getRankMask returns a bitmask of all ranks present in the hand
+func getRankMask(hand Hand) uint16 {
+	clubs := getSuitMask(hand, Clubs)
+	diamonds := getSuitMask(hand, Diamonds)
+	hearts := getSuitMask(hand, Hearts)
+	spades := getSuitMask(hand, Spades)
+	return clubs | diamonds | hearts | spades
+}
+
+// getSuitMask returns a bitmask of ranks for a specific suit
+func getSuitMask(hand Hand, suit int) uint16 {
+	suitBits := uint64(hand) >> (suit * 13)
+	return uint16(suitBits & 0x1FFF) // 13 bits for ranks
+}
+
+// getSuitMasks returns rank masks for all 4 suits
+func getSuitMasks(hand Hand) [4]uint16 {
+	return [4]uint16{
+		getSuitMask(hand, Clubs),
+		getSuitMask(hand, Diamonds),
+		getSuitMask(hand, Hearts),
+		getSuitMask(hand, Spades),
+	}
+}
+
+// hasFlush checks if the hand contains a flush
+func hasFlush(hand Hand) bool {
+	suits := getSuitMasks(hand)
+	for _, suit := range suits {
+		if bits.OnesCount16(suit) >= 5 {
+			return true
+		}
+	}
+	return false
+}
+
+// getHighestRanks returns the highest N ranks from a rank mask
+func getHighestRanks(ranks uint16, count int) uint16 {
+	result := uint16(0)
+	remaining := count
+
+	// Start from Ace (bit 12) and work down
+	for bit := 12; bit >= 0 && remaining > 0; bit-- {
+		if (ranks & (1 << bit)) != 0 {
+			result |= 1 << bit
+			remaining--
+		}
 	}
 
-	// Check for other straights (need 5 consecutive bits)
-	for high := 14; high >= 6; high-- {
-		mask := uint32(0x1F) << uint(high-4) // 5 consecutive bits
-		if (rankBits & mask) == mask {
-			return high
+	return result
+}
+
+// getStraightMask checks for a straight in the rank mask
+func getStraightMask(ranks uint16) uint16 {
+	// Check for regular straights from highest to lowest
+	// A-K-Q-J-T = 0x1F00, K-Q-J-T-9 = 0x0F80, etc.
+	straightMask := uint16(0x1F00) // Start with A-K-Q-J-T
+
+	for i := 0; i <= 8; i++ {
+		if (ranks & straightMask) == straightMask {
+			return straightMask
 		}
+		straightMask >>= 1
+	}
+
+	// Check for wheel (A-2-3-4-5)
+	if (ranks & 0x100F) == 0x100F { // A,2,3,4,5
+		return 0x100F
 	}
 
 	return 0
 }
 
-// findHighestKicker finds the highest single card excluding given ranks
-func findHighestKicker(rankCounts [15]int, excludeRanks ...int) int {
-	// Find highest rank with count=1 that's not excluded
-	for rank := 14; rank >= 2; rank-- {
-		if rankCounts[rank] == 1 {
-			// Check if this rank is excluded
-			excluded := false
-			for _, excludeRank := range excludeRanks {
-				if rank == excludeRank {
-					excluded = true
-					break
+// EvaluateHand evaluates a 7-card poker hand
+func (e *Evaluator) EvaluateHand(hand Hand) HandRank {
+	ranks := getRankMask(hand)
+	suits := getSuitMasks(hand)
+
+	// Check for flush
+	var flushSuit = -1
+	var flushRanks uint16 = 0
+	for i, suit := range suits {
+		if bits.OnesCount16(suit) >= 5 {
+			flushSuit = i
+			flushRanks = getHighestRanks(suit, 5)
+			break
+		}
+	}
+
+	// Check for straight
+	straightMask := getStraightMask(ranks)
+	hasStraight := straightMask != 0
+
+	// Straight flush
+	if flushSuit != -1 && hasStraight {
+		straightInFlush := getStraightMask(suits[flushSuit])
+		if straightInFlush != 0 {
+			// Royal flush (AKQJT of same suit)
+			if straightInFlush == 0x1F00 { // 10,J,Q,K,A
+				return 0 // Royal flush (rank 0 = best possible hand)
+			}
+			// Wheel straight flush (A-2-3-4-5) - 5-high
+			if straightInFlush == 0x100F { // A,2,3,4,5 wheel
+				return 9 // Worst straight flush
+			}
+			// Other straight flushes: K-high=1, Q-high=2, ..., 6-high=8
+			highCardBit := bits.LeadingZeros16(straightInFlush)
+			highCardRank := 15 - highCardBit
+			return HandRank(12 - highCardRank)
+		}
+	}
+
+	// Count rank frequencies
+	rankCounts := [13]int{}
+	for i := 0; i < 13; i++ {
+		if (ranks & (1 << i)) != 0 {
+			// Count how many cards of this rank
+			count := 0
+			for _, suit := range suits {
+				if (suit & (1 << i)) != 0 {
+					count++
 				}
 			}
-			if !excluded {
-				return rank
+			rankCounts[i] = count
+		}
+	}
+
+	// Find pairs, trips, quads
+	quads := 0
+	trips := 0
+	pairs := 0
+
+	for _, count := range rankCounts {
+		switch count {
+		case 4:
+			quads++
+		case 3:
+			trips++
+		case 2:
+			pairs++
+		}
+	}
+
+	// Four of a kind (ranks 10-165)
+	if quads > 0 {
+		quadRank := 0
+		kickerRank := 0
+
+		for rank, count := range rankCounts {
+			if count == 4 {
+				quadRank = rank
+			} else if count >= 1 && rank != quadRank && rank > kickerRank {
+				kickerRank = rank
 			}
 		}
+
+		return HandRank(10 + (12-quadRank)*12 + (12 - kickerRank))
 	}
-	return 0 // No kicker found
-}
 
-// We inlined this function for a 35% speedup
-// findHighestKickers finds n highest single cards excluding given rank
-// func findHighestKickers(rankCounts [15]int, excludeRank int, n int) []int {
-// 	var kickers []int
-// 	for rank := 14; rank >= 2 && len(kickers) < n; rank-- {
-// 		if rankCounts[rank] == 1 && rank != excludeRank {
-// 			kickers = append(kickers, rank)
-// 		}
-// 	}
-// 	return kickers
-// }
+	// Full house (ranks 166-321)
+	if trips > 0 && (pairs > 0 || trips > 1) {
+		tripRank := 0
+		pairRank := 0
+		secondTripRank := 0
 
-// getHighestRanks returns n highest ranks from a slice
-func getHighestRanks(ranks []int, n int) []int {
-	// Sort in descending order
-	sorted := make([]int, len(ranks))
-	copy(sorted, ranks)
-
-	for i := 0; i < len(sorted)-1; i++ {
-		for j := i + 1; j < len(sorted); j++ {
-			if sorted[j] > sorted[i] {
-				sorted[i], sorted[j] = sorted[j], sorted[i]
+		// Find the highest trip
+		for rank, count := range rankCounts {
+			if count == 3 && rank > tripRank {
+				secondTripRank = tripRank
+				tripRank = rank
+			} else if count == 3 && rank > secondTripRank {
+				secondTripRank = rank
+			} else if count == 2 && rank > pairRank {
+				pairRank = rank
 			}
 		}
-	}
 
-	if len(sorted) > n {
-		sorted = sorted[:n]
-	}
-	return sorted
-}
-
-// encodeMultipleRanks encodes up to 5 ranks into a single integer
-func encodeMultipleRanks(ranks []int) int {
-	result := 0
-	for i, rank := range ranks {
-		if i >= 5 {
-			break
+		// If we have two trips, use the lower trip as the pair
+		if trips > 1 {
+			pairRank = secondTripRank
 		}
-		result |= rank << uint(4*i)
-	}
-	return result
-}
 
-// encodeMultipleRanksReverse encodes ranks where higher ranks give lower scores
-func encodeMultipleRanksReverse(ranks []int) int {
-	result := 0
-	for i, rank := range ranks {
-		if i >= 5 {
-			break
+		return HandRank(166 + (12-tripRank)*12 + (12 - pairRank))
+	}
+
+	// Flush (not straight) (ranks 322-1598)
+	if flushSuit != -1 {
+		highCardBit := bits.LeadingZeros16(flushRanks)
+		highCardRank := 15 - highCardBit
+		return HandRank(322 + (12-highCardRank)*100)
+	}
+
+	// Straight (not flush) (ranks 1599-1608)
+	if hasStraight {
+		if straightMask == 0x100F { // A-2-3-4-5 wheel (5-high)
+			return 1608 // Worst straight
 		}
-		// Subtract from 15 to make higher ranks give lower values
-		result |= (15 - rank) << uint(4*i)
+		highCardBit := bits.LeadingZeros16(straightMask)
+		highCardRank := 15 - highCardBit
+		return HandRank(1599 + (12 - highCardRank))
 	}
-	return result
+
+	// Three of a kind (ranks 1609-2466)
+	if trips > 0 {
+		tripRank := 0
+		for rank, count := range rankCounts {
+			if count == 3 {
+				tripRank = rank
+				break
+			}
+		}
+		return HandRank(1609 + (12-tripRank)*65)
+	}
+
+	// Two pair (ranks 2467-3324)
+	if pairs >= 2 {
+		highPair := 0
+		lowPair := 0
+
+		for rank, count := range rankCounts {
+			if count == 2 {
+				if rank > highPair {
+					lowPair = highPair
+					highPair = rank
+				} else if rank > lowPair {
+					lowPair = rank
+				}
+			}
+		}
+
+		return HandRank(2467 + (12-highPair)*65 + (12 - lowPair))
+	}
+
+	// One pair (ranks 3325-6184)
+	if pairs == 1 {
+		pairRank := 0
+		for rank, count := range rankCounts {
+			if count == 2 {
+				pairRank = rank
+				break
+			}
+		}
+		return HandRank(3325 + (12-pairRank)*220)
+	}
+
+	// High card (ranks 6185-7461)
+	highCardBit := bits.LeadingZeros16(ranks)
+	highCardRank := 15 - highCardBit
+	return HandRank(6185 + (12-highCardRank)*100)
 }
 
-// Evaluate7 dispatches to the fastest available evaluator implementation.
-// At runtime it chooses the compressed perfect-hash powered evaluator when its lookup
-// tables have been generated (see gen_perfect_hash_compressed.go).  Otherwise it falls
-// back to the pure algorithmic implementation.
-func Evaluate7(cards []deck.Card) HandRank {
-	if compressedHashReady {
-		return Evaluate7Compressed(cards)
+// GetHandCategory returns the hand category (0-8) for a given hand
+func (e *Evaluator) GetHandCategory(hand Hand) int {
+	rank := e.EvaluateHand(hand)
+
+	switch {
+	case rank == 0:
+		return HandCategoryStraightFlush // Royal flush
+	case rank <= 9:
+		return HandCategoryStraightFlush
+	case rank <= 165:
+		return HandCategoryFourOfAKind
+	case rank <= 321:
+		return HandCategoryFullHouse
+	case rank <= 1598:
+		return HandCategoryFlush
+	case rank <= 1608:
+		return HandCategoryStraight
+	case rank <= 2466:
+		return HandCategoryThreeOfAKind
+	case rank <= 3324:
+		return HandCategoryTwoPair
+	case rank <= 6184:
+		return HandCategoryPair
+	default:
+		return HandCategoryHighCard
 	}
-	return evaluate7Basic(cards)
+}
+
+// GetHandClass returns a string description of the hand class
+func (e *Evaluator) GetHandClass(rank int) string {
+	switch {
+	case rank == 0:
+		return "Royal Flush"
+	case rank <= 9:
+		return "Straight Flush"
+	case rank <= 165:
+		return "Four of a Kind"
+	case rank <= 321:
+		return "Full House"
+	case rank <= 1598:
+		return "Flush"
+	case rank <= 1608:
+		return "Straight"
+	case rank <= 2466:
+		return "Three of a Kind"
+	case rank <= 3324:
+		return "Two Pair"
+	case rank <= 6184:
+		return "One Pair"
+	default:
+		return "High Card"
+	}
+}
+
+// EvaluateCards is a convenience method that takes individual cards
+func (e *Evaluator) EvaluateCards(cards []Card) int {
+	hand := Hand(0)
+	for _, card := range cards {
+		hand |= Hand(card)
+	}
+	return int(e.EvaluateHand(hand))
+}
+
+// DescribeHand returns a description of the hand
+func (e *Evaluator) DescribeHand(cards []Card) string {
+	rank := e.EvaluateCards(cards)
+	return e.GetHandClass(rank)
+}
+
+// GetPercentile returns the percentile rank (0-100) where 100 is best
+func (e *Evaluator) GetPercentile(rank int) float64 {
+	// Total possible ranks: 0-7461
+	// Convert so that lower rank = higher percentile
+	return 100.0 * (1.0 - float64(rank)/7461.0)
+}
+
+// CalculateEquity is a placeholder for SDK compatibility
+func (e *Evaluator) CalculateEquity(hole []Card, board []Card, numOpponents int, iterations int) float64 {
+	// Simplified equity calculation based on hand strength
+	allCards := append(hole, board...)
+	rank := e.EvaluateCards(allCards)
+	percentile := e.GetPercentile(rank)
+
+	// Adjust for number of opponents
+	baseEquity := percentile / 100.0
+	adjustment := 1.0 / float64(numOpponents+1)
+	return baseEquity * adjustment
+}
+
+// Evaluate7 evaluates a 7-card hand for compatibility with existing code
+func Evaluate7(cards interface{}) HandRank {
+	e := NewEvaluator()
+
+	// Convert deck.Card slice to evaluator cards
+	switch v := cards.(type) {
+	case []deck.Card:
+		if len(v) != 7 {
+			return HandRank(7462) // Return worst possible hand if not 7 cards
+		}
+
+		// Convert deck.Card to evaluator Card format
+		evalCards := make([]Card, 7)
+		for i, deckCard := range v {
+			// deck.Card format: Rank is 2-14 (2=Two, 14=Ace), Suit is 0-3 (S,H,D,C)
+			// evaluator Card: bit position = suit*13 + rank (where rank is 0-12)
+			// Convert rank from 2-14 to 0-12
+			rank := deckCard.Rank - 2
+			evalCards[i] = Card(1 << (deckCard.Suit*13 + rank))
+		}
+
+		// Create hand by ORing all cards
+		hand := Hand(0)
+		for _, card := range evalCards {
+			hand |= Hand(card)
+		}
+
+		return e.EvaluateHand(hand)
+	default:
+		return HandRank(7462) // Return worst possible hand for unknown type
+	}
 }

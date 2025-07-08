@@ -38,9 +38,6 @@ tasks:
     cmds:
       - mkdir -p {{.DIST_DIR}}
       - go build -o {{.DIST_DIR}}/holdem-server ./cmd/holdem-server
-      - go build -o {{.DIST_DIR}}/holdem-client ./cmd/holdem-client
-      - go build -o {{.DIST_DIR}}/poker-odds ./cmd/poker-odds
-      - go build -o {{.DIST_DIR}}/benchmark ./cmd/benchmark
 
   build-all:
     desc: Build for multiple platforms
@@ -51,24 +48,18 @@ tasks:
       - GOOS=darwin GOARCH=amd64 go build -o {{.DIST_DIR}}/holdem-server-darwin-amd64 ./cmd/holdem-server
       - GOOS=darwin GOARCH=arm64 go build -o {{.DIST_DIR}}/holdem-server-darwin-arm64 ./cmd/holdem-server
       - GOOS=windows GOARCH=amd64 go build -o {{.DIST_DIR}}/holdem-server-windows-amd64.exe ./cmd/holdem-server
-      - GOOS=linux GOARCH=amd64 go build -o {{.DIST_DIR}}/holdem-client-linux-amd64 ./cmd/holdem-client
-      - GOOS=darwin GOARCH=amd64 go build -o {{.DIST_DIR}}/holdem-client-darwin-amd64 ./cmd/holdem-client
-      - GOOS=darwin GOARCH=arm64 go build -o {{.DIST_DIR}}/holdem-client-darwin-arm64 ./cmd/holdem-client
-      - GOOS=windows GOARCH=amd64 go build -o {{.DIST_DIR}}/holdem-client-windows-amd64.exe ./cmd/holdem-client
-      - GOOS=linux GOARCH=amd64 go build -o {{.DIST_DIR}}/poker-odds-linux-amd64 ./cmd/poker-odds
-      - GOOS=darwin GOARCH=amd64 go build -o {{.DIST_DIR}}/poker-odds-darwin-amd64 ./cmd/poker-odds
-      - GOOS=darwin GOARCH=arm64 go build -o {{.DIST_DIR}}/poker-odds-darwin-arm64 ./cmd/poker-odds
-      - GOOS=windows GOARCH=amd64 go build -o {{.DIST_DIR}}/poker-odds-windows-amd64.exe ./cmd/poker-odds
 
   run:
     desc: Run the server application
     cmds:
       - go run ./cmd/holdem-server
 
-  run-client:
-    desc: Run the client application
+  # run-client: REMOVED - client moved to pokerforbots-tui project
+
+  build-sdk-examples:
+    desc: Build SDK example bots
     cmds:
-      - go run ./cmd/holdem-client
+      - go build -o {{.DIST_DIR}}/example-bot ./sdk/examples
 
   clean:
     desc: Clean build artifacts
@@ -89,8 +80,3 @@ tasks:
   dev:
     desc: Development setup - format, test, lint
     deps: [fmt, test, lint]
-
-  bench:
-    desc: Run benchmark
-    cmds:
-      - go run ./cmd/benchmark

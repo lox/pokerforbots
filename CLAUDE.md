@@ -24,40 +24,28 @@ This is a **client/server Texas Hold'em poker platform** built in Go, designed f
 
 ### Application Commands
 - **Server**: `./bin/holdem-server [--config holdem-server.hcl]`
-- **Client**: `./bin/holdem-client join <table-id> [--config holdem-client.hcl]`
-- **List tables**: `./bin/holdem-client list-tables`
-- **Add bots**: `./bin/holdem-client add-bots <table-id> --count=3`
-- **Poker odds**: `go run cmd/poker-odds/main.go --help`
+- **Example bots**: `go run sdk/examples/main.go --help`
 
-### Docker Workflow
-- **Complete test**: `./scripts/docker-test.sh test`
-- **Full system**: `./scripts/docker-test.sh full`
-- **Interactive client**: `./scripts/docker-test.sh client PlayerName`
 
 ## Architecture
 
 ### Core Components
 - **cmd/holdem-server**: WebSocket game server with table management
-- **cmd/holdem-client**: Interactive TUI client (Bubble Tea)
-- **cmd/poker-odds**: Monte Carlo hand equity calculator
+- **sdk/**: Bot development SDK with types, client, and examples
 - **internal/game**: Game engine, state management, betting rounds
-- **internal/tui**: Terminal UI with two-pane design (log + actions)
-- **internal/bot**: AI strategies (chart-based, TAG, maniac, calling station)
 - **internal/server**: WebSocket protocol and message handling
 - **internal/evaluator**: Hand strength evaluation and equity calculation
 
 ### Key Patterns
-- **Clean Architecture**: Game logic separated from networking and presentation
+- **Clean Architecture**: Game logic separated from networking and SDK
 - **Event-driven**: Publisher/subscriber pattern for game events
-- **WebSocket Protocol**: JSON messages with request/response correlation
-- **HCL Configuration**: Flexible server/client configuration system
+- **WebSocket Protocol**: JSON messages for client/server communication
+- **HCL Configuration**: Flexible server configuration system
 - **Deterministic Testing**: Fixed seeds for reproducible game scenarios
 
 ### Technology Stack
-- **TUI**: charmbracelet/bubbletea, lipgloss, bubbles
-- **WebSocket**: gorilla/websocket
-- **CLI**: alecthomas/kong
-- **Config**: hashicorp/hcl/v2
+- **WebSocket**: gorilla/websocket for client/server communication
+- **Config**: hashicorp/hcl/v2 for server configuration
 - **Testing**: stretchr/testify + gotestsum
 - **Build**: Taskfile (Task) + Hermit for tools
 
@@ -84,15 +72,12 @@ This is a **client/server Texas Hold'em poker platform** built in Go, designed f
 ### Key Implementation Details
 - **Game IDs**: UUIDv7 with base32 encoding (26 chars, TypeID-compatible)
 - **Poker Rules**: 6-max $1/$2 No Limit Hold'em implementation
-- **TUI Design**: Two-pane layout with game log and action interface
-- **Bot Architecture**: Pluggable AI strategies with range-based decisions
-- **WebSocket Messages**: JSON format with request/response correlation IDs
+- **SDK Architecture**: Clean types and client interface for bot development
+- **WebSocket Messages**: JSON format with structured message types
 
 ## Configuration Files
-- **holdem-server.hcl**: Server settings, tables, bot configuration
-- **holdem-client.hcl**: Client preferences and UI settings
+- **holdem-server.hcl**: Server settings and table configuration
 - **Taskfile.yml**: Build automation and development tasks
-- **Docker**: Complete containerized setup in scripts/
 
 ## Verification Workflow
 

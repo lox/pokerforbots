@@ -3,8 +3,8 @@ package game
 import (
 	"fmt"
 
-	"github.com/lox/pokerforbots/internal/deck"
 	"github.com/lox/pokerforbots/internal/evaluator"
+	"github.com/lox/pokerforbots/sdk/deck"
 )
 
 // PlayerType represents the type of player

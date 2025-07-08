@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"sync"
 	"time"
 
@@ -392,66 +391,11 @@ func (c *Connection) handlePlayerDecision(data PlayerDecisionData) {
 }
 
 func (c *Connection) handleAddBot(data AddBotData) {
-	c.logger.Info("Add bot request", "tableId", data.TableID, "count", data.Count, "player", c.GetPlayer())
-
-	if c.gameService == nil {
-		c.sendError("service_unavailable", "Game service not available")
-		return
-	}
-
-	playerName := c.GetPlayer()
-	if playerName == "" {
-		c.sendError("not_authenticated", "Must authenticate first")
-		return
-	}
-
-	// Default to 1 bot if count not specified
-	count := data.Count
-	if count <= 0 {
-		count = 1
-	}
-	if count > 5 {
-		count = 5 // Limit to 5 bots max
-	}
-
-	botNames, err := c.gameService.AddBots(data.TableID, count)
-	if err != nil {
-		c.sendError("add_bot_failed", err.Error())
-		return
-	}
-
-	response, _ := NewMessage(MessageTypeBotAdded, BotAddedData{
-		TableID:  data.TableID,
-		BotNames: botNames,
-		Message:  fmt.Sprintf("Added %d bot(s) to table", len(botNames)),
-	})
-	_ = c.SendMessage(response) // Ignore send errors
+	c.logger.Info("Add bot request (disabled)", "tableId", data.TableID, "player", c.GetPlayer())
+	c.sendError("feature_disabled", "Bot creation has been disabled. Bots should connect as external clients using the pokerforbots SDK.")
 }
 
 func (c *Connection) handleKickBot(data KickBotData) {
-	c.logger.Info("Kick bot request", "tableId", data.TableID, "botName", data.BotName, "player", c.GetPlayer())
-
-	if c.gameService == nil {
-		c.sendError("service_unavailable", "Game service not available")
-		return
-	}
-
-	playerName := c.GetPlayer()
-	if playerName == "" {
-		c.sendError("not_authenticated", "Must authenticate first")
-		return
-	}
-
-	err := c.gameService.KickBot(data.TableID, data.BotName)
-	if err != nil {
-		c.sendError("kick_bot_failed", err.Error())
-		return
-	}
-
-	response, _ := NewMessage(MessageTypeBotKicked, BotKickedData{
-		TableID: data.TableID,
-		BotName: data.BotName,
-		Message: fmt.Sprintf("Kicked bot %s from table", data.BotName),
-	})
-	_ = c.SendMessage(response) // Ignore send errors
+	c.logger.Info("Kick bot request (disabled)", "tableId", data.TableID, "botName", data.BotName, "player", c.GetPlayer())
+	c.sendError("feature_disabled", "Bot management has been disabled. Bots should connect as external clients using the pokerforbots SDK.")
 }

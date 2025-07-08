@@ -3,7 +3,7 @@ package game
 import (
 	"testing"
 
-	"github.com/lox/pokerforbots/internal/deck"
+	"github.com/lox/pokerforbots/sdk/deck"
 )
 
 func TestCalculateSidePots_SimpleCase(t *testing.T) {
