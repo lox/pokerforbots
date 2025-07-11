@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pokerforbots.com/schemas/error.json",
+  "title": "Error Messages",
+  "description": "Schema for error messages",
+  
+  "definitions": {
+    "errorData": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "connection_lost",
+            "invalid_session", 
+            "table_full",
+            "invalid_action",
+            "action_timeout",
+            "insufficient_chips",
+            "not_authenticated",
+            "invalid_auth",
+            "join_failed",
+            "decision_failed",
+            "invalid_message"
+          ],
+          "description": "Error code identifier"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Human-readable error message"
+        }
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    }
+  },
+  
+  "allOf": [
+    { "$ref": "message.json" },
+    {
+      "properties": {
+        "type": { "const": "error" },
+        "data": { "$ref": "#/definitions/errorData" }
+      }
+    }
+  ]
+}

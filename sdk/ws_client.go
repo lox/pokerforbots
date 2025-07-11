@@ -180,6 +180,7 @@ func (c *WSClient) IsConnected() bool {
 
 // Auth sends an authentication message
 func (c *WSClient) Auth(playerName string) error {
+	c.logger.Info("Sending auth message", "playerName", playerName)
 	data := AuthData{
 		PlayerName: playerName,
 	}

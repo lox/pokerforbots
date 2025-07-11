@@ -50,23 +50,23 @@ const (
 
 // AuthData is sent when authenticating
 type AuthData struct {
-	PlayerName string `json:"player_name"`
+	PlayerName string `json:"playerName"`
 }
 
 // JoinTableData is sent when joining a table
 type JoinTableData struct {
-	TableID string `json:"table_id"`
-	BuyIn   int    `json:"buy_in"`
+	TableID string `json:"tableId"`
+	BuyIn   int    `json:"buyIn"`
 }
 
 // LeaveTableData is sent when leaving a table
 type LeaveTableData struct {
-	TableID string `json:"table_id"`
+	TableID string `json:"tableId"`
 }
 
 // PlayerDecisionData is sent when making a game decision
 type PlayerDecisionData struct {
-	TableID   string `json:"table_id"`
+	TableID   string `json:"tableId"`
 	Action    string `json:"action"`
 	Amount    int    `json:"amount,omitempty"`
 	Reasoning string `json:"reasoning,omitempty"`
@@ -74,14 +74,14 @@ type PlayerDecisionData struct {
 
 // AddBotData is sent when adding a bot to a table
 type AddBotData struct {
-	TableID string `json:"table_id"`
+	TableID string `json:"tableId"`
 	Count   int    `json:"count"`
 }
 
 // KickBotData is sent when removing a bot from a table
 type KickBotData struct {
-	TableID string `json:"table_id"`
-	BotName string `json:"bot_name"`
+	TableID string `json:"tableId"`
+	BotName string `json:"botName"`
 }
 
 // Server to Client message data structures
@@ -187,8 +187,8 @@ type WinnerInfo struct {
 // ValidActionInfo represents a valid action the player can take
 type ValidActionInfo struct {
 	Action    string `json:"action"`
-	MinAmount int    `json:"min_amount,omitempty"`
-	MaxAmount int    `json:"max_amount,omitempty"`
+	MinAmount int    `json:"minAmount,omitempty"`
+	MaxAmount int    `json:"maxAmount,omitempty"`
 }
 
 // TableStateData represents the current state of the table
@@ -204,11 +204,11 @@ type TableStateData struct {
 
 // ActionRequiredData is sent when the client needs to make a decision
 type ActionRequiredData struct {
-	TableID      string            `json:"table_id"`
+	TableID      string            `json:"tableId"`
 	Round        string            `json:"round"`
-	ValidActions []ValidActionInfo `json:"valid_actions"`
-	TimeLimit    int               `json:"time_limit"`
-	CurrentBet   int               `json:"current_bet"`
+	ValidActions []ValidActionInfo `json:"validActions"`
+	TimeLimit    int               `json:"timeLimit"`
+	CurrentBet   int               `json:"currentBet"`
 	Pot          int               `json:"pot"`
 }
 

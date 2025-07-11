@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pokerforbots.com/schemas/message.json",
+  "title": "WebSocket Message",
+  "description": "Base WebSocket message format",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "description": "Message type identifier"
+    },
+    "data": {
+      "type": "object",
+      "description": "Message-specific payload"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Message timestamp in ISO 8601 format"
+    },
+    "requestId": {
+      "type": "string",
+      "description": "Optional correlation ID for request/response matching"
+    }
+  },
+  "required": ["type", "data"],
+  "additionalProperties": false
+}

@@ -1,5 +1,11 @@
 # WebSocket Protocol for Holdem Client/Server
 
+## JSON Field Naming Convention
+
+**Standard: camelCase**
+
+All JSON fields use camelCase naming (e.g., `playerName`, `tableId`, `buyIn`, `validActions`).
+
 ## Message Format
 
 All messages are JSON with this structure:
@@ -112,7 +118,33 @@ All messages are JSON with this structure:
 }
 ```
 
-### Game Events (Mirror existing EventBus events)
+### Action Requests
+```json
+{
+  "type": "action_required",
+  "data": {
+    "tableId": "string",
+    "playerName": "string",
+    "validActions": [
+      {
+        "action": "call",
+        "minAmount": "number",
+        "maxAmount": "number"
+      }
+    ],
+    "tableState": {
+      "currentBet": "number",
+      "pot": "number",
+      "currentRound": "preflop|flop|turn|river",
+      "communityCards": ["As", "Kh"],
+      "players": [ /* full player state */ ]
+    },
+    "timeoutSeconds": "number"
+  }
+}
+```
+
+### Game Events
 ```json
 {
   "type": "hand_start",
@@ -124,7 +156,7 @@ All messages are JSON with this structure:
         "chips": "number",
         "position": "string",
         "seatNumber": "number",
-        "holeCards": ["As", "Kh"] // Only for acting player
+        "holeCards": ["As", "Kh"]
       }
     ],
     "smallBlind": "number",
@@ -172,74 +204,64 @@ All messages are JSON with this structure:
     "summary": "formatted-hand-summary"
   }
 }
+```
 
-{
-  "type": "player_timeout",
-  "data": {
-    "tableId": "string",
-    "playerName": "string",
-    "timeoutSeconds": "number",
-    "action": "fold|check"
-  }
-}
+## Schema Validation
 
+### ValidAction Schema
+```json
 {
-  "type": "player_left",
-  "data": {
-    "tableId": "string",
-    "playerName": "string",
-    "reason": "disconnected|quit"
-  }
-}
-
-{
-  "type": "table_left",
-  "data": {
-    "tableId": "string"
-  }
-}
-
-{
-  "type": "bot_added",
-  "data": {
-    "tableId": "string",
-    "botName": "string",
-    "seatNumber": "number"
-  }
-}
-
-{
-  "type": "bot_kicked",
-  "data": {
-    "tableId": "string",
-    "botName": "string"
-  }
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["fold", "call", "check", "raise", "allin"]
+    },
+    "minAmount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "maxAmount": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": ["action"]
 }
 ```
 
-### Action Requests
+### TableState Schema
 ```json
 {
-  "type": "action_required",
-  "data": {
-    "tableId": "string",
-    "playerName": "string",
-    "validActions": [
-      {
-        "action": "call",
-        "minAmount": "number",
-        "maxAmount": "number"
-      }
-    ],
-    "tableState": {
-      "currentBet": "number",
-      "pot": "number",
-      "currentRound": "preflop|flop|turn|river",
-      "communityCards": ["As", "Kh"],
-      "players": [ /* full player state */ ]
+  "type": "object",
+  "properties": {
+    "currentBet": {
+      "type": "integer",
+      "minimum": 0
     },
-    "timeoutSeconds": "number"
-  }
+    "pot": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "currentRound": {
+      "type": "string",
+      "enum": ["preflop", "flop", "turn", "river", "showdown"]
+    },
+    "communityCards": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[2-9TJQKA][shdc]$"
+      }
+    },
+    "players": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PlayerState"
+      }
+    }
+  },
+  "required": ["currentBet", "pot", "currentRound", "players"]
 }
 ```
 
@@ -255,9 +277,66 @@ All messages are JSON with this structure:
 - `action_timeout`: Player took too long to act
 - `insufficient_chips`: Not enough chips for action
 
-## Security Considerations
+## Implementation Notes
 
-1. **Authentication**: JWT tokens for player identity
+1. **Field Naming**: All JSON fields use camelCase consistently
 2. **Action Validation**: Server validates all actions against game rules
-3. **Rate Limiting**: Prevent message spam
-4. **Reconnection**: Handle dropped connections gracefully
+3. **Type Safety**: Use proper type conversion between string actions and enum types
+4. **Error Handling**: Always validate JSON structure before processing
+5. **Reconnection**: Handle dropped connections gracefully
+
+## Schema Validation
+
+### Available Schema Files
+
+The system includes JSON Schema files for runtime validation:
+
+- `sdk/schemas/message.json` - Base message format
+- `sdk/schemas/auth.json` - Authentication messages
+- `sdk/schemas/table.json` - Table operations
+- `sdk/schemas/game.json` - Game actions and state
+- `sdk/schemas/error.json` - Error messages
+
+### Usage in Go
+
+```go
+import "github.com/lox/pokerforbots/sdk"
+
+// Create validator
+validator, err := sdk.NewValidator()
+if err != nil {
+    log.Fatal("Failed to create validator:", err)
+}
+
+// Validate a message
+messageJSON := []byte(`{"type": "auth", "data": {"playerName": "TestBot"}}`)
+if err := validator.ValidateMessage(messageJSON); err != nil {
+    log.Printf("Invalid message: %v", err)
+}
+```
+
+### Automatic Validation
+
+Both the SDK client and server automatically validate messages:
+
+- **SDK Client**: Validates incoming messages from server
+- **Server**: Validates incoming messages from clients
+- **Error Handling**: Invalid messages are logged and rejected with descriptive errors
+
+### Validation Features
+
+- **Type Checking**: Ensures correct data types (string, integer, boolean)
+- **Required Fields**: Validates all required fields are present
+- **Value Constraints**: Checks string patterns, number ranges, array lengths
+- **Enum Validation**: Validates action types, rounds, error codes
+- **Cross-Field Validation**: Conditional requirements (e.g., auth success requires playerId)
+
+### Testing Validation
+
+```bash
+# Run validation tests
+go test ./sdk
+
+# Test SDK validation functionality
+go test ./sdk -run TestValidator
+```

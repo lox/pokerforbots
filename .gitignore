@@ -9,3 +9,6 @@
 
 # Configs
 /holdem-server.hcl
+
+# Hand History
+/handhistory

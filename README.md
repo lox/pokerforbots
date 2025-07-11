@@ -5,6 +5,7 @@ A WebSocket-based Texas Hold'em poker server with SDK for bot development.
 ## Overview
 
 This is a client/server poker platform where:
+
 - **Server**: Runs poker games and manages tables
 - **SDK**: Provides types and utilities for building poker bots
 - **External Clients**: Connect via WebSocket to play (humans or bots)
@@ -14,12 +15,14 @@ The server handles game logic while bots connect as external clients using the p
 ## Quick Start
 
 ### Start Server
+
 ```bash
 ./bin/task build  # Build binaries
 ./dist/holdem-server  # Start poker server on :8080
 ```
 
 ### Build a Bot (using SDK)
+
 ```go
 package main
 
@@ -51,12 +54,14 @@ func main() {
 ## SDK Features
 
 ### Core Types
+
 - **`deck.Card`**: Cards with integer rank (2-14) and suit (0-3)
 - **`TableState`**: Current game state (pot, cards, players, etc.)
 - **`ValidAction`**: Legal actions with min/max amounts
 - **`Decision`**: Bot's chosen action with reasoning
 
 ### Bot Interface
+
 ```go
 type Agent interface {
     MakeDecision(tableState TableState, validActions []ValidAction) Decision
@@ -64,15 +69,14 @@ type Agent interface {
 ```
 
 ### WebSocket Protocol
+
 - **Message Types**: JSON messages for game events and actions
 - **Event Handlers**: Register callbacks for different message types
 - **Automatic Reconnection**: Built-in connection management
 
-
-
 ## Project Structure
 
-```
+```text
 cmd/holdem-server/   # WebSocket poker server
 sdk/                 # Bot development SDK
 ├── deck/           # Card and deck types

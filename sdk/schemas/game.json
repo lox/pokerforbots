@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pokerforbots.com/schemas/game.json",
+  "title": "Game Messages",
+  "description": "Schema for game-related messages",
+  
+  "definitions": {
+    "card": {
+      "type": "string",
+      "pattern": "^[2-9TJQKA][shdc]$",
+      "description": "Card in format like 'As' (Ace of spades)"
+    },
+    
+    "action": {
+      "type": "string",
+      "enum": ["fold", "call", "check", "raise", "allin"],
+      "description": "Poker action type"
+    },
+    
+    "round": {
+      "type": "string",
+      "enum": ["preflop", "flop", "turn", "river", "showdown"],
+      "description": "Betting round"
+    },
+    
+    "validAction": {
+      "type": "object",
+      "properties": {
+        "action": { "$ref": "#/definitions/action" },
+        "minAmount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Minimum amount for this action"
+        },
+        "maxAmount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum amount for this action"
+        }
+      },
+      "required": ["action"],
+      "additionalProperties": false
+    },
+    
+    "playerState": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Player name"
+        },
+        "chips": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Current chip count"
+        },
+        "position": {
+          "type": "string",
+          "description": "Table position"
+        },
+        "seatNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Seat number"
+        },
+        "holeCards": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/card" },
+          "maxItems": 2,
+          "description": "Player's hole cards (only visible to player)"
+        },
+        "betThisRound": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Amount bet in current round"
+        },
+        "totalBet": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total amount bet in current hand"
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Whether player is active in hand"
+        },
+        "isFolded": {
+          "type": "boolean",
+          "description": "Whether player has folded"
+        }
+      },
+      "required": ["name", "chips", "position", "seatNumber", "isActive", "isFolded"],
+      "additionalProperties": false
+    },
+    
+    "tableState": {
+      "type": "object",
+      "properties": {
+        "currentBet": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Current bet amount to call"
+        },
+        "pot": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total pot size"
+        },
+        "currentRound": { "$ref": "#/definitions/round" },
+        "communityCards": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/card" },
+          "maxItems": 5,
+          "description": "Visible community cards"
+        },
+        "players": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/playerState" },
+          "description": "All players at the table"
+        },
+        "actingPlayerIdx": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index of player who needs to act"
+        }
+      },
+      "required": ["currentBet", "pot", "currentRound", "communityCards", "players"],
+      "additionalProperties": false
+    },
+    
+    "actionRequiredData": {
+      "type": "object",
+      "properties": {
+        "tableId": {
+          "type": "string",
+          "description": "Table identifier"
+        },
+        "playerName": {
+          "type": "string",
+          "description": "Player who needs to act"
+        },
+        "validActions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/validAction" },
+          "minItems": 1,
+          "description": "Available actions for the player"
+        },
+        "tableState": { "$ref": "#/definitions/tableState" },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300,
+          "description": "Time limit for decision"
+        }
+      },
+      "required": ["tableId", "playerName", "validActions", "tableState"],
+      "additionalProperties": false
+    },
+    
+    "playerDecisionData": {
+      "type": "object",
+      "properties": {
+        "tableId": {
+          "type": "string",
+          "description": "Table identifier"
+        },
+        "action": { "$ref": "#/definitions/action" },
+        "amount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Amount for raises/bets"
+        },
+        "reasoning": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Optional reasoning for the decision"
+        }
+      },
+      "required": ["tableId", "action"],
+      "additionalProperties": false
+    }
+  },
+  
+  "oneOf": [
+    {
+      "title": "Action Required",
+      "allOf": [
+        { "$ref": "message.json" },
+        {
+          "properties": {
+            "type": { "const": "action_required" },
+            "data": { "$ref": "#/definitions/actionRequiredData" }
+          }
+        }
+      ]
+    },
+    {
+      "title": "Player Decision",
+      "allOf": [
+        { "$ref": "message.json" },
+        {
+          "properties": {
+            "type": { "const": "player_decision" },
+            "data": { "$ref": "#/definitions/playerDecisionData" }
+          }
+        }
+      ]
+    }
+  ]
+}

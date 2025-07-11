@@ -3,11 +3,13 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/gorilla/websocket"
+	"github.com/lox/pokerforbots/sdk"
 )
 
 // Connection represents a WebSocket connection to a client
@@ -22,11 +24,17 @@ type Connection struct {
 	mu          sync.RWMutex
 	closeOnce   sync.Once
 	gameService *GameService
+	validator   *sdk.Validator
 }
 
 // NewConnection creates a new connection wrapper
 func NewConnection(conn *websocket.Conn, logger *log.Logger, gameService *GameService) *Connection {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	validator, err := sdk.NewValidator()
+	if err != nil {
+		logger.Warn("Failed to initialize validator", "error", err)
+	}
 
 	return &Connection{
 		conn:        conn,
@@ -35,6 +43,7 @@ func NewConnection(conn *websocket.Conn, logger *log.Logger, gameService *GameSe
 		ctx:         ctx,
 		cancel:      cancel,
 		gameService: gameService,
+		validator:   validator,
 	}
 }
 
@@ -191,6 +200,15 @@ func (c *Connection) writePump() {
 // handleMessage processes incoming messages from the client
 func (c *Connection) handleMessage(msg *Message) {
 	c.logger.Debug("Received message", "type", msg.Type, "player", c.GetPlayer())
+
+	// Validate message if validator is available
+	if c.validator != nil {
+		if err := c.validateMessage(msg); err != nil {
+			c.logger.Error("Message validation failed", "type", msg.Type, "error", err)
+			c.sendError("invalid_message", fmt.Sprintf("Message validation failed: %v", err))
+			return
+		}
+	}
 
 	switch msg.Type {
 	case MessageTypeAuth:
@@ -388,6 +406,21 @@ func (c *Connection) handlePlayerDecision(data PlayerDecisionData) {
 	}
 
 	// No response needed - the game engine will publish events
+}
+
+// validateMessage validates an incoming WebSocket message
+func (c *Connection) validateMessage(msg *Message) error {
+	if c.validator == nil {
+		return nil // Validation disabled
+	}
+	
+	// Serialize message to JSON for validation
+	msgData, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+	
+	return c.validator.ValidateMessage(msgData)
 }
 
 func (c *Connection) handleAddBot(data AddBotData) {

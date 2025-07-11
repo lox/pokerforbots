@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pokerforbots.com/schemas/table.json",
+  "title": "Table Operation Messages",
+  "description": "Schema for table-related messages",
+  
+  "definitions": {
+    "joinTableData": {
+      "type": "object",
+      "properties": {
+        "tableId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Table identifier"
+        },
+        "seatNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Preferred seat number (optional)"
+        },
+        "buyIn": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "description": "Buy-in amount in chips"
+        }
+      },
+      "required": ["tableId", "buyIn"],
+      "additionalProperties": false
+    },
+    
+    "leaveTableData": {
+      "type": "object",
+      "properties": {
+        "tableId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Table identifier"
+        }
+      },
+      "required": ["tableId"],
+      "additionalProperties": false
+    },
+    
+    "tableJoinedData": {
+      "type": "object",
+      "properties": {
+        "tableId": {
+          "type": "string",
+          "description": "Table identifier"
+        },
+        "seatNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Assigned seat number"
+        },
+        "players": {
+          "type": "array",
+          "items": { "$ref": "game.json#/definitions/playerState" },
+          "description": "Current players at the table"
+        }
+      },
+      "required": ["tableId", "seatNumber", "players"],
+      "additionalProperties": false
+    }
+  },
+  
+  "oneOf": [
+    {
+      "title": "Join Table Request",
+      "allOf": [
+        { "$ref": "message.json" },
+        {
+          "properties": {
+            "type": { "const": "join_table" },
+            "data": { "$ref": "#/definitions/joinTableData" }
+          }
+        }
+      ]
+    },
+    {
+      "title": "Leave Table Request",
+      "allOf": [
+        { "$ref": "message.json" },
+        {
+          "properties": {
+            "type": { "const": "leave_table" },
+            "data": { "$ref": "#/definitions/leaveTableData" }
+          }
+        }
+      ]
+    },
+    {
+      "title": "Table Joined Response",
+      "allOf": [
+        { "$ref": "message.json" },
+        {
+          "properties": {
+            "type": { "const": "table_joined" },
+            "data": { "$ref": "#/definitions/tableJoinedData" }
+          }
+        }
+      ]
+    }
+  ]
+}
