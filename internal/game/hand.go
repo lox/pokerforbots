@@ -155,6 +155,9 @@ func (h *HandState) dealHoleCards() {
 
 // GetValidActions returns valid actions for the current player
 func (h *HandState) GetValidActions() []Action {
+	if h.ActivePlayer < 0 || h.ActivePlayer >= len(h.Players) {
+		return []Action{} // No active player
+	}
 	p := h.Players[h.ActivePlayer]
 	actions := []Action{Fold}
 

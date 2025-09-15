@@ -89,10 +89,15 @@ func (hr *HandRunner) Run() {
 			break // No active players
 		}
 
+		// Get valid actions and verify they exist
+		validActions := hr.handState.GetValidActions()
+		if len(validActions) == 0 {
+			log.Printf("Warning: No valid actions for player %d in hand %s", activePlayer, hr.handID)
+			break // Invalid state, end hand
+		}
+
 		// Send action request to active bot
 		bot := hr.bots[activePlayer]
-		validActions := hr.handState.GetValidActions()
-
 		if err := hr.sendActionRequest(bot, activePlayer, validActions); err != nil {
 			log.Printf("Failed to send action request: %v", err)
 			// Auto-fold on error
