@@ -1,0 +1,69 @@
+version: '3'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  generate:
+    desc: Generate msgpack code
+    cmds:
+      - go generate ./...
+    sources:
+      - internal/protocol/*.go
+    generates:
+      - internal/protocol/*_gen.go
+
+  build:
+    desc: Build the server
+    deps: [generate]
+    cmds:
+      - go build -o pokerforbots cmd/server/main.go
+    sources:
+      - '**/*.go'
+    generates:
+      - pokerforbots
+
+  run:
+    desc: Run the server
+    deps: [build]
+    cmds:
+      - ./pokerforbots
+
+  test:
+    desc: Run all tests
+    deps: [generate]
+    cmds:
+      - go test -v ./...
+
+  bench:
+    desc: Run benchmarks
+    deps: [generate]
+    cmds:
+      - go test -bench=. -benchmem ./...
+
+  demo:
+    desc: Run demo with test bots
+    deps: [build]
+    cmds:
+      - ./pokerforbots &
+      - sleep 1
+      - go run cmd/testbot/main.go --type=caller &
+      - go run cmd/testbot/main.go --type=random &
+      - go run cmd/testbot/main.go --type=aggressive &
+      - wait
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f pokerforbots
+      - rm -f internal/protocol/*_gen.go
+      - rm -f internal/protocol/*_gen_test.go
+
+  install-deps:
+    desc: Install project dependencies
+    cmds:
+      - go get github.com/gorilla/websocket
+      - go get github.com/tinylib/msgp
+      - go install github.com/tinylib/msgp@latest
