@@ -195,11 +195,15 @@ func (hr *HandRunner) sendActionRequest(bot *Bot, seat int, validActions []game.
 
 // waitForAction waits for a bot to send an action or times out
 func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
+	// Create a channel to signal when we're done
+	done := make(chan struct{})
+	defer close(done)
+
 	timer := time.NewTimer(decisionTimeout)
 	defer timer.Stop()
 
 	// Start goroutine to listen for action
-	go hr.listenForAction(botIndex)
+	go hr.listenForAction(botIndex, done)
 
 	select {
 	case action := <-hr.actions:
@@ -217,30 +221,38 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 }
 
 // listenForAction listens for an action from a specific bot
-func (hr *HandRunner) listenForAction(botIndex int) {
+func (hr *HandRunner) listenForAction(botIndex int, done <-chan struct{}) {
 	// Listen for actions from the bot action channel
-	for {
+	select {
+	case action := <-hr.botActionChan:
+		// We received an action, but need to verify it's from the right bot
+		// For now, we accept any action since we can't easily identify which bot sent it
+		// In a production system, we'd include bot ID in the action
 		select {
-		case action := <-hr.botActionChan:
-			// We received an action, but need to verify it's from the right bot
-			// For now, we accept any action since we can't easily identify which bot sent it
-			// In a production system, we'd include bot ID in the action
-			hr.actions <- BotAction{
-				botIndex: botIndex,
-				action:   action,
-			}
-			return
-		case <-time.After(100 * time.Millisecond):
-			// Timeout - send fold action
-			hr.actions <- BotAction{
-				botIndex: botIndex,
-				action: protocol.Action{
-					Type:   "action",
-					Action: "fold",
-				},
-			}
-			return
+		case hr.actions <- BotAction{
+			botIndex: botIndex,
+			action:   action,
+		}:
+		case <-done:
+			// Parent function has returned, stop
 		}
+
+	case <-time.After(100 * time.Millisecond):
+		// Timeout - send fold action
+		select {
+		case hr.actions <- BotAction{
+			botIndex: botIndex,
+			action: protocol.Action{
+				Type:   "action",
+				Action: "fold",
+			},
+		}:
+		case <-done:
+			// Parent function has returned, stop
+		}
+
+	case <-done:
+		// Parent function has returned, stop
 	}
 }
 
