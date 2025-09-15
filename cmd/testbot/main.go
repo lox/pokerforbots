@@ -96,7 +96,7 @@ func (b *Bot) handleMessage(data []byte) error {
 	// Try to decode as each message type
 	// First try ActionRequest as it's the most common
 	var actionReq protocol.ActionRequest
-	if err := protocol.Unmarshal(data, &actionReq); err == nil && actionReq.HandID != "" {
+	if err := protocol.Unmarshal(data, &actionReq); err == nil && actionReq.Type == "action_request" {
 		return b.handleActionRequest(&actionReq)
 	}
 

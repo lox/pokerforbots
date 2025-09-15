@@ -2,14 +2,26 @@ package protocol
 
 import (
 	"bytes"
+	"sync"
 
 	"github.com/tinylib/msgp/msgp"
 )
 
+// Pool of buffers to avoid allocation and ensure thread safety
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return &bytes.Buffer{}
+	},
+}
+
 // Marshal serializes a message to msgpack format
 func Marshal(v interface{}) ([]byte, error) {
-	var buf bytes.Buffer
-	writer := msgp.NewWriter(&buf)
+	// Get a buffer from the pool to ensure thread safety
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufferPool.Put(buf)
+	
+	writer := msgp.NewWriter(buf)
 
 	switch msg := v.(type) {
 	case *Connect:
@@ -52,7 +64,10 @@ func Marshal(v interface{}) ([]byte, error) {
 		return nil, err
 	}
 
-	return buf.Bytes(), nil
+	// Create a copy to avoid aliasing the pooled buffer
+	out := make([]byte, buf.Len())
+	copy(out, buf.Bytes())
+	return out, nil
 }
 
 // Unmarshal deserializes msgpack data into a message
