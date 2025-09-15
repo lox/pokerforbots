@@ -158,17 +158,30 @@ func (h *HandState) GetValidActions() []Action {
 	p := h.Players[h.ActivePlayer]
 	actions := []Action{Fold}
 
-	if h.CurrentBet == p.Bet {
+	toCall := h.CurrentBet - p.Bet
+
+	if toCall == 0 {
+		// No amount to call - can check
 		actions = append(actions, Check)
+		// Can also raise if we have enough chips
+		if p.Chips > h.MinRaise {
+			actions = append(actions, Raise)
+		} else if p.Chips > 0 {
+			actions = append(actions, AllIn)
+		}
 	} else {
-		toCall := h.CurrentBet - p.Bet
+		// Need to call or raise
 		if toCall >= p.Chips {
+			// Can only go all-in
 			actions = append(actions, AllIn)
 		} else {
+			// Can call
 			actions = append(actions, Call)
+			// Can raise if we have enough chips
 			if p.Chips > toCall+h.MinRaise {
 				actions = append(actions, Raise)
 			} else if p.Chips > toCall {
+				// Not enough to min-raise but have chips left after calling
 				actions = append(actions, AllIn)
 			}
 		}
