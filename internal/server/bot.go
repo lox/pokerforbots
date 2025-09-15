@@ -17,6 +17,8 @@ type Bot struct {
 	inHand   bool
 	mu       sync.RWMutex
 	lastPing time.Time
+	closed   bool     // Track if bot is closed
+	done     chan struct{} // Signal channel closure
 }
 
 // NewBot creates a new bot instance
@@ -27,26 +29,30 @@ func NewBot(id string, conn *websocket.Conn, pool *BotPool) *Bot {
 		send:     make(chan []byte, 256),
 		pool:     pool,
 		lastPing: time.Now(),
+		done:     make(chan struct{}),
 	}
 }
 
 // SendMessage sends a protocol message to the bot
 func (b *Bot) SendMessage(msg interface{}) error {
+	// Check if bot is closed
+	b.mu.RLock()
+	if b.closed {
+		b.mu.RUnlock()
+		return ErrBotClosed
+	}
+	b.mu.RUnlock()
+
 	data, err := protocol.Marshal(msg)
 	if err != nil {
 		return err
 	}
 
-	// Use defer to recover from panic if channel is closed
-	defer func() {
-		if r := recover(); r != nil {
-			// Channel was closed, ignore
-		}
-	}()
-
 	select {
 	case b.send <- data:
 		return nil
+	case <-b.done:
+		return ErrBotClosed
 	case <-time.After(time.Second):
 		return ErrSendTimeout
 	}
@@ -71,6 +77,12 @@ func (b *Bot) ReadPump() {
 	defer func() {
 		b.pool.Unregister(b)
 		b.conn.Close()
+		b.mu.Lock()
+		if !b.closed {
+			b.closed = true
+			close(b.done)
+		}
+		b.mu.Unlock()
 	}()
 
 	b.conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -112,6 +124,12 @@ func (b *Bot) WritePump() {
 	defer func() {
 		ticker.Stop()
 		b.conn.Close()
+		b.mu.Lock()
+		if !b.closed {
+			b.closed = true
+			close(b.done)
+		}
+		b.mu.Unlock()
 	}()
 
 	for {

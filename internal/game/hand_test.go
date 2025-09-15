@@ -251,16 +251,24 @@ func TestAllInWithSidePots(t *testing.T) {
 	h.Players[3].Chips = 400
 
 	// Alice goes all-in for 100
-	h.ProcessAction(AllIn, 0)
+	if err := h.ProcessAction(AllIn, 0); err != nil {
+		t.Fatalf("Failed to process Alice's all-in: %v", err)
+	}
 
 	// Bob goes all-in for 200
-	h.ProcessAction(AllIn, 0)
+	if err := h.ProcessAction(AllIn, 0); err != nil {
+		t.Fatalf("Failed to process Bob's all-in: %v", err)
+	}
 
 	// Charlie goes all-in for 300
-	h.ProcessAction(AllIn, 0)
+	if err := h.ProcessAction(AllIn, 0); err != nil {
+		t.Fatalf("Failed to process Charlie's all-in: %v", err)
+	}
 
 	// Dave calls 300
-	h.ProcessAction(Call, 0)
+	if err := h.ProcessAction(Call, 0); err != nil {
+		t.Fatalf("Failed to process Dave's call: %v", err)
+	}
 
 	// Calculate side pots
 	h.calculateSidePots()

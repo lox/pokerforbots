@@ -98,7 +98,13 @@ func NewHandState(playerNames []string, button int, smallBlind, bigBlind, starti
 	h.dealHoleCards()
 
 	// Set first active player
-	h.ActivePlayer = h.nextActivePlayer((button + 3) % len(players))
+	if len(players) == 2 {
+		// Heads-up: button acts first preflop
+		h.ActivePlayer = button
+	} else {
+		// Regular: UTG (button+3) acts first
+		h.ActivePlayer = h.nextActivePlayer((button + 3) % len(players))
+	}
 
 	return h
 }
@@ -114,14 +120,24 @@ func makeEligible(players []*Player) []int {
 func (h *HandState) postBlinds(smallBlind, bigBlind int) {
 	numPlayers := len(h.Players)
 
+	var sbPos, bbPos int
+
+	if numPlayers == 2 {
+		// Heads-up: button posts small blind
+		sbPos = h.Button
+		bbPos = (h.Button + 1) % numPlayers
+	} else {
+		// Regular: button+1 posts small blind, button+2 posts big blind
+		sbPos = (h.Button + 1) % numPlayers
+		bbPos = (h.Button + 2) % numPlayers
+	}
+
 	// Small blind
-	sbPos := (h.Button + 1) % numPlayers
 	h.Players[sbPos].Bet = min(smallBlind, h.Players[sbPos].Chips)
 	h.Players[sbPos].TotalBet = h.Players[sbPos].Bet
 	h.Players[sbPos].Chips -= h.Players[sbPos].Bet
 
 	// Big blind
-	bbPos := (h.Button + 2) % numPlayers
 	h.Players[bbPos].Bet = min(bigBlind, h.Players[bbPos].Chips)
 	h.Players[bbPos].TotalBet = h.Players[bbPos].Bet
 	h.Players[bbPos].Chips -= h.Players[bbPos].Bet
@@ -167,7 +183,14 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 
 	// Track if BB is acting preflop
 	if h.Street == Preflop {
-		bbPos := (h.Button + 2) % len(h.Players)
+		var bbPos int
+		if len(h.Players) == 2 {
+			// Heads-up: button+1 is BB
+			bbPos = (h.Button + 1) % len(h.Players)
+		} else {
+			// Regular: button+2 is BB
+			bbPos = (h.Button + 2) % len(h.Players)
+		}
 		if h.ActivePlayer == bbPos {
 			h.BBActed = true
 		}
@@ -286,7 +309,14 @@ func (h *HandState) isBettingComplete() bool {
 
 	// Special case for preflop: BB gets option even if all bets match
 	if h.Street == Preflop && allMatched {
-		bbPos := (h.Button + 2) % len(h.Players)
+		var bbPos int
+		if len(h.Players) == 2 {
+			// Heads-up: button+1 is BB
+			bbPos = (h.Button + 1) % len(h.Players)
+		} else {
+			// Regular: button+2 is BB
+			bbPos = (h.Button + 2) % len(h.Players)
+		}
 		bb := h.Players[bbPos]
 
 		// If no raises and BB hasn't acted yet

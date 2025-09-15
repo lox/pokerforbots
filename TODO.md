@@ -65,25 +65,45 @@
   - [ ] Test timeout triggers auto-fold (needs hand runner)
   - [x] Test with multiple concurrent bots
 
-### 5. Hand Execution
-- [ ] Hand runner (internal/server/hand_runner.go)
-  - [ ] Deal cards
-  - [ ] Run betting rounds
-  - [ ] Handle timeouts
-  - [ ] Broadcast updates
-  - [ ] Return bots to pool
-- [ ] Integration with game logic
-  - [ ] Action validation
-  - [ ] State transitions
-  - [ ] Winner calculation
+### 5. Hand Execution ✅
+- [x] Hand runner (internal/server/hand_runner.go)
+  - [x] Deal cards
+  - [x] Run betting rounds
+  - [x] Handle timeouts (100ms auto-fold)
+  - [x] Broadcast updates
+  - [x] Return bots to pool
+- [x] Integration with game logic
+  - [x] Action validation
+  - [x] State transitions
+  - [x] Winner calculation
+- [x] **Tests:**
+  - [x] Test hand runner broadcasts
+  - [x] Test action requests
+  - [x] Test hand completion scenarios
+
+### 6. Code Quality & Edge Cases
+- [x] Fix Go idiom issues
+  - [x] Replace panic/recover in bot.SendMessage with proper channel handling
+  - [x] Add error checking in tests
+  - [x] Convert to table-driven tests where appropriate
+- [x] Address missing edge cases
+  - [x] Implement proper heads-up blind posting
+  - [x] Add comprehensive split pot testing
+  - [x] Test invalid action scenarios thoroughly
+  - [x] Fix race conditions in pool tests
+  - [ ] Improve disconnection handling during hands
+- [ ] Documentation improvements
+  - [ ] Add package-level documentation
+  - [ ] Document non-standard behaviors
+  - [ ] Add API usage examples
 - [ ] **Tests:**
-  - [ ] Test complete hand flow
-  - [ ] Test all-in and side pot scenarios
-  - [ ] Test timeout during each street
+  - [ ] Integration tests for complete hand scenarios
+  - [ ] Stress test with rapid connections/disconnections
+  - [ ] Verify all edge cases pass
 
 ## Phase 2: Demo Setup
 
-### 6. Test Bots
+### 7. Test Bots
 - [ ] Create cmd/testbot/main.go
   - [ ] Simple bot framework
   - [ ] Connect and play loop
@@ -94,7 +114,7 @@
 - [ ] **Tests:**
   - [ ] Test bots connect and respond within timeout
 
-### 7. Demo Runner
+### 8. Demo Runner
 - [ ] Create demo script that:
   - [ ] Starts server
   - [ ] Launches 4-6 test bots
@@ -103,14 +123,14 @@
 - [ ] **Tests:**
   - [ ] Verify demo runs for 1000 hands without errors
 
-### 8. Integration Testing
+### 9. Integration Testing
 - [ ] End-to-end test with real bots
 - [ ] Test edge cases (all-ins, everyone folds, etc.)
 - [ ] Basic load test with 20+ bots
 
 ## Phase 3: Polish
 
-### 9. Logging & Metrics
+### 10. Logging & Metrics
 - [ ] Add basic logging
   - [ ] Hand start/end
   - [ ] Player actions
@@ -119,7 +139,7 @@
   - [ ] Hands per second counter
   - [ ] Timeout counter
 
-### 10. Configuration
+### 11. Configuration
 - [ ] Add config file or env vars for:
   - [ ] Server port
   - [ ] Blinds and starting chips

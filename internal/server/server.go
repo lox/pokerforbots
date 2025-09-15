@@ -28,6 +28,7 @@ const (
 
 var (
 	ErrSendTimeout = errors.New("send timeout")
+	ErrBotClosed   = errors.New("bot connection closed")
 )
 
 // Server represents the poker server
