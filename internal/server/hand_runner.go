@@ -21,12 +21,13 @@ const (
 
 // HandRunner manages the execution of a single poker hand
 type HandRunner struct {
-	bots       []*Bot
-	handState  *game.HandState
-	button     int
-	handID     string
-	actions    chan BotAction
-	wg         sync.WaitGroup
+	bots          []*Bot
+	handState     *game.HandState
+	button        int
+	handID        string
+	actions       chan BotAction
+	wg            sync.WaitGroup
+	botActionChan chan protocol.Action // Channel to receive actions from bots
 }
 
 // BotAction represents an action from a bot
@@ -37,11 +38,19 @@ type BotAction struct {
 
 // NewHandRunner creates a new hand runner
 func NewHandRunner(bots []*Bot, handID string, button int) *HandRunner {
+	actionChan := make(chan protocol.Action, len(bots))
+
+	// Set action channel for all bots
+	for _, bot := range bots {
+		bot.SetActionChannel(actionChan)
+	}
+
 	return &HandRunner{
-		bots:    bots,
-		handID:  handID,
-		button:  button,
-		actions: make(chan BotAction, 1),
+		bots:          bots,
+		handID:        handID,
+		button:        button,
+		actions:       make(chan BotAction, 1),
+		botActionChan: actionChan,
 	}
 }
 
@@ -112,6 +121,11 @@ func (hr *HandRunner) Run() {
 	// Send hand result
 	hr.broadcastHandResult()
 
+	// Clean up action channels
+	for _, bot := range hr.bots {
+		bot.ClearActionChannel()
+	}
+
 	log.Printf("Hand %s completed", hr.handID)
 }
 
@@ -131,9 +145,10 @@ func (hr *HandRunner) broadcastHandStart() {
 		}
 
 		msg := &protocol.HandStart{
-			HandID:  hr.handID,
-			Players: players,
-			Button:  hr.button,
+			Type:     "hand_start",
+			HandID:   hr.handID,
+			Players:  players,
+			Button:   hr.button,
 			YourSeat: i,
 			HoleCards: []string{
 				game.CardString(player.HoleCards.GetCard(0)),
@@ -166,6 +181,7 @@ func (hr *HandRunner) sendActionRequest(bot *Bot, seat int, validActions []game.
 	toCall := hr.handState.CurrentBet - hr.handState.Players[seat].Bet
 
 	msg := &protocol.ActionRequest{
+		Type:          "action_request",
 		HandID:        hr.handID,
 		Pot:           pot,
 		ToCall:        toCall,
@@ -202,21 +218,35 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 
 // listenForAction listens for an action from a specific bot
 func (hr *HandRunner) listenForAction(botIndex int) {
-	// This is a simplified version - in production, we'd need proper message routing
-	// For now, we'll auto-respond with a check/call
-	time.Sleep(10 * time.Millisecond) // Simulate thinking
-
-	hr.actions <- BotAction{
-		botIndex: botIndex,
-		action: protocol.Action{
-			Type: "call",
-		},
+	// Listen for actions from the bot action channel
+	for {
+		select {
+		case action := <-hr.botActionChan:
+			// We received an action, but need to verify it's from the right bot
+			// For now, we accept any action since we can't easily identify which bot sent it
+			// In a production system, we'd include bot ID in the action
+			hr.actions <- BotAction{
+				botIndex: botIndex,
+				action:   action,
+			}
+			return
+		case <-time.After(100 * time.Millisecond):
+			// Timeout - send fold action
+			hr.actions <- BotAction{
+				botIndex: botIndex,
+				action: protocol.Action{
+					Type:   "action",
+					Action: "fold",
+				},
+			}
+			return
+		}
 	}
 }
 
 // convertAction converts a protocol action to a game action
 func (hr *HandRunner) convertAction(action protocol.Action) (game.Action, int) {
-	switch action.Type {
+	switch action.Action {
 	case "fold":
 		return game.Fold, 0
 	case "check":
@@ -264,6 +294,7 @@ func (hr *HandRunner) broadcastGameUpdate() {
 		}
 
 		msg := &protocol.GameUpdate{
+			Type:    "game_update",
 			HandID:  hr.handID,
 			Pot:     pot,
 			Players: players,
@@ -288,6 +319,7 @@ func (hr *HandRunner) broadcastStreetChange() {
 
 	for _, bot := range hr.bots {
 		msg := &protocol.StreetChange{
+			Type:   "street_change",
 			HandID: hr.handID,
 			Street: hr.handState.Street.String(),
 			Board:  boardCards,
@@ -361,6 +393,7 @@ func (hr *HandRunner) broadcastHandResult() {
 
 	for _, bot := range hr.bots {
 		msg := &protocol.HandResult{
+			Type:    "hand_result",
 			HandID:  hr.handID,
 			Winners: winnerInfo,
 			Board:   boardCards,

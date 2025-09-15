@@ -33,7 +33,17 @@ tasks:
   test:
     desc: Run all tests
     cmds:
-      - go test -v ./...
+      - bin/gotestsum -f pkgname-and-test-fails --format-icons hivis ./...
+
+  lint:
+    desc: Run linters
+    cmds:
+      - bin/golangci-lint run ./...
+
+  format:
+    desc: Format code
+    cmds:
+      - bin/golangci-lint fmt ./...
 
   bench:
     desc: Run benchmarks
@@ -44,12 +54,7 @@ tasks:
     desc: Run demo with test bots
     deps: [build]
     cmds:
-      - ./pokerforbots &
-      - sleep 1
-      - go run cmd/testbot/main.go --type=caller &
-      - go run cmd/testbot/main.go --type=random &
-      - go run cmd/testbot/main.go --type=aggressive &
-      - wait
+      - ./demo.sh
 
   clean:
     desc: Clean build artifacts

@@ -48,8 +48,8 @@ type Player struct {
 
 // Pot represents a pot (main or side)
 type Pot struct {
-	Amount      int
-	Eligible    []int // Seat numbers eligible for this pot
+	Amount       int
+	Eligible     []int // Seat numbers eligible for this pot
 	MaxPerPlayer int   // Maximum contribution per player
 }
 

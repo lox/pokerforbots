@@ -105,29 +105,46 @@ func ParseCard(s string) (Card, error) {
 
 	var rank uint8
 	switch s[0] {
-	case '2': rank = Two
-	case '3': rank = Three
-	case '4': rank = Four
-	case '5': rank = Five
-	case '6': rank = Six
-	case '7': rank = Seven
-	case '8': rank = Eight
-	case '9': rank = Nine
-	case 'T', 't': rank = Ten
-	case 'J', 'j': rank = Jack
-	case 'Q', 'q': rank = Queen
-	case 'K', 'k': rank = King
-	case 'A', 'a': rank = Ace
+	case '2':
+		rank = Two
+	case '3':
+		rank = Three
+	case '4':
+		rank = Four
+	case '5':
+		rank = Five
+	case '6':
+		rank = Six
+	case '7':
+		rank = Seven
+	case '8':
+		rank = Eight
+	case '9':
+		rank = Nine
+	case 'T', 't':
+		rank = Ten
+	case 'J', 'j':
+		rank = Jack
+	case 'Q', 'q':
+		rank = Queen
+	case 'K', 'k':
+		rank = King
+	case 'A', 'a':
+		rank = Ace
 	default:
 		return 0, fmt.Errorf("invalid rank: %c", s[0])
 	}
 
 	var suit uint8
 	switch s[1] {
-	case 'c', 'C': suit = Clubs
-	case 'd', 'D': suit = Diamonds
-	case 'h', 'H': suit = Hearts
-	case 's', 'S': suit = Spades
+	case 'c', 'C':
+		suit = Clubs
+	case 'd', 'D':
+		suit = Diamonds
+	case 'h', 'H':
+		suit = Hearts
+	case 's', 'S':
+		suit = Spades
 	default:
 		return 0, fmt.Errorf("invalid suit: %c", s[1])
 	}

@@ -27,8 +27,8 @@ func CardString(c Card) string {
 			rank := i % 13
 			suit := i / 13
 
-			rankStr := "23456789TJQKA"[rank:rank+1]
-			suitStr := "cdhs"[suit:suit+1]
+			rankStr := "23456789TJQKA"[rank : rank+1]
+			suitStr := "cdhs"[suit : suit+1]
 
 			return rankStr + suitStr
 		}

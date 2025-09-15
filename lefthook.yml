@@ -6,12 +6,18 @@ pre-commit:
   commands:
     # Run all Go tests - MUST PASS
     go-test:
-      run: go test ./...
+      run: bin/gotestsum --format=standard-quiet ./...
       fail_text: "Tests are failing! Fix all tests before committing."
 
-    # Check Go code formatting
+    # Format Go code with golangci-lint
     go-fmt:
-      glob: "*.go"
-      run: gofmt -l {staged_files}
-      fail_text: "Go files are not formatted. Run 'gofmt -w' on the files."
+      glob: "**/*.go"
+      run: bin/golangci-lint fmt {staged_files}
+      fail_text: "Code formatting failed!"
       stage_fixed: true
+
+    # Lint Go code with golangci-lint (skip for now - too many existing issues)
+    # go-lint:
+    #   run: bin/golangci-lint run ./...
+    #   fail_text: "Linting failed! Fix all linter issues before committing."
+

@@ -10,15 +10,17 @@ import (
 
 // Bot represents a connected bot client
 type Bot struct {
-	ID       string
-	conn     *websocket.Conn
-	send     chan []byte
-	pool     *BotPool
-	inHand   bool
-	mu       sync.RWMutex
-	lastPing time.Time
-	closed   bool     // Track if bot is closed
-	done     chan struct{} // Signal channel closure
+	ID           string
+	conn         *websocket.Conn
+	send         chan []byte
+	pool         *BotPool
+	inHand       bool
+	mu           sync.RWMutex
+	lastPing     time.Time
+	closed       bool                 // Track if bot is closed
+	done         chan struct{}        // Signal channel closure
+	actionChan   chan protocol.Action // Channel to send actions to hand runner
+	handRunnerMu sync.RWMutex
 }
 
 // NewBot creates a new bot instance
@@ -72,11 +74,25 @@ func (b *Bot) IsInHand() bool {
 	return b.inHand
 }
 
+// SetActionChannel sets the channel for sending actions to hand runner
+func (b *Bot) SetActionChannel(ch chan protocol.Action) {
+	b.handRunnerMu.Lock()
+	defer b.handRunnerMu.Unlock()
+	b.actionChan = ch
+}
+
+// ClearActionChannel clears the action channel
+func (b *Bot) ClearActionChannel() {
+	b.handRunnerMu.Lock()
+	defer b.handRunnerMu.Unlock()
+	b.actionChan = nil
+}
+
 // ReadPump reads messages from the websocket connection
 func (b *Bot) ReadPump() {
 	defer func() {
 		b.pool.Unregister(b)
-		b.conn.Close()
+		_ = b.conn.Close()
 		b.mu.Lock()
 		if !b.closed {
 			b.closed = true
@@ -85,9 +101,9 @@ func (b *Bot) ReadPump() {
 		b.mu.Unlock()
 	}()
 
-	b.conn.SetReadDeadline(time.Now().Add(pongWait))
+	_ = b.conn.SetReadDeadline(time.Now().Add(pongWait))
 	b.conn.SetPongHandler(func(string) error {
-		b.conn.SetReadDeadline(time.Now().Add(pongWait))
+		_ = b.conn.SetReadDeadline(time.Now().Add(pongWait))
 		b.mu.Lock()
 		b.lastPing = time.Now()
 		b.mu.Unlock()
@@ -112,8 +128,17 @@ func (b *Bot) ReadPump() {
 
 		// Handle action if bot is in a hand
 		if b.IsInHand() {
-			// Forward to hand runner (will be implemented)
-			// For now, just acknowledge
+			// Forward to hand runner via action channel
+			b.handRunnerMu.RLock()
+			if b.actionChan != nil {
+				select {
+				case b.actionChan <- action:
+					// Action sent successfully
+				default:
+					// Channel full or closed, ignore
+				}
+			}
+			b.handRunnerMu.RUnlock()
 		}
 	}
 }
@@ -123,7 +148,7 @@ func (b *Bot) WritePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
-		b.conn.Close()
+		_ = b.conn.Close()
 		b.mu.Lock()
 		if !b.closed {
 			b.closed = true

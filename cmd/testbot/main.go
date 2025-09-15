@@ -160,7 +160,7 @@ func (b *Bot) handleActionRequest(req *protocol.ActionRequest) error {
 // Close closes the connection
 func (b *Bot) Close() {
 	if b.conn != nil {
-		b.conn.Close()
+		_ = b.conn.Close()
 	}
 }
 

@@ -29,34 +29,95 @@ func TestCardCreation(t *testing.T) {
 
 func TestParseCard(t *testing.T) {
 	tests := []struct {
-		input    string
-		expected string
-		wantErr  bool
+		name        string
+		input       string
+		wantCard    Card
+		wantErr     bool
+		description string
 	}{
-		{"As", "As", false},
-		{"2c", "2c", false},
-		{"Kh", "Kh", false},
-		{"Td", "Td", false},
-		{"9s", "9s", false},
-		{"XX", "", true},
-		{"A", "", true},
-		{"Asd", "", true},
+		{
+			name:        "ace of spades",
+			input:       "As",
+			wantCard:    NewCard(12, 3), // Ace=12, Spades=3
+			wantErr:     false,
+			description: "Parse highest card",
+		},
+		{
+			name:        "two of hearts",
+			input:       "2h",
+			wantCard:    NewCard(0, 2), // Two=0, Hearts=2
+			wantErr:     false,
+			description: "Parse lowest card",
+		},
+		{
+			name:        "king of diamonds",
+			input:       "Kd",
+			wantCard:    NewCard(11, 1), // King=11, Diamonds=1
+			wantErr:     false,
+			description: "Parse face card",
+		},
+		{
+			name:        "ten of clubs",
+			input:       "Tc",
+			wantCard:    NewCard(8, 0), // Ten=8, Clubs=0
+			wantErr:     false,
+			description: "Parse ten with T notation",
+		},
+		{
+			name:        "nine of spades",
+			input:       "9s",
+			wantCard:    NewCard(7, 3), // Nine=7, Spades=3
+			wantErr:     false,
+			description: "Parse number card",
+		},
+		{
+			name:        "invalid rank",
+			input:       "Xs",
+			wantCard:    0,
+			wantErr:     true,
+			description: "Should error on invalid rank",
+		},
+		{
+			name:        "invalid suit",
+			input:       "Ax",
+			wantCard:    0,
+			wantErr:     true,
+			description: "Should error on invalid suit",
+		},
+		{
+			name:        "empty string",
+			input:       "",
+			wantCard:    0,
+			wantErr:     true,
+			description: "Should error on empty string",
+		},
+		{
+			name:        "too short",
+			input:       "A",
+			wantCard:    0,
+			wantErr:     true,
+			description: "Should error on single character",
+		},
+		{
+			name:        "too long",
+			input:       "Asd",
+			wantCard:    0,
+			wantErr:     true,
+			description: "Should error on too many characters",
+		},
 	}
 
 	for _, tt := range tests {
-		card, err := ParseCard(tt.input)
-		if tt.wantErr {
-			if err == nil {
-				t.Errorf("ParseCard(%s) expected error", tt.input)
+		t.Run(tt.name, func(t *testing.T) {
+			card, err := ParseCard(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseCard(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
 			}
-		} else {
-			if err != nil {
-				t.Errorf("ParseCard(%s) unexpected error: %v", tt.input, err)
+			if card != tt.wantCard {
+				t.Errorf("ParseCard(%q) = %v, want %v", tt.input, card, tt.wantCard)
 			}
-			if card.String() != tt.expected {
-				t.Errorf("ParseCard(%s) = %s, want %s", tt.input, card.String(), tt.expected)
-			}
-		}
+		})
 	}
 }
 

@@ -195,7 +195,7 @@ func BenchmarkUnmarshalActionCustom(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var decoded Action
-		decoded.UnmarshalMsg(data)
+		_, _ = decoded.UnmarshalMsg(data)
 	}
 }
 
@@ -232,16 +232,16 @@ func BenchmarkUnmarshalActionRequestCustom(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var decoded ActionRequest
-		decoded.UnmarshalMsg(data)
+		_, _ = decoded.UnmarshalMsg(data)
 	}
 }
 
 // Test that messages are reasonably small
 func TestMessageSizes(t *testing.T) {
 	tests := []struct {
-		name      string
-		msg       interface{ MarshalMsg([]byte) ([]byte, error) }
-		maxSize   int
+		name    string
+		msg     interface{ MarshalMsg([]byte) ([]byte, error) }
+		maxSize int
 	}{
 		{
 			name: "Action",
@@ -307,7 +307,7 @@ func TestBufferReuse(t *testing.T) {
 	buf, _ = msg1.MarshalMsg(buf[:0])
 
 	var decoded1 Connect
-	decoded1.UnmarshalMsg(buf)
+	_, _ = decoded1.UnmarshalMsg(buf)
 	if decoded1.Name != "Bot1" {
 		t.Error("First decode failed")
 	}
@@ -317,7 +317,7 @@ func TestBufferReuse(t *testing.T) {
 	buf, _ = msg2.MarshalMsg(buf[:0])
 
 	var decoded2 Connect
-	decoded2.UnmarshalMsg(buf)
+	_, _ = decoded2.UnmarshalMsg(buf)
 	if decoded2.Name != "Bot2" {
 		t.Error("Second decode failed")
 	}
