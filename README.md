@@ -13,9 +13,6 @@ A high-performance Texas Hold'em poker server optimized for bot-vs-bot play.
 ## Quick Start
 
 ```bash
-# Install Task (if not already installed)
-# brew install go-task/tap/go-task
-
 # Build the server
 task build
 
