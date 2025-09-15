@@ -114,9 +114,39 @@ func TestHandRunnerActionRequest(t *testing.T) {
 }
 
 func TestHandRunnerTimeout(t *testing.T) {
-	// This test is skipped because listenForAction currently
-	// auto-responds with call for testing
-	t.Skip("Skipping timeout test - listenForAction auto-responds")
+	// Test that bots timeout and auto-fold when they don't respond
+	bots := []*Bot{
+		{ID: "timeout-bot1", send: make(chan []byte, 100), actionChan: make(chan protocol.Action, 1)},
+		{ID: "timeout-bot2", send: make(chan []byte, 100), actionChan: make(chan protocol.Action, 1)},
+	}
+
+	runner := NewHandRunner(bots, "timeout-test", 0)
+	
+	// Initialize hand state
+	runner.handState = game.NewHandState(
+		[]string{"timeout-bot1", "timeout-bot2"},
+		0, 5, 10, 1000,
+	)
+
+	// Start the hand runner in background
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runner.Run()
+	}()
+
+	// Don't send any actions - both bots should timeout and auto-fold
+	
+	// Wait for hand to complete (should be quick due to timeouts)
+	select {
+	case <-done:
+		// Hand completed successfully
+		if !runner.handState.IsComplete() {
+			t.Error("Expected hand to be complete after timeouts")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Hand did not complete within timeout period")
+	}
 }
 
 func TestHandRunnerComplete(t *testing.T) {
