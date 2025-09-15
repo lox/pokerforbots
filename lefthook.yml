@@ -1,0 +1,22 @@
+# Lefthook configuration
+# Ensures code quality before commits
+
+pre-commit:
+  parallel: true
+  commands:
+    # Run all Go tests - MUST PASS
+    go-test:
+      run: go test ./...
+      fail_text: "Tests are failing! Fix all tests before committing."
+
+    # Check Go code formatting
+    go-fmt:
+      glob: "*.go"
+      run: gofmt -l {staged_files}
+      fail_text: "Go files are not formatted. Run 'gofmt -w' on the files."
+      stage_fixed: true
+
+    # Run go vet for static analysis
+    go-vet:
+      run: go vet ./...
+      fail_text: "Go vet found issues. Fix them before committing."

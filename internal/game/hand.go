@@ -65,6 +65,7 @@ type HandState struct {
 	Pots         []Pot
 	ActivePlayer int
 	Deck         *Deck
+	BBActed      bool // Track if BB has acted in preflop
 }
 
 // NewHandState creates a new hand state
@@ -84,6 +85,7 @@ func NewHandState(playerNames []string, button int, smallBlind, bigBlind, starti
 		Button:     button,
 		CurrentBet: 0,
 		MinRaise:   bigBlind,
+		LastRaiser: -1, // No raiser initially
 		Street:     Preflop,
 		Deck:       NewDeck(),
 		Pots:       []Pot{{Amount: 0, Eligible: makeEligible(players)}},
@@ -163,6 +165,14 @@ func (h *HandState) GetValidActions() []Action {
 func (h *HandState) ProcessAction(action Action, amount int) error {
 	p := h.Players[h.ActivePlayer]
 
+	// Track if BB is acting preflop
+	if h.Street == Preflop {
+		bbPos := (h.Button + 2) % len(h.Players)
+		if h.ActivePlayer == bbPos {
+			h.BBActed = true
+		}
+	}
+
 	switch action {
 	case Fold:
 		p.Folded = true
@@ -219,7 +229,8 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 	h.ActivePlayer = h.nextActivePlayer(h.ActivePlayer + 1)
 
 	// Check if betting round is complete
-	if h.isBettingComplete() {
+	// Note: ActivePlayer will be -1 if no active players left
+	if h.ActivePlayer == -1 || h.isBettingComplete() {
 		h.nextStreet()
 	}
 
@@ -246,26 +257,45 @@ func (h *HandState) isBettingComplete() bool {
 		}
 	}
 
-	if activePlayers <= 1 {
+	// If only one active player, check if they've matched the current bet
+	if activePlayers == 1 {
+		for _, p := range h.Players {
+			if !p.Folded && !p.AllInFlag {
+				// This is the only active player - have they matched the bet?
+				if p.Bet != h.CurrentBet {
+					return false // They still need to act
+				}
+				break
+			}
+		}
 		return true
 	}
 
-	// Check if all active players have acted and matched the current bet
+	if activePlayers == 0 {
+		return true // Everyone is folded or all-in
+	}
+
+	// Check if all active players have matched the current bet
+	allMatched := true
 	for _, p := range h.Players {
 		if !p.Folded && !p.AllInFlag && p.Bet != h.CurrentBet {
-			return false
+			allMatched = false
+			break
 		}
 	}
 
-	// Special case for preflop: big blind gets option
-	if h.Street == Preflop {
+	// Special case for preflop: BB gets option even if all bets match
+	if h.Street == Preflop && allMatched {
 		bbPos := (h.Button + 2) % len(h.Players)
-		if h.ActivePlayer == bbPos && h.LastRaiser == -1 {
-			return false
+		bb := h.Players[bbPos]
+
+		// If no raises and BB hasn't acted yet
+		if h.LastRaiser == -1 && !bb.Folded && !bb.AllInFlag && !h.BBActed {
+			return false // BB still gets option
 		}
 	}
 
-	return true
+	return allMatched
 }
 
 func (h *HandState) nextStreet() {

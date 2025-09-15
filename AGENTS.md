@@ -44,4 +44,7 @@ Use conventional commits and commit after each numbered milestone in TODO.md:
 - After 8. Integration Testing → `test: add integration and load tests`
 
 Each commit should include all tests for that milestone.
-- Update @TODO.md after each task, and make sure all tests are passing before commit.
+
+Update @TODO.md after each task, and make sure all tests are passing before commit.
+
+YOU MUST NEVER COMMIT FAILING TESTS, EVEN IF THE TEST IS UNRELATED TO YOUR CHANGES.
