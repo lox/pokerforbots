@@ -7,9 +7,13 @@ tasks:
       - task --list
 
   generate:
-    desc: Generate msgpack code (when protocol is ready)
+    desc: Generate msgpack code
     cmds:
-      - echo "Protocol not yet implemented"
+      - go generate ./...
+    sources:
+      - internal/protocol/messages.go
+    generates:
+      - internal/protocol/messages_gen.go
 
   build:
     desc: Build the server

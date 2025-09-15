@@ -7,28 +7,28 @@
 
 ## Phase 1: Core Infrastructure (MVP)
 
-### 1. Project Setup
-- [ ] Initialize Go module and dependencies
-  - [ ] Add gorilla/websocket
-  - [ ] Add msgpack library (tinylib/msgp)
-  - [ ] Create Taskfile.yml with generate/build/test tasks
-- [ ] Create basic project structure
-  - [ ] cmd/server/main.go
-  - [ ] internal/protocol/
-  - [ ] internal/game/
-  - [ ] internal/server/
-- [ ] **Tests:**
-  - [ ] Verify project builds
-  - [ ] Verify msgp code generation works
+### 1. Project Setup ✅
+- [x] Initialize Go module and dependencies
+  - [x] Add gorilla/websocket
+  - [x] Add msgpack library (tinylib/msgp)
+  - [x] Create Taskfile.yml with generate/build/test tasks
+- [x] Create basic project structure
+  - [x] cmd/server/main.go
+  - [x] internal/protocol/
+  - [x] internal/game/
+  - [x] internal/server/
+- [x] **Tests:**
+  - [x] Verify project builds
+  - [x] Verify msgp code generation works
 
-### 2. Protocol Layer
-- [ ] Define msgpack message types in protocol/messages.go
-  - [ ] Connect, Action (client messages)
-  - [ ] HandStart, ActionRequest, GameUpdate, StreetChange, HandResult, Error (server messages)
-- [ ] Setup msgp code generation
-- [ ] **Tests:**
-  - [ ] Test message serialization/deserialization
-  - [ ] Basic benchmark to ensure it's fast enough
+### 2. Protocol Layer ✅
+- [x] Define msgpack message types in protocol/messages.go
+  - [x] Connect, Action (client messages)
+  - [x] HandStart, ActionRequest, GameUpdate, StreetChange, HandResult, Error (server messages)
+- [x] Setup msgp code generation
+- [x] **Tests:**
+  - [x] Test message serialization/deserialization
+  - [x] Basic benchmark to ensure it's fast enough (~20-50ns per operation)
 
 ### 3. Card & Game Logic
 - [ ] Implement bit-packed card representation (internal/game/cards.go)
