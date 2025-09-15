@@ -3,18 +3,20 @@ package server
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // BotPool manages available bots and matches them into hands
 type BotPool struct {
-	bots       map[string]*Bot
-	available  chan *Bot
-	register   chan *Bot
-	unregister chan *Bot
-	mu         sync.RWMutex
-	minPlayers int
-	maxPlayers int
+	bots        map[string]*Bot
+	available   chan *Bot
+	register    chan *Bot
+	unregister  chan *Bot
+	mu          sync.RWMutex
+	minPlayers  int
+	maxPlayers  int
+	handCounter uint64
 }
 
 // NewBotPool creates a new bot pool
@@ -93,10 +95,11 @@ func (p *BotPool) tryMatch() {
 			}
 		default:
 			// No more available bots
-			break
+			goto startHand
 		}
 	}
 
+startHand:
 	// If we got enough bots, start a hand
 	if len(bots) >= p.minPlayers {
 		for _, bot := range bots {
@@ -139,7 +142,9 @@ func (p *BotPool) runHand(bots []*Bot) {
 	}
 
 	// Generate hand ID
-	handID := fmt.Sprintf("hand-%d", time.Now().Unix())
+	// Generate unique hand ID using atomic counter
+	handNum := atomic.AddUint64(&p.handCounter, 1)
+	handID := fmt.Sprintf("hand-%d", handNum)
 
 	// Run the hand
 	runner := NewHandRunner(bots, handID, 0)

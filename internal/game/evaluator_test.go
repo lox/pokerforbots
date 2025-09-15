@@ -140,11 +140,12 @@ func TestCompareHands(t *testing.T) {
 			rank2 := Evaluate7Cards(hand2)
 			result := CompareHands(rank1, rank2)
 
-			if result > 0 && tt.expectedResult != 1 {
+			switch {
+			case result > 0 && tt.expectedResult != 1:
 				t.Errorf("Expected hand2 to win or tie, but hand1 won")
-			} else if result < 0 && tt.expectedResult != -1 {
+			case result < 0 && tt.expectedResult != -1:
 				t.Errorf("Expected hand1 to win or tie, but hand2 won")
-			} else if result == 0 && tt.expectedResult != 0 {
+			case result == 0 && tt.expectedResult != 0:
 				t.Errorf("Expected a winner, but got a tie")
 			}
 		})
@@ -209,7 +210,7 @@ func TestEvaluatorBugs(t *testing.T) {
 	})
 
 	t.Run("kicker ordering bug - high card", func(t *testing.T) {
-		// A-K-Q-J-9 should beat A-K-Q-T-8 
+		// A-K-Q-J-9 should beat A-K-Q-T-8
 		// But bitset comparison loses lexicographic order
 		hand1 := parseCards("As", "Kh", "Qd", "Jc", "9s", "7h", "2d") // A-K-Q-J-9
 		hand2 := parseCards("Ah", "Kd", "Qs", "Tc", "8h", "6s", "3d") // A-K-Q-T-8

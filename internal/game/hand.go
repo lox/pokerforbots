@@ -270,7 +270,7 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 	// Check if betting round is complete
 	// Note: ActivePlayer will be -1 if no active players left
 	if h.ActivePlayer == -1 || h.isBettingComplete() {
-		h.nextStreet()
+		h.NextStreet()
 	}
 
 	return nil
@@ -344,7 +344,8 @@ func (h *HandState) isBettingComplete() bool {
 	return allMatched
 }
 
-func (h *HandState) nextStreet() {
+// NextStreet advances to the next betting street
+func (h *HandState) NextStreet() {
 	// Calculate side pots if needed
 	h.calculateSidePots()
 

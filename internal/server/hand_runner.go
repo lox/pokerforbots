@@ -2,7 +2,6 @@ package server
 
 import (
 	"log"
-	"sync"
 	"time"
 
 	"github.com/lox/pokerforbots/internal/game"
@@ -26,7 +25,6 @@ type HandRunner struct {
 	button        int
 	handID        string
 	actions       chan BotAction
-	wg            sync.WaitGroup
 	botActionChan chan protocol.Action // Channel to receive actions from bots
 }
 
@@ -86,6 +84,7 @@ func (hr *HandRunner) Run() {
 		// Get current player
 		activePlayer := hr.handState.ActivePlayer
 		if activePlayer == -1 {
+			log.Printf("Hand %s: No active players, ending", hr.handID)
 			break // No active players
 		}
 
@@ -95,6 +94,9 @@ func (hr *HandRunner) Run() {
 			log.Printf("Warning: No valid actions for player %d in hand %s", activePlayer, hr.handID)
 			break // Invalid state, end hand
 		}
+
+		log.Printf("Hand %s: Player %d to act, street %s, valid actions: %v",
+			hr.handID, activePlayer, hr.handState.Street, validActions)
 
 		// Send action request to active bot
 		bot := hr.bots[activePlayer]
@@ -352,9 +354,17 @@ func (hr *HandRunner) broadcastStreetChange() {
 func (hr *HandRunner) resolveHand() {
 	// Force showdown if needed
 	if hr.handState.Street != game.Showdown {
-		// Deal remaining cards
-		for hr.handState.Street != game.Showdown {
-			hr.handState.ProcessAction(game.Check, 0)
+		// If everyone is all-in, just advance to showdown
+		if hr.handState.ActivePlayer == -1 {
+			// Deal remaining cards directly
+			for hr.handState.Street != game.Showdown {
+				hr.handState.NextStreet()
+			}
+		} else {
+			// Deal remaining cards by checking
+			for hr.handState.Street != game.Showdown {
+				hr.handState.ProcessAction(game.Check, 0)
+			}
 		}
 	}
 

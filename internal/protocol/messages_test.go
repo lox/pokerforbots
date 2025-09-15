@@ -331,20 +331,20 @@ func TestMarshalRaceCondition(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping race condition test in short mode")
 	}
-	
+
 	// This test creates high contention to trigger buffer aliasing race conditions
 	// that were fixed by copying bytes in Marshal instead of returning aliased slices
-	
+
 	numGoroutines := 20
 	numMessages := 100
-	
+
 	var wg sync.WaitGroup
-	
+
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			
+
 			for j := 0; j < numMessages; j++ {
 				// Create and marshal different message types concurrently
 				msg := &ActionRequest{
@@ -356,26 +356,26 @@ func TestMarshalRaceCondition(t *testing.T) {
 					MinRaise:      20,
 					TimeRemaining: 5000,
 				}
-				
+
 				data, err := Marshal(msg)
 				if err != nil {
 					t.Errorf("Marshal failed: %v", err)
 					return
 				}
-				
+
 				// Unmarshal to verify integrity
 				var decoded ActionRequest
 				if err := Unmarshal(data, &decoded); err != nil {
 					t.Errorf("Unmarshal failed: %v", err)
 					return
 				}
-				
+
 				// Verify the data wasn't corrupted by buffer aliasing
 				if len(decoded.ValidActions) != 3 {
 					t.Errorf("Expected 3 valid actions, got %d", len(decoded.ValidActions))
 					return
 				}
-				
+
 				if decoded.Pot != 100+j {
 					t.Errorf("Expected pot %d, got %d", 100+j, decoded.Pot)
 					return
@@ -383,6 +383,6 @@ func TestMarshalRaceCondition(t *testing.T) {
 			}
 		}(i)
 	}
-	
+
 	wg.Wait()
 }

@@ -533,7 +533,7 @@ func TestReraiseLimits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raiseCount++
+	_ = raiseCount // Test tracking variable
 
 	// In no-limit, there's no cap on number of raises
 	// But we should track that MinRaise is updated correctly

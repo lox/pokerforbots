@@ -54,7 +54,7 @@ func TestBotPool(t *testing.T) {
 
 func TestBotPoolMatching(t *testing.T) {
 	pool := NewBotPool(2, 4)
-	
+
 	// Start the pool in background
 	go pool.Run()
 	defer func() {
@@ -94,7 +94,7 @@ func TestBotPoolMatching(t *testing.T) {
 	if pool.BotCount() == 0 {
 		t.Error("All bots disappeared - pool matching may have issues")
 	}
-	
+
 	// The important thing is that the pool didn't crash and is still running
 	// Bots may have completed hands and been returned to the pool
 }

@@ -70,7 +70,7 @@ func Evaluate7Cards(hand Hand) HandRank {
 	bestFlushRank := HandRank(0)
 	for suit := uint8(0); suit < 4; suit++ {
 		suitMask := hand.GetSuitMask(suit)
-		if bits.OnesCount16(uint16(suitMask)) >= 5 {
+		if bits.OnesCount16(suitMask) >= 5 {
 			flushCards := getFlushCards(hand, suit)
 			// Check for straight flush
 			if straightRank := checkStraight(flushCards); straightRank > 0 {
@@ -81,8 +81,8 @@ func Evaluate7Cards(hand Hand) HandRank {
 			} else {
 				// Regular flush - use top 5 cards
 				topCards := getTopCardsOrdered(flushCards, 5)
-				rank := Flush | (HandRank(topCards[0]) << 24) | (HandRank(topCards[1]) << 20) | 
-					    (HandRank(topCards[2]) << 16) | (HandRank(topCards[3]) << 12) | (HandRank(topCards[4]) << 8)
+				rank := Flush | (HandRank(topCards[0]) << 24) | (HandRank(topCards[1]) << 20) |
+					(HandRank(topCards[2]) << 16) | (HandRank(topCards[3]) << 12) | (HandRank(topCards[4]) << 8)
 				if rank > bestFlushRank {
 					bestFlushRank = rank
 				}
@@ -105,7 +105,7 @@ func Evaluate7Cards(hand Hand) HandRank {
 	// Check for full house - FIXED: accept trips as pair component
 	trips := findNOfAKind(rankCounts, 3)
 	if trips >= 0 {
-		// Look for another set (3+ cards) or pair (2+ cards) 
+		// Look for another set (3+ cards) or pair (2+ cards)
 		pair := findNOfAKindAtLeast(rankCounts, 2, uint8(trips))
 		if pair >= 0 {
 			return FullHouse | (HandRank(trips) << 24) | (HandRank(pair) << 20)
@@ -205,24 +205,6 @@ func findKicker(counts [13]uint8, used []uint8) uint8 {
 	return 0
 }
 
-// findKickers finds the top n kickers excluding used ranks (legacy bitset version)
-func findKickers(counts [13]uint8, used []uint8, n int) uint16 {
-	isUsed := make(map[uint8]bool)
-	for _, r := range used {
-		isUsed[r] = true
-	}
-
-	kickers := uint16(0)
-	found := 0
-	for rank := 12; rank >= 0 && found < n; rank-- {
-		if !isUsed[uint8(rank)] && counts[rank] > 0 {
-			kickers |= uint16(1) << rank
-			found++
-		}
-	}
-	return kickers
-}
-
 // findOrderedKickers finds the top n kickers in descending order, excluding used ranks
 func findOrderedKickers(counts [13]uint8, used []uint8, n int) []uint8 {
 	isUsed := make(map[uint8]bool)
@@ -241,17 +223,6 @@ func findOrderedKickers(counts [13]uint8, used []uint8, n int) []uint8 {
 		kickers = append(kickers, 0)
 	}
 	return kickers
-}
-
-// checkFlush returns the suit if there's a flush, -1 otherwise
-func checkFlush(hand Hand) int {
-	for suit := uint8(0); suit < 4; suit++ {
-		suitMask := hand.GetSuitMask(suit)
-		if bits.OnesCount16(suitMask) >= 5 {
-			return int(suit)
-		}
-	}
-	return -1
 }
 
 // getFlushCards returns a Hand containing only cards of the specified suit
@@ -279,21 +250,6 @@ func checkStraight(hand Hand) uint8 {
 	}
 
 	return 0
-}
-
-// getTopCards returns a bitmask of the top n cards by rank
-func getTopCards(hand Hand, n int) uint16 {
-	rankMask := hand.GetRankMask()
-	result := uint16(0)
-	found := 0
-
-	for rank := 12; rank >= 0 && found < n; rank-- {
-		if rankMask&(1<<rank) != 0 {
-			result |= 1 << rank
-			found++
-		}
-	}
-	return result
 }
 
 // getTopCardsOrdered returns the top n card ranks in descending order

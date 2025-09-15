@@ -6,6 +6,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
+	"github.com/rs/zerolog/log"
 )
 
 // Bot represents a connected bot client
@@ -36,7 +37,7 @@ func NewBot(id string, conn *websocket.Conn, pool *BotPool) *Bot {
 }
 
 // SendMessage sends a protocol message to the bot
-func (b *Bot) SendMessage(msg interface{}) error {
+func (b *Bot) SendMessage(msg any) error {
 	// Check if bot is closed
 	b.mu.RLock()
 	if b.closed {
@@ -114,7 +115,7 @@ func (b *Bot) ReadPump() {
 		_, message, err := b.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				// Log error
+				log.Error().Err(err).Str("bot_id", b.ID).Msg("Unexpected WebSocket close error")
 			}
 			break
 		}

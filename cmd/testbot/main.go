@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
@@ -388,8 +387,7 @@ func main() {
 	}
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
-	// Seed random number generator
-	rand.Seed(time.Now().UnixNano())
+	// Random number generator is automatically seeded in Go 1.20+
 
 	// Create bots with selected strategy
 	var bots []*Bot

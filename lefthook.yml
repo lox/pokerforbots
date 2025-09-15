@@ -16,8 +16,8 @@ pre-commit:
       fail_text: "Code formatting failed!"
       stage_fixed: true
 
-    # Lint Go code with golangci-lint (skip for now - too many existing issues)
-    # go-lint:
-    #   run: bin/golangci-lint run ./...
-    #   fail_text: "Linting failed! Fix all linter issues before committing."
+    # Lint Go code with golangci-lint
+    go-lint:
+      run: bin/golangci-lint run ./...
+      fail_text: "Linting failed! Fix all linter issues before committing."
 

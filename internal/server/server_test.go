@@ -13,7 +13,7 @@ import (
 func TestServerHealth(t *testing.T) {
 	srv := NewServer()
 
-	req := httptest.NewRequest("GET", "/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
 
 	srv.handleHealth(w, req)
@@ -27,7 +27,7 @@ func TestServerHealth(t *testing.T) {
 func TestServerStats(t *testing.T) {
 	srv := NewServer()
 
-	req := httptest.NewRequest("GET", "/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/stats", nil)
 	w := httptest.NewRecorder()
 
 	srv.handleStats(w, req)

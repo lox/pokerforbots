@@ -121,7 +121,7 @@ func TestHandRunnerTimeout(t *testing.T) {
 	}
 
 	runner := NewHandRunner(bots, "timeout-test", 0)
-	
+
 	// Initialize hand state
 	runner.handState = game.NewHandState(
 		[]string{"timeout-bot1", "timeout-bot2"},
@@ -136,7 +136,7 @@ func TestHandRunnerTimeout(t *testing.T) {
 	}()
 
 	// Don't send any actions - both bots should timeout and auto-fold
-	
+
 	// Wait for hand to complete (should be quick due to timeouts)
 	select {
 	case <-done:

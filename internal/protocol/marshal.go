@@ -9,18 +9,18 @@ import (
 
 // Pool of buffers to avoid allocation and ensure thread safety
 var bufferPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &bytes.Buffer{}
 	},
 }
 
 // Marshal serializes a message to msgpack format
-func Marshal(v interface{}) ([]byte, error) {
+func Marshal(v any) ([]byte, error) {
 	// Get a buffer from the pool to ensure thread safety
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufferPool.Put(buf)
-	
+
 	writer := msgp.NewWriter(buf)
 
 	switch msg := v.(type) {
@@ -71,7 +71,7 @@ func Marshal(v interface{}) ([]byte, error) {
 }
 
 // Unmarshal deserializes msgpack data into a message
-func Unmarshal(data []byte, v interface{}) error {
+func Unmarshal(data []byte, v any) error {
 	reader := msgp.NewReader(bytes.NewReader(data))
 
 	switch msg := v.(type) {
