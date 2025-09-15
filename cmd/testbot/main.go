@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"math/rand"
 	"net/url"
 	"os"
@@ -12,6 +11,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // BotStrategy defines how a bot makes decisions
@@ -28,13 +29,19 @@ type Bot struct {
 	strategy BotStrategy
 	botID    string
 	handID   string
+	logger   zerolog.Logger
 }
 
 // NewBot creates a new bot with the given strategy
 func NewBot(strategy BotStrategy) *Bot {
+	botID := fmt.Sprintf("%s-%d", strategy.GetName(), rand.Intn(10000))
 	return &Bot{
 		strategy: strategy,
-		botID:    fmt.Sprintf("%s-%d", strategy.GetName(), rand.Intn(10000)),
+		botID:    botID,
+		logger: log.With().
+			Str("bot_id", botID).
+			Str("strategy", strategy.GetName()).
+			Logger(),
 	}
 }
 
@@ -80,7 +87,7 @@ func (b *Bot) Run() error {
 
 		// Determine message type and handle it
 		if err := b.handleMessage(data); err != nil {
-			log.Printf("[%s] Error handling message: %v", b.botID, err)
+			b.logger.Error().Err(err).Msg("Error handling message")
 		}
 	}
 }
@@ -97,38 +104,57 @@ func (b *Bot) handleMessage(data []byte) error {
 	var handStart protocol.HandStart
 	if err := protocol.Unmarshal(data, &handStart); err == nil && handStart.HandID != "" {
 		b.handID = handStart.HandID
-		log.Printf("[%s] Hand %s started. Hole cards: %v",
-			b.botID, handStart.HandID, handStart.HoleCards)
+		b.logger.Info().
+			Str("hand_id", handStart.HandID).
+			Strs("hole_cards", handStart.HoleCards).
+			Int("seat", handStart.YourSeat).
+			Int("button", handStart.Button).
+			Int("small_blind", handStart.SmallBlind).
+			Int("big_blind", handStart.BigBlind).
+			Int("num_players", len(handStart.Players)).
+			Msg("Hand started")
 		return nil
 	}
 
 	// Try GameUpdate
 	var gameUpdate protocol.GameUpdate
 	if err := protocol.Unmarshal(data, &gameUpdate); err == nil && gameUpdate.HandID != "" {
-		// Log game updates if needed
+		b.logger.Debug().
+			Str("hand_id", gameUpdate.HandID).
+			Int("pot", gameUpdate.Pot).
+			Int("num_players", len(gameUpdate.Players)).
+			Msg("Game update")
 		return nil
 	}
 
 	// Try StreetChange
 	var streetChange protocol.StreetChange
 	if err := protocol.Unmarshal(data, &streetChange); err == nil && streetChange.HandID != "" {
-		log.Printf("[%s] Street changed to %s. Board: %v",
-			b.botID, streetChange.Street, streetChange.Board)
+		b.logger.Info().
+			Str("hand_id", streetChange.HandID).
+			Str("street", streetChange.Street).
+			Strs("board", streetChange.Board).
+			Msg("Street changed")
 		return nil
 	}
 
 	// Try HandResult
 	var handResult protocol.HandResult
 	if err := protocol.Unmarshal(data, &handResult); err == nil && handResult.HandID != "" {
-		log.Printf("[%s] Hand %s completed. Winners: %v",
-			b.botID, handResult.HandID, handResult.Winners)
+		b.logger.Info().
+			Str("hand_id", handResult.HandID).
+			Interface("winners", handResult.Winners).
+			Strs("board", handResult.Board).
+			Msg("Hand completed")
 		return nil
 	}
 
 	// Try Error
 	var errorMsg protocol.Error
 	if err := protocol.Unmarshal(data, &errorMsg); err == nil && errorMsg.Message != "" {
-		log.Printf("[%s] Server error: %s", b.botID, errorMsg.Message)
+		b.logger.Error().
+			Str("error_message", errorMsg.Message).
+			Msg("Server error")
 		return nil
 	}
 
@@ -136,8 +162,27 @@ func (b *Bot) handleMessage(data []byte) error {
 }
 
 func (b *Bot) handleActionRequest(req *protocol.ActionRequest) error {
+	// Log the decision context
+	b.logger.Info().
+		Str("hand_id", req.HandID).
+		Strs("valid_actions", req.ValidActions).
+		Int("pot", req.Pot).
+		Int("to_call", req.ToCall).
+		Int("min_raise", req.MinRaise).
+		Int("time_remaining", req.TimeRemaining).
+		Msg("Action requested")
+
 	// Use strategy to select action
 	action, amount := b.strategy.SelectAction(req.ValidActions, req.Pot, req.ToCall)
+
+	// Log the decision
+	b.logger.Info().
+		Str("hand_id", req.HandID).
+		Str("action", action).
+		Int("amount", amount).
+		Int("pot_before", req.Pot).
+		Int("to_call", req.ToCall).
+		Msg("Action decided")
 
 	// Send action response
 	actionMsg := &protocol.Action{
@@ -150,9 +195,6 @@ func (b *Bot) handleActionRequest(req *protocol.ActionRequest) error {
 	if err != nil {
 		return err
 	}
-
-	log.Printf("[%s] Action: %s %d (pot: %d, to call: %d)",
-		b.botID, action, amount, req.Pot, req.ToCall)
 
 	return b.conn.WriteMessage(websocket.BinaryMessage, data)
 }
@@ -172,19 +214,30 @@ func (s *CallingStationStrategy) GetName() string {
 }
 
 func (s *CallingStationStrategy) SelectAction(validActions []string, pot int, toCall int) (string, int) {
+	log.Debug().
+		Strs("valid_actions", validActions).
+		Str("strategy", "calling-station").
+		Msg("Selecting action: prefer check > call > fold")
+
 	// Prefer check over call
 	for _, action := range validActions {
 		if action == "check" {
+			log.Debug().Str("reason", "can check for free").Msg("Decision made")
 			return "check", 0
 		}
 	}
 	// Otherwise call
 	for _, action := range validActions {
 		if action == "call" {
+			log.Debug().
+				Int("amount_to_call", toCall).
+				Str("reason", "calling to stay in hand").
+				Msg("Decision made")
 			return "call", 0
 		}
 	}
 	// If can't call or check, must fold
+	log.Debug().Str("reason", "no check or call available").Msg("Decision made")
 	return "fold", 0
 }
 
@@ -197,11 +250,20 @@ func (s *RandomStrategy) GetName() string {
 
 func (s *RandomStrategy) SelectAction(validActions []string, pot int, toCall int) (string, int) {
 	if len(validActions) == 0 {
+		log.Debug().Msg("No valid actions available, folding")
 		return "fold", 0
 	}
 
 	// Pick a random valid action
-	action := validActions[rand.Intn(len(validActions))]
+	actionIndex := rand.Intn(len(validActions))
+	action := validActions[actionIndex]
+
+	log.Debug().
+		Strs("valid_actions", validActions).
+		Str("selected_action", action).
+		Int("action_index", actionIndex).
+		Str("strategy", "random").
+		Msg("Randomly selecting action")
 
 	// If raising, pick a random amount between min and 3x pot
 	if action == "raise" {
@@ -211,9 +273,16 @@ func (s *RandomStrategy) SelectAction(validActions []string, pot int, toCall int
 			maxRaise = minRaise * 2
 		}
 		amount := minRaise + rand.Intn(maxRaise-minRaise+1)
+		log.Debug().
+			Int("min_raise", minRaise).
+			Int("max_raise", maxRaise).
+			Int("selected_amount", amount).
+			Str("reason", "random raise amount").
+			Msg("Decision made")
 		return action, amount
 	}
 
+	log.Debug().Str("reason", "random action selected").Msg("Decision made")
 	return action, 0
 }
 
@@ -227,33 +296,64 @@ func (s *AggressiveStrategy) GetName() string {
 func (s *AggressiveStrategy) SelectAction(validActions []string, pot int, toCall int) (string, int) {
 	// Check if we can raise
 	canRaise := false
+	canAllIn := false
 	for _, action := range validActions {
-		if action == "raise" || action == "allin" {
+		if action == "raise" {
 			canRaise = true
-			break
+		}
+		if action == "allin" {
+			canAllIn = true
 		}
 	}
 
+	log.Debug().
+		Strs("valid_actions", validActions).
+		Bool("can_raise", canRaise).
+		Bool("can_allin", canAllIn).
+		Str("strategy", "aggressive").
+		Msg("Evaluating aggressive options")
+
 	// 70% chance to raise if possible
-	if canRaise && rand.Float32() < 0.7 {
-		for _, action := range validActions {
-			if action == "allin" {
-				return "allin", 0
-			}
-			if action == "raise" {
-				// Raise between 2x and 4x the pot
-				amount := pot*2 + rand.Intn(pot*2+1)
-				if amount < toCall*2 {
-					amount = toCall * 2
-				}
-				return "raise", amount
-			}
+	raiseRoll := rand.Float32()
+	if (canRaise || canAllIn) && raiseRoll < 0.7 {
+		log.Debug().
+			Float32("roll", raiseRoll).
+			Float32("threshold", 0.7).
+			Str("decision", "will raise/allin").
+			Msg("Aggression check passed")
+
+		if canAllIn {
+			log.Debug().Str("reason", "going all-in aggressively").Msg("Decision made")
+			return "allin", 0
 		}
+		if canRaise {
+			// Raise between 2x and 4x the pot
+			amount := pot*2 + rand.Intn(pot*2+1)
+			if amount < toCall*2 {
+				amount = toCall * 2
+			}
+			log.Debug().
+				Int("raise_amount", amount).
+				Int("pot_size", pot).
+				Str("reason", "aggressive raise 2-4x pot").
+				Msg("Decision made")
+			return "raise", amount
+		}
+	} else if canRaise || canAllIn {
+		log.Debug().
+			Float32("roll", raiseRoll).
+			Float32("threshold", 0.7).
+			Str("decision", "will not raise").
+			Msg("Aggression check failed")
 	}
 
 	// Otherwise call if we can
 	for _, action := range validActions {
 		if action == "call" {
+			log.Debug().
+				Int("to_call", toCall).
+				Str("reason", "calling instead of raising").
+				Msg("Decision made")
 			return "call", 0
 		}
 	}
@@ -261,10 +361,12 @@ func (s *AggressiveStrategy) SelectAction(validActions []string, pot int, toCall
 	// Check if possible
 	for _, action := range validActions {
 		if action == "check" {
+			log.Debug().Str("reason", "checking - no raise or call available").Msg("Decision made")
 			return "check", 0
 		}
 	}
 
+	log.Debug().Str("reason", "forced to fold - no other options").Msg("Decision made")
 	return "fold", 0
 }
 
@@ -273,8 +375,18 @@ func main() {
 		serverURL = flag.String("server", "ws://localhost:8080/ws", "WebSocket server URL")
 		strategy  = flag.String("strategy", "random", "Bot strategy: calling-station, random, or aggressive")
 		count     = flag.Int("count", 1, "Number of bots to run")
+		debug     = flag.Bool("debug", false, "Enable debug logging")
 	)
 	flag.Parse()
+
+	// Configure zerolog
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
+	if *debug {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	} else {
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
 	// Seed random number generator
 	rand.Seed(time.Now().UnixNano())
@@ -294,18 +406,22 @@ func main() {
 
 		bot := NewBot(strat)
 		if err := bot.Connect(*serverURL); err != nil {
-			log.Fatalf("Failed to connect bot %d: %v", i, err)
+			log.Fatal().Err(err).Int("bot_number", i).Msg("Failed to connect bot")
 		}
 		bots = append(bots, bot)
 
 		// Start bot in goroutine
 		go func(b *Bot) {
 			if err := b.Run(); err != nil {
-				log.Printf("Bot %s disconnected: %v", b.botID, err)
+				b.logger.Error().Err(err).Msg("Bot disconnected")
 			}
 		}(bot)
 
-		log.Printf("Bot %d connected: %s", i+1, bot.botID)
+		log.Info().
+			Int("bot_number", i+1).
+			Str("bot_id", bot.botID).
+			Str("strategy", strat.GetName()).
+			Msg("Bot connected")
 	}
 
 	// Wait for interrupt
@@ -313,8 +429,9 @@ func main() {
 	signal.Notify(interrupt, os.Interrupt)
 	<-interrupt
 
-	log.Println("Shutting down bots...")
+	log.Info().Msg("Shutting down bots...")
 	for _, bot := range bots {
 		bot.Close()
 	}
+	log.Info().Msg("All bots disconnected")
 }
