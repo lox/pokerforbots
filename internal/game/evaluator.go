@@ -7,7 +7,16 @@ import (
 // HandRank represents the strength of a poker hand
 type HandRank uint32
 
-// The high 4 bits are the hand type, the remaining bits are for tie-breaking
+// Bit layout to prevent overlap:
+// Bits 28-31: Hand type (4 bits)
+// Bits 24-27: Primary rank (4 bits) - quad/trip/top pair/straight high
+// Bits 20-23: Secondary rank (4 bits) - pair in full house/second pair
+// Bits 16-19: Tertiary rank (4 bits) - kicker 1
+// Bits 12-15: Quaternary rank (4 bits) - kicker 2
+// Bits 8-11:  Quinary rank (4 bits) - kicker 3
+// Bits 4-7:   Senary rank (4 bits) - kicker 4
+// Bits 0-3:   Septenary rank (4 bits) - kicker 5
+
 const (
 	HighCard HandRank = iota << 28
 	Pair
@@ -57,16 +66,31 @@ func Evaluate7Cards(hand Hand) HandRank {
 		return 0
 	}
 
-	// Check for flush first (most restrictive)
-	flushSuit := checkFlush(hand)
-	if flushSuit >= 0 {
-		// Check for straight flush
-		flushCards := getFlushCards(hand, uint8(flushSuit))
-		if straightRank := checkStraight(flushCards); straightRank > 0 {
-			return StraightFlush | HandRank(straightRank)
+	// Check for flush first (most restrictive) - check ALL suits for best flush
+	bestFlushRank := HandRank(0)
+	for suit := uint8(0); suit < 4; suit++ {
+		suitMask := hand.GetSuitMask(suit)
+		if bits.OnesCount16(uint16(suitMask)) >= 5 {
+			flushCards := getFlushCards(hand, suit)
+			// Check for straight flush
+			if straightRank := checkStraight(flushCards); straightRank > 0 {
+				rank := StraightFlush | (HandRank(straightRank) << 24)
+				if rank > bestFlushRank {
+					bestFlushRank = rank
+				}
+			} else {
+				// Regular flush - use top 5 cards
+				topCards := getTopCardsOrdered(flushCards, 5)
+				rank := Flush | (HandRank(topCards[0]) << 24) | (HandRank(topCards[1]) << 20) | 
+					    (HandRank(topCards[2]) << 16) | (HandRank(topCards[3]) << 12) | (HandRank(topCards[4]) << 8)
+				if rank > bestFlushRank {
+					bestFlushRank = rank
+				}
+			}
 		}
-		// Regular flush - use top 5 cards
-		return Flush | HandRank(getTopCards(flushCards, 5))
+	}
+	if bestFlushRank > 0 {
+		return bestFlushRank
 	}
 
 	// Count ranks for pairs, trips, etc.
@@ -75,27 +99,28 @@ func Evaluate7Cards(hand Hand) HandRank {
 	// Check for four of a kind
 	if quad := findNOfAKind(rankCounts, 4); quad >= 0 {
 		kicker := findKicker(rankCounts, []uint8{uint8(quad)})
-		return FourOfAKind | (HandRank(quad) << 4) | HandRank(kicker)
+		return FourOfAKind | (HandRank(quad) << 24) | (HandRank(kicker) << 20)
 	}
 
-	// Check for full house
+	// Check for full house - FIXED: accept trips as pair component
 	trips := findNOfAKind(rankCounts, 3)
 	if trips >= 0 {
-		pair := findNOfAKindExcept(rankCounts, 2, uint8(trips))
+		// Look for another set (3+ cards) or pair (2+ cards) 
+		pair := findNOfAKindAtLeast(rankCounts, 2, uint8(trips))
 		if pair >= 0 {
-			return FullHouse | (HandRank(trips) << 4) | HandRank(pair)
+			return FullHouse | (HandRank(trips) << 24) | (HandRank(pair) << 20)
 		}
 	}
 
 	// Check for straight
 	if straightRank := checkStraight(hand); straightRank > 0 {
-		return Straight | HandRank(straightRank)
+		return Straight | (HandRank(straightRank) << 24)
 	}
 
 	// Check for three of a kind
 	if trips >= 0 {
-		kickers := findKickers(rankCounts, []uint8{uint8(trips)}, 2)
-		return ThreeOfAKind | (HandRank(trips) << 8) | HandRank(kickers)
+		kickers := findOrderedKickers(rankCounts, []uint8{uint8(trips)}, 2)
+		return ThreeOfAKind | (HandRank(trips) << 24) | (HandRank(kickers[0]) << 20) | (HandRank(kickers[1]) << 16)
 	}
 
 	// Check for two pair
@@ -103,17 +128,21 @@ func Evaluate7Cards(hand Hand) HandRank {
 	if pair1 >= 0 {
 		pair2 := findNOfAKindExcept(rankCounts, 2, uint8(pair1))
 		if pair2 >= 0 {
+			// Ensure pair1 is higher than pair2
+			if pair2 > pair1 {
+				pair1, pair2 = pair2, pair1
+			}
 			kicker := findKicker(rankCounts, []uint8{uint8(pair1), uint8(pair2)})
-			return TwoPair | (HandRank(pair1) << 8) | (HandRank(pair2) << 4) | HandRank(kicker)
+			return TwoPair | (HandRank(pair1) << 24) | (HandRank(pair2) << 20) | (HandRank(kicker) << 16)
 		}
 		// One pair
-		kickers := findKickers(rankCounts, []uint8{uint8(pair1)}, 3)
-		return Pair | (HandRank(pair1) << 12) | HandRank(kickers)
+		kickers := findOrderedKickers(rankCounts, []uint8{uint8(pair1)}, 3)
+		return Pair | (HandRank(pair1) << 24) | (HandRank(kickers[0]) << 20) | (HandRank(kickers[1]) << 16) | (HandRank(kickers[2]) << 12)
 	}
 
 	// High card
-	kickers := findKickers(rankCounts, []uint8{}, 5)
-	return HighCard | HandRank(kickers)
+	kickers := findOrderedKickers(rankCounts, []uint8{}, 5)
+	return HighCard | (HandRank(kickers[0]) << 24) | (HandRank(kickers[1]) << 20) | (HandRank(kickers[2]) << 16) | (HandRank(kickers[3]) << 12) | (HandRank(kickers[4]) << 8)
 }
 
 // countRanks counts how many of each rank we have
@@ -151,6 +180,16 @@ func findNOfAKindExcept(counts [13]uint8, n uint8, except uint8) int {
 	return -1
 }
 
+// findNOfAKindAtLeast finds the highest rank with at least n cards, excluding a specific rank
+func findNOfAKindAtLeast(counts [13]uint8, n uint8, except uint8) int {
+	for rank := 12; rank >= 0; rank-- {
+		if uint8(rank) != except && counts[rank] >= n {
+			return rank
+		}
+	}
+	return -1
+}
+
 // findKicker finds the highest kicker excluding used ranks
 func findKicker(counts [13]uint8, used []uint8) uint8 {
 	isUsed := make(map[uint8]bool)
@@ -158,15 +197,15 @@ func findKicker(counts [13]uint8, used []uint8) uint8 {
 		isUsed[r] = true
 	}
 
-	for rank := uint8(12); rank < 13; rank-- { // Will wrap around after 0
-		if !isUsed[rank] && counts[rank] > 0 {
-			return rank
+	for rank := 12; rank >= 0; rank-- {
+		if !isUsed[uint8(rank)] && counts[rank] > 0 {
+			return uint8(rank)
 		}
 	}
 	return 0
 }
 
-// findKickers finds the top n kickers excluding used ranks
+// findKickers finds the top n kickers excluding used ranks (legacy bitset version)
 func findKickers(counts [13]uint8, used []uint8, n int) uint16 {
 	isUsed := make(map[uint8]bool)
 	for _, r := range used {
@@ -175,11 +214,31 @@ func findKickers(counts [13]uint8, used []uint8, n int) uint16 {
 
 	kickers := uint16(0)
 	found := 0
-	for rank := uint8(12); rank < 13 && found < n; rank-- { // Will wrap around after 0
-		if !isUsed[rank] && counts[rank] > 0 {
+	for rank := 12; rank >= 0 && found < n; rank-- {
+		if !isUsed[uint8(rank)] && counts[rank] > 0 {
 			kickers |= uint16(1) << rank
 			found++
 		}
+	}
+	return kickers
+}
+
+// findOrderedKickers finds the top n kickers in descending order, excluding used ranks
+func findOrderedKickers(counts [13]uint8, used []uint8, n int) []uint8 {
+	isUsed := make(map[uint8]bool)
+	for _, r := range used {
+		isUsed[r] = true
+	}
+
+	kickers := make([]uint8, 0, n)
+	for rank := 12; rank >= 0 && len(kickers) < n; rank-- {
+		if !isUsed[uint8(rank)] && counts[rank] > 0 {
+			kickers = append(kickers, uint8(rank))
+		}
+	}
+	// Pad with zeros if needed
+	for len(kickers) < n {
+		kickers = append(kickers, 0)
 	}
 	return kickers
 }
@@ -212,10 +271,10 @@ func checkStraight(hand Hand) uint8 {
 	}
 
 	// Check for regular straights
-	for high := uint8(12); high >= 4; high-- {
+	for high := 12; high >= 4; high-- {
 		straightMask := uint16(0x1F) << (high - 4)
 		if rankMask&straightMask == straightMask {
-			return high
+			return uint8(high)
 		}
 	}
 
@@ -228,10 +287,23 @@ func getTopCards(hand Hand, n int) uint16 {
 	result := uint16(0)
 	found := 0
 
-	for rank := uint8(12); rank < 13 && found < n; rank-- {
+	for rank := 12; rank >= 0 && found < n; rank-- {
 		if rankMask&(1<<rank) != 0 {
 			result |= 1 << rank
 			found++
+		}
+	}
+	return result
+}
+
+// getTopCardsOrdered returns the top n card ranks in descending order
+func getTopCardsOrdered(hand Hand, n int) []uint8 {
+	rankMask := hand.GetRankMask()
+	result := make([]uint8, 0, n)
+
+	for rank := 12; rank >= 0 && len(result) < n; rank-- {
+		if rankMask&(1<<rank) != 0 {
+			result = append(result, uint8(rank))
 		}
 	}
 	return result
