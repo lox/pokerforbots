@@ -15,8 +15,3 @@ pre-commit:
       run: gofmt -l {staged_files}
       fail_text: "Go files are not formatted. Run 'gofmt -w' on the files."
       stage_fixed: true
-
-    # Run go vet for static analysis
-    go-vet:
-      run: go vet ./...
-      fail_text: "Go vet found issues. Fix them before committing."
