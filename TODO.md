@@ -104,22 +104,22 @@
 ## Phase 2: Demo Setup
 
 ### 7. Test Bots
-- [ ] Create cmd/testbot/main.go
-  - [ ] Simple bot framework
-  - [ ] Connect and play loop
-- [ ] Implement 3 simple bots:
-  - [ ] Calling station (always calls/checks)
-  - [ ] Random bot (random valid actions)
-  - [ ] Aggressive bot (raises often)
-- [ ] **Tests:**
-  - [ ] Test bots connect and respond within timeout
+- [x] Create cmd/testbot/main.go
+  - [x] Simple bot framework
+  - [x] Connect and play loop
+- [x] Implement 3 simple bots:
+  - [x] Calling station (always calls/checks)
+  - [x] Random bot (random valid actions)
+  - [x] Aggressive bot (raises often)
+- [x] **Tests:**
+  - [x] Test bots connect and respond within timeout
 
 ### 8. Demo Runner
-- [ ] Create demo script that:
-  - [ ] Starts server
-  - [ ] Launches 4-6 test bots
-  - [ ] Shows hands completing in terminal
-  - [ ] Displays basic stats (hands/second)
+- [x] Create demo script that:
+  - [x] Starts server
+  - [x] Launches 4-6 test bots
+  - [x] Shows hands completing in terminal
+  - [x] Displays basic stats (hands/second)
 - [ ] **Tests:**
   - [ ] Verify demo runs for 1000 hands without errors
 

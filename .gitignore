@@ -1,5 +1,6 @@
 # Binaries
 pokerforbots
+bin/
 *.exe
 
 # Test binary
@@ -28,3 +29,7 @@ vendor/
 # OS
 .DS_Store
 Thumbs.db
+
+# Logs
+logs/
+*.log
