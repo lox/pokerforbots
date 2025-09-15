@@ -64,9 +64,9 @@ func TestActionMessage(t *testing.T) {
 func TestHandStartMessage(t *testing.T) {
 	original := HandStart{
 		Type:      TypeHandStart,
-		HandID:    12345,
-		HoleCards: []Card{"As", "Kh"},
-		Seat:      2,
+		HandID:    "hand-12345",
+		HoleCards: []string{"As", "Kh"},
+		YourSeat:  2,
 		Button:    0,
 		Players: []Player{
 			{Seat: 0, Name: "Bot1", Chips: 1000},
@@ -92,7 +92,7 @@ func TestHandStartMessage(t *testing.T) {
 
 	// Verify
 	if decoded.HandID != original.HandID {
-		t.Errorf("HandID mismatch: got %d, want %d", decoded.HandID, original.HandID)
+		t.Errorf("HandID mismatch: got %s, want %s", decoded.HandID, original.HandID)
 	}
 	if len(decoded.HoleCards) != len(original.HoleCards) {
 		t.Errorf("HoleCards length mismatch: got %d, want %d", len(decoded.HoleCards), len(original.HoleCards))
@@ -104,15 +104,13 @@ func TestHandStartMessage(t *testing.T) {
 
 func TestActionRequestMessage(t *testing.T) {
 	original := ActionRequest{
-		Type:         TypeActionRequest,
-		TimeoutMs:    100,
-		ValidActions: []string{"fold", "call", "raise"},
-		ToCall:       20,
-		MinRaise:     40,
-		MaxRaise:     990,
-		Pot:          35,
-		Board:        []Card{"Ah", "Kd", "7c"},
-		CurrentBet:   20,
+		Type:          TypeActionRequest,
+		HandID:        "hand-456",
+		TimeRemaining: 100,
+		ValidActions:  []string{"fold", "call", "raise"},
+		ToCall:        20,
+		MinRaise:      40,
+		Pot:           35,
 	}
 
 	// Marshal
@@ -129,31 +127,25 @@ func TestActionRequestMessage(t *testing.T) {
 	}
 
 	// Verify
-	if decoded.TimeoutMs != original.TimeoutMs {
-		t.Errorf("TimeoutMs mismatch: got %d, want %d", decoded.TimeoutMs, original.TimeoutMs)
+	if decoded.TimeRemaining != original.TimeRemaining {
+		t.Errorf("TimeRemaining mismatch: got %d, want %d", decoded.TimeRemaining, original.TimeRemaining)
 	}
 	if decoded.ToCall != original.ToCall {
 		t.Errorf("ToCall mismatch: got %d, want %d", decoded.ToCall, original.ToCall)
-	}
-	if len(decoded.Board) != len(original.Board) {
-		t.Errorf("Board length mismatch: got %d, want %d", len(decoded.Board), len(original.Board))
 	}
 }
 
 func TestHandResultMessage(t *testing.T) {
 	original := HandResult{
-		Type: TypeHandResult,
+		Type:   TypeHandResult,
+		HandID: "hand-789",
 		Winners: []Winner{
 			{
-				Seat:      2,
-				Amount:    200,
-				HandRank:  "Two Pair",
-				HoleCards: []Card{"As", "Kh"},
+				Name:   "Bot2",
+				Amount: 200,
 			},
 		},
-		Board:    []Card{"Ah", "Kd", "7c", "2s", "9h"},
-		Pot:      200,
-		Showdown: true,
+		Board: []string{"Ah", "Kd", "7c", "2s", "9h"},
 	}
 
 	// Marshal
@@ -173,11 +165,8 @@ func TestHandResultMessage(t *testing.T) {
 	if len(decoded.Winners) != len(original.Winners) {
 		t.Errorf("Winners length mismatch: got %d, want %d", len(decoded.Winners), len(original.Winners))
 	}
-	if decoded.Pot != original.Pot {
-		t.Errorf("Pot mismatch: got %d, want %d", decoded.Pot, original.Pot)
-	}
-	if decoded.Showdown != original.Showdown {
-		t.Errorf("Showdown mismatch: got %v, want %v", decoded.Showdown, original.Showdown)
+	if len(decoded.Board) != len(original.Board) {
+		t.Errorf("Board length mismatch: got %d, want %d", len(decoded.Board), len(original.Board))
 	}
 }
 
@@ -212,15 +201,13 @@ func BenchmarkUnmarshalActionCustom(b *testing.B) {
 
 func BenchmarkMarshalActionRequest(b *testing.B) {
 	req := ActionRequest{
-		Type:         TypeActionRequest,
-		TimeoutMs:    100,
-		ValidActions: []string{"fold", "call", "raise"},
-		ToCall:       20,
-		MinRaise:     40,
-		MaxRaise:     990,
-		Pot:          35,
-		Board:        []Card{"Ah", "Kd", "7c"},
-		CurrentBet:   20,
+		Type:          TypeActionRequest,
+		HandID:        "bench-1",
+		TimeRemaining: 100,
+		ValidActions:  []string{"fold", "call", "raise"},
+		ToCall:        20,
+		MinRaise:      40,
+		Pot:           35,
 	}
 
 	b.ResetTimer()
@@ -232,15 +219,13 @@ func BenchmarkMarshalActionRequest(b *testing.B) {
 
 func BenchmarkUnmarshalActionRequestCustom(b *testing.B) {
 	req := ActionRequest{
-		Type:         TypeActionRequest,
-		TimeoutMs:    100,
-		ValidActions: []string{"fold", "call", "raise"},
-		ToCall:       20,
-		MinRaise:     40,
-		MaxRaise:     990,
-		Pot:          35,
-		Board:        []Card{"Ah", "Kd", "7c"},
-		CurrentBet:   20,
+		Type:          TypeActionRequest,
+		HandID:        "bench-1",
+		TimeRemaining: 100,
+		ValidActions:  []string{"fold", "call", "raise"},
+		ToCall:        20,
+		MinRaise:      40,
+		Pot:           35,
 	}
 	data, _ := req.MarshalMsg(nil)
 
@@ -270,15 +255,13 @@ func TestMessageSizes(t *testing.T) {
 		{
 			name: "ActionRequest",
 			msg: &ActionRequest{
-				Type:         TypeActionRequest,
-				TimeoutMs:    100,
-				ValidActions: []string{"fold", "call", "raise"},
-				ToCall:       20,
-				MinRaise:     40,
-				MaxRaise:     990,
-				Pot:          35,
-				Board:        []Card{"Ah", "Kd", "7c"},
-				CurrentBet:   20,
+				Type:          TypeActionRequest,
+				HandID:        "test-msg",
+				TimeRemaining: 100,
+				ValidActions:  []string{"fold", "call", "raise"},
+				ToCall:        20,
+				MinRaise:      40,
+				Pot:           35,
 			},
 			maxSize: 200,
 		},
@@ -286,9 +269,9 @@ func TestMessageSizes(t *testing.T) {
 			name: "HandStart",
 			msg: &HandStart{
 				Type:      TypeHandStart,
-				HandID:    12345,
-				HoleCards: []Card{"As", "Kh"},
-				Seat:      2,
+				HandID:    "hand-test",
+				HoleCards: []string{"As", "Kh"},
+				YourSeat:  2,
 				Button:    0,
 				Players: []Player{
 					{Seat: 0, Name: "Bot1", Chips: 1000},

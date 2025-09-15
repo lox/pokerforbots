@@ -42,9 +42,9 @@ type Action struct {
 // HandStart is sent when a new hand begins
 type HandStart struct {
 	Type       string   `msg:"type"`
-	HandID     int      `msg:"hand_id"`
-	HoleCards  []Card   `msg:"hole_cards"`
-	Seat       int      `msg:"seat"`
+	HandID     string   `msg:"hand_id"`
+	HoleCards  []string `msg:"hole_cards"`
+	YourSeat   int      `msg:"your_seat"`
 	Button     int      `msg:"button"`
 	Players    []Player `msg:"players"`
 	SmallBlind int      `msg:"small_blind"`
@@ -53,57 +53,53 @@ type HandStart struct {
 
 // Player info in a hand
 type Player struct {
-	Seat  int    `msg:"seat"`
-	Name  string `msg:"name"`
-	Chips int    `msg:"chips"`
+	Seat   int    `msg:"seat"`
+	Name   string `msg:"name"`
+	Chips  int    `msg:"chips"`
+	Bet    int    `msg:"bet,omitempty"`
+	Folded bool   `msg:"folded,omitempty"`
+	AllIn  bool   `msg:"all_in,omitempty"`
 }
 
 // ActionRequest asks a bot to make a decision
 type ActionRequest struct {
-	Type         string   `msg:"type"`
-	TimeoutMs    int      `msg:"timeout_ms"`
-	ValidActions []string `msg:"valid_actions"`
-	ToCall       int      `msg:"to_call"`
-	MinRaise     int      `msg:"min_raise"`
-	MaxRaise     int      `msg:"max_raise"`
-	Pot          int      `msg:"pot"`
-	Board        []Card   `msg:"board"`
-	CurrentBet   int      `msg:"current_bet"`
+	Type          string   `msg:"type"`
+	HandID        string   `msg:"hand_id"`
+	TimeRemaining int      `msg:"time_remaining"`
+	ValidActions  []string `msg:"valid_actions"`
+	ToCall        int      `msg:"to_call"`
+	MinRaise      int      `msg:"min_raise"`
+	Pot           int      `msg:"pot"`
 }
 
 // GameUpdate is broadcast when any player acts
 type GameUpdate struct {
-	Type   string `msg:"type"`
-	Seat   int    `msg:"seat"`
-	Action string `msg:"action"`
-	Amount int    `msg:"amount"`
-	Pot    int    `msg:"pot"`
-	Street string `msg:"street"` // preflop, flop, turn, river
+	Type    string   `msg:"type"`
+	HandID  string   `msg:"hand_id"`
+	Pot     int      `msg:"pot"`
+	Players []Player `msg:"players"`
 }
 
 // StreetChange is sent when moving to next betting round
 type StreetChange struct {
-	Type   string `msg:"type"`
-	Street string `msg:"street"` // flop, turn, river
-	Board  []Card `msg:"board"`
-	Pot    int    `msg:"pot"`
+	Type   string   `msg:"type"`
+	HandID string   `msg:"hand_id"`
+	Street string   `msg:"street"`
+	Board  []string `msg:"board"`
 }
 
 // HandResult is sent at hand completion
 type HandResult struct {
-	Type     string   `msg:"type"`
-	Winners  []Winner `msg:"winners"`
-	Board    []Card   `msg:"board"`
-	Pot      int      `msg:"pot"`
-	Showdown bool     `msg:"showdown"`
+	Type    string   `msg:"type"`
+	HandID  string   `msg:"hand_id"`
+	Winners []Winner `msg:"winners"`
+	Board   []string `msg:"board"`
 }
 
 // Winner info
 type Winner struct {
-	Seat      int    `msg:"seat"`
-	Amount    int    `msg:"amount"`
-	HandRank  string `msg:"hand_rank,omitempty"`
-	HoleCards []Card `msg:"hole_cards,omitempty"`
+	Name   string `msg:"name"`
+	Amount int    `msg:"amount"`
 }
 
 // Error message

@@ -37,6 +37,13 @@ func (b *Bot) SendMessage(msg interface{}) error {
 		return err
 	}
 
+	// Use defer to recover from panic if channel is closed
+	defer func() {
+		if r := recover(); r != nil {
+			// Channel was closed, ignore
+		}
+	}()
+
 	select {
 	case b.send <- data:
 		return nil

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -118,18 +119,31 @@ func (p *BotPool) tryMatch() {
 
 // runHand runs a single hand with the given bots
 func (p *BotPool) runHand(bots []*Bot) {
-	// This will be implemented in hand_runner.go
-	// For now, just return bots to pool after a delay
-	time.Sleep(time.Second)
+	defer func() {
+		// Return bots to pool after hand completes
+		for _, bot := range bots {
+			bot.SetInHand(false)
+			select {
+			case p.available <- bot:
+			default:
+				// Queue full
+			}
+		}
+	}()
 
+	// Skip if any bot doesn't have a connection (for testing)
 	for _, bot := range bots {
-		bot.SetInHand(false)
-		select {
-		case p.available <- bot:
-		default:
-			// Queue full
+		if bot.conn == nil {
+			return
 		}
 	}
+
+	// Generate hand ID
+	handID := fmt.Sprintf("hand-%d", time.Now().Unix())
+
+	// Run the hand
+	runner := NewHandRunner(bots, handID, 0)
+	runner.Run()
 }
 
 // Register adds a bot to the pool

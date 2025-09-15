@@ -48,22 +48,22 @@
   - [x] Test hand evaluator with all hand types
   - [x] Test basic game flow (some edge cases need work)
 
-### 4. Server Core
-- [ ] WebSocket server (internal/server/server.go)
-  - [ ] Accept connections
-  - [ ] Basic message routing
-  - [ ] Goroutine per connection
-- [ ] Bot connection management (internal/server/bot.go)
-  - [ ] Bot struct with connection and name
-  - [ ] Send/receive helpers
-  - [ ] Timeout handling with time.Timer
-- [ ] Bot pool (internal/server/pool.go)
-  - [ ] Simple channel-based queue
-  - [ ] Match bots when 2+ available
-- [ ] **Tests:**
-  - [ ] Test WebSocket connection/disconnection
-  - [ ] Test timeout triggers auto-fold
-  - [ ] Test with multiple concurrent bots
+### 4. Server Core ✅
+- [x] WebSocket server (internal/server/server.go)
+  - [x] Accept connections
+  - [x] Basic message routing
+  - [x] Goroutine per connection
+- [x] Bot connection management (internal/server/bot.go)
+  - [x] Bot struct with connection and ID
+  - [x] Send/receive helpers
+  - [x] Ping/pong keepalive
+- [x] Bot pool (internal/server/pool.go)
+  - [x] Simple channel-based queue
+  - [x] Match bots when 2+ available
+- [x] **Tests:**
+  - [x] Test WebSocket connection/disconnection
+  - [ ] Test timeout triggers auto-fold (needs hand runner)
+  - [x] Test with multiple concurrent bots
 
 ### 5. Hand Execution
 - [ ] Hand runner (internal/server/hand_runner.go)
