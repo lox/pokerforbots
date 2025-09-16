@@ -158,12 +158,15 @@ func (p *BotPool) runHand(bots []*Bot) {
 	handNum := atomic.AddUint64(&p.handCounter, 1)
 	handID := fmt.Sprintf("hand-%d", handNum)
 
-	// Run the hand with current button position
-	runner := NewHandRunner(bots, handID, p.currentButton)
+	// Normalize button position for current player count
+	button := p.currentButton % len(bots)
+
+	// Run the hand with normalized button position
+	runner := NewHandRunner(bots, handID, button)
 	runner.Run()
 
 	// Rotate button for next hand
-	p.currentButton = (p.currentButton + 1) % len(bots)
+	p.currentButton = (button + 1) % len(bots)
 }
 
 // Register adds a bot to the pool

@@ -2,7 +2,8 @@ package server
 
 import (
 	"fmt"
-	"net/url"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,15 +15,27 @@ import (
 // TestButtonNeverRotates demonstrates that the button stays at position 0
 // for every hand instead of rotating.
 func TestButtonNeverRotates(t *testing.T) {
-	server := NewServer()
-	go server.Start(":8095")
-	time.Sleep(100 * time.Millisecond)
+	// Create test server
+	s := NewServer()
+
+	// Set up HTTP routes
+	s.mux.HandleFunc("/ws", s.handleWebSocket)
+	s.mux.HandleFunc("/health", s.handleHealth)
+	s.mux.HandleFunc("/stats", s.handleStats)
+
+	testServer := httptest.NewServer(s.mux)
+	defer testServer.Close()
+
+	// Start bot pool
+	go s.pool.Run()
+
+	// Extract host from test server URL
+	wsURL := strings.Replace(testServer.URL, "http://", "ws://", 1) + "/ws"
 
 	// Connect 3 bots
 	bots := make([]*websocket.Conn, 3)
 	for i := 0; i < 3; i++ {
-		u := url.URL{Scheme: "ws", Host: "localhost:8095", Path: "/ws"}
-		conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		if err != nil {
 			t.Fatalf("Bot %d failed to connect: %v", i, err)
 		}
@@ -115,21 +128,4 @@ func TestButtonNeverRotates(t *testing.T) {
 	} else {
 		t.Logf("Button rotated correctly across hands: %v", buttonPositions)
 	}
-}
-
-// TestActionRoutingCannotIdentifyBot demonstrates that the server cannot
-// identify which bot sent an action, allowing one bot to act for another.
-func TestActionRoutingCannotIdentifyBot(t *testing.T) {
-	t.Skip("This test requires modifying the server to expose the vulnerability")
-	// The bug is in internal/server/hand_runner.go:243-248
-	// listenForAction reads from a shared botActionChan and assumes it's from
-	// the currently active seat, without verifying the sender's identity
-}
-
-// TestBankrollAccountingAssumesBuyIn demonstrates that bankroll updates
-// assume a 100-chip buy-in regardless of actual chips.
-func TestBankrollAccountingAssumesBuyIn(t *testing.T) {
-	t.Skip("This test requires access to bot bankroll internals")
-	// The bug is in internal/server/bot.go:104
-	// UpdateBankroll always subtracts 100, even if the bot sat with fewer chips
 }
