@@ -16,22 +16,38 @@ tasks:
       - internal/protocol/messages_gen.go
 
   build:
-    desc: Build the server
+    desc: Build all binaries
     cmds:
       - mkdir -p dist
       - go build -o dist/server cmd/server/main.go
       - go build -o dist/testbot cmd/testbot/main.go
+      - go build -o dist/simulate cmd/simulate/main.go
+      - go build -o dist/spawn-bots cmd/spawn-bots/main.go
     sources:
       - '**/*.go'
     generates:
       - dist/server
       - dist/testbot
+      - dist/simulate
+      - dist/spawn-bots
 
-  run:
-    desc: Run the server
+  server:
+    desc: Run the poker server
     deps: [build]
     cmds:
       - ./dist/server
+
+  simulate:
+    desc: Run single hand simulation (no networking)
+    deps: [build]
+    cmds:
+      - ./dist/simulate {{.CLI_ARGS}}
+
+  spawn-bots:
+    desc: Spawn bots to connect to server (or spawn server)
+    deps: [build]
+    cmds:
+      - ./dist/spawn-bots {{.CLI_ARGS}}
 
   test:
     desc: Run all tests
@@ -54,10 +70,16 @@ tasks:
       - go test -bench=. -benchmem ./...
 
   demo:
-    desc: Run demo with test bots
+    desc: Run interactive demo with 6 bots
     deps: [build]
     cmds:
-      - ./demo.sh
+      - ./dist/spawn-bots -spawn-server -bots 6
+
+  test-1000:
+    desc: Test 1000 hands completion
+    deps: [build]
+    cmds:
+      - ./dist/spawn-bots -spawn-server -bots 6 -hands 1000 -q
 
   clean:
     desc: Clean build artifacts

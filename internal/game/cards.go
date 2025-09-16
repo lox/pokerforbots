@@ -199,12 +199,23 @@ func (h Hand) GetRankMask() uint16 {
 type Deck struct {
 	cards [52]Card // Fixed size array
 	next  int
+	rng   *rand.Rand // Random source for deterministic shuffling
 }
 
 // NewDeck creates a new shuffled deck
 func NewDeck() *Deck {
+	return NewDeckWithSeed(0) // 0 means use default global random
+}
+
+// NewDeckWithSeed creates a new shuffled deck with a specific seed
+func NewDeckWithSeed(seed int64) *Deck {
 	d := &Deck{
 		next: 0,
+	}
+
+	// Set up random source
+	if seed != 0 {
+		d.rng = rand.New(rand.NewSource(seed))
 	}
 
 	// Create all 52 cards
@@ -225,7 +236,12 @@ func NewDeck() *Deck {
 func (d *Deck) Shuffle() {
 	d.next = 0
 	for i := len(d.cards) - 1; i > 0; i-- {
-		j := rand.Intn(i + 1)
+		var j int
+		if d.rng != nil {
+			j = d.rng.Intn(i + 1)
+		} else {
+			j = rand.Intn(i + 1)
+		}
 		d.cards[i], d.cards[j] = d.cards[j], d.cards[i]
 	}
 }

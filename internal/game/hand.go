@@ -103,6 +103,48 @@ func NewHandStateWithChips(playerNames []string, chipCounts []int, button int, s
 	return newHandStateWithPlayers(players, button, smallBlind, bigBlind)
 }
 
+// NewHandStateWithDeck creates a new hand state with a specific deck (for deterministic testing)
+func NewHandStateWithDeck(playerNames []string, button int, smallBlind, bigBlind, startingChips int, deck *Deck) *HandState {
+	players := make([]*Player, len(playerNames))
+	for i, name := range playerNames {
+		players[i] = &Player{
+			Seat:   i,
+			Name:   name,
+			Chips:  startingChips,
+			Folded: false,
+		}
+	}
+
+	h := &HandState{
+		Players:        players,
+		Button:         button,
+		CurrentBet:     0,
+		MinRaise:       bigBlind,
+		LastRaiser:     -1, // No raiser initially
+		Street:         Preflop,
+		Deck:           deck, // Use provided deck
+		Pots:           []Pot{{Amount: 0, Eligible: makeEligible(players)}},
+		ActedThisRound: make([]bool, len(players)),
+	}
+
+	// Post blinds
+	h.postBlinds(smallBlind, bigBlind)
+
+	// Deal hole cards
+	h.dealHoleCards()
+
+	// Set first active player
+	if len(players) == 2 {
+		// Heads-up: button acts first preflop
+		h.ActivePlayer = button
+	} else {
+		// Regular: UTG (button+3) acts first
+		h.ActivePlayer = h.nextActivePlayer((button + 3) % len(players))
+	}
+
+	return h
+}
+
 func newHandStateWithPlayers(players []*Player, button int, smallBlind, bigBlind int) *HandState {
 	h := &HandState{
 		Players:        players,

@@ -33,6 +33,7 @@ type Server struct {
 	pool     *BotPool
 	upgrader websocket.Upgrader
 	botCount atomic.Int64
+	mux      *http.ServeMux
 }
 
 // NewServer creates a new poker server
@@ -47,6 +48,7 @@ func NewServer() *Server {
 				return true
 			},
 		},
+		mux: http.NewServeMux(),
 	}
 }
 
@@ -56,12 +58,12 @@ func (s *Server) Start(addr string) error {
 	go s.pool.Run()
 
 	// Set up HTTP routes
-	http.HandleFunc("/ws", s.handleWebSocket)
-	http.HandleFunc("/health", s.handleHealth)
-	http.HandleFunc("/stats", s.handleStats)
+	s.mux.HandleFunc("/ws", s.handleWebSocket)
+	s.mux.HandleFunc("/health", s.handleHealth)
+	s.mux.HandleFunc("/stats", s.handleStats)
 
 	log.Printf("Server starting on %s", addr)
-	return http.ListenAndServe(addr, nil)
+	return http.ListenAndServe(addr, s.mux)
 }
 
 // handleWebSocket handles WebSocket connections from bots

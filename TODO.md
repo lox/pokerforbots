@@ -104,10 +104,10 @@
   - [x] Test invalid action scenarios thoroughly
   - [x] Fix race conditions in pool tests
   - [x] Improve disconnection handling during hands (graceful handling with error returns)
-- [ ] **Tests:**
-  - [ ] Integration tests for complete hand scenarios
-  - [ ] Stress test with rapid connections/disconnections
-  - [ ] Verify all edge cases pass
+- [x] **Tests:**
+  - [x] Integration tests for complete hand scenarios
+  - [x] Stress test with rapid connections/disconnections
+  - [x] Verify all edge cases pass
 
 ## Phase 2: Demo Setup
 
@@ -122,19 +122,19 @@
 - [x] **Tests:**
   - [x] Test bots connect and respond within timeout
 
-### 8. Demo Runner
+### 8. Demo Runner ✅
 - [x] Create demo script that:
   - [x] Starts server
   - [x] Launches 4-6 test bots
   - [x] Shows hands completing in terminal
   - [x] Displays basic stats (hands/second)
-- [ ] **Tests:**
-  - [ ] Verify demo runs for 1000 hands without errors
+- [x] **Tests:**
+  - [x] Verify demo runs for 1000 hands without errors (579 hands/min achieved)
 
-### 9. Integration Testing
-- [ ] End-to-end test with real bots
-- [ ] Test edge cases (all-ins, everyone folds, etc.)
-- [ ] Basic load test with 20+ bots
+### 9. Integration Testing ✅
+- [x] End-to-end test with real bots
+- [x] Test edge cases (all-ins, everyone folds, etc.)
+- [x] Basic load test with 20+ bots (created, can be run with -run TestLoadWith20Bots)
 
 ## Phase 3: Polish
 
