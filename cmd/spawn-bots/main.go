@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"math/rand"
@@ -16,29 +15,35 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alecthomas/kong"
 	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
 	"github.com/lox/pokerforbots/internal/server"
 	"github.com/rs/zerolog"
 )
 
-var (
+type CLI struct {
 	// Server flags
-	spawnServer = flag.Bool("spawn-server", false, "Start a poker server")
-	serverURL   = flag.String("server", "ws://localhost:8080", "Server WebSocket URL")
-	serverPort  = flag.Int("port", 8080, "Server port (when spawning)")
+	SpawnServer bool   `kong:"help='Start an embedded poker server',short='s'"`
+	Server      string `kong:"default='ws://localhost:8080',help='Server WebSocket URL'"`
+	Port        int    `kong:"default='8080',help='Server port when spawning embedded server'"`
 
 	// Bot configuration
-	numBots        = flag.Int("bots", 6, "Total number of bots")
-	callingBots    = flag.Int("calling", 0, "Number of calling station bots (0 = auto)")
-	randomBots     = flag.Int("random", 0, "Number of random bots (0 = auto)")
-	aggressiveBots = flag.Int("aggressive", 0, "Number of aggressive bots (0 = auto)")
+	Bots       int `kong:"default='6',help='Total number of bots',short='b'"`
+	Calling    int `kong:"default='0',help='Number of calling station bots (0 = auto)',short='c'"`
+	Random     int `kong:"default='0',help='Number of random bots (0 = auto)',short='r'"`
+	Aggressive int `kong:"default='0',help='Number of aggressive bots (0 = auto)',short='a'"`
 
 	// Game configuration
-	hands   = flag.Int("hands", 0, "Number of hands to play (0 = forever)")
-	seed    = flag.Int64("seed", 0, "Random seed (0 for current time)")
-	verbose = flag.Bool("v", false, "Verbose output")
-	quiet   = flag.Bool("q", false, "Quiet mode (only show summary)")
+	Hands   int   `kong:"default='0',help='Number of hands to play (0 = forever)',short='n'"`
+	Seed    int64 `kong:"default='0',help='Random seed (0 for current time)'"`
+	Verbose bool  `kong:"help='Enable verbose output',short='v'"`
+	Quiet   bool  `kong:"help='Quiet mode - only show summary',short='q'"`
+}
+
+var (
+	// Global variables that were previously flags
+	cli CLI
 
 	// Statistics
 	startTime time.Time
@@ -81,14 +86,21 @@ type ActionLog struct {
 }
 
 func main() {
-	flag.Parse()
+	kctx := kong.Parse(&cli,
+		kong.Name("spawn-bots"),
+		kong.Description("Spawn poker bots to test the server"),
+		kong.UsageOnError(),
+		kong.ConfigureHelp(kong.HelpOptions{
+			Compact: true,
+		}),
+	)
 
 	// Configure zerolog for beautiful console output
 	level := zerolog.InfoLevel
-	if *verbose {
+	if cli.Verbose {
 		level = zerolog.DebugLevel
 	}
-	if *quiet {
+	if cli.Quiet {
 		level = zerolog.WarnLevel
 	}
 
@@ -100,56 +112,56 @@ func main() {
 	}).Level(level).With().Timestamp().Str("component", "orchestrator").Logger()
 
 	// Validate configuration
-	if *callingBots == 0 && *randomBots == 0 && *aggressiveBots == 0 {
+	if cli.Calling == 0 && cli.Random == 0 && cli.Aggressive == 0 {
 		// Auto distribution based on total bots
-		third := *numBots / 3
-		remainder := *numBots % 3
-		*callingBots = third
-		*randomBots = third
-		*aggressiveBots = third
+		third := cli.Bots / 3
+		remainder := cli.Bots % 3
+		cli.Calling = third
+		cli.Random = third
+		cli.Aggressive = third
 
 		// Distribute remainder
 		if remainder >= 1 {
-			*callingBots++
+			cli.Calling++
 		}
 		if remainder >= 2 {
-			*randomBots++
+			cli.Random++
 		}
-	} else if *callingBots+*randomBots+*aggressiveBots > 0 {
+	} else if cli.Calling+cli.Random+cli.Aggressive > 0 {
 		// Custom bot distribution specified
-		*numBots = *callingBots + *randomBots + *aggressiveBots
+		cli.Bots = cli.Calling + cli.Random + cli.Aggressive
 	}
 
-	if *numBots < 2 || *numBots > 10 {
-		logger.Fatal().Int("bots", *numBots).Msg("Number of bots must be between 2 and 10")
+	if cli.Bots < 2 || cli.Bots > 10 {
+		kctx.Fatalf("Number of bots must be between 2 and 10 (got %d)", cli.Bots)
 	}
 
 	// Set seed
-	if *seed == 0 {
-		*seed = time.Now().UnixNano()
+	if cli.Seed == 0 {
+		cli.Seed = time.Now().UnixNano()
 	}
-	rng = rand.New(rand.NewSource(*seed))
+	rng = rand.New(rand.NewSource(cli.Seed))
 
 	// Log configuration
-	logEvent := logger.Info().Int64("seed", *seed).Int("total_bots", *numBots).
-		Int("calling_bots", *callingBots).Int("random_bots", *randomBots).Int("aggressive_bots", *aggressiveBots)
+	logEvent := logger.Info().Int64("seed", cli.Seed).Int("total_bots", cli.Bots).
+		Int("calling_bots", cli.Calling).Int("random_bots", cli.Random).Int("aggressive_bots", cli.Aggressive)
 
-	if *hands > 0 {
-		logEvent = logEvent.Int("target_hands", *hands)
+	if cli.Hands > 0 {
+		logEvent = logEvent.Int("target_hands", cli.Hands)
 	} else {
 		logEvent = logEvent.Str("target_hands", "unlimited")
 	}
 
-	if *spawnServer {
-		logEvent = logEvent.Int("server_port", *serverPort).Bool("spawn_server", true)
+	if cli.SpawnServer {
+		logEvent = logEvent.Int("server_port", cli.Port).Bool("spawn_server", true)
 	} else {
-		logEvent = logEvent.Str("server_url", *serverURL).Bool("spawn_server", false)
+		logEvent = logEvent.Str("server_url", cli.Server).Bool("spawn_server", false)
 	}
 
 	logEvent.Msg("Starting Poker Bot Orchestrator")
 
 	orchestrator := &BotOrchestrator{
-		targetHands: *hands,
+		targetHands: cli.Hands,
 		handLogger:  &HandLogger{},
 		logger:      logger,
 	}
@@ -159,24 +171,24 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	// Start server if requested
-	if *spawnServer {
+	if cli.SpawnServer {
 		if err := orchestrator.startServer(); err != nil {
 			logger.Fatal().Err(err).Msg("Failed to start server")
 		}
 		defer orchestrator.cleanup()
 
 		// Update server URL to local
-		*serverURL = fmt.Sprintf("ws://localhost:%d", *serverPort)
+		cli.Server = fmt.Sprintf("ws://localhost:%d", cli.Port)
 	} else {
 		defer orchestrator.cleanup()
 	}
 
 	// Verify server is reachable
 	if !orchestrator.isServerReady() {
-		logger.Fatal().Str("server_url", *serverURL).Msg("Server is not reachable")
+		logger.Fatal().Str("server_url", cli.Server).Msg("Server is not reachable")
 		return
 	}
-	logger.Info().Str("server_url", *serverURL).Msg("Server connection verified")
+	logger.Info().Str("server_url", cli.Server).Msg("Server connection verified")
 
 	// Start time tracking
 	startTime = time.Now()
@@ -204,11 +216,11 @@ func main() {
 }
 
 func (o *BotOrchestrator) startServer() error {
-	o.logger.Info().Int("port", *serverPort).Msg("Starting embedded poker server")
+	o.logger.Info().Int("port", cli.Port).Msg("Starting embedded poker server")
 
 	// Create server logger - use debug level if verbose, otherwise info
 	serverLevel := zerolog.InfoLevel
-	if *verbose {
+	if cli.Verbose {
 		serverLevel = zerolog.DebugLevel
 	}
 
@@ -219,17 +231,17 @@ func (o *BotOrchestrator) startServer() error {
 	}).Level(serverLevel).With().Timestamp().Str("component", "server").Logger()
 
 	// Create RNG instance from seed at main level for dependency injection
-	serverRNG := rand.New(rand.NewSource(*seed))
+	serverRNG := rand.New(rand.NewSource(cli.Seed))
 
 	// Create server instance with optional hand limit and provided RNG
 	if o.targetHands > 0 {
 		o.server = server.NewServerWithHandLimit(serverLogger, serverRNG, uint64(o.targetHands))
-		o.logger.Info().Int("hand_limit", o.targetHands).Int64("seed", *seed).Msg("Server created with hand limit and deterministic RNG")
+		o.logger.Info().Int("hand_limit", o.targetHands).Int64("seed", cli.Seed).Msg("Server created with hand limit and deterministic RNG")
 	} else {
 		o.server = server.NewServer(serverLogger, serverRNG)
-		o.logger.Info().Int64("seed", *seed).Msg("Server created with unlimited hands and deterministic RNG")
+		o.logger.Info().Int64("seed", cli.Seed).Msg("Server created with unlimited hands and deterministic RNG")
 	}
-	o.serverAddr = fmt.Sprintf(":%d", *serverPort)
+	o.serverAddr = fmt.Sprintf(":%d", cli.Port)
 
 	// Start server in background
 	go func() {
@@ -239,7 +251,7 @@ func (o *BotOrchestrator) startServer() error {
 	}()
 
 	// Wait for server to be ready by checking health endpoint
-	healthURL := fmt.Sprintf("http://localhost:%d/health", *serverPort)
+	healthURL := fmt.Sprintf("http://localhost:%d/health", cli.Port)
 	for i := 0; i < 20; i++ { // Try for 10 seconds
 		resp, err := http.Get(healthURL)
 		if err == nil {
@@ -288,7 +300,7 @@ func (o *BotOrchestrator) cleanup() {
 
 func (o *BotOrchestrator) isServerReady() bool {
 	// Try to connect to stats endpoint
-	url := strings.Replace(*serverURL, "ws://", "http://", 1)
+	url := strings.Replace(cli.Server, "ws://", "http://", 1)
 	url = strings.Replace(url, "wss://", "https://", 1)
 	statsURL := url + "/stats"
 
@@ -304,30 +316,30 @@ func (o *BotOrchestrator) isServerReady() bool {
 }
 
 func (o *BotOrchestrator) createBots() error {
-	o.bots = make([]*BotClient, *numBots)
+	o.bots = make([]*BotClient, cli.Bots)
 	botIdx := 0
 
 	// Create calling station bots
-	for i := 0; i < *callingBots; i++ {
+	for i := 0; i < cli.Calling; i++ {
 		o.bots[botIdx] = NewBotClient(botIdx, "calling-station", o.handLogger, o.logger)
 		botIdx++
 	}
 
 	// Create random bots
-	for i := 0; i < *randomBots; i++ {
+	for i := 0; i < cli.Random; i++ {
 		o.bots[botIdx] = NewBotClient(botIdx, "random", o.handLogger, o.logger)
 		botIdx++
 	}
 
 	// Create aggressive bots
-	for i := 0; i < *aggressiveBots; i++ {
+	for i := 0; i < cli.Aggressive; i++ {
 		o.bots[botIdx] = NewBotClient(botIdx, "aggressive", o.handLogger, o.logger)
 		botIdx++
 	}
 
 	// Connect all bots
 	for _, bot := range o.bots {
-		if err := bot.Connect(*serverURL); err != nil {
+		if err := bot.Connect(cli.Server); err != nil {
 			return fmt.Errorf("bot %s failed to connect: %v", bot.name, err)
 		}
 	}

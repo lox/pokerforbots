@@ -70,16 +70,16 @@ tasks:
       - go test -bench=. -benchmem ./...
 
   demo:
-    desc: Run interactive demo with 6 bots
+    desc: Run interactive demo with 6 bots for 50 hands
     deps: [build]
     cmds:
-      - ./dist/spawn-bots -spawn-server -bots 6
+      - ./dist/spawn-bots --spawn-server --bots 6 --hands 50
 
   test-1000:
     desc: Test 1000 hands completion
     deps: [build]
     cmds:
-      - ./dist/spawn-bots -spawn-server -bots 6 -hands 1000 -q
+      - ./dist/spawn-bots --spawn-server --bots 6 --hands 1000 --quiet
 
   clean:
     desc: Clean build artifacts

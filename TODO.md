@@ -146,21 +146,21 @@
 
 ## Phase 3: Polish
 
-### 10. Logging & Metrics
-- [ ] Add basic logging
-  - [ ] Hand start/end
-  - [ ] Player actions
-  - [ ] Errors
-- [ ] Simple metrics
-  - [ ] Hands per second counter
-  - [ ] Timeout counter
+### 10. Logging & Metrics ✅
+- [x] Add basic logging
+  - [x] Hand start/end (Info level with duration)
+  - [x] Player actions (Info level for all actions)
+  - [x] Errors (Error level with context)
+- [x] Simple metrics
+  - [x] Hands per second counter
+  - [x] Timeout counter (tracked and exposed in /stats)
 
-### 11. Configuration
-- [ ] Add config file or env vars for:
-  - [ ] Server port
-  - [ ] Blinds and starting chips
-  - [ ] Timeout values
-  - [ ] Min/max players
+### 11. Configuration ✅
+- [x] Add command-line flags for:
+  - [x] Server port (-addr flag)
+  - [x] Blinds and starting chips (-small-blind, -big-blind, -start-chips)
+  - [x] Timeout values (-timeout-ms)
+  - [x] Min/max players (-min-players, -max-players)
 
 ## Completion Criteria
 

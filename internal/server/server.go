@@ -31,6 +31,16 @@ var (
 	ErrBotClosed   = errors.New("bot connection closed")
 )
 
+// Config holds server configuration
+type Config struct {
+	SmallBlind int
+	BigBlind   int
+	StartChips int
+	Timeout    time.Duration
+	MinPlayers int
+	MaxPlayers int
+}
+
 // Server represents the poker server
 type Server struct {
 	pool       *BotPool
@@ -40,6 +50,7 @@ type Server struct {
 	logger     zerolog.Logger
 	httpServer *http.Server
 	botIDGen   func() string // Function to generate bot IDs
+	config     Config
 }
 
 // createDeterministicBotIDGen creates a deterministic bot ID generator using the provided RNG
@@ -64,10 +75,23 @@ func createDeterministicBotIDGen(rng *rand.Rand) func() string {
 	}
 }
 
-// NewServer creates a new poker server with provided random source
+// NewServer creates a new poker server with provided random source and default config
 func NewServer(logger zerolog.Logger, rng *rand.Rand) *Server {
-	pool := NewBotPool(logger, 2, 9, rng)
-	return NewServerWithBotIDGen(logger, pool, createDeterministicBotIDGen(rng))
+	config := Config{
+		SmallBlind: 5,
+		BigBlind:   10,
+		StartChips: 1000,
+		Timeout:    100 * time.Millisecond,
+		MinPlayers: 2,
+		MaxPlayers: 9,
+	}
+	return NewServerWithConfig(logger, rng, config)
+}
+
+// NewServerWithConfig creates a new poker server with provided random source and config
+func NewServerWithConfig(logger zerolog.Logger, rng *rand.Rand, config Config) *Server {
+	pool := NewBotPoolWithConfig(logger, config.MinPlayers, config.MaxPlayers, rng, config)
+	return NewServerWithBotIDGenAndConfig(logger, pool, createDeterministicBotIDGen(rng), config)
 }
 
 // NewServerWithHandLimit creates a new poker server with a hand limit
@@ -83,9 +107,23 @@ func NewServerWithPool(logger zerolog.Logger, pool *BotPool) *Server {
 
 // NewServerWithBotIDGen creates a new poker server with custom bot pool and ID generator (for testing)
 func NewServerWithBotIDGen(logger zerolog.Logger, pool *BotPool, botIDGen func() string) *Server {
+	config := Config{
+		SmallBlind: 5,
+		BigBlind:   10,
+		StartChips: 1000,
+		Timeout:    100 * time.Millisecond,
+		MinPlayers: 2,
+		MaxPlayers: 9,
+	}
+	return NewServerWithBotIDGenAndConfig(logger, pool, botIDGen, config)
+}
+
+// NewServerWithBotIDGenAndConfig creates a new poker server with custom bot pool, ID generator and config
+func NewServerWithBotIDGenAndConfig(logger zerolog.Logger, pool *BotPool, botIDGen func() string, config Config) *Server {
 	return &Server{
 		pool:     pool,
 		botIDGen: botIDGen,
+		config:   config,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -175,9 +213,13 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	handCount := s.pool.HandCount()
 	handLimit := s.pool.HandLimit()
 	handsRemaining := s.pool.HandsRemaining()
+	timeoutCount := s.pool.TimeoutCount()
+	handsPerSecond := s.pool.HandsPerSecond()
 
 	fmt.Fprintf(w, "Connected bots: %d\n", botCount)
 	fmt.Fprintf(w, "Hands completed: %d\n", handCount)
+	fmt.Fprintf(w, "Hands per second: %.2f\n", handsPerSecond)
+	fmt.Fprintf(w, "Timeouts: %d\n", timeoutCount)
 
 	if handLimit > 0 {
 		fmt.Fprintf(w, "Hand limit: %d\n", handLimit)

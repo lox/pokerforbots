@@ -27,26 +27,60 @@ type BotPool struct {
 	logger          zerolog.Logger
 	rng             *rand.Rand
 	rngMutex        sync.Mutex // Protect RNG access
+	config          Config     // Server configuration
+
+	// Metrics
+	timeoutCounter uint64
+	handStartTime  time.Time
+	metricsLock    sync.RWMutex
 }
 
 // NewBotPool creates a new bot pool with explicit random source
 func NewBotPool(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand) *BotPool {
-	return NewBotPoolWithLimit(logger, minPlayers, maxPlayers, rng, 0) // 0 = unlimited
+	config := Config{
+		SmallBlind: 5,
+		BigBlind:   10,
+		StartChips: 1000,
+		Timeout:    100 * time.Millisecond,
+		MinPlayers: minPlayers,
+		MaxPlayers: maxPlayers,
+	}
+	return NewBotPoolWithConfig(logger, minPlayers, maxPlayers, rng, config)
+}
+
+// NewBotPoolWithConfig creates a new bot pool with explicit random source and config
+func NewBotPoolWithConfig(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand, config Config) *BotPool {
+	return NewBotPoolWithLimitAndConfig(logger, minPlayers, maxPlayers, rng, 0, config) // 0 = unlimited
 }
 
 // NewBotPoolWithLimit creates a new bot pool with explicit random source and hand limit
 func NewBotPoolWithLimit(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand, handLimit uint64) *BotPool {
+	config := Config{
+		SmallBlind: 5,
+		BigBlind:   10,
+		StartChips: 1000,
+		Timeout:    100 * time.Millisecond,
+		MinPlayers: minPlayers,
+		MaxPlayers: maxPlayers,
+	}
+	return NewBotPoolWithLimitAndConfig(logger, minPlayers, maxPlayers, rng, handLimit, config)
+}
+
+// NewBotPoolWithLimitAndConfig creates a new bot pool with explicit random source, hand limit and config
+func NewBotPoolWithLimitAndConfig(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand, handLimit uint64, config Config) *BotPool {
 	return &BotPool{
-		bots:       make(map[string]*Bot),
-		available:  make(chan *Bot, 100),
-		register:   make(chan *Bot),
-		unregister: make(chan *Bot),
-		minPlayers: minPlayers,
-		maxPlayers: maxPlayers,
-		handLimit:  handLimit,
-		stopCh:     make(chan struct{}),
-		logger:     logger.With().Str("component", "pool").Logger(),
-		rng:        rng,
+		bots:          make(map[string]*Bot),
+		available:     make(chan *Bot, 100),
+		register:      make(chan *Bot),
+		unregister:    make(chan *Bot),
+		minPlayers:    minPlayers,
+		maxPlayers:    maxPlayers,
+		handLimit:     handLimit,
+		stopCh:        make(chan struct{}),
+		logger:        logger.With().Str("component", "pool").Logger(),
+		rng:           rng,
+		config:        config,
+		handStartTime: time.Now(),
 	}
 }
 
@@ -249,8 +283,9 @@ func (p *BotPool) runHand(bots []*Bot) {
 		Int("player_count", len(bots)).
 		Msg("Hand starting with random button position")
 
-	// Run the hand with the cloned RNG
-	runner := NewHandRunner(p.logger, bots, handID, button, handRNG)
+	// Run the hand with the cloned RNG and config
+	runner := NewHandRunnerWithConfig(p.logger, bots, handID, button, handRNG, p.config)
+	runner.SetPool(p) // Pass pool for metrics tracking
 	runner.Run()
 
 	p.logger.Info().
@@ -318,4 +353,28 @@ func (p *BotPool) HandsRemaining() uint64 {
 		return 0
 	}
 	return p.handLimit - completed
+}
+
+// IncrementTimeoutCounter increments the timeout counter
+func (p *BotPool) IncrementTimeoutCounter() {
+	atomic.AddUint64(&p.timeoutCounter, 1)
+}
+
+// TimeoutCount returns the number of timeouts that have occurred
+func (p *BotPool) TimeoutCount() uint64 {
+	return atomic.LoadUint64(&p.timeoutCounter)
+}
+
+// HandsPerSecond returns the current hands per second rate
+func (p *BotPool) HandsPerSecond() float64 {
+	p.metricsLock.RLock()
+	defer p.metricsLock.RUnlock()
+
+	elapsed := time.Since(p.handStartTime).Seconds()
+	if elapsed < 1.0 {
+		return 0
+	}
+
+	handCount := float64(atomic.LoadUint64(&p.handCounter))
+	return handCount / elapsed
 }

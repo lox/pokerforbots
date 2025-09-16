@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	// Decision timeout for bot actions
-	decisionTimeout = 100 * time.Millisecond
+	// Default decision timeout for bot actions
+	defaultDecisionTimeout = 100 * time.Millisecond
 
-	// Small blind and big blind amounts
+	// Default blind amounts
 	defaultSmallBlind = 5
 	defaultBigBlind   = 10
 	defaultStartChips = 1000
@@ -34,6 +34,8 @@ type HandRunner struct {
 	lastStreet    game.Street
 	logger        zerolog.Logger
 	rng           *rand.Rand
+	pool          *BotPool // Reference to pool for metrics
+	config        Config   // Server configuration
 }
 
 // ActionEnvelope wraps an action with the sender's bot ID for verification
@@ -54,8 +56,19 @@ type winnerSummary struct {
 	amount int
 }
 
-// NewHandRunner creates a new hand runner
+// NewHandRunner creates a new hand runner with default config
 func NewHandRunner(logger zerolog.Logger, bots []*Bot, handID string, button int, rng *rand.Rand) *HandRunner {
+	config := Config{
+		SmallBlind: defaultSmallBlind,
+		BigBlind:   defaultBigBlind,
+		StartChips: defaultStartChips,
+		Timeout:    defaultDecisionTimeout,
+	}
+	return NewHandRunnerWithConfig(logger, bots, handID, button, rng, config)
+}
+
+// NewHandRunnerWithConfig creates a new hand runner with config
+func NewHandRunnerWithConfig(logger zerolog.Logger, bots []*Bot, handID string, button int, rng *rand.Rand, config Config) *HandRunner {
 	actionChan := make(chan ActionEnvelope, len(bots))
 
 	// Set action channel for all bots
@@ -72,12 +85,19 @@ func NewHandRunner(logger zerolog.Logger, bots []*Bot, handID string, button int
 		lastStreet:    game.Preflop,
 		logger:        logger.With().Str("component", "hand_runner").Str("hand_id", handID).Logger(),
 		rng:           rng,
+		config:        config,
 	}
+}
+
+// SetPool sets the pool reference for metrics tracking
+func (hr *HandRunner) SetPool(pool *BotPool) {
+	hr.pool = pool
 }
 
 // Run executes the hand
 func (hr *HandRunner) Run() {
-	hr.logger.Debug().Int("player_count", len(hr.bots)).Msg("Hand starting")
+	startTime := time.Now()
+	hr.logger.Info().Int("player_count", len(hr.bots)).Msg("Hand starting")
 
 	// Create player names and get buy-ins from bots
 	playerNames := make([]string, len(hr.bots))
@@ -103,8 +123,8 @@ func (hr *HandRunner) Run() {
 		playerNames,
 		chipCounts,
 		hr.button,
-		defaultSmallBlind,
-		defaultBigBlind,
+		hr.config.SmallBlind,
+		hr.config.BigBlind,
 		deck,
 	)
 	hr.lastStreet = hr.handState.Street
@@ -182,6 +202,12 @@ func (hr *HandRunner) Run() {
 	// Log aggregated hand summary and update bankrolls
 	hr.logHandSummary(winners)
 
+	// Log hand completion time
+	elapsed := time.Since(startTime)
+	hr.logger.Info().
+		Dur("duration_ms", elapsed).
+		Msg("Hand completed")
+
 	// Clean up action channels
 	for _, bot := range hr.bots {
 		bot.ClearActionChannel()
@@ -214,8 +240,8 @@ func (hr *HandRunner) broadcastHandStart() {
 				game.CardString(player.HoleCards.GetCard(0)),
 				game.CardString(player.HoleCards.GetCard(1)),
 			},
-			SmallBlind: defaultSmallBlind,
-			BigBlind:   defaultBigBlind,
+			SmallBlind: hr.config.SmallBlind,
+			BigBlind:   hr.config.BigBlind,
 		}
 
 		if err := bot.SendMessage(msg); err != nil {
@@ -247,7 +273,7 @@ func (hr *HandRunner) sendActionRequest(bot *Bot, seat int, validActions []game.
 		ToCall:        toCall,
 		MinRaise:      hr.handState.MinRaise,
 		ValidActions:  actions,
-		TimeRemaining: int(decisionTimeout.Milliseconds()),
+		TimeRemaining: int(hr.config.Timeout.Milliseconds()),
 	}
 
 	return bot.SendMessage(msg)
@@ -259,7 +285,7 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 	done := make(chan struct{})
 	defer close(done)
 
-	timer := time.NewTimer(decisionTimeout)
+	timer := time.NewTimer(hr.config.Timeout)
 	defer timer.Stop()
 
 	// Start goroutine to listen for action
@@ -276,6 +302,9 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 	case <-timer.C:
 		// Timeout - auto fold
 		hr.logger.Warn().Str("bot_id", hr.bots[botIndex].ID).Msg("Bot timed out")
+		if hr.pool != nil {
+			hr.pool.IncrementTimeoutCounter()
+		}
 		return game.Fold, 0
 	}
 }
@@ -283,7 +312,7 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 // listenForAction listens for an action from a specific bot
 func (hr *HandRunner) listenForAction(botIndex int, done <-chan struct{}) {
 	expectedBotID := hr.bots[botIndex].ID
-	timeout := time.After(decisionTimeout)
+	timeout := time.After(hr.config.Timeout)
 
 	// Keep draining the channel until we get the right bot's action or timeout
 	for {
@@ -356,7 +385,13 @@ func (hr *HandRunner) convertAction(action protocol.Action) (game.Action, int) {
 // processAction processes a bot's action
 func (hr *HandRunner) processAction(botIndex int, action game.Action, amount int) game.Action {
 	if err := hr.handState.ProcessAction(action, amount); err != nil {
-		hr.logger.Error().Err(err).Str("bot_id", hr.bots[botIndex].ID).Msg("Invalid action from bot")
+		hr.logger.Error().
+			Err(err).
+			Str("bot_id", hr.bots[botIndex].ID).
+			Str("action", action.String()).
+			Int("amount", amount).
+			Int("seat", botIndex).
+			Msg("Invalid action from bot - forcing fold")
 		// Force fold on invalid action
 		_ = hr.handState.ProcessAction(game.Fold, 0)
 		return game.Fold
@@ -418,7 +453,7 @@ func (hr *HandRunner) totalPot() int {
 }
 
 func (hr *HandRunner) logPlayerAction(seat int, street string, action game.Action, declaredAmount int, toCall int) {
-	hr.logger.Debug().
+	hr.logger.Info().
 		Int("seat", seat).
 		Str("bot", hr.playerLabels[seat]).
 		Str("street", street).
@@ -426,7 +461,7 @@ func (hr *HandRunner) logPlayerAction(seat int, street string, action game.Actio
 		Int("declared_amount", declaredAmount).
 		Int("to_call", toCall).
 		Int("pot", hr.totalPot()).
-		Msg("Action resolved")
+		Msg("Player action")
 }
 
 func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
