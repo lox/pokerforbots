@@ -141,6 +141,17 @@ Sent when bot sends invalid message or action.
 - No warnings or grace period - optimize for speed
 - Chronically slow bots may be disconnected
 
+## Connection Lifecycle
+
+1. Bot establishes WebSocket connection
+2. Server assigns internal bot ID
+3. Bot sends Connect message with display name
+4. Bot enters available pool
+5. Bot plays hands until disconnection
+6. Disconnection removes bot from all systems
+
+Note: The server does not support reconnection. Bots must establish a new connection if disconnected.
+
 ## Card Representation
 
 Cards use string format: rank + suit

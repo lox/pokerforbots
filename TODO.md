@@ -12,6 +12,14 @@
 - ✅ Demo script that runs server with 6 bots
 - ✅ All tests passing including race detection
 
+**Recently Completed Infrastructure Improvements:**
+- ✅ Dependency injection for *rand.Rand throughout codebase
+- ✅ Fix RNG race conditions with proper mutex protection
+- ✅ Action routing security with bot ID verification
+- ✅ Deterministic bot ID generation for testing
+- ✅ Consolidated test suite with better organization
+- ✅ Fixed button randomization in stateless design
+
 ## Simple Performance Goals
 - ✅ Handle 100ms timeouts reliably
 - ✅ Run many concurrent hands

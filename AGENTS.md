@@ -29,7 +29,7 @@ Please refer to these documents for context:
 
 ## Current Phase
 
-Working on Phase 1: Core Infrastructure (see TODO.md for details)
+Phase 2 Complete ✅ - Core infrastructure complete, moving to polish phase
 
 ## Commit Strategy
 
@@ -48,3 +48,19 @@ Each commit should include all tests for that milestone.
 Update @TODO.md after each task, and make sure all tests are passing before commit.
 
 YOU MUST NEVER COMMIT FAILING TESTS, EVEN IF THE TEST IS UNRELATED TO YOUR CHANGES.
+
+## Key Implementation Patterns
+
+### Dependency Injection
+All components requiring randomness accept *rand.Rand in constructors for deterministic testing.
+
+### Stateless Hand Design
+- Each hand is independent with random bot selection
+- Button position is randomized, not rotated
+- No persistent state between hands
+
+### Testing Strategy
+- Unit tests for core logic
+- Integration tests for complete scenarios
+- Race detection enabled throughout
+- Deterministic testing via seeded RNG

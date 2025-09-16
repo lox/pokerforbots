@@ -198,12 +198,23 @@ while True:
 - Advanced anti-collusion detection
 - Performance optimizations (binary protocol, CPU pinning)
 
-## Security Considerations
+## Architectural Decisions
 
-- No authentication in MVP (add later if needed)
-- Rate limiting on connections
+### Randomization Strategy
+The server uses dependency injection for all random number generation. A single *rand.Rand instance is passed through constructors, enabling deterministic testing while preventing race conditions through proper synchronization.
+
+### Security Model
+- Actions are internally wrapped in ActionEnvelope with bot ID verification
+- Timeouts are enforced server-side (100ms) with automatic folding
+- No client can affect another client's actions
 - Input validation on all messages
 - Secure random number generation for cards
+
+### Stateless Design
+Each hand is completely independent:
+- Random selection of 2-9 bots from the available pool
+- Random button position (no rotation between hands)
+- Fresh game state with no carryover
 
 ## Testing Strategy
 
