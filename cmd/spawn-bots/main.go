@@ -362,19 +362,26 @@ func (o *BotOrchestrator) run() <-chan struct{} {
 				rate := float64(currentHands) / elapsed.Seconds() * 60
 
 				// Log progress
-				logEvent := o.logger.Info().Uint64("hands_completed", currentHands).
+				handsCompleted := currentHands
+				logEvent := o.logger.Info().Uint64("hands_completed", handsCompleted).
 					Float64("rate_per_minute", rate).
 					Dur("elapsed", elapsed)
 
 				if o.targetHands > 0 {
-					// Progress based on server hands (currentHands = bot completions, so divide by bot count)
-					// This gives a more accurate percentage relative to actual server hands completed
-					serverHands := float64(currentHands) / float64(len(o.bots))
+					handsRemaining := o.targetHands - int(handsCompleted)
+					if handsRemaining < 0 {
+						handsRemaining = 0
+					}
+					progress := float64(handsCompleted) / float64(o.targetHands) * 100
+					if progress > 100 {
+						progress = 100
+					}
 					logEvent = logEvent.Int("target_hands", o.targetHands).
-						Float64("progress_percent", serverHands/float64(o.targetHands)*100)
+						Int("hands_remaining", handsRemaining).
+						Float64("progress_percent", progress)
 				}
 
-				logEvent.Msg("Game progress update")
+				logEvent.Msg("Session progress")
 
 				// For limited hands, check if server has reached its limit
 				if o.targetHands > 0 {
@@ -426,22 +433,9 @@ func (o *BotOrchestrator) printSummary() {
 	elapsed := time.Since(startTime)
 	rate := float64(hands) / elapsed.Seconds() * 60
 
-	// Log final summary
-	reproduceCmd := fmt.Sprintf("-seed %d -bots %d", *seed, *numBots)
-	if o.targetHands > 0 {
-		reproduceCmd += fmt.Sprintf(" -hands %d", o.targetHands)
-	}
-	if *spawnServer {
-		reproduceCmd += " -spawn-server"
-	}
-	if *verbose {
-		reproduceCmd += " -v"
-	}
-
 	o.logger.Info().Uint64("hands_played", hands).
 		Dur("total_elapsed", elapsed).
 		Float64("final_rate_per_minute", rate).
-		Str("reproduce_command", reproduceCmd).
 		Msg("Session completed successfully")
 }
 
@@ -584,7 +578,7 @@ func (b *BotClient) handleHandStart(msg *protocol.HandStart) {
 			playerChips[i] = p.Chips
 		}
 
-		b.logger.Info().Str("hand_id", msg.HandID).
+		b.logger.Debug().Str("hand_id", msg.HandID).
 			Int("button", msg.Button).
 			Int("small_blind", msg.SmallBlind).
 			Int("big_blind", msg.BigBlind).
@@ -601,7 +595,7 @@ func (b *BotClient) handleActionRequest(msg *protocol.ActionRequest) {
 	action, amount := b.selectAction(msg)
 
 	// Log action with structured data
-	b.logger.Info().Str("hand_id", msg.HandID).
+	b.logger.Debug().Str("hand_id", msg.HandID).
 		Str("street", b.currentStreet).
 		Str("action", action).
 		Int("amount", amount).
@@ -708,7 +702,7 @@ func (b *BotClient) handleStreetChange(msg *protocol.StreetChange) {
 
 	// Log street change with structured data
 	if b.seat == 0 { // Only first bot logs to avoid duplicates
-		b.logger.Info().Str("street", msg.Street).
+		b.logger.Debug().Str("street", msg.Street).
 			Strs("board", msg.Board).
 			Msg("Street changed")
 	}
@@ -718,8 +712,9 @@ func (b *BotClient) handleHandResult(msg *protocol.HandResult) {
 	b.handLogger.mu.Lock()
 	b.handLogger.winners = msg.Winners
 	b.handLogger.board = msg.Board
-	// Increment hands counter
-	atomic.AddUint64(&b.handLogger.handsLogged, 1)
+	if b.seat == 0 {
+		atomic.AddUint64(&b.handLogger.handsLogged, 1)
+	}
 	b.handLogger.mu.Unlock()
 
 	// Log hand result with structured data (only first bot to avoid duplicates)
@@ -731,7 +726,7 @@ func (b *BotClient) handleHandResult(msg *protocol.HandResult) {
 			winnerAmounts[i] = winner.Amount
 		}
 
-		b.logger.Info().Str("hand_id", msg.HandID).
+		b.logger.Debug().Str("hand_id", msg.HandID).
 			Strs("final_board", msg.Board).
 			Strs("winner_names", winnerNames).
 			Ints("winner_amounts", winnerAmounts).

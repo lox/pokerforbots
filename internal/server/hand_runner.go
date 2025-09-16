@@ -1,7 +1,9 @@
 package server
 
 import (
+	"fmt"
 	"math/rand"
+	"sort"
 	"time"
 
 	"github.com/lox/pokerforbots/internal/game"
@@ -28,6 +30,8 @@ type HandRunner struct {
 	actions       chan BotAction
 	botActionChan chan ActionEnvelope // Channel to receive actions from bots with ID verification
 	seatBuyIns    []int               // Track actual buy-in per seat for accurate P&L
+	playerLabels  []string
+	lastStreet    game.Street
 	logger        zerolog.Logger
 	rng           *rand.Rand
 }
@@ -42,6 +46,12 @@ type ActionEnvelope struct {
 type BotAction struct {
 	botIndex int
 	action   protocol.Action
+}
+
+type winnerSummary struct {
+	seat   int
+	name   string
+	amount int
 }
 
 // NewHandRunner creates a new hand runner
@@ -59,6 +69,7 @@ func NewHandRunner(logger zerolog.Logger, bots []*Bot, handID string, button int
 		button:        button,
 		actions:       make(chan BotAction, 1),
 		botActionChan: actionChan,
+		lastStreet:    game.Preflop,
 		logger:        logger.With().Str("component", "hand_runner").Str("hand_id", handID).Logger(),
 		rng:           rng,
 	}
@@ -66,11 +77,12 @@ func NewHandRunner(logger zerolog.Logger, bots []*Bot, handID string, button int
 
 // Run executes the hand
 func (hr *HandRunner) Run() {
-	hr.logger.Info().Int("players", len(hr.bots)).Msg("Hand starting")
+	hr.logger.Debug().Int("player_count", len(hr.bots)).Msg("Hand starting")
 
 	// Create player names and get buy-ins from bots
 	playerNames := make([]string, len(hr.bots))
 	chipCounts := make([]int, len(hr.bots))
+	hr.playerLabels = make([]string, len(hr.bots))
 	for i, bot := range hr.bots {
 		// Use first 8 chars of ID as name, or full ID if shorter
 		if len(bot.ID) >= 8 {
@@ -78,6 +90,7 @@ func (hr *HandRunner) Run() {
 		} else {
 			playerNames[i] = bot.ID
 		}
+		hr.playerLabels[i] = playerNames[i]
 		// Get bot's buy-in (capped at 100)
 		chipCounts[i] = bot.GetBuyIn()
 	}
@@ -94,6 +107,7 @@ func (hr *HandRunner) Run() {
 		defaultBigBlind,
 		deck,
 	)
+	hr.lastStreet = hr.handState.Street
 
 	// Store the actual buy-ins for P&L calculation later
 	hr.seatBuyIns = chipCounts
@@ -122,63 +136,57 @@ func (hr *HandRunner) Run() {
 		for i, a := range validActions {
 			actionStrs[i] = a.String()
 		}
-		hr.logger.Debug().Int("player", activePlayer).Str("street", hr.handState.Street.String()).Strs("valid_actions", actionStrs).Msg("Player to act")
+		streetName := hr.handState.Street.String()
+		toCall := hr.handState.CurrentBet - hr.handState.Players[activePlayer].Bet
+		hr.logger.Debug().
+			Int("seat", activePlayer).
+			Str("bot", hr.playerLabels[activePlayer]).
+			Str("street", streetName).
+			Strs("valid_actions", actionStrs).
+			Int("to_call", toCall).
+			Msg("Player to act")
 
 		// Send action request to active bot
 		bot := hr.bots[activePlayer]
 		if err := hr.sendActionRequest(bot, activePlayer, validActions); err != nil {
 			hr.logger.Error().Err(err).Msg("Failed to send action request")
-			// Auto-fold on error
-			hr.processAction(activePlayer, game.Fold, 0)
+			executed := hr.processAction(activePlayer, game.Fold, 0)
+			hr.logPlayerAction(activePlayer, streetName, executed, 0, toCall)
 			continue
 		}
 
 		// Wait for action with timeout
 		action, amount := hr.waitForAction(activePlayer)
 
-		// Process the action
-		hr.processAction(activePlayer, action, amount)
+		// Process the action and record outcome
+		executed := hr.processAction(activePlayer, action, amount)
+		hr.logPlayerAction(activePlayer, streetName, executed, amount, toCall)
 
 		// Broadcast game update
 		hr.broadcastGameUpdate()
 
 		// Check for street change
-		if hr.handState.Street != hr.getPreviousStreet() {
-			hr.broadcastStreetChange()
+		if hr.handState.Street != hr.lastStreet {
+			previousStreet := hr.lastStreet
+			hr.broadcastStreetChange(previousStreet)
+			hr.lastStreet = hr.handState.Street
 		}
 	}
 
 	// Determine winners and distribute pots
-	hr.resolveHand()
+	winners := hr.resolveHand()
 
 	// Send hand result
-	hr.broadcastHandResult()
+	hr.broadcastHandResult(winners)
 
-	// Update bot bankrolls based on actual P&L (final chips - buy-in)
-	for i, bot := range hr.bots {
-		finalChips := hr.handState.Players[i].Chips
-		delta := finalChips - hr.seatBuyIns[i]
-		// Use first 8 chars of ID as name, or full ID if shorter
-		displayID := bot.ID
-		if len(bot.ID) > 8 {
-			displayID = bot.ID[:8]
-		}
-		hr.logger.Info().
-			Str("bot_id", displayID).
-			Int("seat", i).
-			Int("buy_in", hr.seatBuyIns[i]).
-			Int("final_chips", finalChips).
-			Int("pnl", delta).
-			Msg("Bot P&L calculated")
-		bot.ApplyResult(delta)
-	}
+	// Log aggregated hand summary and update bankrolls
+	hr.logHandSummary(winners)
 
 	// Clean up action channels
 	for _, bot := range hr.bots {
 		bot.ClearActionChannel()
 	}
 
-	hr.logger.Info().Msg("Hand completed")
 }
 
 // broadcastHandStart sends the initial hand information to all bots
@@ -346,13 +354,14 @@ func (hr *HandRunner) convertAction(action protocol.Action) (game.Action, int) {
 }
 
 // processAction processes a bot's action
-func (hr *HandRunner) processAction(botIndex int, action game.Action, amount int) {
-	err := hr.handState.ProcessAction(action, amount)
-	if err != nil {
+func (hr *HandRunner) processAction(botIndex int, action game.Action, amount int) game.Action {
+	if err := hr.handState.ProcessAction(action, amount); err != nil {
 		hr.logger.Error().Err(err).Str("bot_id", hr.bots[botIndex].ID).Msg("Invalid action from bot")
 		// Force fold on invalid action
-		hr.handState.ProcessAction(game.Fold, 0)
+		_ = hr.handState.ProcessAction(game.Fold, 0)
+		return game.Fold
 	}
+	return action
 }
 
 // broadcastGameUpdate sends game state updates to all bots
@@ -389,16 +398,81 @@ func (hr *HandRunner) broadcastGameUpdate() {
 	}
 }
 
-// broadcastStreetChange sends street change notification
-func (hr *HandRunner) broadcastStreetChange() {
-	// Convert board cards to strings
-	boardCards := []string{}
+func (hr *HandRunner) boardStrings() []string {
+	boardCards := make([]string, 0, hr.handState.Board.CountCards())
 	for i := 0; i < hr.handState.Board.CountCards(); i++ {
 		card := hr.handState.Board.GetCard(i)
 		if card != 0 {
 			boardCards = append(boardCards, game.CardString(card))
 		}
 	}
+	return boardCards
+}
+
+func (hr *HandRunner) totalPot() int {
+	total := 0
+	for _, pot := range hr.handState.Pots {
+		total += pot.Amount
+	}
+	return total
+}
+
+func (hr *HandRunner) logPlayerAction(seat int, street string, action game.Action, declaredAmount int, toCall int) {
+	hr.logger.Debug().
+		Int("seat", seat).
+		Str("bot", hr.playerLabels[seat]).
+		Str("street", street).
+		Str("action", action.String()).
+		Int("declared_amount", declaredAmount).
+		Int("to_call", toCall).
+		Int("pot", hr.totalPot()).
+		Msg("Action resolved")
+}
+
+func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
+	boardCards := hr.boardStrings()
+	totalPot := hr.totalPot()
+
+	initialStacks := make([]string, len(hr.seatBuyIns))
+	finalStacks := make([]string, len(hr.seatBuyIns))
+	pnlSummary := make([]string, len(hr.seatBuyIns))
+
+	for i := range hr.bots {
+		finalChips := hr.handState.Players[i].Chips
+		delta := finalChips - hr.seatBuyIns[i]
+		label := hr.playerLabels[i]
+		initialStacks[i] = fmt.Sprintf("seat%d/%s/%d", i, label, hr.seatBuyIns[i])
+		finalStacks[i] = fmt.Sprintf("seat%d/%s/%d", i, label, finalChips)
+		pnlSummary[i] = fmt.Sprintf("seat%d/%s/%+d", i, label, delta)
+		hr.bots[i].ApplyResult(delta)
+	}
+
+	winnerSummaries := make([]string, len(winners))
+	for i, winner := range winners {
+		label := hr.playerLabels[winner.seat]
+		winnerSummaries[i] = fmt.Sprintf("seat%d/%s/%d", winner.seat, label, winner.amount)
+	}
+
+	hr.logger.Info().
+		Int("player_count", len(hr.bots)).
+		Int("button_seat", hr.button).
+		Int("pot_final", totalPot).
+		Strs("board", boardCards).
+		Strs("initial_stacks", initialStacks).
+		Strs("final_stacks", finalStacks).
+		Strs("winners", winnerSummaries).
+		Strs("pnls", pnlSummary).
+		Msg("Hand summary")
+}
+
+// broadcastStreetChange sends street change notification
+func (hr *HandRunner) broadcastStreetChange(previous game.Street) {
+	boardCards := hr.boardStrings()
+	hr.logger.Debug().
+		Str("from", previous.String()).
+		Str("to", hr.handState.Street.String()).
+		Strs("board", boardCards).
+		Msg("Street advanced")
 
 	for _, bot := range hr.bots {
 		msg := &protocol.StreetChange{
@@ -414,8 +488,8 @@ func (hr *HandRunner) broadcastStreetChange() {
 	}
 }
 
-// resolveHand determines winners and distributes pots
-func (hr *HandRunner) resolveHand() {
+// resolveHand determines winners, distributes pots, and returns payout summaries
+func (hr *HandRunner) resolveHand() []winnerSummary {
 	// Force showdown if needed
 	if hr.handState.Street != game.Showdown {
 		// If everyone is all-in, just advance to showdown
@@ -432,10 +506,10 @@ func (hr *HandRunner) resolveHand() {
 		}
 	}
 
-	// Get winners for each pot
+	// Get winners for each pot and accumulate payouts per seat
+	payouts := make(map[int]int)
 	winners := hr.handState.GetWinners()
 
-	// Distribute pots (simplified - just track for display)
 	for potIdx, winnerSeats := range winners {
 		if len(winnerSeats) == 0 {
 			continue
@@ -446,41 +520,38 @@ func (hr *HandRunner) resolveHand() {
 
 		for _, seat := range winnerSeats {
 			hr.handState.Players[seat].Chips += share
+			payouts[seat] += share
 		}
 	}
+
+	summaries := make([]winnerSummary, 0, len(payouts))
+	for seat, amount := range payouts {
+		player := hr.handState.Players[seat]
+		summaries = append(summaries, winnerSummary{
+			seat:   seat,
+			name:   player.Name,
+			amount: amount,
+		})
+	}
+
+	sort.Slice(summaries, func(i, j int) bool {
+		return summaries[i].seat < summaries[j].seat
+	})
+
+	return summaries
 }
 
 // broadcastHandResult sends the final hand result
-func (hr *HandRunner) broadcastHandResult() {
-	// Build winner information
-	winners := hr.handState.GetWinners()
-	winnerInfo := []protocol.Winner{}
-
-	for potIdx, winnerSeats := range winners {
-		if len(winnerSeats) == 0 {
-			continue
-		}
-
-		pot := hr.handState.Pots[potIdx]
-		share := pot.Amount / len(winnerSeats)
-
-		for _, seat := range winnerSeats {
-			player := hr.handState.Players[seat]
-			winnerInfo = append(winnerInfo, protocol.Winner{
-				Name:   player.Name,
-				Amount: share,
-			})
+func (hr *HandRunner) broadcastHandResult(winners []winnerSummary) {
+	winnerInfo := make([]protocol.Winner, len(winners))
+	for i, winner := range winners {
+		winnerInfo[i] = protocol.Winner{
+			Name:   winner.name,
+			Amount: winner.amount,
 		}
 	}
 
-	// Convert board to strings
-	boardCards := []string{}
-	for i := 0; i < hr.handState.Board.CountCards(); i++ {
-		card := hr.handState.Board.GetCard(i)
-		if card != 0 {
-			boardCards = append(boardCards, game.CardString(card))
-		}
-	}
+	boardCards := hr.boardStrings()
 
 	for _, bot := range hr.bots {
 		msg := &protocol.HandResult{
@@ -493,22 +564,6 @@ func (hr *HandRunner) broadcastHandResult() {
 		if err := bot.SendMessage(msg); err != nil {
 			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send hand result")
 		}
-	}
-}
-
-// getPreviousStreet returns the previous street (helper for detecting changes)
-func (hr *HandRunner) getPreviousStreet() game.Street {
-	switch hr.handState.Street {
-	case game.Flop:
-		return game.Preflop
-	case game.Turn:
-		return game.Flop
-	case game.River:
-		return game.Turn
-	case game.Showdown:
-		return game.River
-	default:
-		return game.Preflop
 	}
 }
 

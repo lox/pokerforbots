@@ -52,7 +52,7 @@ func TestHandRunnerMessages(t *testing.T) {
 	}
 
 	// Create hand runner
-	runner := NewHandRunner(testLogger(),bots, "test-hand-2", 0, rand.New(rand.NewSource(42)))
+	runner := NewHandRunner(testLogger(), bots, "test-hand-2", 0, rand.New(rand.NewSource(42)))
 
 	// Send hand start (but don't run full hand)
 	runner.handState = game.NewHandState(
@@ -87,7 +87,7 @@ func TestHandRunnerActionRequest(t *testing.T) {
 	}
 
 	// Create hand runner
-	runner := NewHandRunner(testLogger(),[]*Bot{bot}, "test-hand-3", 0, rand.New(rand.NewSource(42)))
+	runner := NewHandRunner(testLogger(), []*Bot{bot}, "test-hand-3", 0, rand.New(rand.NewSource(42)))
 	runner.handState = game.NewHandState(
 		[]string{"player1"},
 		0,
@@ -122,7 +122,7 @@ func TestHandRunnerTimeout(t *testing.T) {
 		{ID: "timeout-bot2", send: make(chan []byte, 100), actionChan: make(chan ActionEnvelope, 1), bankroll: 100},
 	}
 
-	runner := NewHandRunner(testLogger(),bots, "timeout-test", 0, rand.New(rand.NewSource(42)))
+	runner := NewHandRunner(testLogger(), bots, "timeout-test", 0, rand.New(rand.NewSource(42)))
 
 	// Start the hand runner in background
 	done := make(chan struct{})
@@ -152,7 +152,7 @@ func TestHandRunnerComplete(t *testing.T) {
 		{ID: "bob1234567890", send: make(chan []byte, 100)},
 	}
 
-	runner := NewHandRunner(testLogger(),bots, "complete-test", 0, rand.New(rand.NewSource(42)))
+	runner := NewHandRunner(testLogger(), bots, "complete-test", 0, rand.New(rand.NewSource(42)))
 
 	// Manually setup a simple scenario where one player folds
 	runner.handState = game.NewHandState(
@@ -172,8 +172,8 @@ func TestHandRunnerComplete(t *testing.T) {
 	}
 
 	// Resolve and broadcast results
-	runner.resolveHand()
-	runner.broadcastHandResult()
+	winners := runner.resolveHand()
+	runner.broadcastHandResult(winners)
 
 	// Both bots should receive hand result
 	for _, bot := range bots {
@@ -199,7 +199,7 @@ func TestValidActionsGeneration(t *testing.T) {
 			setupHand: func() *HandRunner {
 				bot1 := &Bot{ID: "bot1", send: make(chan []byte, 10)}
 				bot2 := &Bot{ID: "bot2", send: make(chan []byte, 10)}
-				hr := NewHandRunner(testLogger(),[]*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
+				hr := NewHandRunner(testLogger(), []*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
 				hr.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
 				hr.handState.Street = game.Preflop
 				hr.handState.ActivePlayer = 0
@@ -213,7 +213,7 @@ func TestValidActionsGeneration(t *testing.T) {
 			setupHand: func() *HandRunner {
 				bot1 := &Bot{ID: "bot1", send: make(chan []byte, 10)}
 				bot2 := &Bot{ID: "bot2", send: make(chan []byte, 10)}
-				hr := NewHandRunner(testLogger(),[]*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
+				hr := NewHandRunner(testLogger(), []*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
 				hr.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
 				hr.handState.Street = game.Preflop
 				// Simulate SB calling
@@ -230,7 +230,7 @@ func TestValidActionsGeneration(t *testing.T) {
 			setupHand: func() *HandRunner {
 				bot1 := &Bot{ID: "bot1", send: make(chan []byte, 10)}
 				bot2 := &Bot{ID: "bot2", send: make(chan []byte, 10)}
-				hr := NewHandRunner(testLogger(),[]*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
+				hr := NewHandRunner(testLogger(), []*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
 				hr.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
 				hr.handState.Street = game.Flop
 				hr.handState.CurrentBet = 0
@@ -248,7 +248,7 @@ func TestValidActionsGeneration(t *testing.T) {
 			setupHand: func() *HandRunner {
 				bot1 := &Bot{ID: "bot1", send: make(chan []byte, 10)}
 				bot2 := &Bot{ID: "bot2", send: make(chan []byte, 10)}
-				hr := NewHandRunner(testLogger(),[]*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
+				hr := NewHandRunner(testLogger(), []*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
 				hr.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
 				hr.handState.Street = game.Flop
 				hr.handState.CurrentBet = 1000
@@ -268,7 +268,7 @@ func TestValidActionsGeneration(t *testing.T) {
 			setupHand: func() *HandRunner {
 				bot1 := &Bot{ID: "bot1", send: make(chan []byte, 10)}
 				bot2 := &Bot{ID: "bot2", send: make(chan []byte, 10)}
-				hr := NewHandRunner(testLogger(),[]*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
+				hr := NewHandRunner(testLogger(), []*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
 				hr.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
 				hr.handState.Street = game.Preflop
 				hr.handState.CurrentBet = 10
@@ -329,7 +329,7 @@ func TestValidActionsGeneration(t *testing.T) {
 func TestActionRequestMessagePopulation(t *testing.T) {
 	// Setup
 	bot := &Bot{ID: "test-bot", send: make(chan []byte, 10)}
-	hr := NewHandRunner(testLogger(),[]*Bot{bot}, "test-hand", 0, rand.New(rand.NewSource(42)))
+	hr := NewHandRunner(testLogger(), []*Bot{bot}, "test-hand", 0, rand.New(rand.NewSource(42)))
 	hr.handState = game.NewHandState([]string{"player1"}, 0, 5, 10, 1000)
 
 	// Get valid actions
@@ -547,7 +547,7 @@ func TestWrongBotActionRejection(t *testing.T) {
 		{ID: "bot2", send: make(chan []byte, 100), actionChan: make(chan ActionEnvelope, 1), bankroll: 100},
 	}
 
-	runner := NewHandRunner(testLogger(),bots, "wrong-bot-test", 0, rand.New(rand.NewSource(42)))
+	runner := NewHandRunner(testLogger(), bots, "wrong-bot-test", 0, rand.New(rand.NewSource(42)))
 
 	// Inject a wrong bot action into the channel
 	wrongBotEnvelope := ActionEnvelope{
@@ -626,7 +626,7 @@ func TestBankrollDeltaCalculation(t *testing.T) {
 	}
 
 	bots := []*Bot{bot1, bot2}
-	runner := NewHandRunner(testLogger(),bots, "bankroll-test", 0, rand.New(rand.NewSource(42)))
+	runner := NewHandRunner(testLogger(), bots, "bankroll-test", 0, rand.New(rand.NewSource(42)))
 
 	// Record initial bankrolls
 	initialBankroll1 := bot1.bankroll
