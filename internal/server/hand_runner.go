@@ -250,7 +250,7 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 // listenForAction listens for an action from a specific bot
 func (hr *HandRunner) listenForAction(botIndex int, done <-chan struct{}) {
 	expectedBotID := hr.bots[botIndex].ID
-	timeout := time.After(100 * time.Millisecond)
+	timeout := time.After(decisionTimeout)
 
 	// Keep draining the channel until we get the right bot's action or timeout
 	for {

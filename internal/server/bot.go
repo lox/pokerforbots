@@ -110,22 +110,6 @@ func (b *Bot) ApplyResult(delta int) {
 	}
 }
 
-// UpdateBankroll updates the bot's bankroll after a hand (deprecated - use ApplyResult)
-func (b *Bot) UpdateBankroll(finalChips int) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	const buyIn = 100
-	// Calculate profit/loss: final chips - buy-in
-	change := finalChips - buyIn
-	b.bankroll += change
-
-	// Ensure bankroll doesn't go negative
-	if b.bankroll < 0 {
-		b.bankroll = 0
-	}
-}
-
 // HasChips returns true if the bot has chips to play
 func (b *Bot) HasChips() bool {
 	b.mu.RLock()
