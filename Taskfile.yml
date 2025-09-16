@@ -18,17 +18,20 @@ tasks:
   build:
     desc: Build the server
     cmds:
-      - go build -o pokerforbots cmd/server/main.go
+      - mkdir -p dist
+      - go build -o dist/server cmd/server/main.go
+      - go build -o dist/testbot cmd/testbot/main.go
     sources:
       - '**/*.go'
     generates:
-      - pokerforbots
+      - dist/server
+      - dist/testbot
 
   run:
     desc: Run the server
     deps: [build]
     cmds:
-      - ./pokerforbots
+      - ./dist/server
 
   test:
     desc: Run all tests
@@ -59,7 +62,7 @@ tasks:
   clean:
     desc: Clean build artifacts
     cmds:
-      - rm -f pokerforbots
+      - rm -rf dist/
       - rm -f internal/protocol/*_gen.go
       - rm -f internal/protocol/*_gen_test.go
 

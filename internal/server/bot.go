@@ -22,6 +22,7 @@ type Bot struct {
 	done         chan struct{}        // Signal channel closure
 	actionChan   chan protocol.Action // Channel to send actions to hand runner
 	handRunnerMu sync.RWMutex
+	bankroll     int // Total chips the bot has
 }
 
 // NewBot creates a new bot instance
@@ -33,6 +34,7 @@ func NewBot(id string, conn *websocket.Conn, pool *BotPool) *Bot {
 		pool:     pool,
 		lastPing: time.Now(),
 		done:     make(chan struct{}),
+		bankroll: 10000, // Start with 10,000 chips (100 buy-ins at 100 chips each)
 	}
 }
 
@@ -80,6 +82,41 @@ func (b *Bot) SetActionChannel(ch chan protocol.Action) {
 	b.handRunnerMu.Lock()
 	defer b.handRunnerMu.Unlock()
 	b.actionChan = ch
+}
+
+// GetBuyIn returns the buy-in amount for this bot (capped at 100 chips)
+func (b *Bot) GetBuyIn() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	const maxBuyIn = 100
+	if b.bankroll >= maxBuyIn {
+		return maxBuyIn
+	}
+	return b.bankroll // Return remaining bankroll if less than max buy-in
+}
+
+// UpdateBankroll updates the bot's bankroll after a hand
+func (b *Bot) UpdateBankroll(finalChips int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	const buyIn = 100
+	// Calculate profit/loss: final chips - buy-in
+	change := finalChips - buyIn
+	b.bankroll += change
+
+	// Ensure bankroll doesn't go negative
+	if b.bankroll < 0 {
+		b.bankroll = 0
+	}
+}
+
+// HasChips returns true if the bot has chips to play
+func (b *Bot) HasChips() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.bankroll > 0
 }
 
 // ClearActionChannel clears the action channel

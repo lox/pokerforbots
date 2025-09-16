@@ -23,12 +23,13 @@ fi
 
 # Build the server and bot
 echo -e "${GREEN}Building server and bot...${NC}"
-go build -o bin/server cmd/server/main.go
-go build -o bin/testbot cmd/testbot/main.go
+mkdir -p dist
+go build -o dist/server cmd/server/main.go
+go build -o dist/testbot cmd/testbot/main.go
 
 # Start the server
 echo -e "${GREEN}Starting server on port 8080...${NC}"
-./bin/server &
+./dist/server &
 SERVER_PID=$!
 sleep 2
 
@@ -38,7 +39,7 @@ cleanup() {
     echo -e "${YELLOW}Shutting down...${NC}"
 
     # Kill bots
-    pkill -f "bin/testbot" 2>/dev/null || true
+    pkill -f "dist/testbot" 2>/dev/null || true
 
     # Kill server
     kill $SERVER_PID 2>/dev/null || true
@@ -63,15 +64,15 @@ echo -e "${GREEN}Launching bots...${NC}"
 
 # Start 2 calling stations
 echo "  - Starting 2 calling station bots..."
-./bin/testbot -strategy calling-station -count 2 > logs/calling-station.log 2>&1 &
+./dist/testbot -strategy calling-station -count 2 > logs/calling-station.log 2>&1 &
 
 # Start 2 random bots
 echo "  - Starting 2 random bots..."
-./bin/testbot -strategy random -count 2 > logs/random.log 2>&1 &
+./dist/testbot -strategy random -count 2 > logs/random.log 2>&1 &
 
 # Start 2 aggressive bots
 echo "  - Starting 2 aggressive bots..."
-./bin/testbot -strategy aggressive -count 2 > logs/aggressive.log 2>&1 &
+./dist/testbot -strategy aggressive -count 2 > logs/aggressive.log 2>&1 &
 
 sleep 2
 

@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -90,8 +91,12 @@ func (p *BotPool) tryMatch() {
 			_, connected := p.bots[bot.ID]
 			p.mu.RUnlock()
 
-			if connected && !bot.IsInHand() {
+			if connected && !bot.IsInHand() && bot.HasChips() {
 				bots = append(bots, bot)
+			} else if connected && !bot.HasChips() {
+				// Bot is out of chips, remove from pool
+				log.Printf("Bot %s is out of chips, removing from pool", bot.ID)
+				p.Unregister(bot)
 			}
 		default:
 			// No more available bots
@@ -126,10 +131,16 @@ func (p *BotPool) runHand(bots []*Bot) {
 		// Return bots to pool after hand completes
 		for _, bot := range bots {
 			bot.SetInHand(false)
-			select {
-			case p.available <- bot:
-			default:
-				// Queue full
+			// Only return to pool if bot still has chips
+			if bot.HasChips() {
+				select {
+				case p.available <- bot:
+				default:
+					// Queue full
+				}
+			} else {
+				log.Printf("Bot %s is out of chips after hand, removing from pool", bot.ID)
+				p.Unregister(bot)
 			}
 		}
 	}()

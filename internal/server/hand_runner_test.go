@@ -116,17 +116,11 @@ func TestHandRunnerActionRequest(t *testing.T) {
 func TestHandRunnerTimeout(t *testing.T) {
 	// Test that bots timeout and auto-fold when they don't respond
 	bots := []*Bot{
-		{ID: "timeout-bot1", send: make(chan []byte, 100), actionChan: make(chan protocol.Action, 1)},
-		{ID: "timeout-bot2", send: make(chan []byte, 100), actionChan: make(chan protocol.Action, 1)},
+		{ID: "timeout-bot1", send: make(chan []byte, 100), actionChan: make(chan protocol.Action, 1), bankroll: 100},
+		{ID: "timeout-bot2", send: make(chan []byte, 100), actionChan: make(chan protocol.Action, 1), bankroll: 100},
 	}
 
 	runner := NewHandRunner(bots, "timeout-test", 0)
-
-	// Initialize hand state
-	runner.handState = game.NewHandState(
-		[]string{"timeout-bot1", "timeout-bot2"},
-		0, 5, 10, 1000,
-	)
 
 	// Start the hand runner in background
 	done := make(chan struct{})

@@ -179,13 +179,13 @@ func TestPotDistribution(t *testing.T) {
 	<-handStartReceived
 
 	// Both bots should start with chips minus blinds already posted
-	// Bot 1 (small blind) should have 995 (1000 - 5)
-	// Bot 2 (big blind) should have 990 (1000 - 10)
-	if startingChipsBot1 != 995 {
-		t.Errorf("Bot 1 starting chips = %d, want 995 (after posting small blind)", startingChipsBot1)
+	// Bot 1 (small blind) should have 95 (100 - 5)
+	// Bot 2 (big blind) should have 90 (100 - 10)
+	if startingChipsBot1 != 95 {
+		t.Errorf("Bot 1 starting chips = %d, want 95 (after posting small blind)", startingChipsBot1)
 	}
-	if startingChipsBot2 != 990 {
-		t.Errorf("Bot 2 starting chips = %d, want 990 (after posting big blind)", startingChipsBot2)
+	if startingChipsBot2 != 90 {
+		t.Errorf("Bot 2 starting chips = %d, want 90 (after posting big blind)", startingChipsBot2)
 	}
 
 	// Now play out the hand - Bot 1 will fold, Bot 2 should win

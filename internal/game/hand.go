@@ -55,17 +55,18 @@ type Pot struct {
 
 // HandState represents the state of a poker hand
 type HandState struct {
-	Players      []*Player
-	Button       int
-	CurrentBet   int
-	MinRaise     int
-	LastRaiser   int
-	Street       Street
-	Board        Hand
-	Pots         []Pot
-	ActivePlayer int
-	Deck         *Deck
-	BBActed      bool // Track if BB has acted in preflop
+	Players        []*Player
+	Button         int
+	CurrentBet     int
+	MinRaise       int
+	LastRaiser     int
+	Street         Street
+	Board          Hand
+	Pots           []Pot
+	ActivePlayer   int
+	Deck           *Deck
+	BBActed        bool   // Track if BB has acted in preflop
+	ActedThisRound []bool // Track who has acted in current betting round
 }
 
 // NewHandState creates a new hand state
@@ -80,15 +81,39 @@ func NewHandState(playerNames []string, button int, smallBlind, bigBlind, starti
 		}
 	}
 
+	return newHandStateWithPlayers(players, button, smallBlind, bigBlind)
+}
+
+// NewHandStateWithChips creates a new hand state with individual chip counts
+func NewHandStateWithChips(playerNames []string, chipCounts []int, button int, smallBlind, bigBlind int) *HandState {
+	if len(playerNames) != len(chipCounts) {
+		panic("player names and chip counts must have same length")
+	}
+
+	players := make([]*Player, len(playerNames))
+	for i, name := range playerNames {
+		players[i] = &Player{
+			Seat:   i,
+			Name:   name,
+			Chips:  chipCounts[i],
+			Folded: false,
+		}
+	}
+
+	return newHandStateWithPlayers(players, button, smallBlind, bigBlind)
+}
+
+func newHandStateWithPlayers(players []*Player, button int, smallBlind, bigBlind int) *HandState {
 	h := &HandState{
-		Players:    players,
-		Button:     button,
-		CurrentBet: 0,
-		MinRaise:   bigBlind,
-		LastRaiser: -1, // No raiser initially
-		Street:     Preflop,
-		Deck:       NewDeck(),
-		Pots:       []Pot{{Amount: 0, Eligible: makeEligible(players)}},
+		Players:        players,
+		Button:         button,
+		CurrentBet:     0,
+		MinRaise:       bigBlind,
+		LastRaiser:     -1, // No raiser initially
+		Street:         Preflop,
+		Deck:           NewDeck(),
+		Pots:           []Pot{{Amount: 0, Eligible: makeEligible(players)}},
+		ActedThisRound: make([]bool, len(players)),
 	}
 
 	// Post blinds
@@ -197,6 +222,9 @@ func (h *HandState) GetValidActions() []Action {
 func (h *HandState) ProcessAction(action Action, amount int) error {
 	p := h.Players[h.ActivePlayer]
 
+	// Mark player as having acted in this round
+	h.ActedThisRound[h.ActivePlayer] = true
+
 	// Track if BB is acting preflop
 	if h.Street == Preflop {
 		var bbPos int
@@ -249,6 +277,12 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 		p.Bet = amount
 		p.TotalBet += raiseAmount
 
+		// Reset acted flags when someone raises (everyone needs to act again)
+		for i := range h.ActedThisRound {
+			h.ActedThisRound[i] = false
+		}
+		h.ActedThisRound[h.ActivePlayer] = true
+
 	case AllIn:
 		allInAmount := p.Chips
 		p.Chips = 0
@@ -261,6 +295,12 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 			h.MinRaise = p.Bet - h.CurrentBet
 			h.CurrentBet = p.Bet
 			h.LastRaiser = h.ActivePlayer
+
+			// Reset acted flags when all-in acts as a raise
+			for i := range h.ActedThisRound {
+				h.ActedThisRound[i] = false
+			}
+			h.ActedThisRound[h.ActivePlayer] = true
 		}
 	}
 
@@ -323,8 +363,22 @@ func (h *HandState) isBettingComplete() bool {
 		}
 	}
 
+	// If not all matched, betting is not complete
+	if !allMatched {
+		return false
+	}
+
+	// Check if all active players have acted in this round
+	allActed := true
+	for i, p := range h.Players {
+		if !p.Folded && !p.AllInFlag && !h.ActedThisRound[i] {
+			allActed = false
+			break
+		}
+	}
+
 	// Special case for preflop: BB gets option even if all bets match
-	if h.Street == Preflop && allMatched {
+	if h.Street == Preflop && allMatched && allActed {
 		var bbPos int
 		if len(h.Players) == 2 {
 			// Heads-up: button+1 is BB
@@ -341,7 +395,7 @@ func (h *HandState) isBettingComplete() bool {
 		}
 	}
 
-	return allMatched
+	return allMatched && allActed
 }
 
 // NextStreet advances to the next betting street
@@ -356,7 +410,12 @@ func (h *HandState) NextStreet() {
 	h.CurrentBet = 0
 	h.LastRaiser = -1
 
-	// Deal community cards
+	// Reset acted flags for new betting round
+	for i := range h.ActedThisRound {
+		h.ActedThisRound[i] = false
+	}
+
+	// Move to next street and deal community cards
 	switch h.Street {
 	case Preflop:
 		h.Street = Flop
@@ -374,6 +433,7 @@ func (h *HandState) NextStreet() {
 		h.Board |= Hand(cards[0])
 	case River:
 		h.Street = Showdown
+	case Showdown:
 		return
 	}
 

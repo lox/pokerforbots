@@ -56,8 +56,9 @@ func NewHandRunner(bots []*Bot, handID string, button int) *HandRunner {
 func (hr *HandRunner) Run() {
 	log.Printf("Hand %s starting with %d players", hr.handID, len(hr.bots))
 
-	// Create player names from bot IDs
+	// Create player names and get buy-ins from bots
 	playerNames := make([]string, len(hr.bots))
+	chipCounts := make([]int, len(hr.bots))
 	for i, bot := range hr.bots {
 		// Use first 8 chars of ID as name, or full ID if shorter
 		if len(bot.ID) >= 8 {
@@ -65,15 +66,17 @@ func (hr *HandRunner) Run() {
 		} else {
 			playerNames[i] = bot.ID
 		}
+		// Get bot's buy-in (capped at 100)
+		chipCounts[i] = bot.GetBuyIn()
 	}
 
-	// Initialize hand state
-	hr.handState = game.NewHandState(
+	// Initialize hand state with individual chip counts
+	hr.handState = game.NewHandStateWithChips(
 		playerNames,
+		chipCounts,
 		hr.button,
 		defaultSmallBlind,
 		defaultBigBlind,
-		defaultStartChips,
 	)
 
 	// Send hand start messages
@@ -127,6 +130,12 @@ func (hr *HandRunner) Run() {
 
 	// Send hand result
 	hr.broadcastHandResult()
+
+	// Update bot bankrolls based on final chip counts
+	for i, bot := range hr.bots {
+		finalChips := hr.handState.Players[i].Chips
+		bot.UpdateBankroll(finalChips)
+	}
 
 	// Clean up action channels
 	for _, bot := range hr.bots {

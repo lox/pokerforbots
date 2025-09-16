@@ -17,7 +17,7 @@ import (
 // BotStrategy defines how a bot makes decisions
 type BotStrategy interface {
 	// SelectAction chooses an action given the current game state
-	SelectAction(validActions []string, pot int, toCall int) (string, int)
+	SelectAction(validActions []string, pot int, toCall int, chips int) (string, int)
 	// GetName returns the strategy name
 	GetName() string
 }
@@ -29,6 +29,8 @@ type Bot struct {
 	botID    string
 	handID   string
 	logger   zerolog.Logger
+	chips    int // Current chip count
+	seat     int // Our seat number
 }
 
 // NewBot creates a new bot with the given strategy
@@ -103,10 +105,21 @@ func (b *Bot) handleMessage(data []byte) error {
 	var handStart protocol.HandStart
 	if err := protocol.Unmarshal(data, &handStart); err == nil && handStart.HandID != "" {
 		b.handID = handStart.HandID
+		b.seat = handStart.YourSeat
+
+		// Find our chips
+		for _, p := range handStart.Players {
+			if p.Seat == b.seat {
+				b.chips = p.Chips
+				break
+			}
+		}
+
 		b.logger.Info().
 			Str("hand_id", handStart.HandID).
 			Strs("hole_cards", handStart.HoleCards).
 			Int("seat", handStart.YourSeat).
+			Int("chips", b.chips).
 			Int("button", handStart.Button).
 			Int("small_blind", handStart.SmallBlind).
 			Int("big_blind", handStart.BigBlind).
@@ -118,9 +131,18 @@ func (b *Bot) handleMessage(data []byte) error {
 	// Try GameUpdate
 	var gameUpdate protocol.GameUpdate
 	if err := protocol.Unmarshal(data, &gameUpdate); err == nil && gameUpdate.HandID != "" {
+		// Update our chip count
+		for _, p := range gameUpdate.Players {
+			if p.Seat == b.seat {
+				b.chips = p.Chips
+				break
+			}
+		}
+
 		b.logger.Debug().
 			Str("hand_id", gameUpdate.HandID).
 			Int("pot", gameUpdate.Pot).
+			Int("chips", b.chips).
 			Int("num_players", len(gameUpdate.Players)).
 			Msg("Game update")
 		return nil
@@ -172,7 +194,7 @@ func (b *Bot) handleActionRequest(req *protocol.ActionRequest) error {
 		Msg("Action requested")
 
 	// Use strategy to select action
-	action, amount := b.strategy.SelectAction(req.ValidActions, req.Pot, req.ToCall)
+	action, amount := b.strategy.SelectAction(req.ValidActions, req.Pot, req.ToCall, b.chips)
 
 	// Log the decision
 	b.logger.Info().
@@ -212,7 +234,7 @@ func (s *CallingStationStrategy) GetName() string {
 	return "calling-station"
 }
 
-func (s *CallingStationStrategy) SelectAction(validActions []string, pot int, toCall int) (string, int) {
+func (s *CallingStationStrategy) SelectAction(validActions []string, pot int, toCall int, chips int) (string, int) {
 	log.Debug().
 		Strs("valid_actions", validActions).
 		Str("strategy", "calling-station").
@@ -247,7 +269,7 @@ func (s *RandomStrategy) GetName() string {
 	return "random"
 }
 
-func (s *RandomStrategy) SelectAction(validActions []string, pot int, toCall int) (string, int) {
+func (s *RandomStrategy) SelectAction(validActions []string, pot int, toCall int, chips int) (string, int) {
 	if len(validActions) == 0 {
 		log.Debug().Msg("No valid actions available, folding")
 		return "fold", 0
@@ -264,17 +286,31 @@ func (s *RandomStrategy) SelectAction(validActions []string, pot int, toCall int
 		Str("strategy", "random").
 		Msg("Randomly selecting action")
 
-	// If raising, pick a random amount between min and 3x pot
+	// If raising, pick a random amount between min and 3x pot (capped by chips)
 	if action == "raise" {
 		minRaise := toCall * 2
 		maxRaise := pot * 3
 		if maxRaise < minRaise {
 			maxRaise = minRaise * 2
 		}
+		// Cap at our chip count
+		if maxRaise > chips {
+			maxRaise = chips
+		}
+		if minRaise > chips {
+			// Can't raise, switch to call or fold
+			for _, fallback := range validActions {
+				if fallback == "call" {
+					return "call", 0
+				}
+			}
+			return "fold", 0
+		}
 		amount := minRaise + rand.Intn(maxRaise-minRaise+1)
 		log.Debug().
 			Int("min_raise", minRaise).
 			Int("max_raise", maxRaise).
+			Int("chips", chips).
 			Int("selected_amount", amount).
 			Str("reason", "random raise amount").
 			Msg("Decision made")
@@ -292,7 +328,7 @@ func (s *AggressiveStrategy) GetName() string {
 	return "aggressive"
 }
 
-func (s *AggressiveStrategy) SelectAction(validActions []string, pot int, toCall int) (string, int) {
+func (s *AggressiveStrategy) SelectAction(validActions []string, pot int, toCall int, chips int) (string, int) {
 	// Check if we can raise
 	canRaise := false
 	canAllIn := false
@@ -326,14 +362,19 @@ func (s *AggressiveStrategy) SelectAction(validActions []string, pot int, toCall
 			return "allin", 0
 		}
 		if canRaise {
-			// Raise between 2x and 4x the pot
+			// Raise between 2x and 4x the pot (capped by chips)
 			amount := pot*2 + rand.Intn(pot*2+1)
 			if amount < toCall*2 {
 				amount = toCall * 2
 			}
+			// Cap at our chip count
+			if amount > chips {
+				amount = chips
+			}
 			log.Debug().
 				Int("raise_amount", amount).
 				Int("pot_size", pot).
+				Int("chips", chips).
 				Str("reason", "aggressive raise 2-4x pot").
 				Msg("Decision made")
 			return "raise", amount

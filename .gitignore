@@ -1,6 +1,7 @@
 # Binaries
 pokerforbots
 bin/
+dist/
 *.exe
 
 # Test binary
