@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,7 +46,16 @@ func TestServerStats(t *testing.T) {
 
 func TestWebSocketConnection(t *testing.T) {
 	srv := NewServer()
-	go srv.pool.Run()
+	var poolWg sync.WaitGroup
+	poolWg.Add(1)
+	go func() {
+		defer poolWg.Done()
+		srv.pool.Run()
+	}()
+	t.Cleanup(func() {
+		srv.pool.Stop()
+		poolWg.Wait()
+	})
 
 	// Create test server
 	server := httptest.NewServer(http.HandlerFunc(srv.handleWebSocket))
@@ -82,7 +92,16 @@ func TestWebSocketConnection(t *testing.T) {
 
 func TestMultipleBotConnections(t *testing.T) {
 	srv := NewServer()
-	go srv.pool.Run()
+	var poolWg sync.WaitGroup
+	poolWg.Add(1)
+	go func() {
+		defer poolWg.Done()
+		srv.pool.Run()
+	}()
+	t.Cleanup(func() {
+		srv.pool.Stop()
+		poolWg.Wait()
+	})
 
 	// Create test server
 	server := httptest.NewServer(http.HandlerFunc(srv.handleWebSocket))

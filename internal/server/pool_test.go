@@ -9,7 +9,8 @@ import (
 
 func TestBotPool(t *testing.T) {
 	pool := NewBotPool(2, 4)
-	go pool.Run()
+	stopPool := startTestPool(t, pool)
+	defer stopPool()
 
 	// Create mock bots with proper initialization
 	bot1 := &Bot{
@@ -56,11 +57,8 @@ func TestBotPoolMatching(t *testing.T) {
 	pool := NewBotPool(2, 4)
 
 	// Start the pool in background
-	go pool.Run()
-	defer func() {
-		// Clean shutdown would require adding a shutdown mechanism
-		// For now, the test will end and goroutines will be cleaned up
-	}()
+	stopPool := startTestPool(t, pool)
+	defer stopPool()
 
 	// Create properly initialized bots
 	bots := make([]*Bot, 3)

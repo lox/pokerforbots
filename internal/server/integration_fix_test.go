@@ -18,7 +18,8 @@ import (
 func TestNoEmptyValidActions(t *testing.T) {
 	// Start test server
 	server := NewServer()
-	go server.pool.Run()
+	stopPool := startTestPool(t, server.pool)
+	defer stopPool()
 
 	ts := httptest.NewServer(http.HandlerFunc(server.handleWebSocket))
 	defer ts.Close()

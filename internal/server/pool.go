@@ -19,6 +19,8 @@ type BotPool struct {
 	maxPlayers    int
 	handCounter   uint64
 	currentButton int // Track button position for rotation
+	stopCh        chan struct{}
+	stopOnce      sync.Once
 }
 
 // NewBotPool creates a new bot pool
@@ -30,6 +32,7 @@ func NewBotPool(minPlayers, maxPlayers int) *BotPool {
 		unregister: make(chan *Bot),
 		minPlayers: minPlayers,
 		maxPlayers: maxPlayers,
+		stopCh:     make(chan struct{}),
 	}
 }
 
@@ -40,7 +43,13 @@ func (p *BotPool) Run() {
 
 	for {
 		select {
-		case bot := <-p.register:
+		case <-p.stopCh:
+			return
+
+		case bot, ok := <-p.register:
+			if !ok || bot == nil {
+				continue
+			}
 			p.mu.Lock()
 			p.bots[bot.ID] = bot
 			p.mu.Unlock()
@@ -54,9 +63,12 @@ func (p *BotPool) Run() {
 				}
 			}
 
-		case bot := <-p.unregister:
+		case bot, ok := <-p.unregister:
+			if !ok || bot == nil {
+				continue
+			}
 			p.mu.Lock()
-			if _, ok := p.bots[bot.ID]; ok {
+			if _, exists := p.bots[bot.ID]; exists {
 				delete(p.bots, bot.ID)
 				close(bot.send)
 			}
@@ -70,6 +82,12 @@ func (p *BotPool) Run() {
 
 // tryMatch attempts to match available bots into a hand
 func (p *BotPool) tryMatch() {
+	select {
+	case <-p.stopCh:
+		return
+	default:
+	}
+
 	// Count available bots
 	availableCount := len(p.available)
 	if availableCount < p.minPlayers {
@@ -86,6 +104,9 @@ func (p *BotPool) tryMatch() {
 	bots := make([]*Bot, 0, numPlayers)
 	for i := 0; i < numPlayers; i++ {
 		select {
+		case <-p.stopCh:
+			return
+
 		case bot := <-p.available:
 			// Double-check bot is still connected and not in hand
 			p.mu.RLock()
@@ -171,12 +192,27 @@ func (p *BotPool) runHand(bots []*Bot) {
 
 // Register adds a bot to the pool
 func (p *BotPool) Register(bot *Bot) {
-	p.register <- bot
+	select {
+	case <-p.stopCh:
+		return
+	case p.register <- bot:
+	}
 }
 
 // Unregister removes a bot from the pool
 func (p *BotPool) Unregister(bot *Bot) {
-	p.unregister <- bot
+	select {
+	case <-p.stopCh:
+		return
+	case p.unregister <- bot:
+	}
+}
+
+// Stop signals the pool manager to halt and prevents new registrations.
+func (p *BotPool) Stop() {
+	p.stopOnce.Do(func() {
+		close(p.stopCh)
+	})
 }
 
 // GetBot returns a bot by ID

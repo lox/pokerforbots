@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,12 +14,27 @@ import (
 	"github.com/lox/pokerforbots/internal/protocol"
 )
 
+func startTestPool(t *testing.T, pool *BotPool) func() {
+	t.Helper()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		pool.Run()
+	}()
+	return func() {
+		pool.Stop()
+		wg.Wait()
+	}
+}
+
 // TestBotActionsAreProcessed verifies that bot actions are actually processed
 // This test SHOULD FAIL with current implementation since actions are ignored
 func TestBotActionsAreProcessed(t *testing.T) {
 	// Start test server
 	server := NewServer()
-	go server.pool.Run()
+	stopPool := startTestPool(t, server.pool)
+	defer stopPool()
 
 	ts := httptest.NewServer(http.HandlerFunc(server.handleWebSocket))
 	defer ts.Close()
@@ -104,7 +120,8 @@ func TestBotActionsAreProcessed(t *testing.T) {
 func TestPotDistribution(t *testing.T) {
 	// Start test server
 	server := NewServer()
-	go server.pool.Run()
+	stopPool := startTestPool(t, server.pool)
+	defer stopPool()
 
 	ts := httptest.NewServer(http.HandlerFunc(server.handleWebSocket))
 	defer ts.Close()
@@ -260,7 +277,8 @@ func TestPotDistribution(t *testing.T) {
 func TestTimeoutActuallyFolds(t *testing.T) {
 	// Start test server
 	server := NewServer()
-	go server.pool.Run()
+	stopPool := startTestPool(t, server.pool)
+	defer stopPool()
 
 	ts := httptest.NewServer(http.HandlerFunc(server.handleWebSocket))
 	defer ts.Close()
