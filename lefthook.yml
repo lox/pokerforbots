@@ -4,9 +4,9 @@
 pre-commit:
   parallel: true
   commands:
-    # Run all Go tests - MUST PASS
+    # Run all Go tests with race detector - MUST PASS
     go-test:
-      run: bin/gotestsum --format=standard-quiet ./...
+      run: bin/gotestsum --format=standard-quiet -- -race ./...
       fail_text: "Tests are failing! Fix all tests before committing."
 
     # Format Go code with golangci-lint

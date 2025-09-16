@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,7 +18,8 @@ import (
 // empty valid_actions arrays caused by buffer aliasing race conditions
 func TestNoEmptyValidActions(t *testing.T) {
 	// Start test server
-	server := NewServer()
+	rng := rand.New(rand.NewSource(42))
+	server := NewServer(testLogger(), rng)
 	stopPool := startTestPool(t, server.pool)
 	defer stopPool()
 

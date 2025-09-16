@@ -6,7 +6,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 )
 
 // Bot represents a connected bot client
@@ -23,10 +23,11 @@ type Bot struct {
 	actionChan   chan ActionEnvelope // Channel to send actions to hand runner with bot ID
 	handRunnerMu sync.RWMutex
 	bankroll     int // Total chips the bot has
+	logger       zerolog.Logger
 }
 
 // NewBot creates a new bot instance
-func NewBot(id string, conn *websocket.Conn, pool *BotPool) *Bot {
+func NewBot(logger zerolog.Logger, id string, conn *websocket.Conn, pool *BotPool) *Bot {
 	return &Bot{
 		ID:       id,
 		conn:     conn,
@@ -35,6 +36,7 @@ func NewBot(id string, conn *websocket.Conn, pool *BotPool) *Bot {
 		lastPing: time.Now(),
 		done:     make(chan struct{}),
 		bankroll: 10000, // Start with 10,000 chips (100 buy-ins at 100 chips each)
+		logger:   logger.With().Str("component", "bot").Str("bot_id", id).Logger(),
 	}
 }
 
@@ -150,7 +152,7 @@ func (b *Bot) ReadPump() {
 		_, message, err := b.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Error().Err(err).Str("bot_id", b.ID).Msg("Unexpected WebSocket close error")
+				b.logger.Error().Err(err).Msg("Unexpected WebSocket close error")
 			}
 			break
 		}

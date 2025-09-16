@@ -50,9 +50,9 @@ tasks:
       - ./dist/spawn-bots {{.CLI_ARGS}}
 
   test:
-    desc: Run all tests
+    desc: Run all tests with race detector
     cmds:
-      - bin/gotestsum -f pkgname-and-test-fails --format-icons hivis ./...
+      - bin/gotestsum -f pkgname-and-test-fails --format-icons hivis -- -race ./...
 
   lint:
     desc: Run linters

@@ -61,7 +61,7 @@ func main() {
 	}
 
 	// Create hand state with seeded deck
-	deck := game.NewDeckWithSeed(*seed)
+	deck := game.NewDeck(rng)
 	h := game.NewHandStateWithDeck(playerNames, 0, 5, 10, 100, deck)
 
 	// Store hole cards for display

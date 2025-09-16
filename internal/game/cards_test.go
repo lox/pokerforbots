@@ -2,6 +2,7 @@ package game
 
 import (
 	"math/bits"
+	"math/rand"
 	"testing"
 )
 
@@ -238,7 +239,8 @@ func TestGetSuitMask(t *testing.T) {
 }
 
 func TestDeck(t *testing.T) {
-	deck := NewDeck()
+	rng := rand.New(rand.NewSource(42))
+	deck := NewDeck(rng)
 
 	// Deal some cards
 	cards1 := deck.Deal(2)

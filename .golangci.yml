@@ -9,6 +9,8 @@ linters:
     - unconvert       # Unnecessary type conversions
     - copyloopvar     # Go 1.22+ loop variable issues
     - usestdlibvars   # Use standard library constants
+    - zerologlint     # Detect incorrect zerolog usage
+    - forbidigo       # Forbid certain function calls
 
   disable:
     - errcheck        # Too noisy for this project
@@ -22,6 +24,13 @@ linters:
           disabled: true # Too strict for short variable names
         - name: exported
           disabled: true # Let's start without requiring docs for all exports
+    
+    forbidigo:
+      forbid:
+        - pattern: ^log\.
+          msg: "Usage of the 'log' package is forbidden"
+        - pattern: ^fmt\.Print(f|ln|)\(?
+          msg: "Usage of fmt.Print functions is forbidden"
 
   exclusions:
     rules:

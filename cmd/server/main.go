@@ -4,23 +4,39 @@ import (
 	"context"
 	"flag"
 	"log"
+	"math/rand"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/lox/pokerforbots/internal/server"
+	"github.com/rs/zerolog"
 )
 
 func main() {
 	addr := flag.String("addr", ":8080", "Server address")
+	debug := flag.Bool("debug", false, "Enable debug logging")
 	flag.Parse()
+
+	// Configure zerolog for pretty console output
+	level := zerolog.InfoLevel
+	if *debug {
+		level = zerolog.DebugLevel
+	}
+	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
+		Level(level).
+		With().
+		Timestamp().
+		Logger()
 
 	// Set up signal handling
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	srv := server.NewServer()
+	// Create RNG instance for server
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	srv := server.NewServer(logger, rng)
 
 	// Start server in a goroutine
 	serverErr := make(chan error, 1)

@@ -1,11 +1,12 @@
 package server
 
 import (
-	"log"
+	"math/rand"
 	"time"
 
 	"github.com/lox/pokerforbots/internal/game"
 	"github.com/lox/pokerforbots/internal/protocol"
+	"github.com/rs/zerolog"
 )
 
 const (
@@ -27,6 +28,8 @@ type HandRunner struct {
 	actions       chan BotAction
 	botActionChan chan ActionEnvelope // Channel to receive actions from bots with ID verification
 	seatBuyIns    []int               // Track actual buy-in per seat for accurate P&L
+	logger        zerolog.Logger
+	rng           *rand.Rand
 }
 
 // ActionEnvelope wraps an action with the sender's bot ID for verification
@@ -42,7 +45,7 @@ type BotAction struct {
 }
 
 // NewHandRunner creates a new hand runner
-func NewHandRunner(bots []*Bot, handID string, button int) *HandRunner {
+func NewHandRunner(logger zerolog.Logger, bots []*Bot, handID string, button int, rng *rand.Rand) *HandRunner {
 	actionChan := make(chan ActionEnvelope, len(bots))
 
 	// Set action channel for all bots
@@ -56,12 +59,14 @@ func NewHandRunner(bots []*Bot, handID string, button int) *HandRunner {
 		button:        button,
 		actions:       make(chan BotAction, 1),
 		botActionChan: actionChan,
+		logger:        logger.With().Str("component", "hand_runner").Str("hand_id", handID).Logger(),
+		rng:           rng,
 	}
 }
 
 // Run executes the hand
 func (hr *HandRunner) Run() {
-	log.Printf("Hand %s starting with %d players", hr.handID, len(hr.bots))
+	hr.logger.Info().Int("players", len(hr.bots)).Msg("Hand starting")
 
 	// Create player names and get buy-ins from bots
 	playerNames := make([]string, len(hr.bots))
@@ -77,13 +82,17 @@ func (hr *HandRunner) Run() {
 		chipCounts[i] = bot.GetBuyIn()
 	}
 
-	// Initialize hand state with individual chip counts
-	hr.handState = game.NewHandStateWithChips(
+	// Initialize hand state with individual chip counts and deterministic deck
+	// Clone the RNG to avoid concurrent access issues
+	deckRNG := rand.New(rand.NewSource(hr.rng.Int63()))
+	deck := game.NewDeck(deckRNG)
+	hr.handState = game.NewHandStateWithChipsAndDeck(
 		playerNames,
 		chipCounts,
 		hr.button,
 		defaultSmallBlind,
 		defaultBigBlind,
+		deck,
 	)
 
 	// Store the actual buy-ins for P&L calculation later
@@ -97,24 +106,28 @@ func (hr *HandRunner) Run() {
 		// Get current player
 		activePlayer := hr.handState.ActivePlayer
 		if activePlayer == -1 {
-			log.Printf("Hand %s: No active players, ending", hr.handID)
+			hr.logger.Info().Msg("No active players, ending hand")
 			break // No active players
 		}
 
 		// Get valid actions and verify they exist
 		validActions := hr.handState.GetValidActions()
 		if len(validActions) == 0 {
-			log.Printf("Warning: No valid actions for player %d in hand %s", activePlayer, hr.handID)
+			hr.logger.Warn().Int("player", activePlayer).Msg("No valid actions for player")
 			break // Invalid state, end hand
 		}
 
-		log.Printf("Hand %s: Player %d to act, street %s, valid actions: %v",
-			hr.handID, activePlayer, hr.handState.Street, validActions)
+		// Convert actions to strings for logging
+		actionStrs := make([]string, len(validActions))
+		for i, a := range validActions {
+			actionStrs[i] = a.String()
+		}
+		hr.logger.Debug().Int("player", activePlayer).Str("street", hr.handState.Street.String()).Strs("valid_actions", actionStrs).Msg("Player to act")
 
 		// Send action request to active bot
 		bot := hr.bots[activePlayer]
 		if err := hr.sendActionRequest(bot, activePlayer, validActions); err != nil {
-			log.Printf("Failed to send action request: %v", err)
+			hr.logger.Error().Err(err).Msg("Failed to send action request")
 			// Auto-fold on error
 			hr.processAction(activePlayer, game.Fold, 0)
 			continue
@@ -145,6 +158,18 @@ func (hr *HandRunner) Run() {
 	for i, bot := range hr.bots {
 		finalChips := hr.handState.Players[i].Chips
 		delta := finalChips - hr.seatBuyIns[i]
+		// Use first 8 chars of ID as name, or full ID if shorter
+		displayID := bot.ID
+		if len(bot.ID) > 8 {
+			displayID = bot.ID[:8]
+		}
+		hr.logger.Info().
+			Str("bot_id", displayID).
+			Int("seat", i).
+			Int("buy_in", hr.seatBuyIns[i]).
+			Int("final_chips", finalChips).
+			Int("pnl", delta).
+			Msg("Bot P&L calculated")
 		bot.ApplyResult(delta)
 	}
 
@@ -153,7 +178,7 @@ func (hr *HandRunner) Run() {
 		bot.ClearActionChannel()
 	}
 
-	log.Printf("Hand %s completed", hr.handID)
+	hr.logger.Info().Msg("Hand completed")
 }
 
 // broadcastHandStart sends the initial hand information to all bots
@@ -186,7 +211,7 @@ func (hr *HandRunner) broadcastHandStart() {
 		}
 
 		if err := bot.SendMessage(msg); err != nil {
-			log.Printf("Failed to send hand start to bot %s: %v", bot.ID, err)
+			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send hand start")
 		}
 	}
 }
@@ -242,7 +267,7 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 
 	case <-timer.C:
 		// Timeout - auto fold
-		log.Printf("Bot %s timed out", hr.bots[botIndex].ID)
+		hr.logger.Warn().Str("bot_id", hr.bots[botIndex].ID).Msg("Bot timed out")
 		return game.Fold, 0
 	}
 }
@@ -271,7 +296,10 @@ func (hr *HandRunner) listenForAction(botIndex int, done <-chan struct{}) {
 				}
 			} else {
 				// Wrong bot sent action - log and ignore
-				log.Printf("Bot %s sent action during %s's turn - ignoring", envelope.BotID, expectedBotID)
+				hr.logger.Warn().
+					Str("sender_bot_id", envelope.BotID).
+					Str("expected_bot_id", expectedBotID).
+					Msg("SECURITY: Bot sent action during another bot's turn - REJECTED")
 				// Continue draining to prevent channel poisoning
 				continue
 			}
@@ -321,7 +349,7 @@ func (hr *HandRunner) convertAction(action protocol.Action) (game.Action, int) {
 func (hr *HandRunner) processAction(botIndex int, action game.Action, amount int) {
 	err := hr.handState.ProcessAction(action, amount)
 	if err != nil {
-		log.Printf("Invalid action from bot %s: %v", hr.bots[botIndex].ID, err)
+		hr.logger.Error().Err(err).Str("bot_id", hr.bots[botIndex].ID).Msg("Invalid action from bot")
 		// Force fold on invalid action
 		hr.handState.ProcessAction(game.Fold, 0)
 	}
@@ -356,7 +384,7 @@ func (hr *HandRunner) broadcastGameUpdate() {
 		}
 
 		if err := bot.SendMessage(msg); err != nil {
-			log.Printf("Failed to send game update to bot %s: %v", bot.ID, err)
+			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send game update")
 		}
 	}
 }
@@ -381,7 +409,7 @@ func (hr *HandRunner) broadcastStreetChange() {
 		}
 
 		if err := bot.SendMessage(msg); err != nil {
-			log.Printf("Failed to send street change to bot %s: %v", bot.ID, err)
+			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send street change")
 		}
 	}
 }
@@ -463,7 +491,7 @@ func (hr *HandRunner) broadcastHandResult() {
 		}
 
 		if err := bot.SendMessage(msg); err != nil {
-			log.Printf("Failed to send hand result to bot %s: %v", bot.ID, err)
+			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send hand result")
 		}
 	}
 }

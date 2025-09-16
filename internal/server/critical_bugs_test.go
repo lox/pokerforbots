@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -12,9 +13,10 @@ import (
 	"github.com/lox/pokerforbots/internal/protocol"
 )
 
-// TestButtonNeverRotates ensures the dealer button advances between hands.
-func TestButtonNeverRotates(t *testing.T) {
-	s := NewServer()
+// TestButtonIsRandomized ensures the dealer button position is random between hands per design.
+func TestButtonIsRandomized(t *testing.T) {
+	rng := rand.New(rand.NewSource(42))
+	s := NewServer(testLogger(), rng)
 
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
 	s.mux.HandleFunc("/health", s.handleHealth)
@@ -57,7 +59,7 @@ func TestButtonNeverRotates(t *testing.T) {
 	buttonPositions := []int{}
 	var buttonMutex sync.Mutex
 	seenHands := make(map[string]struct{})
-	targetHands := 2
+	targetHands := 10 // Increased to better detect randomization
 
 	done := make(chan struct{})
 	var doneOnce sync.Once
@@ -131,7 +133,11 @@ func TestButtonNeverRotates(t *testing.T) {
 		uniqueButtons[pos] = struct{}{}
 	}
 
+	// Per design document: button should be random, not follow a predictable pattern
+	// With multiple hands, we should see some variation in button positions
 	if len(uniqueButtons) == 1 {
-		t.Errorf("BUG CONFIRMED: Button never rotates! It stayed at position %d for all %d updates", positions[0], len(positions))
+		t.Errorf("Button position never varied! It stayed at position %d for all %d hands. Expected randomization per design.", positions[0], len(positions))
+	} else {
+		t.Logf("SUCCESS: Button position randomized correctly - saw %d different positions: %v", len(uniqueButtons), uniqueButtons)
 	}
 }

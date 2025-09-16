@@ -2,13 +2,14 @@ package server
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
 )
 
 func TestBotPool(t *testing.T) {
-	pool := NewBotPool(2, 4)
+	pool := NewBotPool(testLogger(), 2, 4, rand.New(rand.NewSource(42)))
 	stopPool := startTestPool(t, pool)
 	defer stopPool()
 
@@ -54,7 +55,7 @@ func TestBotPool(t *testing.T) {
 }
 
 func TestBotPoolMatching(t *testing.T) {
-	pool := NewBotPool(2, 4)
+	pool := NewBotPool(testLogger(), 2, 4, rand.New(rand.NewSource(42)))
 
 	// Start the pool in background
 	stopPool := startTestPool(t, pool)

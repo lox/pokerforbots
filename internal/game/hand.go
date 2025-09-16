@@ -2,6 +2,8 @@ package game
 
 import (
 	"fmt"
+	"math/rand"
+	"time"
 )
 
 // Street represents the betting round
@@ -81,7 +83,8 @@ func NewHandState(playerNames []string, button int, smallBlind, bigBlind, starti
 		}
 	}
 
-	return newHandStateWithPlayers(players, button, smallBlind, bigBlind)
+	deck := NewDeck(rand.New(rand.NewSource(time.Now().UnixNano())))
+	return newHandStateWithPlayersAndDeck(players, button, smallBlind, bigBlind, deck)
 }
 
 // NewHandStateWithChips creates a new hand state with individual chip counts
@@ -100,7 +103,23 @@ func NewHandStateWithChips(playerNames []string, chipCounts []int, button int, s
 		}
 	}
 
-	return newHandStateWithPlayers(players, button, smallBlind, bigBlind)
+	deck := NewDeck(rand.New(rand.NewSource(time.Now().UnixNano())))
+	return newHandStateWithPlayersAndDeck(players, button, smallBlind, bigBlind, deck)
+}
+
+// NewHandStateWithChipsAndDeck creates a new hand state with specific chip counts and deck
+func NewHandStateWithChipsAndDeck(playerNames []string, chipCounts []int, button int, smallBlind, bigBlind int, deck *Deck) *HandState {
+	players := make([]*Player, len(playerNames))
+	for i, name := range playerNames {
+		players[i] = &Player{
+			Seat:   i,
+			Name:   name,
+			Chips:  chipCounts[i],
+			Folded: false,
+		}
+	}
+
+	return newHandStateWithPlayersAndDeck(players, button, smallBlind, bigBlind, deck)
 }
 
 // NewHandStateWithDeck creates a new hand state with a specific deck (for deterministic testing)
@@ -145,7 +164,7 @@ func NewHandStateWithDeck(playerNames []string, button int, smallBlind, bigBlind
 	return h
 }
 
-func newHandStateWithPlayers(players []*Player, button int, smallBlind, bigBlind int) *HandState {
+func newHandStateWithPlayersAndDeck(players []*Player, button int, smallBlind, bigBlind int, deck *Deck) *HandState {
 	h := &HandState{
 		Players:        players,
 		Button:         button,
@@ -153,7 +172,7 @@ func newHandStateWithPlayers(players []*Player, button int, smallBlind, bigBlind
 		MinRaise:       bigBlind,
 		LastRaiser:     -1, // No raiser initially
 		Street:         Preflop,
-		Deck:           NewDeck(),
+		Deck:           deck,
 		Pots:           []Pot{{Amount: 0, Eligible: makeEligible(players)}},
 		ActedThisRound: make([]bool, len(players)),
 	}

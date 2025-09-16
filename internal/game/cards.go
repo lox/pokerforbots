@@ -202,20 +202,11 @@ type Deck struct {
 	rng   *rand.Rand // Random source for deterministic shuffling
 }
 
-// NewDeck creates a new shuffled deck
-func NewDeck() *Deck {
-	return NewDeckWithSeed(0) // 0 means use default global random
-}
-
-// NewDeckWithSeed creates a new shuffled deck with a specific seed
-func NewDeckWithSeed(seed int64) *Deck {
+// NewDeck creates a new shuffled deck with explicit RNG
+func NewDeck(rng *rand.Rand) *Deck {
 	d := &Deck{
 		next: 0,
-	}
-
-	// Set up random source
-	if seed != 0 {
-		d.rng = rand.New(rand.NewSource(seed))
+		rng:  rng,
 	}
 
 	// Create all 52 cards
