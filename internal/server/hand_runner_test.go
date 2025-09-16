@@ -116,8 +116,8 @@ func TestHandRunnerActionRequest(t *testing.T) {
 func TestHandRunnerTimeout(t *testing.T) {
 	// Test that bots timeout and auto-fold when they don't respond
 	bots := []*Bot{
-		{ID: "timeout-bot1", send: make(chan []byte, 100), actionChan: make(chan protocol.Action, 1), bankroll: 100},
-		{ID: "timeout-bot2", send: make(chan []byte, 100), actionChan: make(chan protocol.Action, 1), bankroll: 100},
+		{ID: "timeout-bot1", send: make(chan []byte, 100), actionChan: make(chan ActionEnvelope, 1), bankroll: 100},
+		{ID: "timeout-bot2", send: make(chan []byte, 100), actionChan: make(chan ActionEnvelope, 1), bankroll: 100},
 	}
 
 	runner := NewHandRunner(bots, "timeout-test", 0)
@@ -535,5 +535,147 @@ func TestEmptyValidActionsScenarios(t *testing.T) {
 				t.Error("Got empty valid actions when they should exist!")
 			}
 		})
+	}
+}
+
+func TestWrongBotActionRejection(t *testing.T) {
+	// Test that actions from the wrong bot are ignored
+	bots := []*Bot{
+		{ID: "bot1", send: make(chan []byte, 100), actionChan: make(chan ActionEnvelope, 1), bankroll: 100},
+		{ID: "bot2", send: make(chan []byte, 100), actionChan: make(chan ActionEnvelope, 1), bankroll: 100},
+	}
+
+	runner := NewHandRunner(bots, "wrong-bot-test", 0)
+
+	// Inject a wrong bot action into the channel
+	wrongBotEnvelope := ActionEnvelope{
+		BotID: "bot2", // Bot 2 trying to act when it's bot 1's turn
+		Action: protocol.Action{
+			Type:   "action",
+			Action: "call",
+			Amount: 0,
+		},
+	}
+
+	// Start hand runner
+	handDone := make(chan bool)
+	go func() {
+		runner.Run()
+		handDone <- true
+	}()
+
+	// Wait a bit for hand to start
+	time.Sleep(10 * time.Millisecond)
+
+	// Bot 1 should receive an action request despite bot 2's interference
+	select {
+	case msg := <-bots[0].send:
+		var actionReq protocol.ActionRequest
+		if err := protocol.Unmarshal(msg, &actionReq); err == nil && actionReq.Type == "action_request" {
+			// Bot 1 got action request - inject wrong bot action
+			select {
+			case runner.botActionChan <- wrongBotEnvelope:
+				// Wrong bot action sent
+			default:
+			}
+
+			// Wait a bit then send correct action
+			time.Sleep(20 * time.Millisecond)
+			correctEnvelope := ActionEnvelope{
+				BotID: "bot1",
+				Action: protocol.Action{
+					Type:   "action",
+					Action: "fold",
+					Amount: 0,
+				},
+			}
+			select {
+			case runner.botActionChan <- correctEnvelope:
+				// Correct action sent
+			default:
+			}
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Error("Bot 1 never received action request")
+	}
+
+	// Wait for hand to complete
+	select {
+	case <-handDone:
+		// Good - hand completed normally despite wrong bot interference
+	case <-time.After(500 * time.Millisecond):
+		t.Error("Hand did not complete after correct action was sent")
+	}
+}
+
+func TestBankrollDeltaCalculation(t *testing.T) {
+	// Test that bankroll changes are calculated correctly based on actual buy-ins
+
+	// Start bots with different bankrolls
+	bot1 := &Bot{
+		ID:       "rich-bot",
+		send:     make(chan []byte, 100),
+		bankroll: 1000, // Rich bot
+	}
+	bot2 := &Bot{
+		ID:       "poor-bot",
+		send:     make(chan []byte, 100),
+		bankroll: 50, // Poor bot can only buy in for 50
+	}
+
+	bots := []*Bot{bot1, bot2}
+	runner := NewHandRunner(bots, "bankroll-test", 0)
+
+	// Record initial bankrolls
+	initialBankroll1 := bot1.bankroll
+	_ = bot2.bankroll // initialBankroll2 not used since bot2 loses everything
+
+	// Record the buy-ins (what each bot actually brought to the table)
+	buyIn1 := bot1.GetBuyIn() // Should be 100 (capped)
+	buyIn2 := bot2.GetBuyIn() // Should be 50 (all they have)
+
+	if buyIn1 != 100 {
+		t.Errorf("Bot 1 buy-in = %d, expected 100", buyIn1)
+	}
+	if buyIn2 != 50 {
+		t.Errorf("Bot 2 buy-in = %d, expected 50", buyIn2)
+	}
+
+	// Simulate hand completion where bot1 wins everything
+	// Bot1 starts with 100, bot2 starts with 50
+	// After blinds: bot1 has 95 (small blind 5), bot2 has 40 (big blind 10)
+	// If bot2 goes all-in with 40 and bot1 calls:
+	// - Main pot = 85 (40 from each + 5 from bot1's SB)
+	// - Side pot = 55 (bot1's remaining chips)
+	// If bot1 wins, final chips: bot1 = 140, bot2 = 0
+
+	// Manually set final chip counts to simulate bot1 winning
+	runner.handState = &game.HandState{
+		Players: []*game.Player{
+			{Chips: 140}, // Bot1 won the pot
+			{Chips: 0},   // Bot2 lost everything
+		},
+	}
+	runner.seatBuyIns = []int{buyIn1, buyIn2}
+
+	// Apply the results
+	for i, bot := range runner.bots {
+		finalChips := runner.handState.Players[i].Chips
+		delta := finalChips - runner.seatBuyIns[i]
+		bot.ApplyResult(delta)
+	}
+
+	// Check bankroll changes
+	// Bot1: started with 1000, bought in for 100 (now 900), won 140, delta = +40
+	expectedBankroll1 := initialBankroll1 + 40
+	if bot1.bankroll != expectedBankroll1 {
+		t.Errorf("Bot1 bankroll = %d, expected %d (initial %d + delta %d)",
+			bot1.bankroll, expectedBankroll1, initialBankroll1, 40)
+	}
+
+	// Bot2: started with 50, bought in for 50 (now 0), won 0, delta = -50
+	expectedBankroll2 := 0 // Lost everything
+	if bot2.bankroll != expectedBankroll2 {
+		t.Errorf("Bot2 bankroll = %d, expected %d", bot2.bankroll, expectedBankroll2)
 	}
 }

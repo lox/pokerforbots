@@ -25,7 +25,14 @@ type HandRunner struct {
 	button        int
 	handID        string
 	actions       chan BotAction
-	botActionChan chan protocol.Action // Channel to receive actions from bots
+	botActionChan chan ActionEnvelope // Channel to receive actions from bots with ID verification
+	seatBuyIns    []int               // Track actual buy-in per seat for accurate P&L
+}
+
+// ActionEnvelope wraps an action with the sender's bot ID for verification
+type ActionEnvelope struct {
+	BotID  string
+	Action protocol.Action
 }
 
 // BotAction represents an action from a bot
@@ -36,7 +43,7 @@ type BotAction struct {
 
 // NewHandRunner creates a new hand runner
 func NewHandRunner(bots []*Bot, handID string, button int) *HandRunner {
-	actionChan := make(chan protocol.Action, len(bots))
+	actionChan := make(chan ActionEnvelope, len(bots))
 
 	// Set action channel for all bots
 	for _, bot := range bots {
@@ -78,6 +85,9 @@ func (hr *HandRunner) Run() {
 		defaultSmallBlind,
 		defaultBigBlind,
 	)
+
+	// Store the actual buy-ins for P&L calculation later
+	hr.seatBuyIns = chipCounts
 
 	// Send hand start messages
 	hr.broadcastHandStart()
@@ -131,10 +141,11 @@ func (hr *HandRunner) Run() {
 	// Send hand result
 	hr.broadcastHandResult()
 
-	// Update bot bankrolls based on final chip counts
+	// Update bot bankrolls based on actual P&L (final chips - buy-in)
 	for i, bot := range hr.bots {
 		finalChips := hr.handState.Players[i].Chips
-		bot.UpdateBankroll(finalChips)
+		delta := finalChips - hr.seatBuyIns[i]
+		bot.ApplyResult(delta)
 	}
 
 	// Clean up action channels
@@ -238,37 +249,53 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 
 // listenForAction listens for an action from a specific bot
 func (hr *HandRunner) listenForAction(botIndex int, done <-chan struct{}) {
-	// Listen for actions from the bot action channel
-	select {
-	case action := <-hr.botActionChan:
-		// We received an action, but need to verify it's from the right bot
-		// For now, we accept any action since we can't easily identify which bot sent it
-		// In a production system, we'd include bot ID in the action
-		select {
-		case hr.actions <- BotAction{
-			botIndex: botIndex,
-			action:   action,
-		}:
-		case <-done:
-			// Parent function has returned, stop
-		}
+	expectedBotID := hr.bots[botIndex].ID
+	timeout := time.After(100 * time.Millisecond)
 
-	case <-time.After(100 * time.Millisecond):
-		// Timeout - send fold action
+	// Keep draining the channel until we get the right bot's action or timeout
+	for {
 		select {
-		case hr.actions <- BotAction{
-			botIndex: botIndex,
-			action: protocol.Action{
-				Type:   "action",
-				Action: "fold",
-			},
-		}:
-		case <-done:
-			// Parent function has returned, stop
-		}
+		case envelope := <-hr.botActionChan:
+			// Verify this action is from the expected bot
+			if envelope.BotID == expectedBotID {
+				// Correct bot - forward the action
+				select {
+				case hr.actions <- BotAction{
+					botIndex: botIndex,
+					action:   envelope.Action,
+				}:
+					return // Successfully sent action
+				case <-done:
+					// Parent function has returned, stop
+					return
+				}
+			} else {
+				// Wrong bot sent action - log and ignore
+				log.Printf("Bot %s sent action during %s's turn - ignoring", envelope.BotID, expectedBotID)
+				// Continue draining to prevent channel poisoning
+				continue
+			}
 
-	case <-done:
-		// Parent function has returned, stop
+		case <-timeout:
+			// Timeout - send fold action
+			select {
+			case hr.actions <- BotAction{
+				botIndex: botIndex,
+				action: protocol.Action{
+					Type:   "action",
+					Action: "fold",
+				},
+			}:
+				return
+			case <-done:
+				// Parent function has returned, stop
+				return
+			}
+
+		case <-done:
+			// Parent function has timed out or completed
+			return
+		}
 	}
 }
 

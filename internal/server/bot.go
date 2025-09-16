@@ -18,9 +18,9 @@ type Bot struct {
 	inHand       bool
 	mu           sync.RWMutex
 	lastPing     time.Time
-	closed       bool                 // Track if bot is closed
-	done         chan struct{}        // Signal channel closure
-	actionChan   chan protocol.Action // Channel to send actions to hand runner
+	closed       bool                // Track if bot is closed
+	done         chan struct{}       // Signal channel closure
+	actionChan   chan ActionEnvelope // Channel to send actions to hand runner with bot ID
 	handRunnerMu sync.RWMutex
 	bankroll     int // Total chips the bot has
 }
@@ -78,7 +78,7 @@ func (b *Bot) IsInHand() bool {
 }
 
 // SetActionChannel sets the channel for sending actions to hand runner
-func (b *Bot) SetActionChannel(ch chan protocol.Action) {
+func (b *Bot) SetActionChannel(ch chan ActionEnvelope) {
 	b.handRunnerMu.Lock()
 	defer b.handRunnerMu.Unlock()
 	b.actionChan = ch
@@ -96,7 +96,21 @@ func (b *Bot) GetBuyIn() int {
 	return b.bankroll // Return remaining bankroll if less than max buy-in
 }
 
-// UpdateBankroll updates the bot's bankroll after a hand
+// ApplyResult applies the P&L delta to the bot's bankroll
+func (b *Bot) ApplyResult(delta int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Apply the delta (can be positive or negative)
+	b.bankroll += delta
+
+	// Ensure bankroll doesn't go negative
+	if b.bankroll < 0 {
+		b.bankroll = 0
+	}
+}
+
+// UpdateBankroll updates the bot's bankroll after a hand (deprecated - use ApplyResult)
 func (b *Bot) UpdateBankroll(finalChips int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -166,11 +180,17 @@ func (b *Bot) ReadPump() {
 
 		// Handle action if bot is in a hand
 		if b.IsInHand() {
+			// Wrap action in envelope with bot ID for verification
+			envelope := ActionEnvelope{
+				BotID:  b.ID,
+				Action: action,
+			}
+
 			// Forward to hand runner via action channel
 			b.handRunnerMu.RLock()
 			if b.actionChan != nil {
 				select {
-				case b.actionChan <- action:
+				case b.actionChan <- envelope:
 					// Action sent successfully
 				default:
 					// Channel full or closed, ignore
