@@ -3,7 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"math/rand"
+	"os"
 	"strings"
 	"time"
 
@@ -26,9 +28,12 @@ type BotPlayer struct {
 func main() {
 	flag.Parse()
 
+	// Create writer for output
+	w := os.Stdout
+
 	// Validate bot count
 	if *numBots < 2 || *numBots > 6 {
-		fmt.Println("Number of bots must be between 2 and 6")
+		io.WriteString(w, "Number of bots must be between 2 and 6\n")
 		return
 	}
 
@@ -38,12 +43,12 @@ func main() {
 	}
 	rng := rand.New(rand.NewSource(*seed))
 
-	fmt.Printf("=====================================\n")
-	fmt.Printf("Single Hand Simulator\n")
-	fmt.Printf("=====================================\n")
-	fmt.Printf("Seed: %d\n", *seed)
-	fmt.Printf("Bots: %d\n", *numBots)
-	fmt.Printf("=====================================\n\n")
+	io.WriteString(w, "=====================================\n")
+	io.WriteString(w, "Single Hand Simulator\n")
+	io.WriteString(w, "=====================================\n")
+	io.WriteString(w, fmt.Sprintf("Seed: %d\n", *seed))
+	io.WriteString(w, fmt.Sprintf("Bots: %d\n", *numBots))
+	io.WriteString(w, "=====================================\n\n")
 
 	// Create bot players
 	players := make([]BotPlayer, *numBots)
@@ -70,11 +75,11 @@ func main() {
 	}
 
 	// Print initial state
-	fmt.Printf("HAND START\n")
-	fmt.Printf("Button: Seat %d\n", h.Button)
-	fmt.Printf("Blinds: 5/10\n\n")
+	io.WriteString(w, "HAND START\n")
+	io.WriteString(w, fmt.Sprintf("Button: Seat %d\n", h.Button))
+	io.WriteString(w, "Blinds: 5/10\n\n")
 
-	fmt.Printf("Players:\n")
+	io.WriteString(w, "Players:\n")
 	for i, p := range players {
 		blindStr := ""
 		if *numBots == 2 {
@@ -91,12 +96,12 @@ func main() {
 				blindStr = " (BB)"
 			}
 		}
-		fmt.Printf("  Seat %d: %s (%d chips)%s\n", i, p.Name, p.Chips, blindStr)
+		io.WriteString(w, fmt.Sprintf("  Seat %d: %s (%d chips)%s\n", i, p.Name, p.Chips, blindStr))
 		if *verbose {
-			fmt.Printf("    Hole cards: %s\n", formatHand(p.HoleCards))
+			io.WriteString(w, fmt.Sprintf("    Hole cards: %s\n", formatHand(p.HoleCards)))
 		}
 	}
-	fmt.Printf("\n")
+	io.WriteString(w, "\n")
 
 	// Pass rng to action selection
 	// Run the hand
@@ -114,10 +119,10 @@ func main() {
 	for !h.IsComplete() && actionCount < 100 { // Safety limit
 		// Check for new street
 		if h.Street != lastStreet {
-			fmt.Printf("\n=== %s ===\n", streetNames[h.Street])
+			io.WriteString(w, fmt.Sprintf("\n=== %s ===\n", streetNames[h.Street]))
 			if h.Street > game.Preflop && h.Street < game.Showdown {
-				fmt.Printf("Board: %s\n", formatHand(h.Board))
-				fmt.Printf("Pot: %d\n\n", h.Pots[0].Amount)
+				io.WriteString(w, fmt.Sprintf("Board: %s\n", formatHand(h.Board)))
+				io.WriteString(w, fmt.Sprintf("Pot: %d\n\n", h.Pots[0].Amount))
 			}
 			lastStreet = h.Street
 		}
@@ -148,50 +153,50 @@ func main() {
 		// Process action
 		err := h.ProcessAction(action, amount)
 		if err != nil {
-			fmt.Printf("Error processing action: %v\n", err)
+			io.WriteString(w, fmt.Sprintf("Error processing action: %v\n", err))
 			break
 		}
 
 		// Print action
 		actionStr := formatAction(action, amount, h.CurrentBet-activePlayer.Bet)
-		fmt.Printf("Seat %d (%s): %s - Pot: %d\n",
-			h.ActivePlayer, botPlayer.Name, actionStr, h.Pots[0].Amount)
+		io.WriteString(w, fmt.Sprintf("Seat %d (%s): %s - Pot: %d\n",
+			h.ActivePlayer, botPlayer.Name, actionStr, h.Pots[0].Amount))
 
 		actionCount++
 	}
 
 	// Show showdown if reached
 	if h.Street == game.Showdown || h.IsComplete() {
-		fmt.Printf("\n=== SHOWDOWN ===\n")
-		fmt.Printf("Final Board: %s\n", formatHand(h.Board))
-		fmt.Printf("Final Pot: %d\n\n", h.Pots[0].Amount)
+		io.WriteString(w, "\n=== SHOWDOWN ===\n")
+		io.WriteString(w, fmt.Sprintf("Final Board: %s\n", formatHand(h.Board)))
+		io.WriteString(w, fmt.Sprintf("Final Pot: %d\n\n", h.Pots[0].Amount))
 
 		// Show hands of non-folded players
 		for i, p := range h.Players {
 			if !p.Folded {
-				fmt.Printf("Seat %d (%s): %s\n", i, players[i].Name, formatHand(players[i].HoleCards))
+				io.WriteString(w, fmt.Sprintf("Seat %d (%s): %s\n", i, players[i].Name, formatHand(players[i].HoleCards)))
 			}
 		}
 
 		// Determine and show winners
 		winners := h.GetWinners()
-		fmt.Printf("\nWinners:\n")
+		io.WriteString(w, "\nWinners:\n")
 		for potIdx, winnerSeats := range winners {
 			if len(winnerSeats) > 0 {
 				pot := h.Pots[potIdx]
-				fmt.Printf("  Pot %d (%d chips): ", potIdx+1, pot.Amount)
+				io.WriteString(w, fmt.Sprintf("  Pot %d (%d chips): ", potIdx+1, pot.Amount))
 				winnerNames := []string{}
 				for _, seat := range winnerSeats {
 					winnerNames = append(winnerNames, players[seat].Name)
 				}
-				fmt.Printf("%s\n", strings.Join(winnerNames, ", "))
+				io.WriteString(w, fmt.Sprintf("%s\n", strings.Join(winnerNames, ", ")))
 			}
 		}
 	}
 
-	fmt.Printf("\n=====================================\n")
-	fmt.Printf("To reproduce: -seed %d -bots %d\n", *seed, *numBots)
-	fmt.Printf("=====================================\n")
+	io.WriteString(w, "\n=====================================\n")
+	io.WriteString(w, fmt.Sprintf("To reproduce: -seed %d -bots %d\n", *seed, *numBots))
+	io.WriteString(w, "=====================================\n")
 }
 
 func selectAction(strategy string, validActions []game.Action, pot int, toCall int, chips int, rng *rand.Rand) (game.Action, int) {

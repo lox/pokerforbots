@@ -128,6 +128,7 @@ func (p *BotPool) tryMatch() {
 
 	// Collect all available bots first for random selection
 	allBots := make([]*Bot, 0, availableCount)
+collectLoop:
 	for i := 0; i < availableCount; i++ {
 		select {
 		case <-p.stopCh:
@@ -138,24 +139,23 @@ func (p *BotPool) tryMatch() {
 			_, connected := p.bots[bot.ID]
 			p.mu.RUnlock()
 
-			if connected && !bot.IsInHand() && bot.HasChips() {
+			switch {
+			case connected && !bot.IsInHand() && bot.HasChips():
 				allBots = append(allBots, bot)
-			} else if connected && !bot.HasChips() {
+			case connected && !bot.HasChips():
 				// Bot is out of chips, remove from pool
 				p.logger.Info().Str("bot_id", bot.ID).Msg("Bot out of chips, removing from pool")
 				p.Unregister(bot)
-			} else {
-				// Return disconnected bot to available queue if it's valid
-				if connected {
-					select {
-					case p.available <- bot:
-					default:
-					}
+			case connected:
+				// Return bot to available queue if it's valid
+				select {
+				case p.available <- bot:
+				default:
 				}
 			}
 		default:
 			// No more available bots
-			break
+			break collectLoop
 		}
 	}
 

@@ -11,7 +11,6 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
 // BotStrategy defines how a bot makes decisions
@@ -39,7 +38,7 @@ func NewBot(strategy BotStrategy) *Bot {
 	return &Bot{
 		strategy: strategy,
 		botID:    botID,
-		logger: log.With().
+		logger: zerolog.New(os.Stderr).With().
 			Str("bot_id", botID).
 			Str("strategy", strategy.GetName()).
 			Logger(),
@@ -235,30 +234,19 @@ func (s *CallingStationStrategy) GetName() string {
 }
 
 func (s *CallingStationStrategy) SelectAction(validActions []string, pot int, toCall int, chips int) (string, int) {
-	log.Debug().
-		Strs("valid_actions", validActions).
-		Str("strategy", "calling-station").
-		Msg("Selecting action: prefer check > call > fold")
-
 	// Prefer check over call
 	for _, action := range validActions {
 		if action == "check" {
-			log.Debug().Str("reason", "can check for free").Msg("Decision made")
 			return "check", 0
 		}
 	}
 	// Otherwise call
 	for _, action := range validActions {
 		if action == "call" {
-			log.Debug().
-				Int("amount_to_call", toCall).
-				Str("reason", "calling to stay in hand").
-				Msg("Decision made")
 			return "call", 0
 		}
 	}
 	// If can't call or check, must fold
-	log.Debug().Str("reason", "no check or call available").Msg("Decision made")
 	return "fold", 0
 }
 
@@ -271,20 +259,12 @@ func (s *RandomStrategy) GetName() string {
 
 func (s *RandomStrategy) SelectAction(validActions []string, pot int, toCall int, chips int) (string, int) {
 	if len(validActions) == 0 {
-		log.Debug().Msg("No valid actions available, folding")
 		return "fold", 0
 	}
 
 	// Pick a random valid action
 	actionIndex := rand.Intn(len(validActions))
 	action := validActions[actionIndex]
-
-	log.Debug().
-		Strs("valid_actions", validActions).
-		Str("selected_action", action).
-		Int("action_index", actionIndex).
-		Str("strategy", "random").
-		Msg("Randomly selecting action")
 
 	// If raising, pick a random amount between min and 3x pot (capped by chips)
 	if action == "raise" {
@@ -307,17 +287,9 @@ func (s *RandomStrategy) SelectAction(validActions []string, pot int, toCall int
 			return "fold", 0
 		}
 		amount := minRaise + rand.Intn(maxRaise-minRaise+1)
-		log.Debug().
-			Int("min_raise", minRaise).
-			Int("max_raise", maxRaise).
-			Int("chips", chips).
-			Int("selected_amount", amount).
-			Str("reason", "random raise amount").
-			Msg("Decision made")
 		return action, amount
 	}
 
-	log.Debug().Str("reason", "random action selected").Msg("Decision made")
 	return action, 0
 }
 
@@ -341,24 +313,10 @@ func (s *AggressiveStrategy) SelectAction(validActions []string, pot int, toCall
 		}
 	}
 
-	log.Debug().
-		Strs("valid_actions", validActions).
-		Bool("can_raise", canRaise).
-		Bool("can_allin", canAllIn).
-		Str("strategy", "aggressive").
-		Msg("Evaluating aggressive options")
-
 	// 70% chance to raise if possible
 	raiseRoll := rand.Float32()
 	if (canRaise || canAllIn) && raiseRoll < 0.7 {
-		log.Debug().
-			Float32("roll", raiseRoll).
-			Float32("threshold", 0.7).
-			Str("decision", "will raise/allin").
-			Msg("Aggression check passed")
-
 		if canAllIn {
-			log.Debug().Str("reason", "going all-in aggressively").Msg("Decision made")
 			return "allin", 0
 		}
 		if canRaise {
@@ -371,29 +329,13 @@ func (s *AggressiveStrategy) SelectAction(validActions []string, pot int, toCall
 			if amount > chips {
 				amount = chips
 			}
-			log.Debug().
-				Int("raise_amount", amount).
-				Int("pot_size", pot).
-				Int("chips", chips).
-				Str("reason", "aggressive raise 2-4x pot").
-				Msg("Decision made")
 			return "raise", amount
 		}
-	} else if canRaise || canAllIn {
-		log.Debug().
-			Float32("roll", raiseRoll).
-			Float32("threshold", 0.7).
-			Str("decision", "will not raise").
-			Msg("Aggression check failed")
 	}
 
 	// Otherwise call if we can
 	for _, action := range validActions {
 		if action == "call" {
-			log.Debug().
-				Int("to_call", toCall).
-				Str("reason", "calling instead of raising").
-				Msg("Decision made")
 			return "call", 0
 		}
 	}
@@ -401,12 +343,10 @@ func (s *AggressiveStrategy) SelectAction(validActions []string, pot int, toCall
 	// Check if possible
 	for _, action := range validActions {
 		if action == "check" {
-			log.Debug().Str("reason", "checking - no raise or call available").Msg("Decision made")
 			return "check", 0
 		}
 	}
 
-	log.Debug().Str("reason", "forced to fold - no other options").Msg("Decision made")
 	return "fold", 0
 }
 
@@ -419,14 +359,13 @@ func main() {
 	)
 	flag.Parse()
 
-	// Configure zerolog
+	// Configure logger
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
+	level := zerolog.InfoLevel
 	if *debug {
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	} else {
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+		level = zerolog.DebugLevel
 	}
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).Level(level).With().Timestamp().Logger()
 
 	// Random number generator is automatically seeded in Go 1.20+
 
@@ -445,7 +384,7 @@ func main() {
 
 		bot := NewBot(strat)
 		if err := bot.Connect(*serverURL); err != nil {
-			log.Fatal().Err(err).Int("bot_number", i).Msg("Failed to connect bot")
+			logger.Fatal().Err(err).Int("bot_number", i).Msg("Failed to connect bot")
 		}
 		bots = append(bots, bot)
 
@@ -456,7 +395,7 @@ func main() {
 			}
 		}(bot)
 
-		log.Info().
+		logger.Info().
 			Int("bot_number", i+1).
 			Str("bot_id", bot.botID).
 			Str("strategy", strat.GetName()).
@@ -468,9 +407,9 @@ func main() {
 	signal.Notify(interrupt, os.Interrupt)
 	<-interrupt
 
-	log.Info().Msg("Shutting down bots...")
+	logger.Info().Msg("Shutting down bots...")
 	for _, bot := range bots {
 		bot.Close()
 	}
-	log.Info().Msg("All bots disconnected")
+	logger.Info().Msg("All bots disconnected")
 }

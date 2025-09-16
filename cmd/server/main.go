@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -41,7 +40,7 @@ func main() {
 	// Start server in a goroutine
 	serverErr := make(chan error, 1)
 	go func() {
-		log.Printf("Server starting on %s", *addr)
+		logger.Info().Str("addr", *addr).Msg("Server starting")
 		serverErr <- srv.Start(*addr)
 	}()
 
@@ -49,10 +48,10 @@ func main() {
 	select {
 	case err := <-serverErr:
 		if err != nil {
-			log.Fatal("Server error: ", err)
+			logger.Fatal().Err(err).Msg("Server error")
 		}
 	case sig := <-sigChan:
-		log.Printf("Received signal %v, shutting down gracefully...", sig)
+		logger.Info().Str("signal", sig.String()).Msg("Received signal, shutting down gracefully...")
 
 		// Give server a moment to finish current operations
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -62,9 +61,9 @@ func main() {
 		// For now, we just exit after a brief delay
 		select {
 		case <-ctx.Done():
-			log.Println("Shutdown timeout exceeded, forcing exit")
+			logger.Error().Msg("Shutdown timeout exceeded, forcing exit")
 		case <-time.After(500 * time.Millisecond):
-			log.Println("Server shutdown complete")
+			logger.Info().Msg("Server shutdown complete")
 		}
 	}
 }

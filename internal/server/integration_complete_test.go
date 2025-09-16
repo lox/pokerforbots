@@ -300,7 +300,6 @@ func testAllInCascade(t *testing.T) {
 }
 
 func testHeadsUpPlay(t *testing.T) {
-	t.Skip("Skipping test - heads-up preflop action order not yet implemented correctly")
 	rng := rand.New(rand.NewSource(42))
 	server := NewServer(testLogger(), rng)
 	go server.Start(":8092")
