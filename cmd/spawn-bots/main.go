@@ -649,8 +649,8 @@ func (b *BotClient) selectAction(req *protocol.ActionRequest) (string, int) {
 				if action == "raise" {
 					// Raise 2-3x pot
 					amount := req.Pot * (2 + rng.Intn(2))
-					if amount < req.MinRaise {
-						amount = req.MinRaise
+					if amount < req.MinBet {
+						amount = req.MinBet
 					}
 					// Cap at chips
 					if amount > b.chips {
@@ -681,7 +681,7 @@ func (b *BotClient) selectAction(req *protocol.ActionRequest) (string, int) {
 		if len(req.ValidActions) > 0 {
 			action := req.ValidActions[rng.Intn(len(req.ValidActions))]
 			if action == "raise" {
-				amount := req.MinRaise + rng.Intn(req.Pot+1)
+				amount := req.MinBet + rng.Intn(req.Pot+1)
 				// Cap at chips
 				if amount > b.chips {
 					amount = b.chips

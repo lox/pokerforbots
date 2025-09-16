@@ -16,7 +16,7 @@ import (
 // BotStrategy defines how a bot makes decisions
 type BotStrategy interface {
 	// SelectAction chooses an action given the current game state
-	SelectAction(validActions []string, pot int, toCall int, chips int) (string, int)
+	SelectAction(validActions []string, pot int, toCall int, minBet int, chips int) (string, int)
 	// GetName returns the strategy name
 	GetName() string
 }
@@ -188,12 +188,12 @@ func (b *Bot) handleActionRequest(req *protocol.ActionRequest) error {
 		Strs("valid_actions", req.ValidActions).
 		Int("pot", req.Pot).
 		Int("to_call", req.ToCall).
-		Int("min_raise", req.MinRaise).
+		Int("min_bet", req.MinBet).
 		Int("time_remaining", req.TimeRemaining).
 		Msg("Action requested")
 
 	// Use strategy to select action
-	action, amount := b.strategy.SelectAction(req.ValidActions, req.Pot, req.ToCall, b.chips)
+	action, amount := b.strategy.SelectAction(req.ValidActions, req.Pot, req.ToCall, req.MinBet, b.chips)
 
 	// Log the decision
 	b.logger.Info().
@@ -233,7 +233,7 @@ func (s *CallingStationStrategy) GetName() string {
 	return "calling-station"
 }
 
-func (s *CallingStationStrategy) SelectAction(validActions []string, pot int, toCall int, chips int) (string, int) {
+func (s *CallingStationStrategy) SelectAction(validActions []string, pot int, toCall int, minBet int, chips int) (string, int) {
 	// Prefer check over call
 	for _, action := range validActions {
 		if action == "check" {
@@ -257,7 +257,7 @@ func (s *RandomStrategy) GetName() string {
 	return "random"
 }
 
-func (s *RandomStrategy) SelectAction(validActions []string, pot int, toCall int, chips int) (string, int) {
+func (s *RandomStrategy) SelectAction(validActions []string, pot int, toCall int, minBet int, chips int) (string, int) {
 	if len(validActions) == 0 {
 		return "fold", 0
 	}
@@ -266,18 +266,17 @@ func (s *RandomStrategy) SelectAction(validActions []string, pot int, toCall int
 	actionIndex := rand.Intn(len(validActions))
 	action := validActions[actionIndex]
 
-	// If raising, pick a random amount between min and 3x pot (capped by chips)
+	// If raising, pick a random amount between minBet and 3x pot (capped by chips)
 	if action == "raise" {
-		minRaise := toCall * 2
 		maxRaise := pot * 3
-		if maxRaise < minRaise {
-			maxRaise = minRaise * 2
+		if maxRaise < minBet {
+			maxRaise = minBet * 2
 		}
 		// Cap at our chip count
 		if maxRaise > chips {
 			maxRaise = chips
 		}
-		if minRaise > chips {
+		if minBet > chips {
 			// Can't raise, switch to call or fold
 			for _, fallback := range validActions {
 				if fallback == "call" {
@@ -286,7 +285,7 @@ func (s *RandomStrategy) SelectAction(validActions []string, pot int, toCall int
 			}
 			return "fold", 0
 		}
-		amount := minRaise + rand.Intn(maxRaise-minRaise+1)
+		amount := minBet + rand.Intn(maxRaise-minBet+1)
 		return action, amount
 	}
 
@@ -300,7 +299,7 @@ func (s *AggressiveStrategy) GetName() string {
 	return "aggressive"
 }
 
-func (s *AggressiveStrategy) SelectAction(validActions []string, pot int, toCall int, chips int) (string, int) {
+func (s *AggressiveStrategy) SelectAction(validActions []string, pot int, toCall int, minBet int, chips int) (string, int) {
 	// Check if we can raise
 	canRaise := false
 	canAllIn := false
@@ -320,10 +319,10 @@ func (s *AggressiveStrategy) SelectAction(validActions []string, pot int, toCall
 			return "allin", 0
 		}
 		if canRaise {
-			// Raise between 2x and 4x the pot (capped by chips)
+			// Raise between minBet and 4x the pot (capped by chips)
 			amount := pot*2 + rand.Intn(pot*2+1)
-			if amount < toCall*2 {
-				amount = toCall * 2
+			if amount < minBet {
+				amount = minBet
 			}
 			// Cap at our chip count
 			if amount > chips {

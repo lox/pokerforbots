@@ -323,11 +323,23 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 		}
 
 	case Raise:
-		if amount < h.CurrentBet+h.MinRaise {
-			return fmt.Errorf("raise too small, minimum %d", h.CurrentBet+h.MinRaise)
-		}
-		if amount > p.Chips+p.Bet {
+		// Check if player has enough chips for this raise
+		playerTotalChips := p.Chips + p.Bet
+
+		// If player is trying to raise more than they have, that's an error
+		if amount > playerTotalChips {
 			return fmt.Errorf("insufficient chips")
+		}
+
+		// If player has enough chips, enforce minimum raise
+		// But if they're going all-in with less than min raise, allow it
+		if amount < h.CurrentBet+h.MinRaise {
+			// Check if this is an all-in (player is putting in all their chips)
+			if amount < playerTotalChips {
+				// Player has more chips but trying to raise below minimum
+				return fmt.Errorf("raise too small, minimum %d", h.CurrentBet+h.MinRaise)
+			}
+			// Player is going all-in with less than min raise - this is allowed
 		}
 
 		raiseAmount := amount - p.Bet
@@ -341,6 +353,11 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 		h.Pots[activePot].Amount += raiseAmount
 		p.Bet = amount
 		p.TotalBet += raiseAmount
+
+		// Mark player as all-in if they have no chips left
+		if p.Chips == 0 {
+			p.AllInFlag = true
+		}
 
 		// Reset acted flags when someone raises (everyone needs to act again)
 		for i := range h.ActedThisRound {
@@ -506,6 +523,21 @@ func (h *HandState) NextStreet() {
 
 	// Set first active player for new street
 	h.ActivePlayer = h.nextActivePlayer((h.Button + 1) % len(h.Players))
+
+	// If no active players (all non-folded players are all-in), keep advancing to showdown
+	if h.ActivePlayer == -1 && h.Street != Showdown {
+		// Make sure there are still players in the hand
+		hasPlayers := false
+		for _, p := range h.Players {
+			if !p.Folded {
+				hasPlayers = true
+				break
+			}
+		}
+		if hasPlayers {
+			h.NextStreet()
+		}
+	}
 }
 
 func (h *HandState) calculateSidePots() {

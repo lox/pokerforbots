@@ -111,7 +111,7 @@ func TestActionRequestMessage(t *testing.T) {
 		TimeRemaining: 100,
 		ValidActions:  []string{"fold", "call", "raise"},
 		ToCall:        20,
-		MinRaise:      40,
+		MinBet:        40,
 		Pot:           35,
 	}
 
@@ -208,7 +208,7 @@ func BenchmarkMarshalActionRequest(b *testing.B) {
 		TimeRemaining: 100,
 		ValidActions:  []string{"fold", "call", "raise"},
 		ToCall:        20,
-		MinRaise:      40,
+		MinBet:        40,
 		Pot:           35,
 	}
 
@@ -226,7 +226,7 @@ func BenchmarkUnmarshalActionRequestCustom(b *testing.B) {
 		TimeRemaining: 100,
 		ValidActions:  []string{"fold", "call", "raise"},
 		ToCall:        20,
-		MinRaise:      40,
+		MinBet:        40,
 		Pot:           35,
 	}
 	data, _ := req.MarshalMsg(nil)
@@ -262,7 +262,7 @@ func TestMessageSizes(t *testing.T) {
 				TimeRemaining: 100,
 				ValidActions:  []string{"fold", "call", "raise"},
 				ToCall:        20,
-				MinRaise:      40,
+				MinBet:        40,
 				Pot:           35,
 			},
 			maxSize: 200,
@@ -353,7 +353,7 @@ func TestMarshalRaceCondition(t *testing.T) {
 					ValidActions:  []string{"fold", "call", "raise"},
 					Pot:           100 + j,
 					ToCall:        10,
-					MinRaise:      20,
+					MinBet:        20,
 					TimeRemaining: 5000,
 				}
 

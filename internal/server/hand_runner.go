@@ -271,7 +271,7 @@ func (hr *HandRunner) sendActionRequest(bot *Bot, seat int, validActions []game.
 		HandID:        hr.handID,
 		Pot:           pot,
 		ToCall:        toCall,
-		MinRaise:      hr.handState.MinRaise,
+		MinBet:        hr.handState.CurrentBet + hr.handState.MinRaise,
 		ValidActions:  actions,
 		TimeRemaining: int(hr.config.Timeout.Milliseconds()),
 	}
@@ -453,6 +453,7 @@ func (hr *HandRunner) totalPot() int {
 }
 
 func (hr *HandRunner) logPlayerAction(seat int, street string, action game.Action, declaredAmount int, toCall int) {
+	player := hr.handState.Players[seat]
 	hr.logger.Info().
 		Int("seat", seat).
 		Str("bot", hr.playerLabels[seat]).
@@ -461,6 +462,9 @@ func (hr *HandRunner) logPlayerAction(seat int, street string, action game.Actio
 		Int("declared_amount", declaredAmount).
 		Int("to_call", toCall).
 		Int("pot", hr.totalPot()).
+		Int("chips", player.Chips).
+		Int("bet", player.Bet).
+		Int("total_bet", player.TotalBet).
 		Msg("Player action")
 }
 

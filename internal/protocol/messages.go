@@ -68,7 +68,7 @@ type ActionRequest struct {
 	TimeRemaining int      `msg:"time_remaining"`
 	ValidActions  []string `msg:"valid_actions"`
 	ToCall        int      `msg:"to_call"`
-	MinRaise      int      `msg:"min_raise"`
+	MinBet        int      `msg:"min_bet"`
 	Pot           int      `msg:"pot"`
 }
 
