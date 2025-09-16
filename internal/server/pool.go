@@ -2,29 +2,40 @@ package server
 
 import (
 	"fmt"
-	"log"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 // BotPool manages available bots and matches them into hands
 type BotPool struct {
-	bots          map[string]*Bot
-	available     chan *Bot
-	register      chan *Bot
-	unregister    chan *Bot
-	mu            sync.RWMutex
-	minPlayers    int
-	maxPlayers    int
-	handCounter   uint64
-	currentButton int // Track button position for rotation
-	stopCh        chan struct{}
-	stopOnce      sync.Once
+	bots            map[string]*Bot
+	available       chan *Bot
+	register        chan *Bot
+	unregister      chan *Bot
+	mu              sync.RWMutex
+	minPlayers      int
+	maxPlayers      int
+	handCounter     uint64
+	handLimit       uint64 // 0 means unlimited
+	handLimitLogged bool   // Track if we've logged the hand limit message
+	stopCh          chan struct{}
+	stopOnce        sync.Once
+	logger          zerolog.Logger
+	rng             *rand.Rand
+	rngMutex        sync.Mutex // Protect RNG access
 }
 
-// NewBotPool creates a new bot pool
-func NewBotPool(minPlayers, maxPlayers int) *BotPool {
+// NewBotPool creates a new bot pool with explicit random source
+func NewBotPool(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand) *BotPool {
+	return NewBotPoolWithLimit(logger, minPlayers, maxPlayers, rng, 0) // 0 = unlimited
+}
+
+// NewBotPoolWithLimit creates a new bot pool with explicit random source and hand limit
+func NewBotPoolWithLimit(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand, handLimit uint64) *BotPool {
 	return &BotPool{
 		bots:       make(map[string]*Bot),
 		available:  make(chan *Bot, 100),
@@ -32,7 +43,10 @@ func NewBotPool(minPlayers, maxPlayers int) *BotPool {
 		unregister: make(chan *Bot),
 		minPlayers: minPlayers,
 		maxPlayers: maxPlayers,
+		handLimit:  handLimit,
 		stopCh:     make(chan struct{}),
+		logger:     logger.With().Str("component", "pool").Logger(),
+		rng:        rng,
 	}
 }
 
@@ -88,6 +102,18 @@ func (p *BotPool) tryMatch() {
 	default:
 	}
 
+	// Check if we've reached the hand limit
+	if p.handLimit > 0 && atomic.LoadUint64(&p.handCounter) >= p.handLimit {
+		// Only log once to avoid spam
+		if !p.handLimitLogged {
+			p.handLimitLogged = true
+			p.logger.Info().Uint64("hands_completed", atomic.LoadUint64(&p.handCounter)).
+				Uint64("hand_limit", p.handLimit).
+				Msg("Hand limit reached - stopping new hand creation")
+		}
+		return
+	}
+
 	// Count available bots
 	availableCount := len(p.available)
 	if availableCount < p.minPlayers {
@@ -100,13 +126,12 @@ func (p *BotPool) tryMatch() {
 		numPlayers = p.maxPlayers
 	}
 
-	// Collect bots for the hand
-	bots := make([]*Bot, 0, numPlayers)
-	for i := 0; i < numPlayers; i++ {
+	// Collect all available bots first for random selection
+	allBots := make([]*Bot, 0, availableCount)
+	for i := 0; i < availableCount; i++ {
 		select {
 		case <-p.stopCh:
 			return
-
 		case bot := <-p.available:
 			// Double-check bot is still connected and not in hand
 			p.mu.RLock()
@@ -114,19 +139,51 @@ func (p *BotPool) tryMatch() {
 			p.mu.RUnlock()
 
 			if connected && !bot.IsInHand() && bot.HasChips() {
-				bots = append(bots, bot)
+				allBots = append(allBots, bot)
 			} else if connected && !bot.HasChips() {
 				// Bot is out of chips, remove from pool
-				log.Printf("Bot %s is out of chips, removing from pool", bot.ID)
+				p.logger.Info().Str("bot_id", bot.ID).Msg("Bot out of chips, removing from pool")
 				p.Unregister(bot)
+			} else {
+				// Return disconnected bot to available queue if it's valid
+				if connected {
+					select {
+					case p.available <- bot:
+					default:
+					}
+				}
 			}
 		default:
 			// No more available bots
-			goto startHand
+			break
 		}
 	}
 
-startHand:
+	// Randomly shuffle and select bots for this hand with mutex protection
+	p.rngMutex.Lock()
+	p.rng.Shuffle(len(allBots), func(i, j int) {
+		allBots[i], allBots[j] = allBots[j], allBots[i]
+	})
+	p.rngMutex.Unlock()
+
+	// Take the first numPlayers after shuffle
+	bots := make([]*Bot, 0, numPlayers)
+	if numPlayers > len(allBots) {
+		numPlayers = len(allBots)
+	}
+	for i := 0; i < numPlayers; i++ {
+		bots = append(bots, allBots[i])
+	}
+
+	// Return unused bots to available queue
+	for i := numPlayers; i < len(allBots); i++ {
+		select {
+		case p.available <- allBots[i]:
+		default:
+			// Queue full
+		}
+	}
+
 	// If we got enough bots, start a hand
 	if len(bots) >= p.minPlayers {
 		for _, bot := range bots {
@@ -161,7 +218,7 @@ func (p *BotPool) runHand(bots []*Bot) {
 					// Queue full
 				}
 			} else {
-				log.Printf("Bot %s is out of chips after hand, removing from pool", bot.ID)
+				p.logger.Info().Str("bot_id", bot.ID).Msg("Bot out of chips after hand, removing from pool")
 				p.Unregister(bot)
 			}
 		}
@@ -175,19 +232,30 @@ func (p *BotPool) runHand(bots []*Bot) {
 	}
 
 	// Generate hand ID
-	// Generate unique hand ID using atomic counter
 	handNum := atomic.AddUint64(&p.handCounter, 1)
 	handID := fmt.Sprintf("hand-%d", handNum)
 
-	// Normalize button position for current player count
-	button := p.currentButton % len(bots)
+	// Random button position for stateless hands with mutex protection
+	p.rngMutex.Lock()
+	button := p.rng.Intn(len(bots))
+	// Generate a separate RNG for the hand runner to avoid continued concurrent access
+	handRNGSeed := p.rng.Int63()
+	p.rngMutex.Unlock()
 
-	// Run the hand with normalized button position
-	runner := NewHandRunner(bots, handID, button)
+	handRNG := rand.New(rand.NewSource(handRNGSeed))
+	p.logger.Info().
+		Str("hand_id", handID).
+		Int("button_position", button).
+		Int("player_count", len(bots)).
+		Msg("Hand starting with random button position")
+
+	// Run the hand with the cloned RNG
+	runner := NewHandRunner(p.logger, bots, handID, button, handRNG)
 	runner.Run()
 
-	// Rotate button for next hand
-	p.currentButton = (button + 1) % len(bots)
+	p.logger.Info().
+		Str("hand_id", handID).
+		Msg("Hand complete")
 }
 
 // Register adds a bot to the pool
@@ -228,4 +296,26 @@ func (p *BotPool) BotCount() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return len(p.bots)
+}
+
+// HandCount returns the number of hands completed
+func (p *BotPool) HandCount() uint64 {
+	return atomic.LoadUint64(&p.handCounter)
+}
+
+// HandLimit returns the hand limit (0 means unlimited)
+func (p *BotPool) HandLimit() uint64 {
+	return p.handLimit
+}
+
+// HandsRemaining returns the number of hands remaining (0 if unlimited)
+func (p *BotPool) HandsRemaining() uint64 {
+	if p.handLimit == 0 {
+		return 0 // Unlimited
+	}
+	completed := atomic.LoadUint64(&p.handCounter)
+	if completed >= p.handLimit {
+		return 0
+	}
+	return p.handLimit - completed
 }

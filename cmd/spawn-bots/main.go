@@ -1,14 +1,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"log"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"sync"
@@ -18,6 +18,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
+	"github.com/lox/pokerforbots/internal/server"
+	"github.com/rs/zerolog"
 )
 
 var (
@@ -44,10 +46,12 @@ var (
 )
 
 type BotOrchestrator struct {
-	serverProcess *exec.Cmd
-	bots          []*BotClient
-	logger        *HandLogger
-	targetHands   int
+	server      *server.Server
+	serverAddr  string
+	bots        []*BotClient
+	handLogger  *HandLogger
+	targetHands int
+	logger      zerolog.Logger
 }
 
 type HandLogger struct {
@@ -79,6 +83,22 @@ type ActionLog struct {
 func main() {
 	flag.Parse()
 
+	// Configure zerolog for beautiful console output
+	level := zerolog.InfoLevel
+	if *verbose {
+		level = zerolog.DebugLevel
+	}
+	if *quiet {
+		level = zerolog.WarnLevel
+	}
+
+	// Create logger with beautiful formatting
+	logger := zerolog.New(zerolog.ConsoleWriter{
+		Out:        os.Stderr,
+		TimeFormat: "15:04:05",
+		NoColor:    false,
+	}).Level(level).With().Timestamp().Str("component", "orchestrator").Logger()
+
 	// Validate configuration
 	if *callingBots == 0 && *randomBots == 0 && *aggressiveBots == 0 {
 		// Auto distribution based on total bots
@@ -101,7 +121,7 @@ func main() {
 	}
 
 	if *numBots < 2 || *numBots > 10 {
-		log.Fatal("Number of bots must be between 2 and 10")
+		logger.Fatal().Int("bots", *numBots).Msg("Number of bots must be between 2 and 10")
 	}
 
 	// Set seed
@@ -110,32 +130,28 @@ func main() {
 	}
 	rng = rand.New(rand.NewSource(*seed))
 
-	// Print configuration
-	if !*quiet {
-		fmt.Printf("=====================================\n")
-		fmt.Printf("Poker Bot Orchestrator\n")
-		fmt.Printf("=====================================\n")
-		fmt.Printf("Seed: %d\n", *seed)
-		fmt.Printf("Bots: %d total\n", *numBots)
-		fmt.Printf("  - Calling Station: %d\n", *callingBots)
-		fmt.Printf("  - Random: %d\n", *randomBots)
-		fmt.Printf("  - Aggressive: %d\n", *aggressiveBots)
-		if *hands > 0 {
-			fmt.Printf("Target: %d hands\n", *hands)
-		} else {
-			fmt.Printf("Target: Run forever\n")
-		}
-		if *spawnServer {
-			fmt.Printf("Server: Spawning on port %d\n", *serverPort)
-		} else {
-			fmt.Printf("Server: %s\n", *serverURL)
-		}
-		fmt.Printf("=====================================\n\n")
+	// Log configuration
+	logEvent := logger.Info().Int64("seed", *seed).Int("total_bots", *numBots).
+		Int("calling_bots", *callingBots).Int("random_bots", *randomBots).Int("aggressive_bots", *aggressiveBots)
+
+	if *hands > 0 {
+		logEvent = logEvent.Int("target_hands", *hands)
+	} else {
+		logEvent = logEvent.Str("target_hands", "unlimited")
 	}
+
+	if *spawnServer {
+		logEvent = logEvent.Int("server_port", *serverPort).Bool("spawn_server", true)
+	} else {
+		logEvent = logEvent.Str("server_url", *serverURL).Bool("spawn_server", false)
+	}
+
+	logEvent.Msg("Starting Poker Bot Orchestrator")
 
 	orchestrator := &BotOrchestrator{
 		targetHands: *hands,
-		logger:      &HandLogger{},
+		handLogger:  &HandLogger{},
+		logger:      logger,
 	}
 
 	// Set up signal handling early
@@ -145,7 +161,7 @@ func main() {
 	// Start server if requested
 	if *spawnServer {
 		if err := orchestrator.startServer(); err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+			logger.Fatal().Err(err).Msg("Failed to start server")
 		}
 		defer orchestrator.cleanup()
 
@@ -157,18 +173,20 @@ func main() {
 
 	// Verify server is reachable
 	if !orchestrator.isServerReady() {
-		log.Println("Server is not reachable")
+		logger.Fatal().Str("server_url", *serverURL).Msg("Server is not reachable")
 		return
 	}
+	logger.Info().Str("server_url", *serverURL).Msg("Server connection verified")
 
 	// Start time tracking
 	startTime = time.Now()
 
 	// Create and connect bots
 	if err := orchestrator.createBots(); err != nil {
-		log.Printf("Failed to create bots: %v", err)
+		logger.Fatal().Err(err).Msg("Failed to create bots")
 		return
 	}
+	logger.Info().Int("bot_count", len(orchestrator.bots)).Msg("All bots connected successfully")
 
 	// Run bots
 	done := orchestrator.run()
@@ -176,13 +194,9 @@ func main() {
 	// Wait for completion or interrupt
 	select {
 	case <-done:
-		if !*quiet {
-			fmt.Println("\nTarget reached!")
-		}
+		logger.Info().Msg("Target hands reached - shutting down")
 	case <-sigChan:
-		if !*quiet {
-			fmt.Println("\nInterrupted - cleaning up...")
-		}
+		logger.Info().Msg("Interrupt signal received - cleaning up")
 	}
 
 	// Show summary
@@ -190,54 +204,71 @@ func main() {
 }
 
 func (o *BotOrchestrator) startServer() error {
-	if !*quiet {
-		fmt.Printf("Starting poker server on port %d...\n", *serverPort)
-	}
+	o.logger.Info().Int("port", *serverPort).Msg("Starting embedded poker server")
 
-	// Build the server first
-	buildCmd := exec.Command("go", "build", "-o", "dist/server", "cmd/server/main.go")
-	if err := buildCmd.Run(); err != nil {
-		return fmt.Errorf("failed to build server: %v", err)
-	}
-
-	// Start the server
-	o.serverProcess = exec.Command("./dist/server")
-
-	// Optionally capture server output for debugging
+	// Create server logger - use debug level if verbose, otherwise info
+	serverLevel := zerolog.InfoLevel
 	if *verbose {
-		o.serverProcess.Stdout = os.Stdout
-		o.serverProcess.Stderr = os.Stderr
+		serverLevel = zerolog.DebugLevel
 	}
 
-	if err := o.serverProcess.Start(); err != nil {
-		return fmt.Errorf("failed to start server: %v", err)
+	serverLogger := zerolog.New(zerolog.ConsoleWriter{
+		Out:        os.Stderr,
+		TimeFormat: "15:04:05",
+		NoColor:    false,
+	}).Level(serverLevel).With().Timestamp().Str("component", "server").Logger()
+
+	// Create RNG instance from seed at main level for dependency injection
+	serverRNG := rand.New(rand.NewSource(*seed))
+
+	// Create server instance with optional hand limit and provided RNG
+	if o.targetHands > 0 {
+		o.server = server.NewServerWithHandLimit(serverLogger, serverRNG, uint64(o.targetHands))
+		o.logger.Info().Int("hand_limit", o.targetHands).Int64("seed", *seed).Msg("Server created with hand limit and deterministic RNG")
+	} else {
+		o.server = server.NewServer(serverLogger, serverRNG)
+		o.logger.Info().Int64("seed", *seed).Msg("Server created with unlimited hands and deterministic RNG")
+	}
+	o.serverAddr = fmt.Sprintf(":%d", *serverPort)
+
+	// Start server in background
+	go func() {
+		if err := o.server.Start(o.serverAddr); err != nil && err != http.ErrServerClosed {
+			o.logger.Error().Err(err).Msg("Server failed to start")
+		}
+	}()
+
+	// Wait for server to be ready by checking health endpoint
+	healthURL := fmt.Sprintf("http://localhost:%d/health", *serverPort)
+	for i := 0; i < 20; i++ { // Try for 10 seconds
+		resp, err := http.Get(healthURL)
+		if err == nil {
+			resp.Body.Close()
+			o.logger.Debug().Msg("Server startup completed successfully")
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 
-	// Wait for server to be ready
-	time.Sleep(2 * time.Second)
-
-	return nil
+	return fmt.Errorf("server did not become ready within 10 seconds")
 }
 
 func (o *BotOrchestrator) stopServer() {
-	if o.serverProcess != nil {
-		// Try graceful shutdown first
-		o.serverProcess.Process.Signal(syscall.SIGTERM)
+	if o.server != nil {
+		o.logger.Info().Msg("Stopping embedded server")
 
-		// Give it a moment to shut down
-		done := make(chan error, 1)
-		go func() {
-			done <- o.serverProcess.Wait()
-		}()
+		// Create a context with timeout for graceful shutdown
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-		select {
-		case <-done:
-			// Process exited gracefully
-		case <-time.After(2 * time.Second):
-			// Force kill if it doesn't exit
-			o.serverProcess.Process.Kill()
-			o.serverProcess.Wait()
+		// Attempt graceful shutdown
+		if err := o.server.Shutdown(ctx); err != nil {
+			o.logger.Error().Err(err).Msg("Error during server shutdown")
+		} else {
+			o.logger.Info().Msg("Server stopped gracefully")
 		}
+
+		o.server = nil
 	}
 }
 
@@ -250,7 +281,7 @@ func (o *BotOrchestrator) cleanup() {
 	}
 
 	// Stop server if we spawned it
-	if o.serverProcess != nil {
+	if o.server != nil {
 		o.stopServer()
 	}
 }
@@ -278,19 +309,19 @@ func (o *BotOrchestrator) createBots() error {
 
 	// Create calling station bots
 	for i := 0; i < *callingBots; i++ {
-		o.bots[botIdx] = NewBotClient(botIdx, "calling-station", o.logger)
+		o.bots[botIdx] = NewBotClient(botIdx, "calling-station", o.handLogger, o.logger)
 		botIdx++
 	}
 
 	// Create random bots
 	for i := 0; i < *randomBots; i++ {
-		o.bots[botIdx] = NewBotClient(botIdx, "random", o.logger)
+		o.bots[botIdx] = NewBotClient(botIdx, "random", o.handLogger, o.logger)
 		botIdx++
 	}
 
 	// Create aggressive bots
 	for i := 0; i < *aggressiveBots; i++ {
-		o.bots[botIdx] = NewBotClient(botIdx, "aggressive", o.logger)
+		o.bots[botIdx] = NewBotClient(botIdx, "aggressive", o.handLogger, o.logger)
 		botIdx++
 	}
 
@@ -325,26 +356,34 @@ func (o *BotOrchestrator) run() <-chan struct{} {
 		for { //nolint:staticcheck // explicit select for clarity
 			select {
 			case <-ticker.C:
-				currentHands := atomic.LoadUint64(&o.logger.handsLogged)
+				currentHands := atomic.LoadUint64(&o.handLogger.handsLogged)
 
-				if !*quiet && !*verbose {
-					// Show progress line
-					elapsed := time.Since(startTime)
-					rate := float64(currentHands) / elapsed.Seconds() * 60
+				elapsed := time.Since(startTime)
+				rate := float64(currentHands) / elapsed.Seconds() * 60
 
-					if o.targetHands > 0 {
-						fmt.Printf("\rHands: %d/%d | Rate: %.0f/min | Elapsed: %s",
-							currentHands, o.targetHands, rate, elapsed.Round(time.Second))
-					} else {
-						fmt.Printf("\rHands: %d | Rate: %.0f/min | Elapsed: %s",
-							currentHands, rate, elapsed.Round(time.Second))
-					}
+				// Log progress
+				logEvent := o.logger.Info().Uint64("hands_completed", currentHands).
+					Float64("rate_per_minute", rate).
+					Dur("elapsed", elapsed)
+
+				if o.targetHands > 0 {
+					// Progress based on server hands (currentHands = bot completions, so divide by bot count)
+					// This gives a more accurate percentage relative to actual server hands completed
+					serverHands := float64(currentHands) / float64(len(o.bots))
+					logEvent = logEvent.Int("target_hands", o.targetHands).
+						Float64("progress_percent", serverHands/float64(o.targetHands)*100)
 				}
 
-				// Check if we reached target
-				if o.targetHands > 0 && currentHands >= uint64(o.targetHands) {
-					close(done)
-					return
+				logEvent.Msg("Game progress update")
+
+				// For limited hands, check if server has reached its limit
+				if o.targetHands > 0 {
+					// Poll server stats to see if hand limit reached
+					if o.checkServerHandLimit() {
+						o.logger.Info().Msg("Server hand limit reached - shutting down")
+						close(done)
+						return
+					}
 				}
 			}
 		}
@@ -353,29 +392,57 @@ func (o *BotOrchestrator) run() <-chan struct{} {
 	return done
 }
 
+// checkServerHandLimit polls the server's stats endpoint to see if hand limit is reached
+func (o *BotOrchestrator) checkServerHandLimit() bool {
+	if o.serverAddr == "" {
+		return false // No server address available
+	}
+
+	statsURL := fmt.Sprintf("http://localhost%s/stats", o.serverAddr)
+	resp, err := http.Get(statsURL)
+	if err != nil {
+		// Server might be down or unreachable, don't shutdown on this
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false
+	}
+
+	statsText := string(body)
+
+	// Look for "Hands remaining: 0" which indicates limit reached
+	return strings.Contains(statsText, "Hands remaining: 0")
+}
+
 func (o *BotOrchestrator) printSummary() {
-	hands := atomic.LoadUint64(&o.logger.handsLogged)
+	hands := atomic.LoadUint64(&o.handLogger.handsLogged)
 	elapsed := time.Since(startTime)
 	rate := float64(hands) / elapsed.Seconds() * 60
 
-	fmt.Printf("\n\n=====================================\n")
-	fmt.Printf("Summary\n")
-	fmt.Printf("=====================================\n")
-	fmt.Printf("Hands played: %d\n", hands)
-	fmt.Printf("Time elapsed: %s\n", elapsed.Round(time.Second))
-	fmt.Printf("Hands/minute: %.0f\n", rate)
-	fmt.Printf("=====================================\n")
-
-	if *seed != 0 {
-		fmt.Printf("To reproduce: -seed %d -bots %d", *seed, *numBots)
-		if hands > 0 {
-			fmt.Printf(" -hands %d", hands)
-		}
-		if *spawnServer {
-			fmt.Printf(" -spawn-server")
-		}
-		fmt.Printf("\n")
+	// Log final summary
+	reproduceCmd := fmt.Sprintf("-seed %d -bots %d", *seed, *numBots)
+	if o.targetHands > 0 {
+		reproduceCmd += fmt.Sprintf(" -hands %d", o.targetHands)
 	}
+	if *spawnServer {
+		reproduceCmd += " -spawn-server"
+	}
+	if *verbose {
+		reproduceCmd += " -v"
+	}
+
+	o.logger.Info().Uint64("hands_played", hands).
+		Dur("total_elapsed", elapsed).
+		Float64("final_rate_per_minute", rate).
+		Str("reproduce_command", reproduceCmd).
+		Msg("Session completed successfully")
 }
 
 // BotClient represents a single bot connection
@@ -384,19 +451,22 @@ type BotClient struct {
 	name          string
 	strategy      string
 	conn          *websocket.Conn
-	logger        *HandLogger
+	handLogger    *HandLogger
+	logger        zerolog.Logger
 	seat          int
 	chips         int
 	holeCards     []string
 	currentStreet string
 }
 
-func NewBotClient(id int, strategy string, logger *HandLogger) *BotClient {
+func NewBotClient(id int, strategy string, handLogger *HandLogger, logger zerolog.Logger) *BotClient {
+	botName := fmt.Sprintf("Bot%d_%s", id, strategy)
 	return &BotClient{
-		id:       id,
-		name:     fmt.Sprintf("Bot%d_%s", id, strategy),
-		strategy: strategy,
-		logger:   logger,
+		id:         id,
+		name:       botName,
+		strategy:   strategy,
+		handLogger: handLogger,
+		logger:     logger.With().Str("component", "bot").Str("bot_name", botName).Str("strategy", strategy).Logger(),
 	}
 }
 
@@ -489,54 +559,56 @@ func (b *BotClient) handleHandStart(msg *protocol.HandStart) {
 	}
 
 	// Log hand start
-	b.logger.mu.Lock()
+	b.handLogger.mu.Lock()
 	if b.seat == 0 { // Only first bot logs hand info
-		b.logger.handID = msg.HandID
-		b.logger.players = nil
-		b.logger.streets = nil
-		b.logger.actions = nil
-		b.logger.board = nil
-		b.logger.winners = nil
+		b.handLogger.handID = msg.HandID
+		b.handLogger.players = nil
+		b.handLogger.streets = nil
+		b.handLogger.actions = nil
+		b.handLogger.board = nil
+		b.handLogger.winners = nil
 
 		for _, p := range msg.Players {
-			b.logger.players = append(b.logger.players, PlayerInfo{
+			b.handLogger.players = append(b.handLogger.players, PlayerInfo{
 				Name:  p.Name,
 				Seat:  p.Seat,
 				Chips: p.Chips,
 			})
 		}
 
-		if *verbose && !*quiet {
-			fmt.Printf("\n=== HAND %s ===\n", msg.HandID)
-			fmt.Printf("Button: Seat %d\n", msg.Button)
-			fmt.Printf("Blinds: %d/%d\n", msg.SmallBlind, msg.BigBlind)
-			fmt.Printf("Players:\n")
-			for _, p := range msg.Players {
-				fmt.Printf("  Seat %d: %s (%d chips)\n", p.Seat, p.Name, p.Chips)
-			}
-			fmt.Printf("\n")
+		// Log hand start with structured data
+		playerNames := make([]string, len(msg.Players))
+		playerChips := make([]int, len(msg.Players))
+		for i, p := range msg.Players {
+			playerNames[i] = p.Name
+			playerChips[i] = p.Chips
 		}
+
+		b.logger.Info().Str("hand_id", msg.HandID).
+			Int("button", msg.Button).
+			Int("small_blind", msg.SmallBlind).
+			Int("big_blind", msg.BigBlind).
+			Strs("player_names", playerNames).
+			Ints("player_chips", playerChips).
+			Strs("hole_cards", b.holeCards).
+			Msg("Hand started")
 	}
-	b.logger.mu.Unlock()
+	b.handLogger.mu.Unlock()
 }
 
 func (b *BotClient) handleActionRequest(msg *protocol.ActionRequest) {
 	// Determine action based on strategy
 	action, amount := b.selectAction(msg)
 
-	// Log action
-	if *verbose && !*quiet {
-		actionStr := action
-		if action == "raise" {
-			actionStr = fmt.Sprintf("raises to %d", amount)
-		} else if action == "call" && msg.ToCall > 0 {
-			actionStr = fmt.Sprintf("calls %d", msg.ToCall)
-		}
-
-		b.logger.mu.Lock()
-		fmt.Printf("[%s] %s: %s\n", strings.ToUpper(b.currentStreet), b.name, actionStr)
-		b.logger.mu.Unlock()
-	}
+	// Log action with structured data
+	b.logger.Info().Str("hand_id", msg.HandID).
+		Str("street", b.currentStreet).
+		Str("action", action).
+		Int("amount", amount).
+		Int("pot", msg.Pot).
+		Int("to_call", msg.ToCall).
+		Strs("valid_actions", msg.ValidActions).
+		Msg("Player action")
 
 	// Send action
 	actionMsg := &protocol.Action{
@@ -629,37 +701,40 @@ func (b *BotClient) handleGameUpdate(msg *protocol.GameUpdate) {
 func (b *BotClient) handleStreetChange(msg *protocol.StreetChange) {
 	b.currentStreet = msg.Street
 
-	b.logger.mu.Lock()
-	b.logger.streets = append(b.logger.streets, msg.Street)
-	b.logger.board = msg.Board
+	b.handLogger.mu.Lock()
+	b.handLogger.streets = append(b.handLogger.streets, msg.Street)
+	b.handLogger.board = msg.Board
+	b.handLogger.mu.Unlock()
 
-	if *verbose && !*quiet {
-		fmt.Printf("\n=== %s ===\n", strings.ToUpper(msg.Street))
-		if len(msg.Board) > 0 {
-			fmt.Printf("Board: %s\n", strings.Join(msg.Board, " "))
-		}
+	// Log street change with structured data
+	if b.seat == 0 { // Only first bot logs to avoid duplicates
+		b.logger.Info().Str("street", msg.Street).
+			Strs("board", msg.Board).
+			Msg("Street changed")
 	}
-
-	b.logger.mu.Unlock()
 }
 
 func (b *BotClient) handleHandResult(msg *protocol.HandResult) {
-	b.logger.mu.Lock()
-	defer b.logger.mu.Unlock()
-
-	b.logger.winners = msg.Winners
-	b.logger.board = msg.Board
-
+	b.handLogger.mu.Lock()
+	b.handLogger.winners = msg.Winners
+	b.handLogger.board = msg.Board
 	// Increment hands counter
-	atomic.AddUint64(&b.logger.handsLogged, 1)
+	atomic.AddUint64(&b.handLogger.handsLogged, 1)
+	b.handLogger.mu.Unlock()
 
-	if *verbose && !*quiet {
-		fmt.Printf("\n=== SHOWDOWN ===\n")
-		fmt.Printf("Final Board: %s\n", strings.Join(msg.Board, " "))
-		fmt.Printf("Winners:\n")
-		for _, winner := range msg.Winners {
-			fmt.Printf("  %s wins %d\n", winner.Name, winner.Amount)
+	// Log hand result with structured data (only first bot to avoid duplicates)
+	if b.seat == 0 {
+		winnerNames := make([]string, len(msg.Winners))
+		winnerAmounts := make([]int, len(msg.Winners))
+		for i, winner := range msg.Winners {
+			winnerNames[i] = winner.Name
+			winnerAmounts[i] = winner.Amount
 		}
-		fmt.Printf("\n")
+
+		b.logger.Info().Str("hand_id", msg.HandID).
+			Strs("final_board", msg.Board).
+			Strs("winner_names", winnerNames).
+			Ints("winner_amounts", winnerAmounts).
+			Msg("Hand completed")
 	}
 }
