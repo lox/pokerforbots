@@ -296,7 +296,9 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 		p.Bet += toCall
 		p.TotalBet += toCall
 		p.Chips -= toCall
-		h.Pots[0].Amount += toCall
+		// Add to the active pot (last pot if side pots exist)
+		activePot := len(h.Pots) - 1
+		h.Pots[activePot].Amount += toCall
 		if p.Chips == 0 {
 			p.AllInFlag = true
 		}
@@ -315,7 +317,9 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 		h.LastRaiser = h.ActivePlayer
 
 		p.Chips -= raiseAmount
-		h.Pots[0].Amount += raiseAmount
+		// Add to the active pot (last pot if side pots exist)
+		activePot := len(h.Pots) - 1
+		h.Pots[activePot].Amount += raiseAmount
 		p.Bet = amount
 		p.TotalBet += raiseAmount
 
@@ -329,7 +333,9 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 		allInAmount := p.Chips
 		p.Chips = 0
 		p.AllInFlag = true
-		h.Pots[0].Amount += allInAmount
+		// Add to the active pot (last pot if side pots exist)
+		activePot := len(h.Pots) - 1
+		h.Pots[activePot].Amount += allInAmount
 		p.Bet += allInAmount
 		p.TotalBet += allInAmount
 
@@ -525,12 +531,19 @@ func (h *HandState) calculateSidePots() {
 		contribution := maxAmount - lastAmount
 
 		for _, p := range h.Players {
-			if !p.Folded && p.TotalBet >= maxAmount {
+			// Include chips from ALL players who contributed, even if folded
+			if p.TotalBet >= maxAmount {
 				pot.Amount += contribution
-				pot.Eligible = append(pot.Eligible, p.Seat)
-			} else if !p.Folded && p.TotalBet > lastAmount {
+				// Only non-folded players are eligible to win
+				if !p.Folded {
+					pot.Eligible = append(pot.Eligible, p.Seat)
+				}
+			} else if p.TotalBet > lastAmount {
 				pot.Amount += p.TotalBet - lastAmount
-				pot.Eligible = append(pot.Eligible, p.Seat)
+				// Only non-folded players are eligible to win
+				if !p.Folded {
+					pot.Eligible = append(pot.Eligible, p.Seat)
+				}
 			}
 		}
 
@@ -547,9 +560,11 @@ func (h *HandState) calculateSidePots() {
 	}
 
 	for _, p := range h.Players {
-		if !p.Folded && p.TotalBet > lastAmount {
+		// Include chips from ALL players who contributed, even if folded
+		if p.TotalBet > lastAmount {
 			mainPot.Amount += p.TotalBet - lastAmount
-			if !p.AllInFlag {
+			// Only non-folded, non-all-in players are eligible to win
+			if !p.Folded && !p.AllInFlag {
 				mainPot.Eligible = append(mainPot.Eligible, p.Seat)
 			}
 		}

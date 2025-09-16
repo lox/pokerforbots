@@ -10,14 +10,15 @@ import (
 
 // BotPool manages available bots and matches them into hands
 type BotPool struct {
-	bots        map[string]*Bot
-	available   chan *Bot
-	register    chan *Bot
-	unregister  chan *Bot
-	mu          sync.RWMutex
-	minPlayers  int
-	maxPlayers  int
-	handCounter uint64
+	bots          map[string]*Bot
+	available     chan *Bot
+	register      chan *Bot
+	unregister    chan *Bot
+	mu            sync.RWMutex
+	minPlayers    int
+	maxPlayers    int
+	handCounter   uint64
+	currentButton int // Track button position for rotation
 }
 
 // NewBotPool creates a new bot pool
@@ -157,9 +158,12 @@ func (p *BotPool) runHand(bots []*Bot) {
 	handNum := atomic.AddUint64(&p.handCounter, 1)
 	handID := fmt.Sprintf("hand-%d", handNum)
 
-	// Run the hand
-	runner := NewHandRunner(bots, handID, 0)
+	// Run the hand with current button position
+	runner := NewHandRunner(bots, handID, p.currentButton)
 	runner.Run()
+
+	// Rotate button for next hand
+	p.currentButton = (p.currentButton + 1) % len(bots)
 }
 
 // Register adds a bot to the pool
