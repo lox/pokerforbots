@@ -216,7 +216,7 @@ The server uses dependency injection for all random number generation. A single 
 ### Stateless Design
 Each hand is completely independent:
 - Random selection of 2-9 bots from the available pool
-- Button assigned to the first seat in that shuffled order (no rotation carried between hands)
+- Button assigned to the first seat in that shuffled order (no rotation carried between hands), so the seating shuffle alone defines blinds/position
 - Fresh game state with no carryover
 
 ## Testing Strategy
