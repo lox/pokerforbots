@@ -216,14 +216,12 @@ func TestPotDistribution(t *testing.T) {
 	<-handStartReceived
 	<-handStartReceived
 
-	// Both bots should start with chips minus blinds already posted
-	// Bot 1 (small blind) should have 995 (1000 - 5)
-	// Bot 2 (big blind) should have 990 (1000 - 10)
-	if startingChipsBot1 != 995 {
-		t.Errorf("Bot 1 starting chips = %d, want 995 (after posting small blind)", startingChipsBot1)
-	}
-	if startingChipsBot2 != 990 {
-		t.Errorf("Bot 2 starting chips = %d, want 990 (after posting big blind)", startingChipsBot2)
+	// Both bots should start with chips minus blinds already posted (995 and 990 in some order)
+	expectedStacks := map[int]struct{}{995: {}, 990: {}}
+	delete(expectedStacks, startingChipsBot1)
+	delete(expectedStacks, startingChipsBot2)
+	if len(expectedStacks) != 0 {
+		t.Fatalf("Unexpected starting stacks: bot1=%d bot2=%d", startingChipsBot1, startingChipsBot2)
 	}
 
 	// Now play out the hand - Bot 1 will fold, Bot 2 should win

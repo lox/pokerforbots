@@ -13,8 +13,8 @@ import (
 	"github.com/lox/pokerforbots/internal/protocol"
 )
 
-// TestButtonIsRandomized ensures the dealer button position is random between hands per design.
-func TestButtonIsRandomized(t *testing.T) {
+// TestButtonAssignedToFirstSeat ensures the dealer button is always given to seat 0 after shuffling.
+func TestButtonAssignedToFirstSeat(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	s := NewServer(testLogger(), rng)
 
@@ -59,7 +59,7 @@ func TestButtonIsRandomized(t *testing.T) {
 	buttonPositions := []int{}
 	var buttonMutex sync.Mutex
 	seenHands := make(map[string]struct{})
-	targetHands := 10 // Increased to better detect randomization
+	targetHands := 10
 
 	done := make(chan struct{})
 	var doneOnce sync.Once
@@ -128,16 +128,11 @@ func TestButtonIsRandomized(t *testing.T) {
 		t.Fatalf("Expected at least %d button updates, got %d", targetHands*len(bots), len(positions))
 	}
 
-	uniqueButtons := make(map[int]struct{})
 	for _, pos := range positions {
-		uniqueButtons[pos] = struct{}{}
+		if pos != 0 {
+			t.Fatalf("Expected button to always be seat 0, saw %d", pos)
+		}
 	}
 
-	// Per design document: button should be random, not follow a predictable pattern
-	// With multiple hands, we should see some variation in button positions
-	if len(uniqueButtons) == 1 {
-		t.Errorf("Button position never varied! It stayed at position %d for all %d hands. Expected randomization per design.", positions[0], len(positions))
-	} else {
-		t.Logf("SUCCESS: Button position randomized correctly - saw %d different positions: %v", len(uniqueButtons), uniqueButtons)
-	}
+	t.Logf("Button assigned to seat 0 for all %d observations", len(positions))
 }

@@ -270,19 +270,19 @@ func (p *BotPool) runHand(bots []*Bot) {
 	handNum := atomic.AddUint64(&p.handCounter, 1)
 	handID := fmt.Sprintf("hand-%d", handNum)
 
-	// Random button position for stateless hands with mutex protection
+	// Generate per-hand RNG to avoid concurrent access to the pool RNG
 	p.rngMutex.Lock()
-	button := p.rng.Intn(len(bots))
-	// Generate a separate RNG for the hand runner to avoid continued concurrent access
 	handRNGSeed := p.rng.Int63()
 	p.rngMutex.Unlock()
+
+	button := 0 // With freshly shuffled seats, seat 0 acts as the button every hand
 
 	handRNG := rand.New(rand.NewSource(handRNGSeed))
 	p.logger.Info().
 		Str("hand_id", handID).
 		Int("button_position", button).
 		Int("player_count", len(bots)).
-		Msg("Hand starting with random button position")
+		Msg("Hand starting with deterministic button assignment")
 
 	// Run the hand with the cloned RNG and config
 	runner := NewHandRunnerWithConfig(p.logger, bots, handID, button, handRNG, p.config)
