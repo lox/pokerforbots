@@ -160,6 +160,22 @@ func main() {
 
 	logEvent.Msg("Starting Poker Bot Orchestrator")
 
+	// Print reproduce arguments
+	reproduceArgs := fmt.Sprintf("--seed %d --bots %d --calling %d --random %d --aggressive %d",
+		cli.Seed, cli.Bots, cli.Calling, cli.Random, cli.Aggressive)
+
+	if cli.Hands > 0 {
+		reproduceArgs += fmt.Sprintf(" --hands %d", cli.Hands)
+	}
+
+	if cli.SpawnServer {
+		reproduceArgs += fmt.Sprintf(" --spawn-server --port %d", cli.Port)
+	} else {
+		reproduceArgs += fmt.Sprintf(" --server %s", cli.Server)
+	}
+
+	logger.Info().Str("reproduce_args", reproduceArgs).Msg("To reproduce this exact run")
+
 	orchestrator := &BotOrchestrator{
 		targetHands: cli.Hands,
 		handLogger:  &HandLogger{},
@@ -724,6 +740,7 @@ func (b *BotClient) handleHandResult(msg *protocol.HandResult) {
 	b.handLogger.mu.Lock()
 	b.handLogger.winners = msg.Winners
 	b.handLogger.board = msg.Board
+	handNum := b.handLogger.handsLogged + 1 // Get hand number before incrementing
 	if b.seat == 0 {
 		atomic.AddUint64(&b.handLogger.handsLogged, 1)
 	}
@@ -743,5 +760,22 @@ func (b *BotClient) handleHandResult(msg *protocol.HandResult) {
 			Strs("winner_names", winnerNames).
 			Ints("winner_amounts", winnerAmounts).
 			Msg("Hand completed")
+
+		// Print reproduce arguments to recreate the session up to and including this hand
+		// This will replay with the same seed and run exactly handNum hands
+		reproduceArgs := fmt.Sprintf("--seed %d --bots %d --calling %d --random %d --aggressive %d --hands %d",
+			cli.Seed, cli.Bots, cli.Calling, cli.Random, cli.Aggressive, handNum)
+
+		if cli.SpawnServer {
+			reproduceArgs += fmt.Sprintf(" --spawn-server --port %d", cli.Port)
+		} else {
+			reproduceArgs += fmt.Sprintf(" --server %s", cli.Server)
+		}
+
+		b.logger.Info().
+			Uint64("hand_number", handNum).
+			Str("hand_id", msg.HandID).
+			Str("reproduce_args", reproduceArgs).
+			Msg("To reproduce up to this hand")
 	}
 }
