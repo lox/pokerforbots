@@ -31,6 +31,8 @@ linters:
           msg: "Usage of the 'log' package is forbidden"
         - pattern: ^fmt\.Print(f|ln|)\(?
           msg: "Usage of fmt.Print functions is forbidden"
+      exclude-paths:
+        - ^cmd/
 
   exclusions:
     rules:
