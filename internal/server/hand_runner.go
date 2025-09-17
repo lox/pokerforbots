@@ -112,7 +112,7 @@ func (hr *HandRunner) Run() {
 			playerNames[i] = bot.ID
 		}
 		hr.playerLabels[i] = playerNames[i]
-		// Get bot's buy-in (capped at 100)
+		// Get bot's buy-in (capped at table starting stack)
 		chipCounts[i] = bot.GetBuyIn()
 	}
 

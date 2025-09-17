@@ -650,7 +650,7 @@ func TestBankrollDeltaCalculation(t *testing.T) {
 	bot1 := &Bot{
 		ID:       "rich-bot",
 		send:     make(chan []byte, 100),
-		bankroll: 1000, // Rich bot
+		bankroll: 2000, // Rich bot (can cover two full buy-ins)
 	}
 	bot2 := &Bot{
 		ID:       "poor-bot",
@@ -666,11 +666,11 @@ func TestBankrollDeltaCalculation(t *testing.T) {
 	_ = bot2.bankroll // initialBankroll2 not used since bot2 loses everything
 
 	// Record the buy-ins (what each bot actually brought to the table)
-	buyIn1 := bot1.GetBuyIn() // Should be 100 (capped)
+	buyIn1 := bot1.GetBuyIn() // Should be capped at table stack (default 1000)
 	buyIn2 := bot2.GetBuyIn() // Should be 50 (all they have)
 
-	if buyIn1 != 100 {
-		t.Errorf("Bot 1 buy-in = %d, expected 100", buyIn1)
+	if buyIn1 != defaultMaxBuyIn {
+		t.Errorf("Bot 1 buy-in = %d, expected %d", buyIn1, defaultMaxBuyIn)
 	}
 	if buyIn2 != 50 {
 		t.Errorf("Bot 2 buy-in = %d, expected 50", buyIn2)
@@ -685,10 +685,13 @@ func TestBankrollDeltaCalculation(t *testing.T) {
 	// If bot1 wins, final chips: bot1 = 140, bot2 = 0
 
 	// Manually set final chip counts to simulate bot1 winning
+	finalChipsBot1 := buyIn1 + buyIn2
+	finalChipsBot2 := 0
+
 	runner.handState = &game.HandState{
 		Players: []*game.Player{
-			{Chips: 140}, // Bot1 won the pot
-			{Chips: 0},   // Bot2 lost everything
+			{Chips: finalChipsBot1},
+			{Chips: finalChipsBot2},
 		},
 	}
 	runner.seatBuyIns = []int{buyIn1, buyIn2}
@@ -702,14 +705,14 @@ func TestBankrollDeltaCalculation(t *testing.T) {
 
 	// Check bankroll changes
 	// Bot1: started with 1000, bought in for 100 (now 900), won 140, delta = +40
-	expectedBankroll1 := initialBankroll1 + 40
+	expectedBankroll1 := initialBankroll1 + (finalChipsBot1 - buyIn1)
 	if bot1.bankroll != expectedBankroll1 {
 		t.Errorf("Bot1 bankroll = %d, expected %d (initial %d + delta %d)",
 			bot1.bankroll, expectedBankroll1, initialBankroll1, 40)
 	}
 
 	// Bot2: started with 50, bought in for 50 (now 0), won 0, delta = -50
-	expectedBankroll2 := 0 // Lost everything
+	expectedBankroll2 := finalChipsBot2 // Lost everything
 	if bot2.bankroll != expectedBankroll2 {
 		t.Errorf("Bot2 bankroll = %d, expected %d", bot2.bankroll, expectedBankroll2)
 	}

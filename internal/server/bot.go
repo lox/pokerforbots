@@ -47,8 +47,20 @@ func (b *Bot) IsClosed() bool {
 	return b.closed
 }
 
+const (
+	defaultMaxBuyIn   = 1000 // 100 big blinds at 5/10
+	defaultBankrollBB = 100  // bots keep 100 buy-ins by default
+)
+
 // NewBot creates a new bot instance
 func NewBot(logger zerolog.Logger, id string, conn *websocket.Conn, pool *BotPool) *Bot {
+	maxBuyIn := defaultMaxBuyIn
+	if pool != nil && pool.config.StartChips > 0 {
+		maxBuyIn = pool.config.StartChips
+	}
+
+	bankroll := maxBuyIn * defaultBankrollBB
+
 	return &Bot{
 		ID:       id,
 		conn:     conn,
@@ -56,7 +68,7 @@ func NewBot(logger zerolog.Logger, id string, conn *websocket.Conn, pool *BotPoo
 		pool:     pool,
 		lastPing: time.Now(),
 		done:     make(chan struct{}),
-		bankroll: 10000, // Start with 10,000 chips (100 buy-ins at 100 chips each)
+		bankroll: bankroll,
 		logger:   logger.With().Str("component", "bot").Str("bot_id", id).Logger(),
 	}
 }
@@ -107,12 +119,16 @@ func (b *Bot) SetActionChannel(ch chan ActionEnvelope) {
 	b.actionChan = ch
 }
 
-// GetBuyIn returns the buy-in amount for this bot (capped at 100 chips)
+// GetBuyIn returns the buy-in amount for this bot (capped at the table's starting stack)
 func (b *Bot) GetBuyIn() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	const maxBuyIn = 100
+	maxBuyIn := defaultMaxBuyIn
+	if b.pool != nil && b.pool.config.StartChips > 0 {
+		maxBuyIn = b.pool.config.StartChips
+	}
+
 	if b.bankroll >= maxBuyIn {
 		return maxBuyIn
 	}
