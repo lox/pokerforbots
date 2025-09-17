@@ -327,7 +327,6 @@ func (c *client) handlePlayerAction(msg *protocol.PlayerAction) error {
 	var (
 		nameLabel        string
 		holeHeaderNeeded bool
-		heroName         string
 		heroCards        string
 	)
 	if state != nil && state.id == msg.HandID && msg.Seat >= 0 && msg.Seat < len(state.players) {
@@ -367,7 +366,6 @@ func (c *client) handlePlayerAction(msg *protocol.PlayerAction) error {
 			holeHeaderNeeded = true
 		}
 		if state.yourSeat >= 0 && state.yourSeat < len(state.players) {
-			heroName = formatPlayerName(state, state.yourSeat, state.players[state.yourSeat].Name, state.players[state.yourSeat].Folded, state.players[state.yourSeat].AllIn)
 			heroCards = formatCards(state.holeCards)
 		}
 	} else {
@@ -377,10 +375,15 @@ func (c *client) handlePlayerAction(msg *protocol.PlayerAction) error {
 
 	if holeHeaderNeeded {
 		stdoutln()
-		stdoutln(colorize("*** HOLE CARDS ***", colorBold+colorBlue))
-		if heroName != "" && heroCards != "" {
-			stdoutf("%s: %s\n", heroName, heroCards)
+		cardsForHeader := heroCards
+		if cardsForHeader == "" {
+			cardsForHeader = formatCards(state.holeCards)
 		}
+		header := "*** HOLE CARDS ***"
+		if strings.TrimSpace(cardsForHeader) != "" {
+			header = fmt.Sprintf("*** HOLE CARDS *** (%s)", cardsForHeader)
+		}
+		stdoutln(colorize(header, colorBold+colorBlue))
 	}
 
 	actionDesc := describePlayerAction(msg.Action, msg.AmountPaid, msg.PlayerBet, msg.PlayerChips)
@@ -727,11 +730,7 @@ func (c *client) handleInputLine(raw string) {
 	c.pendingAction = nil
 	c.mu.Unlock()
 
-	stdoutf("Sent action: %s", formatActionLabel(action))
-	if action == "raise" || action == "bet" {
-		stdoutf(" %s", formatAmount(amount))
-	}
-	stdoutln()
+	stdoutln(formatSentActionLine(action, amount))
 }
 
 func (c *client) close() {
@@ -818,21 +817,22 @@ func describePlayerAction(action string, amountPaid, playerBet, playerChips int)
 		}
 		return colorize("calls", colorGreen)
 	case "raise":
+		if playerBet > 0 {
+			return fmt.Sprintf("raises to %s", formatAmount(playerBet))
+		}
 		if amountPaid > 0 {
-			return fmt.Sprintf("raises %s to %s", formatAmount(amountPaid), formatAmount(playerBet))
+			return fmt.Sprintf("raises %s", formatAmount(amountPaid))
 		}
-		return fmt.Sprintf("raises to %s", formatAmount(playerBet))
+		return colorize("raises", colorBold)
 	case "allin":
-		var base string
 		switch {
-		case amountPaid > 0 && playerBet > amountPaid:
-			base = fmt.Sprintf("raises %s to %s", formatAmount(amountPaid), formatAmount(playerBet))
 		case playerBet > 0:
-			base = fmt.Sprintf("bets %s", formatAmount(playerBet))
+			return fmt.Sprintf("raises to %s %s", formatAmount(playerBet), colorize("and is all-in", colorRed+colorBold))
+		case amountPaid > 0:
+			return fmt.Sprintf("bets %s %s", formatAmount(amountPaid), colorize("and is all-in", colorRed+colorBold))
 		default:
-			base = colorize("moves all-in", colorRed+colorBold)
+			return colorize("moves all-in", colorRed+colorBold)
 		}
-		return fmt.Sprintf("%s %s", base, colorize("and is all-in", colorRed+colorBold))
 	case "post_small_blind":
 		return fmt.Sprintf("posts small blind %s", formatAmount(amountPaid))
 	case "post_big_blind":
@@ -932,6 +932,24 @@ func colorize(text string, color string) string {
 		return text
 	}
 	return color + text + colorReset
+}
+
+func formatSentActionLine(action string, amount int) string {
+	switch action {
+	case "raise":
+		if amount > 0 {
+			return fmt.Sprintf("Sent action: %s to %s", formatActionLabel(action), formatAmount(amount))
+		}
+	case "bet":
+		if amount > 0 {
+			return fmt.Sprintf("Sent action: %s %s", formatActionLabel(action), formatAmount(amount))
+		}
+	case "allin":
+		if amount > 0 {
+			return fmt.Sprintf("Sent action: %s for %s", formatActionLabel(action), formatAmount(amount))
+		}
+	}
+	return fmt.Sprintf("Sent action: %s", formatActionLabel(action))
 }
 
 func stdoutf(format string, args ...any) {
