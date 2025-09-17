@@ -53,11 +53,14 @@ Bot → WebSocket → Server → Bot Pool → Hand Runner → Game Engine
 - `GameUpdate`: Broadcast other player actions
 - `HandResult`: Announce winner(s)
 
-### Timeout Handling
+### Timeout Handling & Disconnects
 
 - Configurable timeout per action (default 100ms)
 - Auto-fold on timeout
-- No reconnection support - simplicity over resilience
+- Immediate fold on WebSocket disconnect; the seat is removed from the hand with no replacement
+- Reconnecting bots must initiate a fresh session (new connection + Connect message)
+- Future roadmap: authenticate reconnecting bots and restore their bankroll when rejoining the pool, but never resume an in-flight hand
+- No mid-hand reconnection support – simplicity over resilience remains the guiding principle
 
 ## Game Rules
 

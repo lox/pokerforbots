@@ -381,35 +381,46 @@ func (o *BotOrchestrator) run() <-chan struct{} {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 
+		var lastHandCount uint64
+		lastProgressLog := time.Now()
+		const progressInterval = 30 * time.Second // Log progress every 30s even without hand progress
+
 		for { //nolint:staticcheck // explicit select for clarity
 			select {
 			case <-ticker.C:
 				currentHands := atomic.LoadUint64(&o.handLogger.handsLogged)
 
-				elapsed := time.Since(startTime)
-				rate := float64(currentHands) / elapsed.Seconds() * 60
+				// Only log if hand count changed or 30 seconds have passed
+				shouldLog := currentHands != lastHandCount || time.Since(lastProgressLog) >= progressInterval
 
-				// Log progress
-				handsCompleted := currentHands
-				logEvent := o.logger.Info().Uint64("hands_completed", handsCompleted).
-					Float64("rate_per_minute", rate).
-					Dur("elapsed", elapsed)
+				if shouldLog {
+					elapsed := time.Since(startTime)
+					rate := float64(currentHands) / elapsed.Seconds() * 60
 
-				if o.targetHands > 0 {
-					handsRemaining := o.targetHands - int(handsCompleted)
-					if handsRemaining < 0 {
-						handsRemaining = 0
+					// Log progress
+					handsCompleted := currentHands
+					logEvent := o.logger.Info().Uint64("hands_completed", handsCompleted).
+						Float64("rate_per_minute", rate).
+						Dur("elapsed", elapsed)
+
+					if o.targetHands > 0 {
+						handsRemaining := o.targetHands - int(handsCompleted)
+						if handsRemaining < 0 {
+							handsRemaining = 0
+						}
+						progress := float64(handsCompleted) / float64(o.targetHands) * 100
+						if progress > 100 {
+							progress = 100
+						}
+						logEvent = logEvent.Int("target_hands", o.targetHands).
+							Int("hands_remaining", handsRemaining).
+							Float64("progress_percent", progress)
 					}
-					progress := float64(handsCompleted) / float64(o.targetHands) * 100
-					if progress > 100 {
-						progress = 100
-					}
-					logEvent = logEvent.Int("target_hands", o.targetHands).
-						Int("hands_remaining", handsRemaining).
-						Float64("progress_percent", progress)
+
+					logEvent.Msg("Session progress")
+					lastHandCount = currentHands
+					lastProgressLog = time.Now()
 				}
-
-				logEvent.Msg("Session progress")
 
 				// For limited hands, check if server has reached its limit
 				if o.targetHands > 0 {

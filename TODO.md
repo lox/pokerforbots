@@ -162,6 +162,12 @@
   - [x] Timeout values (-timeout-ms)
   - [x] Min/max players (-min-players, -max-players)
 
+### 12. Human CLI Client ✅
+- [x] Build minimal interactive CLI for human players
+  - [x] Connect via WebSocket with msgpack protocol
+  - [x] Display table state updates and prompt for actions
+  - [x] Ship as `cmd/client`
+
 ## Completion Criteria
 
 A successful demo should:

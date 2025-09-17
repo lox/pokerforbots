@@ -148,9 +148,12 @@ Sent when bot sends invalid message or action.
 3. Bot sends Connect message with display name
 4. Bot enters available pool
 5. Bot plays hands until disconnection
-6. Disconnection removes bot from all systems
+6. Disconnection immediately folds the bot from any active hand and removes it from all queues
+7. Reconnection requires a brand-new WebSocket session and `Connect` message; no in-hand recovery is attempted
 
-Note: The server does not support reconnection. Bots must establish a new connection if disconnected.
+Notes:
+- The server does not support mid-hand reconnection. Every hand remains independent.
+- Future work will add bot authentication so a reconnecting bot can reclaim its bankroll balance when rejoining the idle pool, but it still starts fresh for upcoming hands.
 
 ## Card Representation
 

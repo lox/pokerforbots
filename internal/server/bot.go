@@ -26,6 +26,27 @@ type Bot struct {
 	logger       zerolog.Logger
 }
 
+func (b *Bot) close() {
+	b.mu.Lock()
+	if !b.closed {
+		b.closed = true
+		close(b.done)
+	}
+	b.mu.Unlock()
+}
+
+// Done returns a channel that is closed when the bot connection shuts down.
+func (b *Bot) Done() <-chan struct{} {
+	return b.done
+}
+
+// IsClosed reports whether the bot connection has been closed.
+func (b *Bot) IsClosed() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.closed
+}
+
 // NewBot creates a new bot instance
 func NewBot(logger zerolog.Logger, id string, conn *websocket.Conn, pool *BotPool) *Bot {
 	return &Bot{
@@ -129,14 +150,9 @@ func (b *Bot) ClearActionChannel() {
 // ReadPump reads messages from the websocket connection
 func (b *Bot) ReadPump() {
 	defer func() {
+		b.close()
 		b.pool.Unregister(b)
 		_ = b.conn.Close()
-		b.mu.Lock()
-		if !b.closed {
-			b.closed = true
-			close(b.done)
-		}
-		b.mu.Unlock()
 	}()
 
 	_ = b.conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -193,12 +209,7 @@ func (b *Bot) WritePump() {
 	defer func() {
 		ticker.Stop()
 		_ = b.conn.Close()
-		b.mu.Lock()
-		if !b.closed {
-			b.closed = true
-			close(b.done)
-		}
-		b.mu.Unlock()
+		b.close()
 	}()
 
 	for {

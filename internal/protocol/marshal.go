@@ -36,6 +36,10 @@ func Marshal(v any) ([]byte, error) {
 		if err := msg.EncodeMsg(writer); err != nil {
 			return nil, err
 		}
+	case *PlayerAction:
+		if err := msg.EncodeMsg(writer); err != nil {
+			return nil, err
+		}
 	case *Action:
 		if err := msg.EncodeMsg(writer); err != nil {
 			return nil, err
@@ -80,6 +84,8 @@ func Unmarshal(data []byte, v any) error {
 	case *HandStart:
 		return msg.DecodeMsg(reader)
 	case *GameUpdate:
+		return msg.DecodeMsg(reader)
+	case *PlayerAction:
 		return msg.DecodeMsg(reader)
 	case *Action:
 		return msg.DecodeMsg(reader)

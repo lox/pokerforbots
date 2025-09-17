@@ -14,6 +14,7 @@ const (
 	TypeHandStart     = "hand_start"
 	TypeActionRequest = "action_request"
 	TypeGameUpdate    = "game_update"
+	TypePlayerAction  = "player_action"
 	TypeStreetChange  = "street_change"
 	TypeHandResult    = "hand_result"
 	TypeError         = "error"
@@ -80,6 +81,20 @@ type GameUpdate struct {
 	Players []Player `msg:"players"`
 }
 
+// PlayerAction is broadcast after each player action (including blinds, timeouts)
+type PlayerAction struct {
+	Type        string `msg:"type"`
+	HandID      string `msg:"hand_id"`
+	Street      string `msg:"street"`
+	Seat        int    `msg:"seat"`
+	PlayerName  string `msg:"player_name"`
+	Action      string `msg:"action"`       // fold, check, call, raise, allin, post_small_blind, post_big_blind, timeout_fold
+	AmountPaid  int    `msg:"amount_paid"`  // Incremental amount paid with this action
+	PlayerBet   int    `msg:"player_bet"`   // Player's total bet after action
+	PlayerChips int    `msg:"player_chips"` // Player's chips after action
+	Pot         int    `msg:"pot"`          // Total pot after action
+}
+
 // StreetChange is sent when moving to next betting round
 type StreetChange struct {
 	Type   string   `msg:"type"`
@@ -90,16 +105,26 @@ type StreetChange struct {
 
 // HandResult is sent at hand completion
 type HandResult struct {
-	Type    string   `msg:"type"`
-	HandID  string   `msg:"hand_id"`
-	Winners []Winner `msg:"winners"`
-	Board   []string `msg:"board"`
+	Type     string         `msg:"type"`
+	HandID   string         `msg:"hand_id"`
+	Winners  []Winner       `msg:"winners"`
+	Board    []string       `msg:"board"`
+	Showdown []ShowdownHand `msg:"showdown,omitempty"` // All hands shown at showdown
 }
 
 // Winner info
 type Winner struct {
-	Name   string `msg:"name"`
-	Amount int    `msg:"amount"`
+	Name      string   `msg:"name"`
+	Amount    int      `msg:"amount"`
+	HoleCards []string `msg:"hole_cards,omitempty"` // Winner's hole cards
+	HandRank  string   `msg:"hand_rank,omitempty"`  // e.g., "Two Pair, Aces and Kings"
+}
+
+// ShowdownHand represents a player's hand shown at showdown (losers who show)
+type ShowdownHand struct {
+	Name      string   `msg:"name"`
+	HoleCards []string `msg:"hole_cards"`
+	HandRank  string   `msg:"hand_rank"` // e.g., "Pair of Queens"
 }
 
 // Error message

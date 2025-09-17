@@ -186,6 +186,39 @@ func TestHandRunnerComplete(t *testing.T) {
 	}
 }
 
+func TestHandRunnerForceFoldOnDisconnect(t *testing.T) {
+	// Two bots, bot1 will disconnect
+	bots := []*Bot{
+		{ID: "bot1", send: make(chan []byte, 10), done: make(chan struct{})},
+		{ID: "bot2", send: make(chan []byte, 10), done: make(chan struct{})},
+	}
+
+	runner := NewHandRunner(testLogger(), bots, "disconnect-test", 0, rand.New(rand.NewSource(42)))
+	runner.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
+	runner.playerLabels = []string{"bot1", "bot2"}
+	runner.lastStreet = runner.handState.Street
+
+	// Simulate bot2 disconnecting
+	bots[1].mu.Lock()
+	bots[1].closed = true
+	bots[1].mu.Unlock()
+	close(bots[1].done)
+
+	runner.foldDisconnectedPlayers(-1)
+
+	if !runner.handState.Players[1].Folded {
+		t.Fatal("expected seat 1 to be folded after disconnect")
+	}
+
+	// Connected bot should observe at least one message (player_action or game_update)
+	select {
+	case <-bots[0].send:
+		// ok
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("expected player_action broadcast to connected bot")
+	}
+}
+
 // TestValidActionsGeneration tests that valid actions are always generated correctly
 func TestValidActionsGeneration(t *testing.T) {
 	tests := []struct {

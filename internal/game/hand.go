@@ -400,6 +400,48 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 	return nil
 }
 
+// ForceFold marks the specified seat as folded immediately, regardless of turn order.
+// Used for exceptional conditions like disconnects and protocol violations.
+func (h *HandState) ForceFold(seat int) {
+	if seat < 0 || seat >= len(h.Players) {
+		return
+	}
+
+	player := h.Players[seat]
+	if player.Folded {
+		return
+	}
+
+	player.Folded = true
+	h.ActedThisRound[seat] = true
+
+	// If the folding player was the big blind preflop, mark that they have acted to avoid hanging the round.
+	if h.Street == Preflop {
+		var bbPos int
+		if len(h.Players) == 2 {
+			bbPos = (h.Button + 1) % len(h.Players)
+		} else {
+			bbPos = (h.Button + 2) % len(h.Players)
+		}
+		if seat == bbPos {
+			h.BBActed = true
+		}
+	}
+
+	if h.LastRaiser == seat {
+		h.LastRaiser = -1
+	}
+
+	// Advance the active player if the disconnected bot was due to act next.
+	if seat == h.ActivePlayer {
+		h.ActivePlayer = h.nextActivePlayer(seat + 1)
+	}
+
+	if h.ActivePlayer == -1 || h.isBettingComplete() {
+		h.NextStreet()
+	}
+}
+
 func (h *HandState) nextActivePlayer(from int) int {
 	numPlayers := len(h.Players)
 	for i := 0; i < numPlayers; i++ {

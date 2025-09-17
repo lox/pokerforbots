@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/lox/pokerforbots/internal/game"
@@ -135,8 +136,18 @@ func (hr *HandRunner) Run() {
 	// Send hand start messages
 	hr.broadcastHandStart()
 
+	// Broadcast blind posts
+	hr.broadcastBlindPosts()
+
 	// Run betting rounds until hand is complete
 	for !hr.handState.IsComplete() {
+		if hr.foldDisconnectedPlayers(-1) {
+			// State changed (street may have advanced); re-evaluate hand completion
+			if hr.handState.IsComplete() {
+				break
+			}
+			continue
+		}
 		// Get current player
 		activePlayer := hr.handState.ActivePlayer
 		if activePlayer == -1 {
@@ -168,6 +179,10 @@ func (hr *HandRunner) Run() {
 
 		// Send action request to active bot
 		bot := hr.bots[activePlayer]
+		if hr.foldDisconnectedPlayers(activePlayer) {
+			// Active player disconnected before acting, loop to pick next player
+			continue
+		}
 		if err := hr.sendActionRequest(bot, activePlayer, validActions); err != nil {
 			hr.logger.Error().Err(err).Msg("Failed to send action request")
 			executed := hr.processAction(activePlayer, game.Fold, 0)
@@ -175,7 +190,7 @@ func (hr *HandRunner) Run() {
 			continue
 		}
 
-		// Wait for action with timeout
+		// Wait for action with timeout or disconnect
 		action, amount := hr.waitForAction(activePlayer)
 
 		// Process the action and record outcome
@@ -299,6 +314,10 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 		// Wrong bot sent action, auto-fold
 		return game.Fold, 0
 
+	case <-hr.bots[botIndex].Done():
+		hr.logger.Warn().Str("bot_id", hr.bots[botIndex].ID).Msg("Bot disconnected during action window")
+		return game.Fold, 0
+
 	case <-timer.C:
 		// Timeout - auto fold
 		hr.logger.Warn().Str("bot_id", hr.bots[botIndex].ID).Msg("Bot timed out")
@@ -382,8 +401,11 @@ func (hr *HandRunner) convertAction(action protocol.Action) (game.Action, int) {
 	}
 }
 
-// processAction processes a bot's action
+// processAction processes a bot's action and broadcasts it
 func (hr *HandRunner) processAction(botIndex int, action game.Action, amount int) game.Action {
+	// Track the player's bet before the action
+	playerBetBefore := hr.handState.Players[botIndex].Bet
+
 	if err := hr.handState.ProcessAction(action, amount); err != nil {
 		hr.logger.Error().
 			Err(err).
@@ -394,9 +416,122 @@ func (hr *HandRunner) processAction(botIndex int, action game.Action, amount int
 			Msg("Invalid action from bot - forcing fold")
 		// Force fold on invalid action
 		_ = hr.handState.ProcessAction(game.Fold, 0)
+
+		// Broadcast the forced fold
+		hr.broadcastPlayerAction(botIndex, "timeout_fold", 0)
 		return game.Fold
 	}
+
+	// Calculate amount paid (difference in bet)
+	playerBetAfter := hr.handState.Players[botIndex].Bet
+	amountPaid := playerBetAfter - playerBetBefore
+
+	// Map action to string for broadcast
+	actionStr := action.String()
+	if action == game.AllIn {
+		actionStr = "allin"
+	} else {
+		actionStr = strings.ToLower(actionStr)
+	}
+
+	// Broadcast the player action
+	hr.broadcastPlayerAction(botIndex, actionStr, amountPaid)
+
 	return action
+}
+
+// foldDisconnectedPlayers scans for closed bot connections (excluding skipSeat) and force-folds them.
+// Returns true if any folds occurred.
+func (hr *HandRunner) foldDisconnectedPlayers(skipSeat int) bool {
+	if hr.handState == nil {
+		return false
+	}
+	changed := false
+	for seat, bot := range hr.bots {
+		if seat == skipSeat {
+			continue
+		}
+		if bot.IsClosed() {
+			if hr.forceFoldSeat(seat) {
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
+// forceFoldSeat immediately folds the given seat and broadcasts state changes.
+// Returns true if the player was folded.
+func (hr *HandRunner) forceFoldSeat(seat int) bool {
+	if hr.handState == nil || seat < 0 || seat >= len(hr.handState.Players) {
+		return false
+	}
+	player := hr.handState.Players[seat]
+	if player.Folded {
+		return false
+	}
+	prevStreet := hr.handState.Street
+	hr.logger.Warn().
+		Int("seat", seat).
+		Str("bot", hr.playerLabels[seat]).
+		Msg("Bot disconnected - forcing fold")
+	hr.handState.ForceFold(seat)
+	hr.broadcastPlayerAction(seat, "timeout_fold", 0)
+	hr.broadcastGameUpdate()
+	if hr.handState.Street != prevStreet {
+		hr.broadcastStreetChange(prevStreet)
+		hr.lastStreet = hr.handState.Street
+	}
+	return true
+}
+
+// broadcastBlindPosts sends blind posting actions
+func (hr *HandRunner) broadcastBlindPosts() {
+	numPlayers := len(hr.handState.Players)
+	var sbPos, bbPos int
+
+	if numPlayers == 2 {
+		// Heads-up: button posts small blind
+		sbPos = hr.button
+		bbPos = (hr.button + 1) % numPlayers
+	} else {
+		// Regular: button+1 posts small blind, button+2 posts big blind
+		sbPos = (hr.button + 1) % numPlayers
+		bbPos = (hr.button + 2) % numPlayers
+	}
+
+	// Broadcast small blind post
+	sbPlayer := hr.handState.Players[sbPos]
+	hr.broadcastPlayerAction(sbPos, "post_small_blind", sbPlayer.Bet)
+
+	// Broadcast big blind post
+	bbPlayer := hr.handState.Players[bbPos]
+	hr.broadcastPlayerAction(bbPos, "post_big_blind", bbPlayer.Bet)
+}
+
+// broadcastPlayerAction sends detailed action information to all bots
+func (hr *HandRunner) broadcastPlayerAction(seat int, action string, amountPaid int) {
+	player := hr.handState.Players[seat]
+	pot := hr.totalPot()
+
+	msg := &protocol.PlayerAction{
+		Type:        "player_action",
+		HandID:      hr.handID,
+		Street:      hr.handState.Street.String(),
+		Seat:        seat,
+		PlayerName:  player.Name,
+		Action:      action,
+		AmountPaid:  amountPaid,
+		PlayerBet:   player.Bet,
+		PlayerChips: player.Chips,
+		Pot:         pot,
+	}
+
+	for _, bot := range hr.bots {
+		if err := bot.SendMessage(msg); err != nil {
+			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send player action")
+		}
+	}
 }
 
 // broadcastGameUpdate sends game state updates to all bots
@@ -580,24 +715,67 @@ func (hr *HandRunner) resolveHand() []winnerSummary {
 	return summaries
 }
 
-// broadcastHandResult sends the final hand result
+// broadcastHandResult sends the final hand result with showdown details
 func (hr *HandRunner) broadcastHandResult(winners []winnerSummary) {
+	// Evaluate all hands for showdown info
+	boardCards := hr.boardStrings()
+
+	// Prepare winner info with hole cards and hand ranks
 	winnerInfo := make([]protocol.Winner, len(winners))
+	winnerSeats := make(map[int]bool)
 	for i, winner := range winners {
+		player := hr.handState.Players[winner.seat]
+		holeCards := []string{
+			game.CardString(player.HoleCards.GetCard(0)),
+			game.CardString(player.HoleCards.GetCard(1)),
+		}
+
+		// Evaluate the hand
+		fullHand := player.HoleCards | hr.handState.Board
+		handRank := game.Evaluate7Cards(fullHand)
+
 		winnerInfo[i] = protocol.Winner{
-			Name:   winner.name,
-			Amount: winner.amount,
+			Name:      winner.name,
+			Amount:    winner.amount,
+			HoleCards: holeCards,
+			HandRank:  handRank.String(),
+		}
+		winnerSeats[winner.seat] = true
+	}
+
+	// Collect showdown hands from non-winners who made it to showdown
+	var showdownHands []protocol.ShowdownHand
+	if hr.handState.Street == game.Showdown {
+		for _, player := range hr.handState.Players {
+			// Skip if folded, winner, or no hole cards
+			if player.Folded || winnerSeats[player.Seat] || player.HoleCards == 0 {
+				continue
+			}
+
+			// Only include if player was still in at showdown (not folded)
+			holeCards := []string{
+				game.CardString(player.HoleCards.GetCard(0)),
+				game.CardString(player.HoleCards.GetCard(1)),
+			}
+
+			fullHand := player.HoleCards | hr.handState.Board
+			handRank := game.Evaluate7Cards(fullHand)
+
+			showdownHands = append(showdownHands, protocol.ShowdownHand{
+				Name:      player.Name,
+				HoleCards: holeCards,
+				HandRank:  handRank.String(),
+			})
 		}
 	}
 
-	boardCards := hr.boardStrings()
-
 	for _, bot := range hr.bots {
 		msg := &protocol.HandResult{
-			Type:    "hand_result",
-			HandID:  hr.handID,
-			Winners: winnerInfo,
-			Board:   boardCards,
+			Type:     "hand_result",
+			HandID:   hr.handID,
+			Winners:  winnerInfo,
+			Board:    boardCards,
+			Showdown: showdownHands,
 		}
 
 		if err := bot.SendMessage(msg); err != nil {

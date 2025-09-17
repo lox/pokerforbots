@@ -115,6 +115,7 @@ func (p *BotPool) Run() {
 			if !ok || bot == nil {
 				continue
 			}
+			bot.close()
 			p.mu.Lock()
 			if _, exists := p.bots[bot.ID]; exists {
 				delete(p.bots, bot.ID)

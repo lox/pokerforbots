@@ -23,6 +23,7 @@ tasks:
       - go build -o dist/testbot cmd/testbot/main.go
       - go build -o dist/simulate cmd/simulate/main.go
       - go build -o dist/spawn-bots cmd/spawn-bots/main.go
+      - go build -o dist/client cmd/client/main.go
     sources:
       - '**/*.go'
     generates:
@@ -30,12 +31,19 @@ tasks:
       - dist/testbot
       - dist/simulate
       - dist/spawn-bots
+      - dist/client
 
   server:
     desc: Run the poker server
     deps: [build]
     cmds:
-      - ./dist/server
+      - ./dist/server {{.CLI_ARGS}}
+
+  client:
+    desc: Run the poker client
+    deps: [build]
+    cmds:
+      - ./dist/client {{.CLI_ARGS}}
 
   simulate:
     desc: Run single hand simulation (no networking)
@@ -87,10 +95,3 @@ tasks:
       - rm -rf dist/
       - rm -f internal/protocol/*_gen.go
       - rm -f internal/protocol/*_gen_test.go
-
-  install-deps:
-    desc: Install project dependencies
-    cmds:
-      - go get github.com/gorilla/websocket
-      - go get github.com/tinylib/msgp
-      - go install github.com/tinylib/msgp@latest
