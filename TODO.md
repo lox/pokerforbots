@@ -197,11 +197,10 @@ A successful demo should:
 - [x] **Tests:** updated integration helpers to send connect handshake before assertions
 
 TODO follow-up:
-- [ ] Implement lobby/list/leave protocol messages so clients can discover games dynamically
 - [x] Add HTTP `/games` endpoint for runtime game inspection/discovery
 - [x] Add `POST/DELETE /admin/games` HTTP endpoints for runtime table management (authentication TODO)
 - [ ] Add authentication/authorization for `/admin/*` endpoints
-- [ ] Retire `cmd/spawn-bots` once in-process NPC bots cover test/demo use-cases
+- [x] Retire `cmd/spawn-bots` once in-process NPC bots cover test/demo use-cases
 
 ### 14. Deterministic Testing Tools (TODO)
 - [ ] Add `--seed` and `--mirror` flags to `cmd/server`; propagate to `server.Config`
