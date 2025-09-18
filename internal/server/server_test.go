@@ -259,6 +259,47 @@ func TestGamesEndpoint(t *testing.T) {
 	}
 }
 
+func TestAdminCreateAndDeleteGame(t *testing.T) {
+	srv := NewServer(testLogger(), rand.New(rand.NewSource(99)))
+
+	createPayload := `{
+		"id": "test",
+		"small_blind": 10,
+		"big_blind": 20,
+		"start_chips": 1500,
+		"timeout_ms": 200,
+		"min_players": 2,
+		"max_players": 6,
+		"require_player": false
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/admin/games", strings.NewReader(createPayload))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.handleAdminGames(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", rec.Code)
+	}
+
+	if _, ok := srv.manager.GetGame("test"); !ok {
+		t.Fatal("expected game to be registered")
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/admin/games/test", nil)
+	deleteRec := httptest.NewRecorder()
+
+	srv.handleAdminGame(deleteRec, deleteReq)
+
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", deleteRec.Code)
+	}
+
+	if _, ok := srv.manager.GetGame("test"); ok {
+		t.Fatal("expected game to be removed")
+	}
+}
+
 // TestHandLimitLogic verifies that the bot pool stops creating hands when hand limit is reached
 // This tests the tryMatch logic directly without requiring WebSocket connections
 func TestHandLimitLogic(t *testing.T) {

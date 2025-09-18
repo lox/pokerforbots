@@ -52,6 +52,8 @@ func (gm *GameManager) RegisterGame(id string, pool *BotPool, config Config) *Ga
 	defer gm.mu.Unlock()
 
 	if existing, ok := gm.games[id]; ok {
+		existing.Config = config
+		existing.RequirePlayer = config.RequirePlayer
 		return existing
 	}
 
@@ -61,6 +63,27 @@ func (gm *GameManager) RegisterGame(id string, pool *BotPool, config Config) *Ga
 		gm.defaultGameID = id
 	}
 	return instance
+}
+
+// DeleteGame removes a game by ID and returns it.
+func (gm *GameManager) DeleteGame(id string) (*GameInstance, bool) {
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
+
+	instance, ok := gm.games[id]
+	if !ok {
+		return nil, false
+	}
+
+	delete(gm.games, id)
+	if gm.defaultGameID == id {
+		gm.defaultGameID = ""
+		for newID := range gm.games {
+			gm.defaultGameID = newID
+			break
+		}
+	}
+	return instance, true
 }
 
 // GetGame retrieves a game by ID.

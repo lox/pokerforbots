@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -160,6 +161,8 @@ func (s *Server) Start(addr string) error {
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/stats", s.handleStats)
 	s.mux.HandleFunc("/games", s.handleGames)
+	s.mux.HandleFunc("/admin/games", s.handleAdminGames)
+	s.mux.HandleFunc("/admin/games/", s.handleAdminGame)
 
 	// Create HTTP server
 	s.httpServer = &http.Server{
@@ -306,4 +309,94 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error().Err(err).Msg("failed to encode games response")
 		w.WriteHeader(http.StatusInternalServerError)
 	}
+}
+
+type adminGameRequest struct {
+	ID            string `json:"id"`
+	SmallBlind    int    `json:"small_blind"`
+	BigBlind      int    `json:"big_blind"`
+	StartChips    int    `json:"start_chips"`
+	TimeoutMs     int    `json:"timeout_ms"`
+	MinPlayers    int    `json:"min_players"`
+	MaxPlayers    int    `json:"max_players"`
+	RequirePlayer *bool  `json:"require_player"`
+}
+
+func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	// TODO: add admin authentication (shared secret or mTLS) once operational requirements are finalized.
+
+	var req adminGameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("invalid JSON payload"))
+		return
+	}
+
+	if req.ID == "" || req.SmallBlind <= 0 || req.BigBlind <= 0 || req.StartChips <= 0 || req.TimeoutMs <= 0 || req.MinPlayers <= 0 || req.MaxPlayers < req.MinPlayers {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("invalid game parameters"))
+		return
+	}
+
+	if _, exists := s.manager.GetGame(req.ID); exists {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte("game already exists"))
+		return
+	}
+
+	config := Config{
+		SmallBlind:    req.SmallBlind,
+		BigBlind:      req.BigBlind,
+		StartChips:    req.StartChips,
+		Timeout:       time.Duration(req.TimeoutMs) * time.Millisecond,
+		MinPlayers:    req.MinPlayers,
+		MaxPlayers:    req.MaxPlayers,
+		RequirePlayer: true,
+	}
+	if req.RequirePlayer != nil {
+		config.RequirePlayer = *req.RequirePlayer
+	}
+
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	pool := NewBotPoolWithConfig(s.logger, config.MinPlayers, config.MaxPlayers, rng, config)
+	s.manager.RegisterGame(req.ID, pool, config)
+	go pool.Run()
+
+	s.logger.Info().Str("game_id", req.ID).Msg("Admin created game")
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	summary := s.manager.ListGames()
+	if err := json.NewEncoder(w).Encode(summary); err != nil {
+		s.logger.Error().Err(err).Msg("failed to encode admin create response")
+	}
+}
+
+func (s *Server) handleAdminGame(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := strings.TrimPrefix(r.URL.Path, "/admin/games/")
+	if id == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("missing game id"))
+		return
+	}
+
+	instance, ok := s.manager.DeleteGame(id)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("game not found"))
+		return
+	}
+
+	instance.Pool.Stop()
+	s.logger.Info().Str("game_id", id).Msg("Admin deleted game")
+	w.WriteHeader(http.StatusNoContent)
 }

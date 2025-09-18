@@ -30,6 +30,7 @@ The server exposes HTTP endpoints for monitoring and discovery:
 - `GET /health` - Health check endpoint
 - `GET /stats` - Basic aggregate statistics (connected bots, hands completed)
 - `GET /games` - JSON list of configured games with blinds, seat limits, and player requirements
+- `POST /admin/games` / `DELETE /admin/games/{id}` - create or remove tables (authentication TBD; restrict to trusted environments)
 
 ## Architecture Notes
 

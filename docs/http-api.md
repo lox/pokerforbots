@@ -36,11 +36,14 @@ Returns the list of configured game instances.
 Existing plaintext endpoint that surfaces aggregate server statistics (hands
 completed, timeouts, etc.). Use this for quick health checks.
 
-## Admin Endpoints (Planned)
+## Admin Endpoints
 
-All mutating operations will remain on HTTP endpoints under `/admin/*`
-(e.g. create/delete games, upload scripted decks). These endpoints will require
-explicit authentication and are not yet implemented.
+Mutating operations live under `/admin/*`:
+
+- `POST /admin/games` – create a new game. Payload mirrors the `GET /games` fields.
+- `DELETE /admin/games/{id}` – remove an existing game (current hands are allowed to finish before the pool stops).
+
+⚠️ **Authentication:** currently open for convenience; add shared-secret or mTLS before exposing outside trusted environments. (TODO)
 
 Keeping the WebSocket contract minimal lets bot authors plug into the system
 without tracking additional message types, while operations teams can script or
