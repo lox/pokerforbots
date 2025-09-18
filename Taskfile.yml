@@ -56,7 +56,7 @@ tasks:
   test:
     desc: Run all tests with race detector
     cmds:
-      - bin/gotestsum -f pkgname-and-test-fails --format-icons hivis -- -race ./...
+      - bin/gotestsum -f pkgname-and-test-fails --format-icons hivis -- -race -parallel 12 ./...
 
   lint:
     desc: Run linters

@@ -7,6 +7,7 @@ import (
 // TestAllInRaiseBelowMinimum tests that a player can go all-in with a raise
 // that's below the minimum raise requirement
 func TestAllInRaiseBelowMinimum(t *testing.T) {
+	t.Parallel()
 	// Create a hand with varied chip stacks
 	players := []string{"Alice", "Bob", "Charlie"}
 	chipCounts := []int{100, 15, 100} // Bob only has 15 chips
@@ -45,6 +46,7 @@ func TestAllInRaiseBelowMinimum(t *testing.T) {
 // TestAllInRaiseAboveCurrentBetButBelowMinimum tests the scenario where
 // a player goes all-in with a raise that's above the current bet but below minimum raise
 func TestAllInRaiseAboveCurrentBetButBelowMinimum(t *testing.T) {
+	t.Parallel()
 	// Create a hand with varied chip stacks
 	players := []string{"Alice", "Bob", "Charlie"}
 	chipCounts := []int{100, 35, 100} // Bob has 35 chips
@@ -89,6 +91,7 @@ func TestAllInRaiseAboveCurrentBetButBelowMinimum(t *testing.T) {
 // TestRegularRaiseBelowMinimumStillRejected tests that a regular raise
 // (not all-in) below minimum is still rejected
 func TestRegularRaiseBelowMinimumStillRejected(t *testing.T) {
+	t.Parallel()
 	// Create a hand with players having plenty of chips
 	players := []string{"Alice", "Bob", "Charlie"}
 	h := NewHandState(players, 0, 5, 10, 1000)

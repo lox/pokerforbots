@@ -6,7 +6,7 @@ pre-commit:
   commands:
     # Run all Go tests with race detector - MUST PASS
     go-test:
-      run: bin/gotestsum --format=standard-quiet -- -race ./...
+      run: bin/gotestsum --format=standard-quiet -- -race -parallel 12 ./...
       fail_text: "Tests are failing! Fix all tests before committing."
 
     # Format Go code with golangci-lint
@@ -20,4 +20,3 @@ pre-commit:
     go-lint:
       run: bin/golangci-lint run ./...
       fail_text: "Linting failed! Fix all linter issues before committing."
-

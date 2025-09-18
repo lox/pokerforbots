@@ -15,6 +15,7 @@ import (
 
 // TestButtonAssignedToFirstSeat ensures the dealer button is always given to seat 0 after shuffling.
 func TestButtonAssignedToFirstSeat(t *testing.T) {
+	t.Parallel()
 	rng := rand.New(rand.NewSource(42))
 	s := NewServer(testLogger(), rng)
 

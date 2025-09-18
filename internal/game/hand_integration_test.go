@@ -6,6 +6,7 @@ import (
 
 // TestCompleteHandFlow tests a complete hand from preflop to showdown
 func TestCompleteHandFlow(t *testing.T) {
+	t.Parallel()
 	// Create a 3-player game
 	h := NewHandState([]string{"Alice", "Bob", "Charlie"}, 0, 5, 10, 100)
 
@@ -201,6 +202,7 @@ func TestCompleteHandFlow(t *testing.T) {
 
 // TestAllInScenarios tests various all-in situations
 func TestAllInScenarios(t *testing.T) {
+	t.Parallel()
 	t.Run("PreFlopAllIn", func(t *testing.T) {
 		h := NewHandState([]string{"Alice", "Bob", "Charlie"}, 0, 5, 10, 100)
 
@@ -305,6 +307,7 @@ func TestAllInScenarios(t *testing.T) {
 
 // TestBettingRules tests various betting rules and constraints
 func TestBettingRules(t *testing.T) {
+	t.Parallel()
 	t.Run("MinimumRaise", func(t *testing.T) {
 		h := NewHandState([]string{"Alice", "Bob"}, 0, 5, 10, 1000)
 
@@ -393,6 +396,7 @@ func TestBettingRules(t *testing.T) {
 
 // TestHeadsUpBlindsIntegration tests heads-up blind posting
 func TestHeadsUpBlindsIntegration(t *testing.T) {
+	t.Parallel()
 	h := NewHandState([]string{"Alice", "Bob"}, 0, 5, 10, 100)
 
 	// In heads-up, button posts small blind
@@ -434,6 +438,7 @@ func TestHeadsUpBlindsIntegration(t *testing.T) {
 
 // TestSidePotCalculation tests side pot creation and distribution
 func TestSidePotCalculation(t *testing.T) {
+	t.Parallel()
 	// Create players with specific chip amounts
 	h := NewHandStateWithChips(
 		[]string{"ShortStack", "MidStack", "BigStack"},

@@ -5,6 +5,7 @@ import (
 )
 
 func TestHandStateCreation(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
 	h := NewHandState(players, 0, 5, 10, 1000)
 
@@ -42,6 +43,7 @@ func TestHandStateCreation(t *testing.T) {
 }
 
 func TestGetValidActions(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
 	h := NewHandState(players, 0, 5, 10, 1000)
 
@@ -73,6 +75,7 @@ func TestGetValidActions(t *testing.T) {
 }
 
 func TestProcessAction(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
 	h := NewHandState(players, 0, 5, 10, 1000)
 
@@ -134,6 +137,7 @@ func TestProcessAction(t *testing.T) {
 }
 
 func TestSidePots(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
 	h := NewHandState(players, 0, 5, 10, 100)
 
@@ -190,6 +194,7 @@ func TestSidePots(t *testing.T) {
 }
 
 func TestHandCompletion(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
 	h := NewHandState(players, 0, 5, 10, 1000)
 
@@ -212,6 +217,7 @@ func TestHandCompletion(t *testing.T) {
 }
 
 func TestGetWinners(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
 	h := NewHandState(players, 0, 5, 10, 1000)
 
@@ -241,6 +247,7 @@ func TestGetWinners(t *testing.T) {
 }
 
 func TestAllInWithSidePots(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie", "Dave"}
 	h := NewHandState(players, 0, 5, 10, 1000)
 
@@ -289,6 +296,7 @@ func TestAllInWithSidePots(t *testing.T) {
 
 // TestMinimumRaiseValidation tests that raises must meet minimum requirements
 func TestMinimumRaiseValidation(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
 	h := NewHandState(players, 0, 5, 10, 1000)
 
@@ -313,6 +321,7 @@ func TestMinimumRaiseValidation(t *testing.T) {
 
 // TestAllPlayersFoldExceptOne tests winner when everyone folds
 func TestAllPlayersFoldExceptOne(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
 	h := NewHandState(players, 0, 5, 10, 1000)
 
@@ -339,6 +348,7 @@ func TestAllPlayersFoldExceptOne(t *testing.T) {
 
 // TestSplitPot tests when multiple players have identical hands
 func TestSplitPot(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob"}
 	h := NewHandState(players, 0, 5, 10, 1000)
 
@@ -358,6 +368,7 @@ func TestSplitPot(t *testing.T) {
 
 // TestHeadsUpBlinds tests blind posting in heads-up
 func TestHeadsUpBlinds(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob"}
 	h := NewHandState(players, 0, 5, 10, 1000)
 
@@ -415,6 +426,7 @@ func TestHeadsUpBlinds(t *testing.T) {
 
 // TestShortStackCantCoverBlinds tests when player can't afford blinds
 func TestShortStackCantCoverBlinds(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
 
 	// Create hand state
@@ -440,6 +452,7 @@ func TestShortStackCantCoverBlinds(t *testing.T) {
 
 // TestAceLowStraight tests the wheel straight (A-2-3-4-5)
 func TestAceLowStraight(t *testing.T) {
+	t.Parallel()
 	// Create hand with A-2-3-4-5
 	hand := parseCards("As", "2d", "3c", "4h", "5s", "Kd", "Qh")
 
@@ -460,6 +473,7 @@ func TestAceLowStraight(t *testing.T) {
 
 // TestComplexSidePots tests multiple all-ins with different amounts
 func TestComplexSidePots(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie", "Dave"}
 	h := NewHandState(players, 0, 5, 10, 1000)
 
@@ -509,6 +523,7 @@ func TestComplexSidePots(t *testing.T) {
 // TestSidePotWithFoldedPlayerRegression tests that folded players' chips
 // remain in the pot during side pot calculation (regression test for critical bug)
 func TestSidePotWithFoldedPlayerRegression(t *testing.T) {
+	t.Parallel()
 	// Simple scenario: 3 players all put in chips, one folds, one goes all-in
 	// The folded player's chips should still be in the pot
 
@@ -557,6 +572,7 @@ func TestSidePotWithFoldedPlayerRegression(t *testing.T) {
 // TestPostAllInBetsToCorrectPot verifies that after creating side pots,
 // new bets go to the correct pot - regression test for critical bug
 func TestPostAllInBetsToCorrectPot(t *testing.T) {
+	t.Parallel()
 	// Create a scenario where one player is all-in and others continue betting
 	playerNames := []string{"Alice", "Bob", "Charlie"}
 	chipCounts := []int{100, 30, 100} // Bob is short-stacked
@@ -624,6 +640,7 @@ func TestPostAllInBetsToCorrectPot(t *testing.T) {
 
 // TestReraiseLimits tests betting cap scenarios
 func TestReraiseLimits(t *testing.T) {
+	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
 	h := NewHandState(players, 0, 5, 10, 1000)
 
@@ -660,6 +677,7 @@ func TestReraiseLimits(t *testing.T) {
 
 // TestKickerComparison tests that kickers are properly compared
 func TestKickerComparison(t *testing.T) {
+	t.Parallel()
 	// Both players have a pair of aces, different kickers
 	// Player 1: AA with KQJ kickers
 	// Player 2: AA with KQ10 kickers

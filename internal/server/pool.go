@@ -44,6 +44,13 @@ type BotPool struct {
 	lastStamp time.Time
 }
 
+// WithRNG executes fn with exclusive access to the pool's RNG.
+func (p *BotPool) WithRNG(fn func(*rand.Rand)) {
+	p.rngMutex.Lock()
+	defer p.rngMutex.Unlock()
+	fn(p.rng)
+}
+
 type botStats struct {
 	BotID       string
 	DisplayName string
@@ -162,10 +169,7 @@ func (p *BotPool) Run() {
 			}
 			bot.close()
 			p.mu.Lock()
-			if _, exists := p.bots[bot.ID]; exists {
-				delete(p.bots, bot.ID)
-				close(bot.send)
-			}
+			delete(p.bots, bot.ID)
 			p.mu.Unlock()
 
 		case <-matchTicker.C:

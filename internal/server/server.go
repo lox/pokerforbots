@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -60,20 +61,28 @@ type Server struct {
 	botIDGen      func() string // Function to generate bot IDs
 	config        Config
 	bootstrapNPCs map[string][]NPCSpec
+	routesOnce    sync.Once
 }
 
-// createDeterministicBotIDGen creates a deterministic bot ID generator using the provided RNG
-func createDeterministicBotIDGen(rng *rand.Rand) func() string {
-	var mu sync.Mutex
-	return func() string {
-		mu.Lock()
-		defer mu.Unlock()
-
-		// Generate deterministic UUID using the provided RNG
-		var uuid [16]byte
-		for i := 0; i < 16; i++ {
-			uuid[i] = byte(rng.Intn(256))
+// createDeterministicBotIDGen creates a deterministic bot ID generator using the provided RNG accessor.
+// If no accessor is supplied, a local mutex is used to guard the RNG.
+func createDeterministicBotIDGen(rng *rand.Rand, withRNG func(func(*rand.Rand))) func() string {
+	if withRNG == nil {
+		var fallback sync.Mutex
+		withRNG = func(fn func(*rand.Rand)) {
+			fallback.Lock()
+			defer fallback.Unlock()
+			fn(rng)
 		}
+	}
+
+	return func() string {
+		var uuid [16]byte
+		withRNG(func(r *rand.Rand) {
+			for i := 0; i < 16; i++ {
+				uuid[i] = byte(r.Intn(256))
+			}
+		})
 
 		// Set version (4) and variant bits according to RFC 4122
 		uuid[6] = (uuid[6] & 0x0f) | 0x40 // Version 4
@@ -103,13 +112,13 @@ func NewServer(logger zerolog.Logger, rng *rand.Rand) *Server {
 // NewServerWithConfig creates a new poker server with provided random source and config
 func NewServerWithConfig(logger zerolog.Logger, rng *rand.Rand, config Config) *Server {
 	pool := NewBotPoolWithLimitAndConfig(logger, config.MinPlayers, config.MaxPlayers, rng, config.HandLimit, config)
-	return NewServerWithBotIDGenAndConfig(logger, pool, createDeterministicBotIDGen(rng), config)
+	return NewServerWithBotIDGenAndConfig(logger, pool, createDeterministicBotIDGen(rng, pool.WithRNG), config)
 }
 
 // NewServerWithHandLimit creates a new poker server with a hand limit
 func NewServerWithHandLimit(logger zerolog.Logger, rng *rand.Rand, handLimit uint64) *Server {
 	pool := NewBotPoolWithLimit(logger, 2, 9, rng, handLimit)
-	return NewServerWithBotIDGen(logger, pool, createDeterministicBotIDGen(rng))
+	return NewServerWithBotIDGen(logger, pool, createDeterministicBotIDGen(rng, pool.WithRNG))
 }
 
 // NewServerWithPool creates a new poker server with a custom bot pool (for testing)
@@ -161,6 +170,15 @@ func NewServerWithBotIDGenAndConfig(logger zerolog.Logger, pool *BotPool, botIDG
 
 // Start starts the server on the given address
 func (s *Server) Start(addr string) error {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return s.Serve(listener)
+}
+
+// Serve starts the server using an existing listener.
+func (s *Server) Serve(listener net.Listener) error {
 	// Start bot pools for all registered games
 	s.manager.StartAll()
 
@@ -177,22 +195,26 @@ func (s *Server) Start(addr string) error {
 	}
 	s.bootstrapNPCs = nil
 
-	// Set up HTTP routes
-	s.mux.HandleFunc("/ws", s.handleWebSocket)
-	s.mux.HandleFunc("/health", s.handleHealth)
-	s.mux.HandleFunc("/stats", s.handleStats)
-	s.mux.HandleFunc("/games", s.handleGames)
-	s.mux.HandleFunc("/admin/games", s.handleAdminGames)
-	s.mux.HandleFunc("/admin/games/", s.handleAdminGame)
+	s.ensureRoutes()
 
-	// Create HTTP server
 	s.httpServer = &http.Server{
-		Addr:    addr,
 		Handler: s.mux,
 	}
 
-	s.logger.Info().Str("addr", addr).Msg("Server starting")
-	return s.httpServer.ListenAndServe()
+	s.logger.Info().Str("addr", listener.Addr().String()).Msg("Server starting")
+
+	return s.httpServer.Serve(listener)
+}
+
+func (s *Server) ensureRoutes() {
+	s.routesOnce.Do(func() {
+		s.mux.HandleFunc("/ws", s.handleWebSocket)
+		s.mux.HandleFunc("/health", s.handleHealth)
+		s.mux.HandleFunc("/stats", s.handleStats)
+		s.mux.HandleFunc("/games", s.handleGames)
+		s.mux.HandleFunc("/admin/games", s.handleAdminGames)
+		s.mux.HandleFunc("/admin/games/", s.handleAdminGame)
+	})
 }
 
 // Shutdown gracefully shuts down the server

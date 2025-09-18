@@ -17,6 +17,7 @@ import (
 // TestNoEmptyValidActions is an integration test that verifies the fix for
 // empty valid_actions arrays caused by buffer aliasing race conditions
 func TestNoEmptyValidActions(t *testing.T) {
+	t.Parallel()
 	// Start test server
 	rng := rand.New(rand.NewSource(42))
 	server := NewServer(testLogger(), rng)

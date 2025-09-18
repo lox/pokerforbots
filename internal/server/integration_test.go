@@ -49,6 +49,7 @@ func startTestPool(t *testing.T, pool *BotPool) func() {
 // TestBotActionsAreProcessed verifies that bot actions are actually processed
 // Updated to work with randomized bot ordering per stateless hand design
 func TestBotActionsAreProcessed(t *testing.T) {
+	t.Parallel()
 	// Start test server with deterministic RNG (seed 1 should make bot1 act first)
 	server := newTestServerWithDeterministicRNG(t, 1)
 	stopPool := startTestPool(t, server.pool)
@@ -122,6 +123,7 @@ func TestBotActionsAreProcessed(t *testing.T) {
 
 // TestPotDistribution verifies that winners receive their chips
 func TestPotDistribution(t *testing.T) {
+	t.Parallel()
 	// Start test server with deterministic RNG (seed chosen to put bot1 as small blind)
 	server := newTestServerWithDeterministicRNG(t, 42)
 	stopPool := startTestPool(t, server.pool)
@@ -260,6 +262,7 @@ func TestPotDistribution(t *testing.T) {
 
 // TestTimeoutActuallyFolds verifies that timeouts result in folds
 func TestTimeoutActuallyFolds(t *testing.T) {
+	t.Parallel()
 	// Start test server with deterministic RNG
 	server := newTestServerWithDeterministicRNG(t, 456)
 	stopPool := startTestPool(t, server.pool)

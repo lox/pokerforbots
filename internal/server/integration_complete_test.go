@@ -1,8 +1,12 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math/rand"
+	"net"
+	"net/http"
 	"net/url"
 	"sync"
 	"testing"
@@ -12,8 +16,63 @@ import (
 	"github.com/lox/pokerforbots/internal/protocol"
 )
 
+const serverReadyTimeout = 2 * time.Second
+
+func startServerForTest(t *testing.T) (host string) {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create listener: %v", err)
+	}
+	addr := listener.Addr().String()
+
+	rng := rand.New(rand.NewSource(42))
+	server := NewServer(testLogger(), rng)
+
+	go func() {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			t.Errorf("server error on %s: %v", addr, err)
+		}
+	}()
+
+	waitForServer(t, addr)
+
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			t.Fatalf("server shutdown error on %s: %v", addr, err)
+		}
+	})
+
+	return addr
+}
+
+func waitForServer(t *testing.T, addr string) {
+	t.Helper()
+
+	healthURL := fmt.Sprintf("http://%s/health", addr)
+	deadline := time.Now().Add(serverReadyTimeout)
+	client := http.Client{Timeout: 100 * time.Millisecond}
+
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(healthURL)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("server not ready at %s", healthURL)
+}
+
 // TestCompleteHandScenarios tests various complete hand scenarios
 func TestCompleteHandScenarios(t *testing.T) {
+	t.Parallel()
 	t.Run("EveryoneFolds", func(t *testing.T) {
 		testEveryoneFolds(t)
 	})
@@ -32,21 +91,21 @@ func TestCompleteHandScenarios(t *testing.T) {
 }
 
 func testEveryoneFolds(t *testing.T) {
-	rng := rand.New(rand.NewSource(42))
-	server := NewServer(testLogger(), rng)
-	go server.Start(":8089")
-	time.Sleep(100 * time.Millisecond)
+	host := startServerForTest(t)
 
 	// Connect 3 bots
 	bots := make([]*websocket.Conn, 3)
 	for i := 0; i < 3; i++ {
-		u := url.URL{Scheme: "ws", Host: "localhost:8089", Path: "/ws"}
+		u := url.URL{Scheme: "ws", Host: host, Path: "/ws"}
 		conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
 			t.Fatalf("Bot %d failed to connect: %v", i, err)
 		}
-		defer conn.Close()
 		bots[i] = conn
+		connRef := conn
+		t.Cleanup(func() {
+			_ = connRef.Close()
+		})
 
 		// Send connect message
 		connectMsg := &protocol.Connect{
@@ -55,7 +114,9 @@ func testEveryoneFolds(t *testing.T) {
 			Role: string(BotRolePlayer),
 		}
 		data, _ := protocol.Marshal(connectMsg)
-		conn.WriteMessage(websocket.BinaryMessage, data)
+		if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+			t.Fatalf("Bot %d failed to send connect message: %v", i, err)
+		}
 	}
 
 	// Wait for hand to start
@@ -106,21 +167,21 @@ func testEveryoneFolds(t *testing.T) {
 }
 
 func testShowdownWithMultiplePlayers(t *testing.T) {
-	rng := rand.New(rand.NewSource(42))
-	server := NewServer(testLogger(), rng)
-	go server.Start(":8090")
-	time.Sleep(100 * time.Millisecond)
+	host := startServerForTest(t)
 
 	// Connect 4 bots
 	bots := make([]*websocket.Conn, 4)
 	for i := 0; i < 4; i++ {
-		u := url.URL{Scheme: "ws", Host: "localhost:8090", Path: "/ws"}
+		u := url.URL{Scheme: "ws", Host: host, Path: "/ws"}
 		conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
 			t.Fatalf("Bot %d failed to connect: %v", i, err)
 		}
-		defer conn.Close()
 		bots[i] = conn
+		connRef := conn
+		t.Cleanup(func() {
+			_ = connRef.Close()
+		})
 
 		// Send connect message
 		connectMsg := &protocol.Connect{
@@ -129,7 +190,9 @@ func testShowdownWithMultiplePlayers(t *testing.T) {
 			Role: string(BotRolePlayer),
 		}
 		data, _ := protocol.Marshal(connectMsg)
-		conn.WriteMessage(websocket.BinaryMessage, data)
+		if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+			t.Fatalf("Bot %d failed to send connect message: %v", i, err)
+		}
 	}
 
 	// Wait for hand to start
@@ -210,21 +273,21 @@ func testShowdownWithMultiplePlayers(t *testing.T) {
 }
 
 func testAllInCascade(t *testing.T) {
-	rng := rand.New(rand.NewSource(42))
-	server := NewServer(testLogger(), rng)
-	go server.Start(":8091")
-	time.Sleep(100 * time.Millisecond)
+	host := startServerForTest(t)
 
 	// Connect 3 bots
 	bots := make([]*websocket.Conn, 3)
 	for i := 0; i < 3; i++ {
-		u := url.URL{Scheme: "ws", Host: "localhost:8091", Path: "/ws"}
+		u := url.URL{Scheme: "ws", Host: host, Path: "/ws"}
 		conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
 			t.Fatalf("Bot %d failed to connect: %v", i, err)
 		}
-		defer conn.Close()
 		bots[i] = conn
+		connRef := conn
+		t.Cleanup(func() {
+			_ = connRef.Close()
+		})
 
 		// Send connect message
 		connectMsg := &protocol.Connect{
@@ -233,7 +296,9 @@ func testAllInCascade(t *testing.T) {
 			Role: string(BotRolePlayer),
 		}
 		data, _ := protocol.Marshal(connectMsg)
-		conn.WriteMessage(websocket.BinaryMessage, data)
+		if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+			t.Fatalf("Bot %d failed to send connect message: %v", i, err)
+		}
 	}
 
 	// Wait for hand to start
@@ -303,21 +368,21 @@ func testAllInCascade(t *testing.T) {
 }
 
 func testHeadsUpPlay(t *testing.T) {
-	rng := rand.New(rand.NewSource(42))
-	server := NewServer(testLogger(), rng)
-	go server.Start(":8092")
-	time.Sleep(100 * time.Millisecond)
+	host := startServerForTest(t)
 
 	// Connect exactly 2 bots for heads-up
 	bots := make([]*websocket.Conn, 2)
 	for i := 0; i < 2; i++ {
-		u := url.URL{Scheme: "ws", Host: "localhost:8092", Path: "/ws"}
+		u := url.URL{Scheme: "ws", Host: host, Path: "/ws"}
 		conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
 			t.Fatalf("Bot %d failed to connect: %v", i, err)
 		}
-		defer conn.Close()
 		bots[i] = conn
+		connRef := conn
+		t.Cleanup(func() {
+			_ = connRef.Close()
+		})
 
 		// Send connect message
 		connectMsg := &protocol.Connect{
@@ -326,7 +391,9 @@ func testHeadsUpPlay(t *testing.T) {
 			Role: string(BotRolePlayer),
 		}
 		data, _ := protocol.Marshal(connectMsg)
-		conn.WriteMessage(websocket.BinaryMessage, data)
+		if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+			t.Fatalf("Bot %d failed to send connect message: %v", i, err)
+		}
 	}
 
 	// Wait for hand to start
@@ -420,11 +487,8 @@ func testHeadsUpPlay(t *testing.T) {
 
 // TestRapidConnectionDisconnection tests rapid connections and disconnections
 func TestRapidConnectionDisconnection(t *testing.T) {
-	t.Skip("Skipping flaky test - rapid disconnections cause timing issues")
-	rng := rand.New(rand.NewSource(42))
-	server := NewServer(testLogger(), rng)
-	go server.Start(":8093")
-	time.Sleep(100 * time.Millisecond)
+	t.Parallel()
+	host := startServerForTest(t)
 
 	// Rapidly connect and disconnect bots
 	var wg sync.WaitGroup
@@ -436,7 +500,7 @@ func TestRapidConnectionDisconnection(t *testing.T) {
 		go func(botNum int) {
 			defer wg.Done()
 
-			u := url.URL{Scheme: "ws", Host: "localhost:8093", Path: "/ws"}
+			u := url.URL{Scheme: "ws", Host: host, Path: "/ws"}
 			conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 			if err != nil {
 				errorMutex.Lock()
@@ -444,6 +508,7 @@ func TestRapidConnectionDisconnection(t *testing.T) {
 				errorMutex.Unlock()
 				return
 			}
+			defer conn.Close()
 
 			// Send connect message
 			connectMsg := &protocol.Connect{
@@ -452,44 +517,55 @@ func TestRapidConnectionDisconnection(t *testing.T) {
 				Role: string(BotRolePlayer),
 			}
 			data, _ := protocol.Marshal(connectMsg)
-			conn.WriteMessage(websocket.BinaryMessage, data)
+			if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+				errorMutex.Lock()
+				connectionErrors++
+				errorMutex.Unlock()
+				return
+			}
 
 			// Random delay before disconnect
+			// Use staggered waits to simulate churn without overwhelming the server.
 			time.Sleep(time.Duration(50+botNum*10) * time.Millisecond)
 
 			// Disconnect
-			conn.Close()
 		}(i)
 
-		// Small delay between connections
+		// Small delay between connection attempts to reduce contention
 		time.Sleep(10 * time.Millisecond)
 	}
 
 	wg.Wait()
 
 	if connectionErrors > 0 {
-		t.Errorf("Had %d connection errors during rapid connect/disconnect", connectionErrors)
+		t.Fatalf("Had %d connection errors during rapid connect/disconnect", connectionErrors)
 	}
 
 	// Verify server is still responsive
-	u := url.URL{Scheme: "ws", Host: "localhost:8080", Path: "/ws"}
+	u := url.URL{Scheme: "ws", Host: host, Path: "/ws"}
 	testConn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
-		t.Fatal("Server not responsive after rapid connections")
+		t.Fatalf("Server not responsive after rapid connections: %v", err)
 	}
-	testConn.Close()
+	defer testConn.Close()
+
+	connectMsg := &protocol.Connect{
+		Type: protocol.TypeConnect,
+		Name: "RapidBotCheck",
+		Role: string(BotRolePlayer),
+	}
+	data, _ := protocol.Marshal(connectMsg)
+	if err := testConn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+		t.Fatalf("Failed to complete post-test handshake: %v", err)
+	}
 
 	t.Log("Server handled rapid connections successfully")
 }
 
 // TestLoadWith20Bots tests the server with 20+ concurrent bots
 func TestLoadWith20Bots(t *testing.T) {
-	t.Skip("Skipping load test - requires significant resources")
-
-	rng := rand.New(rand.NewSource(42))
-	server := NewServer(testLogger(), rng)
-	go server.Start(":8094")
-	time.Sleep(100 * time.Millisecond)
+	t.Parallel()
+	host := startServerForTest(t)
 
 	numBots := 24
 	bots := make([]*websocket.Conn, numBots)
@@ -498,13 +574,16 @@ func TestLoadWith20Bots(t *testing.T) {
 
 	// Connect all bots
 	for i := 0; i < numBots; i++ {
-		u := url.URL{Scheme: "ws", Host: "localhost:8094", Path: "/ws"}
+		u := url.URL{Scheme: "ws", Host: host, Path: "/ws"}
 		conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
 			t.Fatalf("Bot %d failed to connect: %v", i, err)
 		}
-		defer conn.Close()
 		bots[i] = conn
+		connRef := conn
+		t.Cleanup(func() {
+			_ = connRef.Close()
+		})
 
 		// Send connect message
 		connectMsg := &protocol.Connect{
@@ -513,17 +592,29 @@ func TestLoadWith20Bots(t *testing.T) {
 			Role: string(BotRolePlayer),
 		}
 		data, _ := protocol.Marshal(connectMsg)
-		conn.WriteMessage(websocket.BinaryMessage, data)
+		if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+			t.Fatalf("Bot %d failed to send connect message: %v", i, err)
+		}
 	}
 
 	// Run each bot
 	var wg sync.WaitGroup
+	done := make(chan struct{})
+	var doneOnce sync.Once
+	targetHands := 10
+
 	for i, conn := range bots {
 		wg.Add(1)
 		go func(botNum int, c *websocket.Conn) {
 			defer wg.Done()
 
 			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+
 				_, data, err := c.ReadMessage()
 				if err != nil {
 					return
@@ -547,7 +638,9 @@ func TestLoadWith20Bots(t *testing.T) {
 						Amount: 0,
 					}
 					respData, _ := protocol.Marshal(actionMsg)
-					c.WriteMessage(websocket.BinaryMessage, respData)
+					if err := c.WriteMessage(websocket.BinaryMessage, respData); err != nil {
+						return
+					}
 				}
 
 				// Count completed hands
@@ -555,26 +648,43 @@ func TestLoadWith20Bots(t *testing.T) {
 				if err := protocol.Unmarshal(data, &handResult); err == nil && handResult.Type == "hand_result" {
 					handMutex.Lock()
 					handsCompleted++
-					if handsCompleted >= 10 {
-						handMutex.Unlock()
-						return // Stop after 10 hands
-					}
+					reached := handsCompleted >= targetHands
 					handMutex.Unlock()
+
+					if reached {
+						doneOnce.Do(func() { close(done) })
+						return
+					}
 				}
 			}
 		}(i, conn)
 	}
 
-	// Wait for hands to complete or timeout
-	time.Sleep(30 * time.Second)
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		handMutex.Lock()
+		finalCount := handsCompleted
+		handMutex.Unlock()
+		t.Fatalf("Timed out completing hands: only %d finished with %d bots", finalCount, numBots)
+	}
+
+	// Close connections proactively to ensure goroutines exit cleanly, then wait.
+	for _, conn := range bots {
+		if conn != nil {
+			_ = conn.Close()
+		}
+	}
+
+	wg.Wait()
 
 	handMutex.Lock()
 	finalCount := handsCompleted
 	handMutex.Unlock()
 
-	if finalCount < 10 {
-		t.Errorf("Only completed %d hands with %d bots in 30 seconds", finalCount, numBots)
-	} else {
-		t.Logf("Successfully completed %d hands with %d bots", finalCount, numBots)
+	if finalCount < targetHands {
+		t.Fatalf("Only completed %d hands with %d bots", finalCount, numBots)
 	}
+
+	t.Logf("Successfully completed %d hands with %d bots", finalCount, numBots)
 }

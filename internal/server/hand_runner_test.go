@@ -10,6 +10,7 @@ import (
 )
 
 func TestHandRunner(t *testing.T) {
+	t.Parallel()
 	// Create mock bots with larger buffers
 	bots := []*Bot{
 		{ID: "bot1-12345678", send: make(chan []byte, 100)},
@@ -45,6 +46,7 @@ func TestHandRunner(t *testing.T) {
 }
 
 func TestHandRunnerMessages(t *testing.T) {
+	t.Parallel()
 	// Create mock bots with buffered channels
 	bots := []*Bot{
 		{ID: "alice12345678", send: make(chan []byte, 100)},
@@ -80,6 +82,7 @@ func TestHandRunnerMessages(t *testing.T) {
 }
 
 func TestHandRunnerActionRequest(t *testing.T) {
+	t.Parallel()
 	// Create mock bot
 	bot := &Bot{
 		ID:   "test-bot-12345678",
@@ -116,6 +119,7 @@ func TestHandRunnerActionRequest(t *testing.T) {
 }
 
 func TestHandRunnerTimeout(t *testing.T) {
+	t.Parallel()
 	// Test that bots timeout and auto-fold when they don't respond
 	bots := []*Bot{
 		{ID: "timeout-bot1", send: make(chan []byte, 100), actionChan: make(chan ActionEnvelope, 1), bankroll: 100},
@@ -146,6 +150,7 @@ func TestHandRunnerTimeout(t *testing.T) {
 }
 
 func TestHandRunnerComplete(t *testing.T) {
+	t.Parallel()
 	// Create a simple 2-player scenario
 	bots := []*Bot{
 		{ID: "alice12345678", send: make(chan []byte, 100)},
@@ -187,6 +192,7 @@ func TestHandRunnerComplete(t *testing.T) {
 }
 
 func TestHandRunnerForceFoldOnDisconnect(t *testing.T) {
+	t.Parallel()
 	// Two bots, bot1 will disconnect
 	bots := []*Bot{
 		{ID: "bot1", send: make(chan []byte, 10), done: make(chan struct{})},
@@ -221,6 +227,7 @@ func TestHandRunnerForceFoldOnDisconnect(t *testing.T) {
 
 // TestValidActionsGeneration tests that valid actions are always generated correctly
 func TestValidActionsGeneration(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		setupHand     func() *HandRunner
@@ -360,6 +367,7 @@ func TestValidActionsGeneration(t *testing.T) {
 
 // TestActionRequestMessagePopulation verifies all ActionRequest fields are populated
 func TestActionRequestMessagePopulation(t *testing.T) {
+	t.Parallel()
 	// Setup
 	bot := &Bot{ID: "test-bot", send: make(chan []byte, 10)}
 	hr := NewHandRunner(testLogger(), []*Bot{bot}, "test-hand", 0, rand.New(rand.NewSource(42)))
@@ -414,6 +422,7 @@ func TestActionRequestMessagePopulation(t *testing.T) {
 
 // TestActivePlayerAfterActions tests ActivePlayer is valid after various actions
 func TestActivePlayerAfterActions(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		setup  func() *game.HandState
@@ -493,6 +502,7 @@ func TestActivePlayerAfterActions(t *testing.T) {
 
 // TestEmptyValidActionsScenarios specifically tests scenarios that might produce empty valid actions
 func TestEmptyValidActionsScenarios(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		setup     func() *game.HandState
@@ -574,6 +584,7 @@ func TestEmptyValidActionsScenarios(t *testing.T) {
 }
 
 func TestWrongBotActionRejection(t *testing.T) {
+	t.Parallel()
 	// Test that actions from the wrong bot are ignored
 	bots := []*Bot{
 		{ID: "bot1", send: make(chan []byte, 100), actionChan: make(chan ActionEnvelope, 1), bankroll: 100},
@@ -644,6 +655,7 @@ func TestWrongBotActionRejection(t *testing.T) {
 }
 
 func TestBankrollDeltaCalculation(t *testing.T) {
+	t.Parallel()
 	// Test that bankroll changes are calculated correctly based on actual buy-ins
 
 	// Start bots with different bankrolls

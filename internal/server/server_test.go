@@ -17,6 +17,7 @@ import (
 )
 
 func TestServerHealth(t *testing.T) {
+	t.Parallel()
 	rng := rand.New(rand.NewSource(42))
 	srv := NewServer(testLogger(), rng)
 
@@ -33,6 +34,7 @@ func TestServerHealth(t *testing.T) {
 
 // TestStatsEndpoint verifies the enhanced stats endpoint
 func TestStatsEndpoint(t *testing.T) {
+	t.Parallel()
 	logger := testLogger()
 	rng := rand.New(rand.NewSource(12345))
 
@@ -131,6 +133,7 @@ func TestStatsEndpoint(t *testing.T) {
 }
 
 func TestWebSocketConnection(t *testing.T) {
+	t.Parallel()
 	rng := rand.New(rand.NewSource(42))
 	srv := NewServer(testLogger(), rng)
 	srv.pool.minPlayers = 10
@@ -181,6 +184,7 @@ func TestWebSocketConnection(t *testing.T) {
 }
 
 func TestMultipleBotConnections(t *testing.T) {
+	t.Parallel()
 	rng := rand.New(rand.NewSource(42))
 	srv := NewServer(testLogger(), rng)
 	srv.pool.minPlayers = 10
@@ -235,6 +239,7 @@ func TestMultipleBotConnections(t *testing.T) {
 }
 
 func TestGamesEndpoint(t *testing.T) {
+	t.Parallel()
 	rng := rand.New(rand.NewSource(77))
 	srv := NewServer(testLogger(), rng)
 	req := httptest.NewRequest(http.MethodGet, "/games", nil)
@@ -261,6 +266,7 @@ func TestGamesEndpoint(t *testing.T) {
 }
 
 func TestAdminCreateAndDeleteGame(t *testing.T) {
+	t.Parallel()
 	srv := NewServer(testLogger(), rand.New(rand.NewSource(99)))
 
 	createPayload := `{
@@ -310,6 +316,7 @@ func TestAdminCreateAndDeleteGame(t *testing.T) {
 }
 
 func TestAdminGameStatsEndpoint(t *testing.T) {
+	t.Parallel()
 	srv := NewServer(testLogger(), rand.New(rand.NewSource(7)))
 
 	game, ok := srv.manager.GetGame("default")
@@ -379,6 +386,7 @@ func TestAdminGameStatsEndpoint(t *testing.T) {
 // TestHandLimitLogic verifies that the bot pool stops creating hands when hand limit is reached
 // This tests the tryMatch logic directly without requiring WebSocket connections
 func TestHandLimitLogic(t *testing.T) {
+	t.Parallel()
 	logger := testLogger()
 	rng := rand.New(rand.NewSource(42))
 	handLimit := uint64(2) // Allow exactly 2 hands
@@ -458,6 +466,7 @@ func TestHandLimitLogic(t *testing.T) {
 
 // TestUnlimitedHandsWithZeroLimit verifies that 0 hand limit means unlimited
 func TestUnlimitedHandsWithZeroLimit(t *testing.T) {
+	t.Parallel()
 	logger := testLogger()
 	rng := rand.New(rand.NewSource(456))
 

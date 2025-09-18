@@ -7,6 +7,7 @@ import (
 )
 
 func TestConnectMessage(t *testing.T) {
+	t.Parallel()
 	original := Connect{
 		Type: TypeConnect,
 		Name: "TestBot",
@@ -35,6 +36,7 @@ func TestConnectMessage(t *testing.T) {
 }
 
 func TestActionMessage(t *testing.T) {
+	t.Parallel()
 	original := Action{
 		Type:   TypeAction,
 		Action: "raise",
@@ -64,6 +66,7 @@ func TestActionMessage(t *testing.T) {
 }
 
 func TestHandStartMessage(t *testing.T) {
+	t.Parallel()
 	original := HandStart{
 		Type:      TypeHandStart,
 		HandID:    "hand-12345",
@@ -105,6 +108,7 @@ func TestHandStartMessage(t *testing.T) {
 }
 
 func TestActionRequestMessage(t *testing.T) {
+	t.Parallel()
 	original := ActionRequest{
 		Type:          TypeActionRequest,
 		HandID:        "hand-456",
@@ -142,6 +146,7 @@ func TestActionRequestMessage(t *testing.T) {
 }
 
 func TestHandResultMessage(t *testing.T) {
+	t.Parallel()
 	original := HandResult{
 		Type:   TypeHandResult,
 		HandID: "hand-789",
@@ -246,6 +251,7 @@ func BenchmarkUnmarshalActionRequestCustom(b *testing.B) {
 
 // Test that messages are reasonably small
 func TestMessageSizes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		msg     interface{ MarshalMsg([]byte) ([]byte, error) }
@@ -309,6 +315,7 @@ func TestMessageSizes(t *testing.T) {
 
 // Test roundtrip with buffer reuse
 func TestBufferReuse(t *testing.T) {
+	t.Parallel()
 	var buf []byte
 
 	// First message
@@ -335,6 +342,7 @@ func TestBufferReuse(t *testing.T) {
 // TestMarshalRaceCondition tests for buffer aliasing race conditions in Marshal
 // This test should be run with -race flag to detect data races
 func TestMarshalRaceCondition(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping race condition test in short mode")
 	}

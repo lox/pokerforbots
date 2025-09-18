@@ -6,6 +6,7 @@ import (
 
 // TestAllInPlayerSkippedForActions verifies that all-in players are not prompted for actions
 func TestAllInPlayerSkippedForActions(t *testing.T) {
+	t.Parallel()
 	// Create a 3-player game with different chip counts
 	// Bob has more chips than Alice so he won't go all-in when calling
 	players := []string{"Alice", "Bob", "Charlie"}
@@ -65,6 +66,7 @@ func TestAllInPlayerSkippedForActions(t *testing.T) {
 
 // TestAllPlayersAllInAutoComplete verifies the hand completes automatically when all players are all-in
 func TestAllPlayersAllInAutoComplete(t *testing.T) {
+	t.Parallel()
 	// Create a 2-player game
 	players := []string{"Alice", "Bob"}
 	chipCounts := []int{100, 150}
@@ -109,6 +111,7 @@ func TestAllPlayersAllInAutoComplete(t *testing.T) {
 
 // TestMixedAllInAndActivePlayers verifies correct action flow with mix of all-in and active players
 func TestMixedAllInAndActivePlayers(t *testing.T) {
+	t.Parallel()
 	// Create a 4-player game with varied stacks
 	// Button is at position 0 (Alice), so:
 	// - Position 1 (Bob) is SB
@@ -172,6 +175,7 @@ func TestMixedAllInAndActivePlayers(t *testing.T) {
 
 // TestAllInShowdownCompletes verifies that when all players go all-in, the hand completes correctly
 func TestAllInShowdownCompletes(t *testing.T) {
+	t.Parallel()
 	// Create a game with different chip counts
 	players := []string{"Alice", "Bob", "Charlie"}
 	chipCounts := []int{100, 200, 150}

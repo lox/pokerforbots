@@ -9,6 +9,7 @@ import (
 )
 
 func TestBotPool(t *testing.T) {
+	t.Parallel()
 	pool := NewBotPool(testLogger(), 2, 4, rand.New(rand.NewSource(42)))
 	stopPool := startTestPool(t, pool)
 	defer stopPool()
@@ -55,6 +56,7 @@ func TestBotPool(t *testing.T) {
 }
 
 func TestBotPoolMatching(t *testing.T) {
+	t.Parallel()
 	pool := NewBotPool(testLogger(), 2, 4, rand.New(rand.NewSource(42)))
 
 	// Start the pool in background
@@ -99,6 +101,7 @@ func TestBotPoolMatching(t *testing.T) {
 }
 
 func TestBotSendMessage(t *testing.T) {
+	t.Parallel()
 	bot := &Bot{
 		ID:   "test",
 		send: make(chan []byte, 1),
@@ -136,6 +139,7 @@ func TestBotSendMessage(t *testing.T) {
 }
 
 func TestBotPoolRequiresPlayer(t *testing.T) {
+	t.Parallel()
 	config := Config{
 		SmallBlind:    5,
 		BigBlind:      10,

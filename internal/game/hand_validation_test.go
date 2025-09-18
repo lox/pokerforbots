@@ -6,6 +6,7 @@ import (
 
 // TestBasicHandFlow tests a simple hand with minimal actions
 func TestBasicHandFlow(t *testing.T) {
+	t.Parallel()
 	h := NewHandState([]string{"Alice", "Bob"}, 0, 5, 10, 100)
 
 	// Verify preflop state
@@ -139,6 +140,7 @@ func TestBasicHandFlow(t *testing.T) {
 
 // TestBettingAndFolding tests betting and folding scenarios
 func TestBettingAndFolding(t *testing.T) {
+	t.Parallel()
 	h := NewHandState([]string{"Alice", "Bob", "Charlie"}, 0, 5, 10, 100)
 
 	// Verify initial state
@@ -211,6 +213,7 @@ func TestBettingAndFolding(t *testing.T) {
 
 // TestAllInWithSidePotsValidation tests all-in scenarios with side pots
 func TestAllInWithSidePotsValidation(t *testing.T) {
+	t.Parallel()
 	// Create players with different stacks
 	h := NewHandStateWithChips(
 		[]string{"ShortStack", "MidStack", "BigStack"},

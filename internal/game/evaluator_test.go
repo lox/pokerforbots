@@ -14,6 +14,7 @@ func parseCards(strs ...string) Hand {
 }
 
 func TestEvaluateHandTypes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		cards    []string
@@ -88,6 +89,7 @@ func TestEvaluateHandTypes(t *testing.T) {
 }
 
 func TestCompareHands(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		hand1Cards     []string
@@ -181,6 +183,7 @@ func BenchmarkEvaluateFullHouse(b *testing.B) {
 
 // TestEvaluatorBugs tests specific bugs found by oracle review
 func TestEvaluatorBugs(t *testing.T) {
+	t.Parallel()
 	t.Run("overlapping bit fields bug - pair rankings", func(t *testing.T) {
 		// Pair of 2s with kickers A-K-Q should lose to pair of 3s with any kickers
 		// But due to bit overlap, the Ace/King bits can interfere with pair ranking

@@ -287,6 +287,11 @@ func (b *Bot) WritePump() {
 				return
 			}
 
+		case <-b.done:
+			b.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = b.conn.WriteMessage(websocket.CloseMessage, []byte{})
+			return
+
 		case <-ticker.C:
 			b.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := b.conn.WriteMessage(websocket.PingMessage, nil); err != nil {

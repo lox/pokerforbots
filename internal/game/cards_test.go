@@ -7,6 +7,7 @@ import (
 )
 
 func TestCardCreation(t *testing.T) {
+	t.Parallel()
 	// Test card creation
 	aceSpades := NewCard(Ace, Spades)
 	if aceSpades.Rank() != Ace {
@@ -29,6 +30,7 @@ func TestCardCreation(t *testing.T) {
 }
 
 func TestParseCard(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		input       string
@@ -108,21 +110,23 @@ func TestParseCard(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			card, err := ParseCard(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ParseCard(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+	for _, testCase := range tests {
+		tc := testCase
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			card, err := ParseCard(tc.input)
+			if (err != nil) != tc.wantErr {
 				return
 			}
-			if card != tt.wantCard {
-				t.Errorf("ParseCard(%q) = %v, want %v", tt.input, card, tt.wantCard)
+			if card != tc.wantCard {
+				t.Errorf("ParseCard(%q) = %v, want %v", tc.input, card, tc.wantCard)
 			}
 		})
 	}
 }
 
 func TestAll52Cards(t *testing.T) {
+	t.Parallel()
 	// Test all 52 cards encode/decode correctly
 	cards := make(map[string]bool)
 
@@ -154,6 +158,7 @@ func TestAll52Cards(t *testing.T) {
 }
 
 func TestHandOperations(t *testing.T) {
+	t.Parallel()
 	aceSpades, _ := ParseCard("As")
 	kingHearts, _ := ParseCard("Kh")
 	queenDiamonds, _ := ParseCard("Qd")
@@ -187,6 +192,7 @@ func TestHandOperations(t *testing.T) {
 }
 
 func TestHandBitset(t *testing.T) {
+	t.Parallel()
 	// Test that different cards use different bits
 	aceSpades, _ := ParseCard("As")
 	aceHearts, _ := ParseCard("Ah")
@@ -216,6 +222,7 @@ func TestHandBitset(t *testing.T) {
 }
 
 func TestGetSuitMask(t *testing.T) {
+	t.Parallel()
 	// Create a hand with specific cards
 	cards := []Card{}
 
@@ -239,6 +246,7 @@ func TestGetSuitMask(t *testing.T) {
 }
 
 func TestDeck(t *testing.T) {
+	t.Parallel()
 	rng := rand.New(rand.NewSource(42))
 	deck := NewDeck(rng)
 
