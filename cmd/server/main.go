@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -82,22 +84,22 @@ func main() {
 	// Wait for either server error or interrupt signal
 	select {
 	case err := <-serverErr:
-		if err != nil {
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			ctx.FatalIfErrorf(err)
 		}
 	case sig := <-sigChan:
 		logger.Info().Str("signal", sig.String()).Msg("Received signal, shutting down gracefully...")
 
-		// Give server a moment to finish current operations
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		// Note: server.Stop() would need to be implemented for full graceful shutdown
-		// For now, we just exit after a brief delay
-		select {
-		case <-shutdownCtx.Done():
-			logger.Error().Msg("Shutdown timeout exceeded, forcing exit")
-		case <-time.After(500 * time.Millisecond):
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Error().Err(err).Msg("Graceful shutdown failed")
+		}
+
+		if err := <-serverErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error().Err(err).Msg("Server exited with error")
+		} else {
 			logger.Info().Msg("Server shutdown complete")
 		}
 	}
