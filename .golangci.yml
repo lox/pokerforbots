@@ -40,6 +40,9 @@ linters:
       - path: ^cmd/
         linters:
           - forbidigo # Allow log and fmt.Print in cmd/ binaries
+      - path: ^examples/
+        linters:
+          - forbidigo # Examples may use log/fmt for simplicity
 
 issues:
   # Don't hide multiple issues in the same line

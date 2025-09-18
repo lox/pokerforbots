@@ -39,7 +39,10 @@ curl -X POST http://localhost:8080/admin/games \
          }'
 
 # Run your development bot (connecting as role=player)
-go run ./examples/testbot --server ws://localhost:8080/ws --game sandbox --strategy random
+go run ./examples/random --server ws://localhost:8080/ws --game sandbox
+
+# OR launch the complex bot skeleton (for custom logic)
+go run ./examples/complex --server ws://localhost:8080/ws --game sandbox --debug
 ```
 
 ## Monitoring
