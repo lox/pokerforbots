@@ -70,6 +70,7 @@ type ActionRequest struct {
 	ValidActions  []string `msg:"valid_actions"`
 	ToCall        int      `msg:"to_call"`
 	MinBet        int      `msg:"min_bet"`
+	MinRaise      int      `msg:"min_raise"`
 	Pot           int      `msg:"pot"`
 }
 

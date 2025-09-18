@@ -32,9 +32,13 @@ Response to action_request from server. Must be sent within timeout window.
 {
   "type": "action",
   "action": "fold|call|check|raise|allin",
-  "amount": 0              // Only required for raise (0 for other actions)
+  "amount": 0              // For "raise" this is the *total* bet size (raise-to value). 0 for other actions.
 }
 ```
+
+Notes:
+- When sending `"raise"`, set `amount` to the final total bet (call amount + raise increment). This mirrors the server’s `player_bet` field.
+- For `"allin"` the `amount` field is ignored; the server deduces the wager from the stack size.
 
 ## Server → Client Messages
 
@@ -58,42 +62,81 @@ Sent when a new hand begins. Bot receives hole cards and game setup.
 ```
 
 ### Action Request
-Server requests action from bot. Must respond within timeout_ms.
+Server asks the acting bot to choose an action.
+
 ```
 {
   "type": "action_request",
-  "timeout_ms": 100,         // Milliseconds to respond
-  "valid_actions": ["fold", "call", "raise"],  // Legal actions
-  "to_call": 20,             // Amount to call (0 if can check)
-  "min_raise": 40,           // Minimum raise amount
-  "max_raise": 990,          // Maximum raise (your stack)
-  "pot": 35,                 // Current pot size
-  "board": ["Ah", "Kd", "7c"], // Community cards (0-5 cards)
-  "current_bet": 20          // Current bet to match
+  "hand_id": "hand-42",
+  "time_remaining": 100,            // Milliseconds left before timeout
+  "valid_actions": ["fold", "call", "raise"],
+  "to_call": 20,                    // Chips required to match the current wager (0 if checking is allowed)
+  "min_bet": 40,                    // Smallest legal total bet/raise size
+  "min_raise": 20,                  // Minimum incremental chips beyond the call when raising
+  "pot": 35                         // Pot size before acting
 }
 ```
 
+Field semantics:
+
+- `to_call` – amount that must be invested to call. When `0`, checking is legal.
+- `min_bet` – the smallest total bet the player may declare if they choose to bet or raise. When no bet exists this equals the big blind; otherwise it is the current highest bet plus the minimum raise increment.
+- `min_raise` – the minimum *additional* chips that must be added beyond the call to make a legal raise. When `to_call == 0`, this matches the opening bet size.
+- `valid_actions` – subset of `fold`, `check`, `call`, `bet`, `raise`, `allin` that are legal in the current state.
+- `time_remaining` – deadline in milliseconds. Missing it causes the server to fold the hand automatically.
+
+### Player Action
+Broadcast immediately after every player action (including blind posts and auto-folds) so all bots can mirror wagering state.
+
+```
+{
+  "type": "player_action",
+  "hand_id": "hand-42",
+  "street": "preflop",
+  "seat": 3,
+  "player_name": "Bot3",
+  "action": "raise",                 // fold | check | call | bet | raise | allin | post_small_blind | post_big_blind | timeout_fold
+  "amount_paid": 20,                  // Chips added during this action only
+  "player_bet": 70,                   // Player's total committed bet after acting
+  "player_chips": 930,                // Stack remaining
+  "pot": 120                          // Pot size after acting
+}
+```
+
+Action vocabulary:
+
+- `bet` – first voluntary wager on the street. `player_bet` equals the bet size.
+- `raise` – increase after a wager already exists. `player_bet` shows the new “to” amount.
+- `allin` – the player’s entire stack went in. Treat it as a bet or raise based on whether a wager existed; short all-ins that do not meet the minimum raise still use `action = "allin"` and do **not** reopen betting.
+- `post_small_blind`, `post_big_blind` – forced blinds at hand start.
+- `timeout_fold` – server auto-folded the player due to timeout or disconnect.
+
 ### Game Update
-Broadcast when any player acts. Lets bots track game state.
+Sent periodically to snapshot the full table state (e.g., after each action).
+
 ```
 {
   "type": "game_update",
-  "seat": 0,                 // Acting player's seat
-  "action": "raise",         // Action taken
-  "amount": 50,              // Amount (0 for fold/check)
-  "pot": 85,                 // New pot size
-  "street": "flop"           // Current street
+  "hand_id": "hand-42",
+  "pot": 120,
+  "players": [
+    {"name": "Bot1", "chips": 930, "bet": 70, "folded": false, "all_in": false},
+    {"name": "Bot2", "chips": 995, "bet": 10, "folded": false, "all_in": false},
+    {"name": "Bot3", "chips": 1000, "bet": 0, "folded": true,  "all_in": false}
+  ]
 }
 ```
+
+`bet` reflects the total chips each player has committed on the current street, `chips` is their remaining stack, and the boolean flags indicate folded/all-in status.
 
 ### Street Change
 Sent when moving to next betting round.
 ```
 {
   "type": "street_change",
-  "street": "flop",          // New street: flop|turn|river
-  "board": ["Ah", "Kd", "7c"], // All community cards
-  "pot": 100                 // Current pot
+  "hand_id": "hand-42",
+  "street": "flop",          // New street: preflop|flop|turn|river
+  "board": ["Ah", "Kd", "7c"] // All community cards dealt so far
 }
 ```
 

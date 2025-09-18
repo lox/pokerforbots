@@ -35,27 +35,23 @@ tasks:
 
   server:
     desc: Run the poker server
-    deps: [build]
     cmds:
-      - ./dist/server {{.CLI_ARGS}}
+      - go run ./cmd/server {{.CLI_ARGS}}
 
   client:
     desc: Run the poker client
-    deps: [build]
     cmds:
-      - ./dist/client {{.CLI_ARGS}}
+      - go run ./cmd/client {{.CLI_ARGS}}
 
   simulate:
     desc: Run single hand simulation (no networking)
-    deps: [build]
     cmds:
-      - ./dist/simulate {{.CLI_ARGS}}
+      - go run ./cmd/simulate {{.CLI_ARGS}}
 
   spawn-bots:
     desc: Spawn bots to connect to server (or spawn server)
-    deps: [build]
     cmds:
-      - ./dist/spawn-bots {{.CLI_ARGS}}
+      - go run ./cmd/spawn-bots {{.CLI_ARGS}}
 
   test:
     desc: Run all tests with race detector

@@ -112,6 +112,7 @@ func TestActionRequestMessage(t *testing.T) {
 		ValidActions:  []string{"fold", "call", "raise"},
 		ToCall:        20,
 		MinBet:        40,
+		MinRaise:      20,
 		Pot:           35,
 	}
 
@@ -134,6 +135,9 @@ func TestActionRequestMessage(t *testing.T) {
 	}
 	if decoded.ToCall != original.ToCall {
 		t.Errorf("ToCall mismatch: got %d, want %d", decoded.ToCall, original.ToCall)
+	}
+	if decoded.MinRaise != original.MinRaise {
+		t.Errorf("MinRaise mismatch: got %d, want %d", decoded.MinRaise, original.MinRaise)
 	}
 }
 
@@ -209,6 +213,7 @@ func BenchmarkMarshalActionRequest(b *testing.B) {
 		ValidActions:  []string{"fold", "call", "raise"},
 		ToCall:        20,
 		MinBet:        40,
+		MinRaise:      20,
 		Pot:           35,
 	}
 
@@ -227,6 +232,7 @@ func BenchmarkUnmarshalActionRequestCustom(b *testing.B) {
 		ValidActions:  []string{"fold", "call", "raise"},
 		ToCall:        20,
 		MinBet:        40,
+		MinRaise:      20,
 		Pot:           35,
 	}
 	data, _ := req.MarshalMsg(nil)
@@ -263,6 +269,7 @@ func TestMessageSizes(t *testing.T) {
 				ValidActions:  []string{"fold", "call", "raise"},
 				ToCall:        20,
 				MinBet:        40,
+				MinRaise:      20,
 				Pot:           35,
 			},
 			maxSize: 200,
@@ -354,6 +361,7 @@ func TestMarshalRaceCondition(t *testing.T) {
 					Pot:           100 + j,
 					ToCall:        10,
 					MinBet:        20,
+					MinRaise:      10,
 					TimeRemaining: 5000,
 				}
 

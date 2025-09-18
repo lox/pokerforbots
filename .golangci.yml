@@ -31,14 +31,15 @@ linters:
           msg: "Usage of the 'log' package is forbidden"
         - pattern: ^fmt\.Print(f|ln|)\(?
           msg: "Usage of fmt.Print functions is forbidden"
-      exclude-paths:
-        - ^cmd/
 
   exclusions:
     rules:
       - path: _test\.go
         linters:
           - errcheck # Don't require error checking in tests
+      - path: ^cmd/
+        linters:
+          - forbidigo # Allow log and fmt.Print in cmd/ binaries
 
 issues:
   # Don't hide multiple issues in the same line

@@ -287,6 +287,7 @@ func (hr *HandRunner) sendActionRequest(bot *Bot, seat int, validActions []game.
 		Pot:           pot,
 		ToCall:        toCall,
 		MinBet:        hr.handState.CurrentBet + hr.handState.MinRaise,
+		MinRaise:      hr.handState.MinRaise,
 		ValidActions:  actions,
 		TimeRemaining: int(hr.config.Timeout.Milliseconds()),
 	}
@@ -641,36 +642,24 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 
 // broadcastStreetChange sends street change notification
 func (hr *HandRunner) broadcastStreetChange(previous game.Street) {
-	boardCards := hr.boardStrings()
-	hr.logger.Debug().
-		Str("from", previous.String()).
-		Str("to", hr.handState.Street.String()).
-		Strs("board", boardCards).
-		Msg("Street advanced")
-
-	for _, bot := range hr.bots {
-		msg := &protocol.StreetChange{
-			Type:   "street_change",
-			HandID: hr.handID,
-			Street: hr.handState.Street.String(),
-			Board:  boardCards,
-		}
-
-		if err := bot.SendMessage(msg); err != nil {
-			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send street change")
-		}
-	}
+	hr.broadcastSpecificStreet(previous, hr.handState.Street, hr.boardStrings())
 }
 
 // resolveHand determines winners, distributes pots, and returns payout summaries
 func (hr *HandRunner) resolveHand() []winnerSummary {
 	// Force showdown if needed
 	if hr.handState.Street != game.Showdown {
-		// If everyone is all-in, just advance to showdown
+		// If everyone is all-in, fast-forward streets
 		if hr.handState.ActivePlayer == -1 {
-			// Deal remaining cards directly
 			for hr.handState.Street != game.Showdown {
+				prev := hr.handState.Street
 				hr.handState.NextStreet()
+				if hr.handState.Street == game.Showdown {
+					hr.broadcastRemainingStreets(prev)
+				} else {
+					hr.broadcastStreetChange(prev)
+					hr.lastStreet = hr.handState.Street
+				}
 			}
 		} else {
 			// Deal remaining cards by checking
@@ -713,6 +702,71 @@ func (hr *HandRunner) resolveHand() []winnerSummary {
 	})
 
 	return summaries
+}
+
+func (hr *HandRunner) broadcastSpecificStreet(previous, current game.Street, board []string) {
+	hr.logger.Debug().
+		Str("from", previous.String()).
+		Str("to", current.String()).
+		Strs("board", board).
+		Msg("Street advanced")
+
+	for _, bot := range hr.bots {
+		msg := &protocol.StreetChange{
+			Type:   "street_change",
+			HandID: hr.handID,
+			Street: current.String(),
+			Board:  board,
+		}
+
+		if err := bot.SendMessage(msg); err != nil {
+			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send street change")
+		}
+	}
+}
+
+func (hr *HandRunner) broadcastRemainingStreets(from game.Street) {
+	board := hr.boardStrings()
+	order := []struct {
+		street game.Street
+		needed int
+	}{
+		{game.Flop, 3},
+		{game.Turn, 4},
+		{game.River, 5},
+	}
+	prev := from
+	for _, step := range order {
+		if streetOrder(step.street) <= streetOrder(prev) {
+			continue
+		}
+		if len(board) < step.needed {
+			continue
+		}
+		hr.broadcastSpecificStreet(prev, step.street, board[:step.needed])
+		prev = step.street
+	}
+	hr.lastStreet = prev
+	if hr.handState.Street == game.Showdown {
+		hr.lastStreet = game.Showdown
+	}
+}
+
+func streetOrder(s game.Street) int {
+	switch s {
+	case game.Preflop:
+		return 0
+	case game.Flop:
+		return 1
+	case game.Turn:
+		return 2
+	case game.River:
+		return 3
+	case game.Showdown:
+		return 4
+	default:
+		return -1
+	}
 }
 
 // broadcastHandResult sends the final hand result with showdown details
