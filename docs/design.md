@@ -231,6 +231,8 @@ Each hand is completely independent:
 - **Scenario Scripts** *(planned)*: A game may accept scripted decks or seed lists for deterministic simulation runs without restarting the server.
 - **Simulation Control Channel** *(planned)*: Trusted tooling can request ad-hoc simulation sessions (e.g., `N` mirrored hands with specified bots) routed through dedicated game instances, leaving other tables unaffected.
 
+HTTP endpoints (`GET /games`, `GET /stats`) expose discovery and monitoring data while the WebSocket protocol stays focused on gameplay messages.
+
 ## Testing Strategy
 
 - Unit tests for game logic

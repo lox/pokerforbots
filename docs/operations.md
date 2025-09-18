@@ -25,10 +25,11 @@ task spawn-bots -- -bots 6 -spawn-server -v
 
 ## Monitoring
 
-The server exposes HTTP endpoints for monitoring:
+The server exposes HTTP endpoints for monitoring and discovery:
 
 - `GET /health` - Health check endpoint
-- `GET /stats` - Basic statistics (connected bots, hands completed)
+- `GET /stats` - Basic aggregate statistics (connected bots, hands completed)
+- `GET /games` - JSON list of configured games with blinds, seat limits, and player requirements
 
 ## Architecture Notes
 

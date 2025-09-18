@@ -198,7 +198,7 @@ A successful demo should:
 
 TODO follow-up:
 - [ ] Implement lobby/list/leave protocol messages so clients can discover games dynamically
-- [ ] Add admin logging/API to inspect registered games at runtime
+- [x] Add HTTP `/games` endpoint for runtime game inspection/discovery
 
 ### 14. Deterministic Testing Tools (TODO)
 - [ ] Add `--seed` and `--mirror` flags to `cmd/server`; propagate to `server.Config`

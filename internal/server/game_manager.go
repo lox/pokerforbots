@@ -2,6 +2,7 @@ package server
 
 import (
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -16,8 +17,16 @@ type GameInstance struct {
 
 // GameSummary holds lightweight metadata for clients.
 type GameSummary struct {
-	ID     string
-	Config Config
+	ID            string `json:"id"`
+	SmallBlind    int    `json:"small_blind"`
+	BigBlind      int    `json:"big_blind"`
+	StartChips    int    `json:"start_chips"`
+	TimeoutMs     int    `json:"timeout_ms"`
+	MinPlayers    int    `json:"min_players"`
+	MaxPlayers    int    `json:"max_players"`
+	RequirePlayer bool   `json:"require_player"`
+	ConnectedBots int    `json:"connected_bots"`
+	HandsPlayed   uint64 `json:"hands_played"`
 }
 
 // GameManager tracks available games and their bot pools.
@@ -46,7 +55,7 @@ func (gm *GameManager) RegisterGame(id string, pool *BotPool, config Config) *Ga
 		return existing
 	}
 
-	instance := &GameInstance{ID: id, Config: config, Pool: pool}
+	instance := &GameInstance{ID: id, Config: config, Pool: pool, RequirePlayer: config.RequirePlayer}
 	gm.games[id] = instance
 	if gm.defaultGameID == "" {
 		gm.defaultGameID = id
@@ -84,7 +93,19 @@ func (gm *GameManager) ListGames() []GameSummary {
 
 	summaries := make([]GameSummary, 0, len(gm.games))
 	for _, game := range gm.games {
-		summaries = append(summaries, GameSummary{ID: game.ID, Config: game.Config})
+		summary := GameSummary{
+			ID:            game.ID,
+			SmallBlind:    game.Config.SmallBlind,
+			BigBlind:      game.Config.BigBlind,
+			StartChips:    game.Config.StartChips,
+			TimeoutMs:     int(game.Config.Timeout / time.Millisecond),
+			MinPlayers:    game.Config.MinPlayers,
+			MaxPlayers:    game.Config.MaxPlayers,
+			RequirePlayer: game.RequirePlayer,
+			ConnectedBots: game.Pool.BotCount(),
+			HandsPlayed:   game.Pool.HandCount(),
+		}
+		summaries = append(summaries, summary)
 	}
 	return summaries
 }

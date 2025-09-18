@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -229,6 +230,32 @@ func TestMultipleBotConnections(t *testing.T) {
 
 	if srv.pool.BotCount() != 0 {
 		t.Errorf("Expected 0 bots after disconnect, got %d", srv.pool.BotCount())
+	}
+}
+
+func TestGamesEndpoint(t *testing.T) {
+	rng := rand.New(rand.NewSource(77))
+	srv := NewServer(testLogger(), rng)
+	req := httptest.NewRequest(http.MethodGet, "/games", nil)
+	rec := httptest.NewRecorder()
+
+	srv.handleGames(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 response, got %d", rec.Code)
+	}
+
+	var games []GameSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &games); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if len(games) == 0 {
+		t.Fatal("expected at least one game in response")
+	}
+
+	if games[0].ID != "default" {
+		t.Fatalf("expected default game, got %s", games[0].ID)
 	}
 }
 

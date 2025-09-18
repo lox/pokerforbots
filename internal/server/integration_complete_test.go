@@ -341,6 +341,7 @@ func testHeadsUpPlay(t *testing.T) {
 	for i, conn := range bots {
 		go func(botNum int, c *websocket.Conn) {
 			myPosition := -1
+			actedPreflop := false
 
 			for {
 				_, data, err := c.ReadMessage()
@@ -352,6 +353,11 @@ func testHeadsUpPlay(t *testing.T) {
 				var handStart protocol.HandStart
 				if err := protocol.Unmarshal(data, &handStart); err == nil && handStart.Type == "hand_start" {
 					myPosition = handStart.YourSeat
+					mu.Lock()
+					if !buttonActedFirst && myPosition == 0 && actedPreflop {
+						buttonActedFirst = true
+					}
+					mu.Unlock()
 				}
 
 				// Check for action request
@@ -359,8 +365,11 @@ func testHeadsUpPlay(t *testing.T) {
 				if err := protocol.Unmarshal(data, &actionReq); err == nil && actionReq.Type == "action_request" {
 					// Track preflop action order
 					mu.Lock()
-					if preflopActionCount == 0 && myPosition == 0 {
-						buttonActedFirst = true
+					if preflopActionCount == 0 {
+						actedPreflop = true
+						if myPosition == 0 {
+							buttonActedFirst = true
+						}
 					}
 					preflopActionCount++
 					mu.Unlock()

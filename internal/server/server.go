@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -158,6 +159,7 @@ func (s *Server) Start(addr string) error {
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/stats", s.handleStats)
+	s.mux.HandleFunc("/games", s.handleGames)
 
 	// Create HTTP server
 	s.httpServer = &http.Server{
@@ -288,5 +290,20 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Hands remaining: %d\n", handsRemaining)
 	} else {
 		fmt.Fprintf(w, "Hand limit: unlimited\n")
+	}
+}
+
+// handleGames returns the list of configured games as JSON.
+func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	summaries := s.manager.ListGames()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(summaries); err != nil {
+		s.logger.Error().Err(err).Msg("failed to encode games response")
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
