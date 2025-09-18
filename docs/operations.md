@@ -15,6 +15,9 @@ go run ./cmd/server --npc-bots 6
 
 # Explicit NPC mix
 go run ./cmd/server --npc-calling 2 --npc-random 3 --npc-aggro 1
+
+# Deterministic simulation run (fixed seed, auto-shutdown after 500 hands)
+go run ./cmd/server --seed 1337 --hands 500 --npc-bots 3
 ```
 
 ### Demo with Test Bots
@@ -52,8 +55,10 @@ The server exposes HTTP endpoints for monitoring and discovery:
 - `GET /health` - Health check endpoint
 - `GET /stats` - Basic aggregate statistics (connected bots, hands completed)
 - `GET /games` - JSON list of configured games with blinds, seat limits, and player requirements
+- `GET /admin/games/{id}/stats` - Detailed per-game stats including bot win/loss deltas and remaining hand budget
 - `POST /admin/games` / `DELETE /admin/games/{id}` - create or remove tables (authentication TBD; restrict to trusted environments)
   - Payload may include an `npcs` array to automatically spawn built-in opponents (strategies: `calling`, `aggressive`, `random`).
+- Bots connected over WebSocket receive a `game_completed` message (with the per-bot stats snapshot) whenever a game exhausts its configured hand budget.
 
 ## Architecture Notes
 

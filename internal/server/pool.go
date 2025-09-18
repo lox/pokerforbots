@@ -3,37 +3,60 @@ package server
 import (
 	"fmt"
 	"math/rand"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/lox/pokerforbots/internal/protocol"
 	"github.com/rs/zerolog"
 )
 
 // BotPool manages available bots and matches them into hands
 type BotPool struct {
-	bots            map[string]*Bot
-	available       chan *Bot
-	register        chan *Bot
-	unregister      chan *Bot
-	mu              sync.RWMutex
-	minPlayers      int
-	maxPlayers      int
-	handCounter     uint64
-	handLimit       uint64 // 0 means unlimited
-	handLimitLogged bool   // Track if we've logged the hand limit message
-	stopCh          chan struct{}
-	stopOnce        sync.Once
-	logger          zerolog.Logger
-	rng             *rand.Rand
-	rngMutex        sync.Mutex // Protect RNG access
-	config          Config     // Server configuration
+	bots              map[string]*Bot
+	available         chan *Bot
+	register          chan *Bot
+	unregister        chan *Bot
+	mu                sync.RWMutex
+	minPlayers        int
+	maxPlayers        int
+	handCounter       uint64
+	handLimit         uint64 // 0 means unlimited
+	handLimitLogged   bool   // Track if we've logged the hand limit message
+	handLimitNotified atomic.Bool
+	stopCh            chan struct{}
+	stopOnce          sync.Once
+	logger            zerolog.Logger
+	rng               *rand.Rand
+	rngMutex          sync.Mutex // Protect RNG access
+	config            Config     // Server configuration
+	gameID            string
 
 	// Metrics
 	timeoutCounter uint64
 	handStartTime  time.Time
 	metricsLock    sync.RWMutex
+
+	statsMu   sync.RWMutex
+	botStats  map[string]*botStats
+	lastHand  string
+	lastStamp time.Time
 }
+
+type botStats struct {
+	BotID       string
+	DisplayName string
+	Role        BotRole
+	Hands       int
+	NetChips    int64
+	TotalWon    int64
+	TotalLost   int64
+	LastDelta   int
+	LastUpdated time.Time
+}
+
+const reasonHandLimitReached = "hand_limit_reached"
 
 // NewBotPool creates a new bot pool with explicit random source
 func NewBotPool(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand) *BotPool {
@@ -45,6 +68,8 @@ func NewBotPool(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Ran
 		MinPlayers:    minPlayers,
 		MaxPlayers:    maxPlayers,
 		RequirePlayer: true,
+		HandLimit:     0,
+		Seed:          0,
 	}
 	return NewBotPoolWithConfig(logger, minPlayers, maxPlayers, rng, config)
 }
@@ -64,6 +89,8 @@ func NewBotPoolWithLimit(logger zerolog.Logger, minPlayers, maxPlayers int, rng 
 		MinPlayers:    minPlayers,
 		MaxPlayers:    maxPlayers,
 		RequirePlayer: true,
+		HandLimit:     0,
+		Seed:          0,
 	}
 	return NewBotPoolWithLimitAndConfig(logger, minPlayers, maxPlayers, rng, handLimit, config)
 }
@@ -83,7 +110,23 @@ func NewBotPoolWithLimitAndConfig(logger zerolog.Logger, minPlayers, maxPlayers 
 		rng:           rng,
 		config:        config,
 		handStartTime: time.Now(),
+		botStats:      make(map[string]*botStats),
+		lastStamp:     time.Now(),
 	}
+}
+
+// SetGameID stores the identifier of the game this pool manages.
+func (p *BotPool) SetGameID(id string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.gameID = id
+}
+
+// GameID returns the identifier associated with this pool.
+func (p *BotPool) GameID() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.gameID
 }
 
 // Run starts the bot pool manager
@@ -148,6 +191,7 @@ func (p *BotPool) tryMatch() {
 				Uint64("hand_limit", p.handLimit).
 				Msg("Hand limit reached - stopping new hand creation")
 		}
+		p.notifyGameCompleted(reasonHandLimitReached)
 		return
 	}
 
@@ -403,4 +447,178 @@ func (p *BotPool) HandsPerSecond() float64 {
 
 	handCount := float64(atomic.LoadUint64(&p.handCounter))
 	return handCount / elapsed
+}
+
+// RecordHandOutcome updates aggregate statistics for the bots that participated in a hand.
+func (p *BotPool) RecordHandOutcome(handID string, bots []*Bot, deltas []int) {
+	if len(bots) != len(deltas) {
+		return
+	}
+
+	now := time.Now()
+
+	p.statsMu.Lock()
+
+	if p.botStats == nil {
+		p.botStats = make(map[string]*botStats)
+	}
+
+	p.lastHand = handID
+	p.lastStamp = now
+
+	for i, bot := range bots {
+		if bot == nil {
+			continue
+		}
+
+		key := bot.ID
+		stats, exists := p.botStats[key]
+		if !exists {
+			stats = &botStats{BotID: key}
+			p.botStats[key] = stats
+		}
+
+		displayName := bot.DisplayName()
+		if displayName == "" {
+			displayName = bot.ID
+		}
+
+		stats.DisplayName = displayName
+		stats.Role = bot.Role()
+		stats.Hands++
+
+		delta := deltas[i]
+		stats.NetChips += int64(delta)
+		if delta >= 0 {
+			stats.TotalWon += int64(delta)
+		} else {
+			stats.TotalLost += int64(-delta)
+		}
+		stats.LastDelta = delta
+		stats.LastUpdated = now
+	}
+
+	p.statsMu.Unlock()
+
+	p.maybeNotifyHandLimit()
+}
+
+// PlayerStats returns a snapshot of aggregate statistics for all bots in the pool.
+func (p *BotPool) PlayerStats() []PlayerStats {
+	p.statsMu.RLock()
+	defer p.statsMu.RUnlock()
+
+	if len(p.botStats) == 0 {
+		return []PlayerStats{}
+	}
+
+	players := make([]PlayerStats, 0, len(p.botStats))
+	for _, stats := range p.botStats {
+		role := string(stats.Role)
+		avg := 0.0
+		if stats.Hands > 0 {
+			avg = float64(stats.NetChips) / float64(stats.Hands)
+		}
+
+		players = append(players, PlayerStats{
+			BotID:       stats.BotID,
+			DisplayName: stats.DisplayName,
+			Role:        role,
+			Hands:       stats.Hands,
+			NetChips:    stats.NetChips,
+			AvgPerHand:  avg,
+			TotalWon:    stats.TotalWon,
+			TotalLost:   stats.TotalLost,
+			LastDelta:   stats.LastDelta,
+			LastUpdated: stats.LastUpdated,
+		})
+	}
+
+	sort.Slice(players, func(i, j int) bool {
+		if players[i].Role == players[j].Role {
+			if players[i].DisplayName == players[j].DisplayName {
+				return players[i].BotID < players[j].BotID
+			}
+			return players[i].DisplayName < players[j].DisplayName
+		}
+		return players[i].Role < players[j].Role
+	})
+
+	return players
+}
+
+// HandLimitNotified returns true if the pool has already broadcast the completion notification.
+func (p *BotPool) HandLimitNotified() bool {
+	return p.handLimitNotified.Load()
+}
+
+func (p *BotPool) maybeNotifyHandLimit() {
+	if p.handLimit == 0 {
+		return
+	}
+	if atomic.LoadUint64(&p.handCounter) < p.handLimit {
+		return
+	}
+	p.notifyGameCompleted(reasonHandLimitReached)
+}
+
+func (p *BotPool) notifyGameCompleted(reason string) {
+	if reason == "" {
+		reason = reasonHandLimitReached
+	}
+	if !p.handLimitNotified.CompareAndSwap(false, true) {
+		return
+	}
+
+	playerStats := p.PlayerStats()
+	players := make([]protocol.GameCompletedPlayer, len(playerStats))
+	for i, ps := range playerStats {
+		players[i] = protocol.GameCompletedPlayer{
+			BotID:       ps.BotID,
+			DisplayName: ps.DisplayName,
+			Role:        ps.Role,
+			Hands:       ps.Hands,
+			NetChips:    ps.NetChips,
+			AvgPerHand:  ps.AvgPerHand,
+			TotalWon:    ps.TotalWon,
+			TotalLost:   ps.TotalLost,
+			LastDelta:   ps.LastDelta,
+		}
+	}
+
+	completed := atomic.LoadUint64(&p.handCounter)
+
+	msg := &protocol.GameCompleted{
+		Type:           protocol.TypeGameCompleted,
+		GameID:         p.GameID(),
+		HandsCompleted: completed,
+		HandLimit:      p.handLimit,
+		Reason:         reason,
+		Seed:           p.config.Seed,
+		Players:        players,
+	}
+
+	// Snapshot bots to avoid holding locks during network sends
+	p.mu.RLock()
+	bots := make([]*Bot, 0, len(p.bots))
+	for _, bot := range p.bots {
+		bots = append(bots, bot)
+	}
+	p.mu.RUnlock()
+
+	for _, bot := range bots {
+		if bot == nil {
+			continue
+		}
+		if err := bot.SendMessage(msg); err != nil {
+			p.logger.Debug().Str("bot_id", bot.ID).Err(err).Msg("failed to send game_completed message")
+		}
+	}
+
+	p.logger.Info().
+		Str("game_id", msg.GameID).
+		Uint64("hands_completed", msg.HandsCompleted).
+		Uint64("hand_limit", msg.HandLimit).
+		Str("reason", msg.Reason).
+		Msg("Broadcasted game_completed message")
 }

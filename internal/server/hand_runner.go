@@ -621,6 +621,7 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 	initialStacks := make([]string, len(hr.seatBuyIns))
 	finalStacks := make([]string, len(hr.seatBuyIns))
 	pnlSummary := make([]string, len(hr.seatBuyIns))
+	deltas := make([]int, len(hr.seatBuyIns))
 
 	for i := range hr.bots {
 		finalChips := hr.handState.Players[i].Chips
@@ -629,6 +630,7 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 		initialStacks[i] = fmt.Sprintf("seat%d/%s/%d", i, label, hr.seatBuyIns[i])
 		finalStacks[i] = fmt.Sprintf("seat%d/%s/%d", i, label, finalChips)
 		pnlSummary[i] = fmt.Sprintf("seat%d/%s/%+d", i, label, delta)
+		deltas[i] = delta
 		hr.bots[i].ApplyResult(delta)
 	}
 
@@ -648,6 +650,10 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 		Strs("winners", winnerSummaries).
 		Strs("pnls", pnlSummary).
 		Msg("Hand summary")
+
+	if hr.pool != nil {
+		hr.pool.RecordHandOutcome(hr.handID, hr.bots, deltas)
+	}
 }
 
 // broadcastStreetChange sends street change notification

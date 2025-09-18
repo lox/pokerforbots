@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/url"
 	"os"
@@ -68,6 +70,9 @@ func (b *complexBot) run() error {
 			continue
 		}
 		if err := b.handle(data); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
 			b.logger.Error().Err(err).Msg("handler error")
 		}
 	}
@@ -81,6 +86,10 @@ func (b *complexBot) handle(data []byte) error {
 	var req protocol.ActionRequest
 	if err := protocol.Unmarshal(data, &req); err == nil && req.Type == protocol.TypeActionRequest {
 		return b.respond(req)
+	}
+
+	if handled, err := b.tryGameCompleted(data); handled {
+		return err
 	}
 	return nil
 }
@@ -118,6 +127,37 @@ func (b *complexBot) tryPlayerAction(data []byte) bool {
 	}
 	b.state.LastAction = action
 	return true
+}
+
+func (b *complexBot) tryGameCompleted(data []byte) (bool, error) {
+	var completed protocol.GameCompleted
+	if err := protocol.Unmarshal(data, &completed); err != nil || completed.Type != protocol.TypeGameCompleted {
+		return false, nil
+	}
+	playersJSON, _ := json.MarshalIndent(completed.Players, "", "  ")
+	b.logger.Info().
+		Str("game_id", completed.GameID).
+		Uint64("hands_completed", completed.HandsCompleted).
+		Uint64("hand_limit", completed.HandLimit).
+		Str("reason", completed.Reason).
+		Int64("seed", completed.Seed).
+		RawJSON("players", playersJSON).
+		Msg("game completed")
+
+	for _, ps := range completed.Players {
+		if ps.DisplayName == b.id {
+			b.logger.Info().
+				Str("game_id", completed.GameID).
+				Float64("avg_per_hand", ps.AvgPerHand).
+				Int64("net_chips", ps.NetChips).
+				Int64("total_won", ps.TotalWon).
+				Int64("total_lost", ps.TotalLost).
+				Msg("complex bot summary")
+			break
+		}
+	}
+
+	return true, io.EOF
 }
 
 func (b *complexBot) respond(req protocol.ActionRequest) error {

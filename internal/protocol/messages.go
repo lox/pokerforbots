@@ -18,6 +18,7 @@ const (
 	TypeStreetChange  = "street_change"
 	TypeHandResult    = "hand_result"
 	TypeError         = "error"
+	TypeGameCompleted = "game_completed"
 )
 
 // Card representation as string (e.g., "As", "Kh")
@@ -114,6 +115,30 @@ type HandResult struct {
 	Winners  []Winner       `msg:"winners"`
 	Board    []string       `msg:"board"`
 	Showdown []ShowdownHand `msg:"showdown,omitempty"` // All hands shown at showdown
+}
+
+// GameCompletedPlayer summarizes a bot's performance during the game run.
+type GameCompletedPlayer struct {
+	BotID       string  `msg:"bot_id"`
+	DisplayName string  `msg:"display_name"`
+	Role        string  `msg:"role"`
+	Hands       int     `msg:"hands"`
+	NetChips    int64   `msg:"net_chips"`
+	AvgPerHand  float64 `msg:"avg_per_hand"`
+	TotalWon    int64   `msg:"total_won"`
+	TotalLost   int64   `msg:"total_lost"`
+	LastDelta   int     `msg:"last_delta"`
+}
+
+// GameCompleted is sent when a game instance stops spawning new hands (e.g. hand limit reached).
+type GameCompleted struct {
+	Type           string                `msg:"type"`
+	GameID         string                `msg:"game_id"`
+	HandsCompleted uint64                `msg:"hands_completed"`
+	HandLimit      uint64                `msg:"hand_limit"`
+	Reason         string                `msg:"reason"`
+	Seed           int64                 `msg:"seed"`
+	Players        []GameCompletedPlayer `msg:"players"`
 }
 
 // Winner info

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/lox/pokerforbots/internal/protocol"
 )
 
 func TestServerHealth(t *testing.T) {
@@ -308,6 +309,73 @@ func TestAdminCreateAndDeleteGame(t *testing.T) {
 	}
 }
 
+func TestAdminGameStatsEndpoint(t *testing.T) {
+	srv := NewServer(testLogger(), rand.New(rand.NewSource(7)))
+
+	game, ok := srv.manager.GetGame("default")
+	if !ok {
+		t.Fatal("expected default game to exist")
+	}
+
+	bot1 := NewBot(testLogger(), "bot-player", nil, game.Pool)
+	bot1.SetDisplayName("complex")
+	bot1.SetRole(BotRolePlayer)
+
+	bot2 := NewBot(testLogger(), "bot-npc", nil, game.Pool)
+	bot2.SetDisplayName("npc-aggr")
+	bot2.SetRole(BotRoleNPC)
+
+	game.Pool.RecordHandOutcome("hand-1", []*Bot{bot1, bot2}, []int{150, -150})
+
+	statsReq := httptest.NewRequest(http.MethodGet, "/admin/games/default/stats", nil)
+	statsRec := httptest.NewRecorder()
+
+	srv.handleAdminGame(statsRec, statsReq)
+
+	if statsRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", statsRec.Code)
+	}
+
+	var payload GameStats
+	if err := json.Unmarshal(statsRec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode stats response: %v", err)
+	}
+
+	if payload.ID != "default" {
+		t.Fatalf("expected stats for default game, got %s", payload.ID)
+	}
+
+	if len(payload.Players) != 2 {
+		t.Fatalf("expected 2 player stats, got %d", len(payload.Players))
+	}
+
+	var foundPlayer bool
+	for _, ps := range payload.Players {
+		if ps.DisplayName == "complex" {
+			foundPlayer = true
+			if ps.NetChips != 150 {
+				t.Fatalf("expected complex net chips 150, got %d", ps.NetChips)
+			}
+			if ps.Role != string(BotRolePlayer) {
+				t.Fatalf("expected complex role player, got %s", ps.Role)
+			}
+		}
+	}
+
+	if !foundPlayer {
+		t.Fatal("expected complex bot stats present")
+	}
+
+	notFoundReq := httptest.NewRequest(http.MethodGet, "/admin/games/missing/stats", nil)
+	notFoundRec := httptest.NewRecorder()
+
+	srv.handleAdminGame(notFoundRec, notFoundReq)
+
+	if notFoundRec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing game, got %d", notFoundRec.Code)
+	}
+}
+
 // TestHandLimitLogic verifies that the bot pool stops creating hands when hand limit is reached
 // This tests the tryMatch logic directly without requiring WebSocket connections
 func TestHandLimitLogic(t *testing.T) {
@@ -317,6 +385,7 @@ func TestHandLimitLogic(t *testing.T) {
 
 	// Create pool with hand limit
 	pool := NewBotPoolWithLimit(logger, 2, 4, rng, handLimit)
+	pool.SetGameID("test-hand-limit")
 
 	// Start pool
 	var wg sync.WaitGroup
@@ -334,6 +403,7 @@ func TestHandLimitLogic(t *testing.T) {
 	atomic.StoreUint64(&pool.handCounter, handLimit)
 
 	// Create bots and register them - they should not trigger new hands
+	bots := make([]*Bot, 0, 4)
 	for i := 0; i < 4; i++ {
 		bot := &Bot{
 			ID:       fmt.Sprintf("test-bot-%d", i+1),
@@ -345,6 +415,7 @@ func TestHandLimitLogic(t *testing.T) {
 			conn:     nil, // This will cause runHand to exit early, which is perfect for testing
 		}
 		pool.Register(bot)
+		bots = append(bots, bot)
 	}
 
 	// Wait for the tryMatch to be called multiple times
@@ -354,6 +425,32 @@ func TestHandLimitLogic(t *testing.T) {
 	finalHandCount := atomic.LoadUint64(&pool.handCounter)
 	if finalHandCount != handLimit {
 		t.Errorf("Hand limit was not respected: expected %d, got %d", handLimit, finalHandCount)
+	}
+
+	if !pool.HandLimitNotified() {
+		t.Fatalf("expected hand limit notification to be sent")
+	}
+
+	select {
+	case msg := <-bots[0].send:
+		var completed protocol.GameCompleted
+		if err := protocol.Unmarshal(msg, &completed); err != nil {
+			t.Fatalf("failed to decode game_completed message: %v", err)
+		}
+		if completed.Type != protocol.TypeGameCompleted {
+			t.Fatalf("expected game_completed type, got %s", completed.Type)
+		}
+		if completed.HandLimit != handLimit {
+			t.Fatalf("expected hand limit %d, got %d", handLimit, completed.HandLimit)
+		}
+		if completed.GameID == "" {
+			t.Fatal("expected game id to be set")
+		}
+		if completed.Reason != "hand_limit_reached" {
+			t.Fatalf("expected reason hand_limit_reached, got %s", completed.Reason)
+		}
+	default:
+		t.Fatal("expected game_completed message to be delivered")
 	}
 
 	t.Logf("SUCCESS: Hand limit of %d was respected, %d hands completed", handLimit, finalHandCount)

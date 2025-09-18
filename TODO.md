@@ -203,7 +203,10 @@ TODO follow-up:
 - [x] Retire `cmd/spawn-bots` once in-process NPC bots cover test/demo use-cases
 
 ### 14. Deterministic Testing Tools (TODO)
-- [ ] Add `--seed` and `--mirror` flags to `cmd/server`; propagate to `server.Config`
+- [x] Add `--seed` flag and fixed-hand runs (`--hands`) to `cmd/server`; propagate to `server.Config`
+- [x] Allow admin-created games to specify `seed`/`hands` and surface `/admin/games/{id}/stats` aggregates
+- [x] Emit `game_completed` websocket messages (with per-bot stats) when a hand limit completes
+- [ ] Add `--mirror` flag to `cmd/server`; propagate to `server.Config`
 - [ ] Allow game configs to opt into mirror runs (replay same deck across seat rotations)
 - [ ] Define deck/script injection format for dev mode (JSON or seed list)
 - [ ] Expose hand group metadata (`hand_group_id`, `mirror_index`) in logs/protocol

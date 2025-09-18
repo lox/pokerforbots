@@ -152,6 +152,7 @@ game:
   big_blind: 10
   decision_timeout_ms: 100
   require_player: true   # Hand will only start if at least one player-role bot is seated
+  hand_limit: 0          # 0 = unlimited, otherwise stop spawning hands after N
 
 pool:
   match_interval_ms: 10
@@ -228,11 +229,13 @@ Each hand is completely independent:
 - **Multiple Game Instances**: The server will expose multiple named "games", each with their own `Config` (blinds, timeouts, min/max seats) and bot pool. Bots join and leave games explicitly through the protocol.
 - **Bot Roles**: Connecting bots declare a role (`player` or `npc`). Game configs (default included) can require at least one `player` before starting a hand, keeping background sparring bots idle until a focus bot attaches.
 - **Built-in NPC Bots**: Games may spawn NPC opponents (calling station, aggressive, random). The server runs these strategies in-process when configured via the admin API.
+- **Deterministic Runs**: CLI flags (`--seed`, `--hands`) and matching admin payload fields let you spin up reproducible games that halt after N hands, while `/admin/games/{id}/stats` exposes per-bot performance metrics for rapid tuning.
+- **Session Completion Signal**: When a game exhausts its configured hand budget it emits a `game_completed` message (with per-bot stats) so tooling can wrap up gracefully without tearing down connections.
 - **Mirrored Hands** *(planned)*: Game instances can optionally replay each shuffled deck across every seat rotation to reduce variance during testing.
 - **Scenario Scripts** *(planned)*: A game may accept scripted decks or seed lists for deterministic simulation runs without restarting the server.
 - **Simulation Control Channel** *(planned)*: Trusted tooling can request ad-hoc simulation sessions (e.g., `N` mirrored hands with specified bots) routed through dedicated game instances, leaving other tables unaffected.
 
-HTTP endpoints (`GET /games`, `GET /stats`) expose discovery and monitoring data while the WebSocket protocol stays focused on gameplay messages.
+HTTP endpoints (`GET /games`, `GET /stats`, `GET /admin/games/{id}/stats`) expose discovery and monitoring data while the WebSocket protocol stays focused on gameplay messages.
 
 ## Testing Strategy
 

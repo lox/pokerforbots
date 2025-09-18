@@ -59,6 +59,7 @@ func (gm *GameManager) RegisterGame(id string, pool *BotPool, config Config) *Ga
 	}
 
 	instance := &GameInstance{ID: id, Config: config, Pool: pool, RequirePlayer: config.RequirePlayer}
+	pool.SetGameID(id)
 	gm.games[id] = instance
 	if gm.defaultGameID == "" {
 		gm.defaultGameID = id
@@ -153,6 +154,47 @@ func (gm *GameManager) ListGames() []GameSummary {
 		summaries = append(summaries, summary)
 	}
 	return summaries
+}
+
+// GameStats retrieves statistics for a game by ID.
+func (gm *GameManager) GameStats(id string) (GameStats, bool) {
+	gm.mu.RLock()
+	defer gm.mu.RUnlock()
+
+	instance, ok := gm.games[id]
+	if !ok {
+		return GameStats{}, false
+	}
+
+	stats := instance.Stats()
+	return stats, true
+}
+
+// Stats returns aggregate statistics for the game instance.
+func (gi *GameInstance) Stats() GameStats {
+	timeoutMs := int(gi.Config.Timeout / time.Millisecond)
+	handsCompleted := gi.Pool.HandCount()
+	handLimit := gi.Pool.HandLimit()
+
+	stats := GameStats{
+		ID:             gi.ID,
+		SmallBlind:     gi.Config.SmallBlind,
+		BigBlind:       gi.Config.BigBlind,
+		StartChips:     gi.Config.StartChips,
+		TimeoutMs:      timeoutMs,
+		MinPlayers:     gi.Config.MinPlayers,
+		MaxPlayers:     gi.Config.MaxPlayers,
+		RequirePlayer:  gi.RequirePlayer,
+		HandsCompleted: handsCompleted,
+		HandLimit:      handLimit,
+		HandsRemaining: gi.Pool.HandsRemaining(),
+		Timeouts:       gi.Pool.TimeoutCount(),
+		HandsPerSecond: gi.Pool.HandsPerSecond(),
+		Seed:           gi.Config.Seed,
+		Players:        gi.Pool.PlayerStats(),
+	}
+
+	return stats
 }
 
 // StartAll launches the bot pools for all registered games.

@@ -60,6 +60,10 @@ func Marshal(v any) ([]byte, error) {
 		if err := msg.EncodeMsg(writer); err != nil {
 			return nil, err
 		}
+	case *GameCompleted:
+		if err := msg.EncodeMsg(writer); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, ErrUnknownMessageType
 	}
@@ -96,6 +100,8 @@ func Unmarshal(data []byte, v any) error {
 	case *HandResult:
 		return msg.DecodeMsg(reader)
 	case *Error:
+		return msg.DecodeMsg(reader)
+	case *GameCompleted:
 		return msg.DecodeMsg(reader)
 	default:
 		return ErrUnknownMessageType

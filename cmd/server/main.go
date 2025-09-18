@@ -29,6 +29,8 @@ type CLI struct {
 	NPCCalling    int    `kong:"default='0',help='NPC calling-station bots (overrides auto distribution)'"`
 	NPCRandom     int    `kong:"default='0',help='NPC random bots (overrides auto distribution)'"`
 	NPCAggro      int    `kong:"default='0',help='NPC aggressive bots (overrides auto distribution)'"`
+	Seed          *int64 `kong:"help='Deterministic RNG seed for the server (optional)'"`
+	Hands         uint64 `kong:"default='0',help='Maximum hands to run in the default game (0 = unlimited)'"`
 }
 
 func main() {
@@ -66,10 +68,18 @@ func main() {
 		MinPlayers:    cli.MinPlayers,
 		MaxPlayers:    cli.MaxPlayers,
 		RequirePlayer: cli.RequirePlayer,
+		HandLimit:     cli.Hands,
+		Seed:          0,
 	}
 
 	// Create RNG instance for server
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	seed := time.Now().UnixNano()
+	if cli.Seed != nil {
+		seed = *cli.Seed
+	}
+
+	rng := rand.New(rand.NewSource(seed))
+	config.Seed = seed
 	srv := server.NewServerWithConfig(logger, rng, config)
 
 	if specs := computeDefaultNPCSpecs(cli.NPCBots, cli.NPCCalling, cli.NPCRandom, cli.NPCAggro); len(specs) > 0 {
@@ -90,6 +100,8 @@ func main() {
 			Int("timeout_ms", cli.TimeoutMs).
 			Int("min_players", cli.MinPlayers).
 			Int("max_players", cli.MaxPlayers).
+			Uint64("hand_limit", cli.Hands).
+			Int64("seed", seed).
 			Msg("Server starting")
 		serverErr <- srv.Start(cli.Addr)
 	}()

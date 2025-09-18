@@ -43,6 +43,8 @@ type Config struct {
 	MinPlayers    int
 	MaxPlayers    int
 	RequirePlayer bool
+	HandLimit     uint64
+	Seed          int64
 }
 
 // Server represents the poker server
@@ -92,13 +94,15 @@ func NewServer(logger zerolog.Logger, rng *rand.Rand) *Server {
 		MinPlayers:    2,
 		MaxPlayers:    9,
 		RequirePlayer: true,
+		HandLimit:     0,
+		Seed:          0,
 	}
 	return NewServerWithConfig(logger, rng, config)
 }
 
 // NewServerWithConfig creates a new poker server with provided random source and config
 func NewServerWithConfig(logger zerolog.Logger, rng *rand.Rand, config Config) *Server {
-	pool := NewBotPoolWithConfig(logger, config.MinPlayers, config.MaxPlayers, rng, config)
+	pool := NewBotPoolWithLimitAndConfig(logger, config.MinPlayers, config.MaxPlayers, rng, config.HandLimit, config)
 	return NewServerWithBotIDGenAndConfig(logger, pool, createDeterministicBotIDGen(rng), config)
 }
 
@@ -123,6 +127,8 @@ func NewServerWithBotIDGen(logger zerolog.Logger, pool *BotPool, botIDGen func()
 		MinPlayers:    2,
 		MaxPlayers:    9,
 		RequirePlayer: true,
+		HandLimit:     0,
+		Seed:          0,
 	}
 	return NewServerWithBotIDGenAndConfig(logger, pool, botIDGen, config)
 }
@@ -344,6 +350,8 @@ type adminGameRequest struct {
 	MaxPlayers    int       `json:"max_players"`
 	RequirePlayer *bool     `json:"require_player"`
 	NPCs          []NPCSpec `json:"npcs"`
+	Hands         *uint64   `json:"hands,omitempty"`
+	Seed          *int64    `json:"seed,omitempty"`
 }
 
 func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
@@ -387,13 +395,24 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 		MinPlayers:    req.MinPlayers,
 		MaxPlayers:    req.MaxPlayers,
 		RequirePlayer: true,
+		HandLimit:     0,
 	}
 	if req.RequirePlayer != nil {
 		config.RequirePlayer = *req.RequirePlayer
 	}
 
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	pool := NewBotPoolWithConfig(s.logger, config.MinPlayers, config.MaxPlayers, rng, config)
+	if req.Hands != nil {
+		config.HandLimit = *req.Hands
+	}
+
+	seed := time.Now().UnixNano()
+	if req.Seed != nil {
+		seed = *req.Seed
+	}
+
+	config.Seed = seed
+	rng := rand.New(rand.NewSource(seed))
+	pool := NewBotPoolWithLimitAndConfig(s.logger, config.MinPlayers, config.MaxPlayers, rng, config.HandLimit, config)
 	instance := s.manager.RegisterGame(req.ID, pool, config)
 	go pool.Run()
 
@@ -415,27 +434,55 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminGame(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	id := strings.TrimPrefix(r.URL.Path, "/admin/games/")
-	if id == "" {
+	path := strings.TrimPrefix(r.URL.Path, "/admin/games/")
+	if path == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("missing game id"))
 		return
 	}
 
-	instance, ok := s.manager.DeleteGame(id)
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte("game not found"))
-		return
-	}
+	parts := strings.Split(path, "/")
+	id := parts[0]
 
-	instance.StopNPCs()
-	instance.Pool.Stop()
-	s.logger.Info().Str("game_id", id).Msg("Admin deleted game")
-	w.WriteHeader(http.StatusNoContent)
+	switch r.Method {
+	case http.MethodDelete:
+		if len(parts) != 1 {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("game not found"))
+			return
+		}
+
+		instance, ok := s.manager.DeleteGame(id)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("game not found"))
+			return
+		}
+
+		instance.StopNPCs()
+		instance.Pool.Stop()
+		s.logger.Info().Str("game_id", id).Msg("Admin deleted game")
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodGet:
+		if len(parts) != 2 || parts[1] != "stats" {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("endpoint not found"))
+			return
+		}
+
+		stats, ok := s.manager.GameStats(id)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("game not found"))
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(stats); err != nil {
+			s.logger.Error().Err(err).Msg("failed to encode game stats response")
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
 }

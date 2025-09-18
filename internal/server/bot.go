@@ -73,6 +73,7 @@ func NewBot(logger zerolog.Logger, id string, conn *websocket.Conn, pool *BotPoo
 		done:     make(chan struct{}),
 		bankroll: bankroll,
 		logger:   logger.With().Str("component", "bot").Str("bot_id", id).Logger(),
+		role:     BotRoleNPC,
 	}
 }
 

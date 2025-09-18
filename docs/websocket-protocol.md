@@ -175,6 +175,34 @@ Sent at hand completion with winner(s) and final state.
 }
 ```
 
+### Game Completed
+Broadcast exactly once when a game instance stops creating new hands (for example, when a configured hand limit is reached). Bots can treat this as the end of a simulation run and disconnect or request a fresh game.
+```
+{
+  "type": "game_completed",
+  "game_id": "sandbox",
+  "hands_completed": 500,
+  "hand_limit": 500,
+  "reason": "hand_limit_reached",
+  "seed": 1337,
+  "players": [
+    {
+      "bot_id": "complex-3298",
+      "display_name": "complex",
+      "role": "player",
+      "hands": 500,
+      "net_chips": 12850,
+      "avg_per_hand": 25.7,
+      "total_won": 94210,
+      "total_lost": 81360,
+      "last_delta": 180
+    }
+  ]
+}
+```
+
+`reason` currently uses `hand_limit_reached`; additional values may appear as new shutdown triggers are implemented.
+
 ### Error
 Sent when bot sends invalid message or action.
 ```
