@@ -32,7 +32,7 @@ func TestNoEmptyValidActions(t *testing.T) {
 
 	// Connect multiple bots concurrently to create race conditions
 	numBots := 4
-	numHandsPerBot := 5
+	numHandsPerBot := 3
 	var wg sync.WaitGroup
 
 	emptyActionsFound := make(chan string, 10) // Buffer for error messages

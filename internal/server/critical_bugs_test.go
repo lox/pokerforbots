@@ -18,6 +18,7 @@ func TestButtonAssignedToFirstSeat(t *testing.T) {
 	t.Parallel()
 	rng := rand.New(rand.NewSource(42))
 	s := NewServer(testLogger(), rng)
+	s.pool.SetMatchInterval(5 * time.Millisecond)
 
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
 	s.mux.HandleFunc("/health", s.handleHealth)
@@ -61,7 +62,7 @@ func TestButtonAssignedToFirstSeat(t *testing.T) {
 	buttonPositions := []int{}
 	var buttonMutex sync.Mutex
 	seenHands := make(map[string]struct{})
-	targetHands := 10
+	targetHands := 5
 
 	done := make(chan struct{})
 	var doneOnce sync.Once

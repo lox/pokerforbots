@@ -32,6 +32,7 @@ type BotPool struct {
 	rngMutex          sync.Mutex // Protect RNG access
 	config            Config     // Server configuration
 	gameID            string
+	matchInterval     time.Duration
 
 	// Metrics
 	timeoutCounter uint64
@@ -77,6 +78,7 @@ func NewBotPool(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Ran
 		RequirePlayer: true,
 		HandLimit:     0,
 		Seed:          0,
+		MatchInterval: 100 * time.Millisecond,
 	}
 	return NewBotPoolWithConfig(logger, minPlayers, maxPlayers, rng, config)
 }
@@ -98,12 +100,18 @@ func NewBotPoolWithLimit(logger zerolog.Logger, minPlayers, maxPlayers int, rng 
 		RequirePlayer: true,
 		HandLimit:     0,
 		Seed:          0,
+		MatchInterval: 100 * time.Millisecond,
 	}
 	return NewBotPoolWithLimitAndConfig(logger, minPlayers, maxPlayers, rng, handLimit, config)
 }
 
 // NewBotPoolWithLimitAndConfig creates a new bot pool with explicit random source, hand limit and config
 func NewBotPoolWithLimitAndConfig(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand, handLimit uint64, config Config) *BotPool {
+	matchInterval := config.MatchInterval
+	if matchInterval <= 0 {
+		matchInterval = 100 * time.Millisecond
+	}
+
 	return &BotPool{
 		bots:          make(map[string]*Bot),
 		available:     make(chan *Bot, 100),
@@ -119,6 +127,7 @@ func NewBotPoolWithLimitAndConfig(logger zerolog.Logger, minPlayers, maxPlayers 
 		handStartTime: time.Now(),
 		botStats:      make(map[string]*botStats),
 		lastStamp:     time.Now(),
+		matchInterval: matchInterval,
 	}
 }
 
@@ -138,7 +147,7 @@ func (p *BotPool) GameID() string {
 
 // Run starts the bot pool manager
 func (p *BotPool) Run() {
-	matchTicker := time.NewTicker(100 * time.Millisecond)
+	matchTicker := time.NewTicker(p.matchInterval)
 	defer matchTicker.Stop()
 
 	for {
@@ -176,6 +185,14 @@ func (p *BotPool) Run() {
 			p.tryMatch()
 		}
 	}
+}
+
+// SetMatchInterval overrides the interval between matchmaking attempts. Safe to call before Run.
+func (p *BotPool) SetMatchInterval(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	p.matchInterval = d
 }
 
 // tryMatch attempts to match available bots into a hand

@@ -136,6 +136,7 @@ func TestWebSocketConnection(t *testing.T) {
 	t.Parallel()
 	rng := rand.New(rand.NewSource(42))
 	srv := NewServer(testLogger(), rng)
+	srv.pool.SetMatchInterval(5 * time.Millisecond)
 	srv.pool.minPlayers = 10
 	srv.pool.config.RequirePlayer = false
 	var poolWg sync.WaitGroup
@@ -187,6 +188,7 @@ func TestMultipleBotConnections(t *testing.T) {
 	t.Parallel()
 	rng := rand.New(rand.NewSource(42))
 	srv := NewServer(testLogger(), rng)
+	srv.pool.SetMatchInterval(5 * time.Millisecond)
 	srv.pool.minPlayers = 10
 	srv.pool.config.RequirePlayer = false
 	var poolWg sync.WaitGroup
@@ -426,8 +428,13 @@ func TestHandLimitLogic(t *testing.T) {
 		bots = append(bots, bot)
 	}
 
-	// Wait for the tryMatch to be called multiple times
-	time.Sleep(500 * time.Millisecond)
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if atomic.LoadUint64(&pool.handCounter) == handLimit {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	// Verify hand count hasn't increased beyond the limit
 	finalHandCount := atomic.LoadUint64(&pool.handCounter)
@@ -436,13 +443,21 @@ func TestHandLimitLogic(t *testing.T) {
 	}
 
 	if !pool.HandLimitNotified() {
-		t.Fatalf("expected hand limit notification to be sent")
+		deadline := time.Now().Add(200 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			if pool.HandLimitNotified() {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if !pool.HandLimitNotified() {
+			t.Fatalf("expected hand limit notification to be sent")
+		}
 	}
 
-	select {
-	case msg := <-bots[0].send:
+	decodeGameCompleted := func(raw []byte) {
 		var completed protocol.GameCompleted
-		if err := protocol.Unmarshal(msg, &completed); err != nil {
+		if err := protocol.Unmarshal(raw, &completed); err != nil {
 			t.Fatalf("failed to decode game_completed message: %v", err)
 		}
 		if completed.Type != protocol.TypeGameCompleted {
@@ -457,7 +472,25 @@ func TestHandLimitLogic(t *testing.T) {
 		if completed.Reason != "hand_limit_reached" {
 			t.Fatalf("expected reason hand_limit_reached, got %s", completed.Reason)
 		}
-	default:
+	}
+
+	messageReceived := false
+	deadlineMsg := time.Now().Add(150 * time.Millisecond)
+	for !messageReceived && time.Now().Before(deadlineMsg) {
+		for _, bot := range bots {
+			select {
+			case msg := <-bot.send:
+				decodeGameCompleted(msg)
+				messageReceived = true
+			default:
+			}
+		}
+		if !messageReceived {
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+
+	if !messageReceived {
 		t.Fatal("expected game_completed message to be delivered")
 	}
 

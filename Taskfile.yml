@@ -58,6 +58,11 @@ tasks:
     cmds:
       - bin/gotestsum -f pkgname-and-test-fails --format-icons hivis -- -race -parallel 12 ./...
 
+  test:slowest:
+    desc: Report slowest tests (short mode)
+    cmds:
+      - go test -json -short ./... | gotestsum tool slowest
+
   lint:
     desc: Run linters
     cmds:

@@ -70,6 +70,7 @@ func main() {
 		RequirePlayer: cli.RequirePlayer,
 		HandLimit:     cli.Hands,
 		Seed:          0,
+		MatchInterval: 100 * time.Millisecond,
 	}
 
 	// Create RNG instance for server

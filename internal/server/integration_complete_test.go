@@ -29,6 +29,7 @@ func startServerForTest(t *testing.T) (host string) {
 
 	rng := rand.New(rand.NewSource(42))
 	server := NewServer(testLogger(), rng)
+	server.pool.SetMatchInterval(5 * time.Millisecond)
 
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
