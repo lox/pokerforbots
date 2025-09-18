@@ -45,6 +45,28 @@ Mutating operations live under `/admin/*`:
 
 ⚠️ **Authentication:** currently open for convenience; add shared-secret or mTLS before exposing outside trusted environments. (TODO)
 
+Example payload:
+
+```json
+{
+  "id": "sandbox",
+  "small_blind": 5,
+  "big_blind": 10,
+  "start_chips": 1000,
+  "timeout_ms": 100,
+  "min_players": 2,
+  "max_players": 6,
+  "require_player": true,
+  "npcs": [
+    {"strategy": "calling", "count": 2},
+    {"strategy": "aggressive", "count": 1},
+    {"strategy": "random", "count": 2}
+  ]
+}
+```
+
+Strategies supported for NPCs: `calling` (calling-station), `aggressive`, `random`. Count values of `0` are ignored.
+
 Keeping the WebSocket contract minimal lets bot authors plug into the system
 without tracking additional message types, while operations teams can script or
 curl the HTTP surfaces as needed.

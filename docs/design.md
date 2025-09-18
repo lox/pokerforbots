@@ -227,6 +227,7 @@ Each hand is completely independent:
 ### Game Manager & Simulation Roadmap
 - **Multiple Game Instances**: The server will expose multiple named "games", each with their own `Config` (blinds, timeouts, min/max seats) and bot pool. Bots join and leave games explicitly through the protocol.
 - **Bot Roles**: Connecting bots declare a role (`player` or `npc`). Game configs (default included) can require at least one `player` before starting a hand, keeping background sparring bots idle until a focus bot attaches.
+- **Built-in NPC Bots**: Games may spawn NPC opponents (calling station, aggressive, random). The server runs these strategies in-process when configured via the admin API.
 - **Mirrored Hands** *(planned)*: Game instances can optionally replay each shuffled deck across every seat rotation to reduce variance during testing.
 - **Scenario Scripts** *(planned)*: A game may accept scripted decks or seed lists for deterministic simulation runs without restarting the server.
 - **Simulation Control Channel** *(planned)*: Trusted tooling can request ad-hoc simulation sessions (e.g., `N` mirrored hands with specified bots) routed through dedicated game instances, leaving other tables unaffected.

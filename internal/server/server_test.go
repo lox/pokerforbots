@@ -270,7 +270,8 @@ func TestAdminCreateAndDeleteGame(t *testing.T) {
 		"timeout_ms": 200,
 		"min_players": 2,
 		"max_players": 6,
-		"require_player": false
+		"require_player": false,
+		"npcs": [{"strategy": "random", "count": 2}]
 	}`
 	req := httptest.NewRequest(http.MethodPost, "/admin/games", strings.NewReader(createPayload))
 	req.Header.Set("Content-Type", "application/json")
@@ -282,8 +283,12 @@ func TestAdminCreateAndDeleteGame(t *testing.T) {
 		t.Fatalf("expected 201, got %d", rec.Code)
 	}
 
-	if _, ok := srv.manager.GetGame("test"); !ok {
+	game, ok := srv.manager.GetGame("test")
+	if !ok {
 		t.Fatal("expected game to be registered")
+	}
+	if len(game.npcs) != 2 {
+		t.Fatalf("expected 2 NPCs, got %d", len(game.npcs))
 	}
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/admin/games/test", nil)
@@ -297,6 +302,9 @@ func TestAdminCreateAndDeleteGame(t *testing.T) {
 
 	if _, ok := srv.manager.GetGame("test"); ok {
 		t.Fatal("expected game to be removed")
+	}
+	if len(game.npcs) != 0 {
+		t.Fatalf("expected NPCs to be stopped, still have %d", len(game.npcs))
 	}
 }
 

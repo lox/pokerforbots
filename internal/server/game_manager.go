@@ -13,6 +13,7 @@ type GameInstance struct {
 	Config        Config
 	Pool          *BotPool
 	RequirePlayer bool
+	npcs          []*npcBot
 }
 
 // GameSummary holds lightweight metadata for clients.
@@ -86,6 +87,27 @@ func (gm *GameManager) DeleteGame(id string) (*GameInstance, bool) {
 	return instance, true
 }
 
+func (gi *GameInstance) AddNPCs(logger zerolog.Logger, specs []NPCSpec) {
+	for _, spec := range specs {
+		if spec.Count <= 0 {
+			continue
+		}
+		strategy := resolveStrategy(spec.Strategy)
+		for i := 0; i < spec.Count; i++ {
+			npc := newNPCBot(logger, gi.Pool, gi.ID, strategy)
+			npc.start()
+			gi.npcs = append(gi.npcs, npc)
+		}
+	}
+}
+
+func (gi *GameInstance) StopNPCs() {
+	for _, npc := range gi.npcs {
+		npc.stop()
+	}
+	gi.npcs = nil
+}
+
 // GetGame retrieves a game by ID.
 func (gm *GameManager) GetGame(id string) (*GameInstance, bool) {
 	gm.mu.RLock()
@@ -149,6 +171,7 @@ func (gm *GameManager) StopAll() {
 	defer gm.mu.RUnlock()
 
 	for _, game := range gm.games {
+		game.StopNPCs()
 		game.Pool.Stop()
 	}
 }

@@ -12,15 +12,28 @@ PORT=9090 task server
 ```
 
 ### Demo with Test Bots
+Create a sandbox game with NPC opponents via the admin API, then connect your bot:
+
 ```bash
-# Basic demo
-task spawn-bots -- -bots 6 -spawn-server
+curl -X POST http://localhost:8080/admin/games \
+     -H "Content-Type: application/json" \
+     -d '{
+           "id": "sandbox",
+           "small_blind": 5,
+           "big_blind": 10,
+           "start_chips": 1000,
+           "timeout_ms": 100,
+           "min_players": 2,
+           "max_players": 6,
+           "require_player": true,
+           "npcs": [
+             {"strategy": "calling", "count": 2},
+             {"strategy": "random", "count": 3}
+           ]
+         }'
 
-# Reproducible testing with seed
-task spawn-bots -- -seed 42 -bots 4 -spawn-server
-
-# Verbose output
-task spawn-bots -- -bots 6 -spawn-server -v
+# Run your development bot (connecting as role=player)
+go run ./cmd/testbot --server ws://localhost:8080/ws --game sandbox
 ```
 
 ## Monitoring
@@ -31,6 +44,7 @@ The server exposes HTTP endpoints for monitoring and discovery:
 - `GET /stats` - Basic aggregate statistics (connected bots, hands completed)
 - `GET /games` - JSON list of configured games with blinds, seat limits, and player requirements
 - `POST /admin/games` / `DELETE /admin/games/{id}` - create or remove tables (authentication TBD; restrict to trusted environments)
+  - Payload may include an `npcs` array to automatically spawn built-in opponents (strategies: `calling`, `aggressive`, `random`).
 
 ## Architecture Notes
 

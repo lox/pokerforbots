@@ -312,14 +312,15 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 }
 
 type adminGameRequest struct {
-	ID            string `json:"id"`
-	SmallBlind    int    `json:"small_blind"`
-	BigBlind      int    `json:"big_blind"`
-	StartChips    int    `json:"start_chips"`
-	TimeoutMs     int    `json:"timeout_ms"`
-	MinPlayers    int    `json:"min_players"`
-	MaxPlayers    int    `json:"max_players"`
-	RequirePlayer *bool  `json:"require_player"`
+	ID            string    `json:"id"`
+	SmallBlind    int       `json:"small_blind"`
+	BigBlind      int       `json:"big_blind"`
+	StartChips    int       `json:"start_chips"`
+	TimeoutMs     int       `json:"timeout_ms"`
+	MinPlayers    int       `json:"min_players"`
+	MaxPlayers    int       `json:"max_players"`
+	RequirePlayer *bool     `json:"require_player"`
+	NPCs          []NPCSpec `json:"npcs"`
 }
 
 func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
@@ -340,6 +341,13 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("invalid game parameters"))
 		return
+	}
+	for _, spec := range req.NPCs {
+		if spec.Count < 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("npc count must be non-negative"))
+			return
+		}
 	}
 
 	if _, exists := s.manager.GetGame(req.ID); exists {
@@ -363,10 +371,17 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	pool := NewBotPoolWithConfig(s.logger, config.MinPlayers, config.MaxPlayers, rng, config)
-	s.manager.RegisterGame(req.ID, pool, config)
+	instance := s.manager.RegisterGame(req.ID, pool, config)
 	go pool.Run()
 
-	s.logger.Info().Str("game_id", req.ID).Msg("Admin created game")
+	if len(req.NPCs) > 0 {
+		instance.AddNPCs(s.logger, req.NPCs)
+	}
+
+	s.logger.Info().
+		Str("game_id", req.ID).
+		Int("npc_groups", len(req.NPCs)).
+		Msg("Admin created game")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -396,6 +411,7 @@ func (s *Server) handleAdminGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	instance.StopNPCs()
 	instance.Pool.Stop()
 	s.logger.Info().Str("game_id", id).Msg("Admin deleted game")
 	w.WriteHeader(http.StatusNoContent)
