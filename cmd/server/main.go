@@ -25,6 +25,10 @@ type CLI struct {
 	MinPlayers    int    `kong:"default='2',help='Minimum players per hand'"`
 	MaxPlayers    int    `kong:"default='9',help='Maximum players per hand'"`
 	RequirePlayer bool   `kong:"default='true',help='Require at least one player-role bot per hand'"`
+	NPCBots       int    `kong:"default='0',help='Total NPC bots to spawn in default game (auto distribution)'"`
+	NPCCalling    int    `kong:"default='0',help='NPC calling-station bots (overrides auto distribution)'"`
+	NPCRandom     int    `kong:"default='0',help='NPC random bots (overrides auto distribution)'"`
+	NPCAggro      int    `kong:"default='0',help='NPC aggressive bots (overrides auto distribution)'"`
 }
 
 func main() {
@@ -68,6 +72,13 @@ func main() {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	srv := server.NewServerWithConfig(logger, rng, config)
 
+	if specs := computeDefaultNPCSpecs(cli.NPCBots, cli.NPCCalling, cli.NPCRandom, cli.NPCAggro); len(specs) > 0 {
+		srv.AddBootstrapNPCs("default", specs)
+		for _, spec := range specs {
+			logger.Info().Str("game_id", "default").Str("strategy", spec.Strategy).Int("count", spec.Count).Msg("Spawning default NPC bots")
+		}
+	}
+
 	// Start server in a goroutine
 	serverErr := make(chan error, 1)
 	go func() {
@@ -105,4 +116,40 @@ func main() {
 			logger.Info().Msg("Server shutdown complete")
 		}
 	}
+}
+
+func computeDefaultNPCSpecs(total, calling, random, aggro int) []server.NPCSpec {
+	if total <= 0 && calling == 0 && random == 0 && aggro == 0 {
+		return nil
+	}
+
+	if total > 0 && calling == 0 && random == 0 && aggro == 0 {
+		base := total / 3
+		remainder := total % 3
+		calling = base
+		random = base
+		aggro = base
+		if remainder >= 1 {
+			calling++
+		}
+		if remainder >= 2 {
+			random++
+		}
+	}
+
+	specs := make([]server.NPCSpec, 0, 3)
+	if calling > 0 {
+		specs = append(specs, server.NPCSpec{Strategy: "calling", Count: calling})
+	}
+	if random > 0 {
+		specs = append(specs, server.NPCSpec{Strategy: "random", Count: random})
+	}
+	if aggro > 0 {
+		specs = append(specs, server.NPCSpec{Strategy: "aggressive", Count: aggro})
+	}
+
+	if len(specs) == 0 {
+		return nil
+	}
+	return specs
 }

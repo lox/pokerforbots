@@ -9,6 +9,12 @@ task server
 
 # Custom port (set in environment or modify Taskfile.yml)
 PORT=9090 task server
+
+# Spawn NPC opponents in the default game (auto distribute strategies)
+go run ./cmd/server --npc-bots 6
+
+# Explicit NPC mix
+go run ./cmd/server --npc-calling 2 --npc-random 3 --npc-aggro 1
 ```
 
 ### Demo with Test Bots

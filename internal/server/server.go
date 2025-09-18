@@ -57,6 +57,7 @@ type Server struct {
 	httpServer    *http.Server
 	botIDGen      func() string // Function to generate bot IDs
 	config        Config
+	bootstrapNPCs map[string][]NPCSpec
 }
 
 // createDeterministicBotIDGen creates a deterministic bot ID generator using the provided RNG
@@ -138,6 +139,7 @@ func NewServerWithBotIDGenAndConfig(logger zerolog.Logger, pool *BotPool, botIDG
 		defaultGameID: defaultGameID,
 		botIDGen:      botIDGen,
 		config:        config,
+		bootstrapNPCs: make(map[string][]NPCSpec),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -155,6 +157,19 @@ func NewServerWithBotIDGenAndConfig(logger zerolog.Logger, pool *BotPool, botIDG
 func (s *Server) Start(addr string) error {
 	// Start bot pools for all registered games
 	s.manager.StartAll()
+
+	// Bootstrap NPCs after pools are running
+	for gameID, specs := range s.bootstrapNPCs {
+		if len(specs) == 0 {
+			continue
+		}
+		if instance, ok := s.manager.GetGame(gameID); ok {
+			instance.AddNPCs(s.logger, specs)
+		} else {
+			s.logger.Warn().Str("game_id", gameID).Msg("Bootstrap NPC target game not found")
+		}
+	}
+	s.bootstrapNPCs = nil
 
 	// Set up HTTP routes
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
@@ -309,6 +324,14 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error().Err(err).Msg("failed to encode games response")
 		w.WriteHeader(http.StatusInternalServerError)
 	}
+}
+
+// AddBootstrapNPCs schedules NPC bots to be attached to the given game when Start is invoked.
+func (s *Server) AddBootstrapNPCs(gameID string, specs []NPCSpec) {
+	if len(specs) == 0 {
+		return
+	}
+	s.bootstrapNPCs[gameID] = append(s.bootstrapNPCs[gameID], specs...)
 }
 
 type adminGameRequest struct {
