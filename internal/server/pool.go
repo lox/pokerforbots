@@ -32,7 +32,8 @@ type BotPool struct {
 	rngMutex          sync.Mutex // Protect RNG access
 	config            Config     // Server configuration
 	gameID            string
-	matchInterval     time.Duration
+	matchTrigger      chan struct{}
+	matcherWG         sync.WaitGroup
 
 	// Metrics
 	timeoutCounter uint64
@@ -78,7 +79,6 @@ func NewBotPool(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Ran
 		RequirePlayer: true,
 		HandLimit:     0,
 		Seed:          0,
-		MatchInterval: 100 * time.Millisecond,
 	}
 	return NewBotPoolWithConfig(logger, minPlayers, maxPlayers, rng, config)
 }
@@ -100,18 +100,13 @@ func NewBotPoolWithLimit(logger zerolog.Logger, minPlayers, maxPlayers int, rng 
 		RequirePlayer: true,
 		HandLimit:     0,
 		Seed:          0,
-		MatchInterval: 100 * time.Millisecond,
 	}
 	return NewBotPoolWithLimitAndConfig(logger, minPlayers, maxPlayers, rng, handLimit, config)
 }
 
 // NewBotPoolWithLimitAndConfig creates a new bot pool with explicit random source, hand limit and config
-func NewBotPoolWithLimitAndConfig(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand, handLimit uint64, config Config) *BotPool {
-	matchInterval := config.MatchInterval
-	if matchInterval <= 0 {
-		matchInterval = 100 * time.Millisecond
-	}
 
+func NewBotPoolWithLimitAndConfig(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand, handLimit uint64, config Config) *BotPool {
 	return &BotPool{
 		bots:          make(map[string]*Bot),
 		available:     make(chan *Bot, 100),
@@ -127,7 +122,7 @@ func NewBotPoolWithLimitAndConfig(logger zerolog.Logger, minPlayers, maxPlayers 
 		handStartTime: time.Now(),
 		botStats:      make(map[string]*botStats),
 		lastStamp:     time.Now(),
-		matchInterval: matchInterval,
+		matchTrigger:  make(chan struct{}, 1),
 	}
 }
 
@@ -146,9 +141,10 @@ func (p *BotPool) GameID() string {
 }
 
 // Run starts the bot pool manager
+
 func (p *BotPool) Run() {
-	matchTicker := time.NewTicker(p.matchInterval)
-	defer matchTicker.Stop()
+	p.matcherWG.Add(1)
+	go p.matchLoop()
 
 	for {
 		select {
@@ -170,6 +166,7 @@ func (p *BotPool) Run() {
 				default:
 					// Queue full
 				}
+				p.triggerMatch()
 			}
 
 		case bot, ok := <-p.unregister:
@@ -180,19 +177,35 @@ func (p *BotPool) Run() {
 			p.mu.Lock()
 			delete(p.bots, bot.ID)
 			p.mu.Unlock()
+		}
+	}
+}
 
-		case <-matchTicker.C:
+func (p *BotPool) matchLoop() {
+	defer p.matcherWG.Done()
+	for {
+		select {
+		case <-p.stopCh:
+			return
+		case _, ok := <-p.matchTrigger:
+			if !ok {
+				return
+			}
 			p.tryMatch()
 		}
 	}
 }
 
-// SetMatchInterval overrides the interval between matchmaking attempts. Safe to call before Run.
-func (p *BotPool) SetMatchInterval(d time.Duration) {
-	if d <= 0 {
+func (p *BotPool) triggerMatch() {
+	select {
+	case <-p.stopCh:
 		return
+	default:
 	}
-	p.matchInterval = d
+	select {
+	case p.matchTrigger <- struct{}{}:
+	default:
+	}
 }
 
 // tryMatch attempts to match available bots into a hand
@@ -305,6 +318,9 @@ collectLoop:
 			// Queue full
 		}
 	}
+	if len(p.available) >= p.minPlayers {
+		p.triggerMatch()
+	}
 
 	// If we got enough bots, start a hand
 	if len(bots) >= p.minPlayers {
@@ -344,6 +360,7 @@ func (p *BotPool) runHand(bots []*Bot) {
 				p.Unregister(bot)
 			}
 		}
+		p.triggerMatch()
 	}()
 
 	// Skip if any bot doesn't have a connection (for testing)
@@ -406,6 +423,7 @@ func (p *BotPool) Unregister(bot *Bot) {
 func (p *BotPool) Stop() {
 	p.stopOnce.Do(func() {
 		close(p.stopCh)
+		p.matcherWG.Wait()
 	})
 }
 

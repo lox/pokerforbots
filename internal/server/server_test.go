@@ -136,7 +136,6 @@ func TestWebSocketConnection(t *testing.T) {
 	t.Parallel()
 	rng := rand.New(rand.NewSource(42))
 	srv := NewServer(testLogger(), rng)
-	srv.pool.SetMatchInterval(5 * time.Millisecond)
 	srv.pool.minPlayers = 10
 	srv.pool.config.RequirePlayer = false
 	var poolWg sync.WaitGroup
@@ -188,7 +187,6 @@ func TestMultipleBotConnections(t *testing.T) {
 	t.Parallel()
 	rng := rand.New(rand.NewSource(42))
 	srv := NewServer(testLogger(), rng)
-	srv.pool.SetMatchInterval(5 * time.Millisecond)
 	srv.pool.minPlayers = 10
 	srv.pool.config.RequirePlayer = false
 	var poolWg sync.WaitGroup

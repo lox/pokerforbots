@@ -34,7 +34,6 @@ func newTestServerWithDeterministicRNG(t *testing.T, seed int64) *Server {
 
 func startTestPool(t *testing.T, pool *BotPool) func() {
 	t.Helper()
-	pool.SetMatchInterval(5 * time.Millisecond)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {

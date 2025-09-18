@@ -29,7 +29,6 @@ func startServerForTest(t *testing.T) (host string) {
 
 	rng := rand.New(rand.NewSource(42))
 	server := NewServer(testLogger(), rng)
-	server.pool.SetMatchInterval(5 * time.Millisecond)
 
 	go func() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -196,35 +195,22 @@ func testShowdownWithMultiplePlayers(t *testing.T) {
 		}
 	}
 
-	// Wait for hand to start
-	time.Sleep(200 * time.Millisecond)
+	results := make(chan error, len(bots))
+	var wg sync.WaitGroup
 
-	// Track streets and hand completion
-	streetsSeen := make(map[string]bool)
-	handCompleted := make(chan bool, 4)
-	var streetMutex sync.Mutex
-
-	// Each bot checks/calls to showdown
 	for i, conn := range bots {
+		wg.Add(1)
 		go func(botNum int, c *websocket.Conn) {
+			defer wg.Done()
 			for {
 				_, data, err := c.ReadMessage()
 				if err != nil {
+					results <- fmt.Errorf("bot %d read error: %w", botNum, err)
 					return
 				}
 
-				// Track street changes
-				var streetChange protocol.StreetChange
-				if err := protocol.Unmarshal(data, &streetChange); err == nil && streetChange.Type == "street_change" {
-					streetMutex.Lock()
-					streetsSeen[streetChange.Street] = true
-					streetMutex.Unlock()
-				}
-
-				// Check for action request
 				var actionReq protocol.ActionRequest
 				if err := protocol.Unmarshal(data, &actionReq); err == nil && actionReq.Type == "action_request" {
-					// Check if possible, otherwise call
 					action := "call"
 					for _, validAction := range actionReq.ValidActions {
 						if validAction == "check" {
@@ -239,38 +225,42 @@ func testShowdownWithMultiplePlayers(t *testing.T) {
 						Amount: 0,
 					}
 					respData, _ := protocol.Marshal(actionMsg)
-					c.WriteMessage(websocket.BinaryMessage, respData)
+					_ = c.WriteMessage(websocket.BinaryMessage, respData)
+					continue
 				}
 
-				// Check for hand result
 				var handResult protocol.HandResult
 				if err := protocol.Unmarshal(data, &handResult); err == nil && handResult.Type == "hand_result" {
-					// Verify we saw all streets
-					streetMutex.Lock()
-					if !streetsSeen["flop"] || !streetsSeen["turn"] || !streetsSeen["river"] {
-						t.Error("Did not see all streets before showdown")
+					switch {
+					case len(handResult.Winners) == 0:
+						results <- fmt.Errorf("no winners in hand result")
+					case len(handResult.Board) != 5:
+						results <- fmt.Errorf("expected full board, got %d cards", len(handResult.Board))
+					default:
+						results <- nil
 					}
-					streetMutex.Unlock()
-
-					// Verify we have winners
-					if len(handResult.Winners) == 0 {
-						t.Error("No winners in hand result")
-					}
-
-					handCompleted <- true
 					return
 				}
 			}
 		}(i, conn)
 	}
 
-	// Wait for hand to complete
-	select {
-	case <-handCompleted:
-		t.Log("Hand completed successfully with showdown")
-	case <-time.After(5 * time.Second):
-		t.Fatal("Hand did not complete within timeout")
+	successes := 0
+	timeout := time.After(5 * time.Second)
+	for successes < len(bots) {
+		select {
+		case err := <-results:
+			if err != nil {
+				t.Error(err)
+			}
+			successes++
+		case <-timeout:
+			t.Fatal("Hand did not complete within timeout")
+		}
 	}
+
+	wg.Wait()
+	t.Log("Hand completed successfully with showdown")
 }
 
 func testAllInCascade(t *testing.T) {

@@ -46,7 +46,6 @@ type Config struct {
 	RequirePlayer bool
 	HandLimit     uint64
 	Seed          int64
-	MatchInterval time.Duration
 }
 
 // Server represents the poker server
@@ -106,7 +105,6 @@ func NewServer(logger zerolog.Logger, rng *rand.Rand) *Server {
 		RequirePlayer: true,
 		HandLimit:     0,
 		Seed:          0,
-		MatchInterval: 100 * time.Millisecond,
 	}
 	return NewServerWithConfig(logger, rng, config)
 }
@@ -140,7 +138,6 @@ func NewServerWithBotIDGen(logger zerolog.Logger, pool *BotPool, botIDGen func()
 		RequirePlayer: true,
 		HandLimit:     0,
 		Seed:          0,
-		MatchInterval: 100 * time.Millisecond,
 	}
 	return NewServerWithBotIDGenAndConfig(logger, pool, botIDGen, config)
 }
@@ -421,7 +418,6 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 		MaxPlayers:    req.MaxPlayers,
 		RequirePlayer: true,
 		HandLimit:     0,
-		MatchInterval: 100 * time.Millisecond,
 	}
 	if req.RequirePlayer != nil {
 		config.RequirePlayer = *req.RequirePlayer

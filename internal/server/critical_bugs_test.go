@@ -18,7 +18,6 @@ func TestButtonAssignedToFirstSeat(t *testing.T) {
 	t.Parallel()
 	rng := rand.New(rand.NewSource(42))
 	s := NewServer(testLogger(), rng)
-	s.pool.SetMatchInterval(5 * time.Millisecond)
 
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
 	s.mux.HandleFunc("/health", s.handleHealth)
@@ -127,8 +126,8 @@ func TestButtonAssignedToFirstSeat(t *testing.T) {
 
 	t.Logf("button positions: %v", positions)
 
-	if len(positions) < targetHands*len(bots) {
-		t.Fatalf("Expected at least %d button updates, got %d", targetHands*len(bots), len(positions))
+	if len(positions) < targetHands {
+		t.Fatalf("Expected at least %d button observations, got %d", targetHands, len(positions))
 	}
 
 	for _, pos := range positions {

@@ -11,25 +11,15 @@ import (
 func TestBotPool(t *testing.T) {
 	t.Parallel()
 	pool := NewBotPool(testLogger(), 2, 4, rand.New(rand.NewSource(42)))
+	pool.minPlayers = 10
+	pool.maxPlayers = 10
 	stopPool := startTestPool(t, pool)
 	defer stopPool()
 
 	// Create mock bots with proper initialization
-	bot1 := &Bot{
-		ID:   "bot1",
-		send: make(chan []byte, 1),
-		done: make(chan struct{}),
-	}
-	bot2 := &Bot{
-		ID:   "bot2",
-		send: make(chan []byte, 1),
-		done: make(chan struct{}),
-	}
-	bot3 := &Bot{
-		ID:   "bot3",
-		send: make(chan []byte, 1),
-		done: make(chan struct{}),
-	}
+	bot1 := &Bot{ID: "bot1", send: make(chan []byte, 1), done: make(chan struct{}), pool: pool, bankroll: 1000}
+	bot2 := &Bot{ID: "bot2", send: make(chan []byte, 1), done: make(chan struct{}), pool: pool, bankroll: 1000}
+	bot3 := &Bot{ID: "bot3", send: make(chan []byte, 1), done: make(chan struct{}), pool: pool, bankroll: 1000}
 
 	// Register bots
 	pool.Register(bot1)
@@ -67,12 +57,13 @@ func TestBotPoolMatching(t *testing.T) {
 	bots := make([]*Bot, 3)
 	for i := 0; i < 3; i++ {
 		bots[i] = &Bot{
-			ID:     fmt.Sprintf("bot%d-12345678", i),
-			send:   make(chan []byte, 100), // Larger buffer to prevent blocking
-			pool:   pool,
-			done:   make(chan struct{}),
-			mu:     sync.RWMutex{},
-			inHand: false,
+			ID:       fmt.Sprintf("bot%d-12345678", i),
+			send:     make(chan []byte, 100),
+			pool:     pool,
+			done:     make(chan struct{}),
+			mu:       sync.RWMutex{},
+			inHand:   false,
+			bankroll: 1000,
 		}
 	}
 
@@ -86,18 +77,11 @@ func TestBotPoolMatching(t *testing.T) {
 		return pool.BotCount() == 3
 	}, 100*time.Millisecond, "Expected 3 bots to be registered")
 
-	// Give the pool a moment to try matching
 	time.Sleep(200 * time.Millisecond)
 
-	// Check that at least 2 bots were matched into a hand
-	// We can't reliably test the exact state due to race conditions in hand completion,
-	// but we can verify the pool is functioning
 	if pool.BotCount() == 0 {
 		t.Error("All bots disappeared - pool matching may have issues")
 	}
-
-	// The important thing is that the pool didn't crash and is still running
-	// Bots may have completed hands and been returned to the pool
 }
 
 func TestBotSendMessage(t *testing.T) {
