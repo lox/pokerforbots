@@ -32,6 +32,7 @@ type HandRunner struct {
 	botActionChan chan ActionEnvelope // Channel to receive actions from bots with ID verification
 	seatBuyIns    []int               // Track actual buy-in per seat for accurate P&L
 	playerLabels  []string
+	networkNames  []string
 	lastStreet    game.Street
 	logger        zerolog.Logger
 	rng           *rand.Rand
@@ -95,6 +96,19 @@ func (hr *HandRunner) SetPool(pool *BotPool) {
 	hr.pool = pool
 }
 
+func (hr *HandRunner) displayName(observerSeat, targetSeat int) string {
+	if observerSeat == targetSeat {
+		if targetSeat >= 0 && targetSeat < len(hr.playerLabels) && hr.playerLabels[targetSeat] != "" {
+			return hr.playerLabels[targetSeat]
+		}
+		return fmt.Sprintf("player-%d", targetSeat+1)
+	}
+	if targetSeat >= 0 && targetSeat < len(hr.networkNames) && hr.networkNames[targetSeat] != "" {
+		return hr.networkNames[targetSeat]
+	}
+	return fmt.Sprintf("bot-%d", targetSeat+1)
+}
+
 // Run executes the hand
 func (hr *HandRunner) Run() {
 	startTime := time.Now()
@@ -104,6 +118,7 @@ func (hr *HandRunner) Run() {
 	playerNames := make([]string, len(hr.bots))
 	chipCounts := make([]int, len(hr.bots))
 	hr.playerLabels = make([]string, len(hr.bots))
+	hr.networkNames = make([]string, len(hr.bots))
 	for i, bot := range hr.bots {
 		// Use first 8 chars of ID as name, or full ID if shorter
 		if len(bot.ID) >= 8 {
@@ -112,6 +127,7 @@ func (hr *HandRunner) Run() {
 			playerNames[i] = bot.ID
 		}
 		hr.playerLabels[i] = playerNames[i]
+		hr.networkNames[i] = fmt.Sprintf("bot-%d", i+1)
 		// Get bot's buy-in (capped at table starting stack)
 		chipCounts[i] = bot.GetBuyIn()
 	}
@@ -239,7 +255,7 @@ func (hr *HandRunner) broadcastHandStart() {
 		players := make([]protocol.Player, len(hr.bots))
 		for j, p := range hr.handState.Players {
 			players[j] = protocol.Player{
-				Name:  p.Name,
+				Name:  hr.displayName(i, j),
 				Chips: p.Chips,
 				Seat:  p.Seat,
 			}
@@ -515,20 +531,20 @@ func (hr *HandRunner) broadcastPlayerAction(seat int, action string, amountPaid 
 	player := hr.handState.Players[seat]
 	pot := hr.totalPot()
 
-	msg := &protocol.PlayerAction{
-		Type:        "player_action",
-		HandID:      hr.handID,
-		Street:      hr.handState.Street.String(),
-		Seat:        seat,
-		PlayerName:  player.Name,
-		Action:      action,
-		AmountPaid:  amountPaid,
-		PlayerBet:   player.Bet,
-		PlayerChips: player.Chips,
-		Pot:         pot,
-	}
+	for observerSeat, bot := range hr.bots {
+		msg := &protocol.PlayerAction{
+			Type:        "player_action",
+			HandID:      hr.handID,
+			Street:      hr.handState.Street.String(),
+			Seat:        seat,
+			PlayerName:  hr.displayName(observerSeat, seat),
+			Action:      action,
+			AmountPaid:  amountPaid,
+			PlayerBet:   player.Bet,
+			PlayerChips: player.Chips,
+			Pot:         pot,
+		}
 
-	for _, bot := range hr.bots {
 		if err := bot.SendMessage(msg); err != nil {
 			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send player action")
 		}
@@ -537,18 +553,12 @@ func (hr *HandRunner) broadcastPlayerAction(seat int, action string, amountPaid 
 
 // broadcastGameUpdate sends game state updates to all bots
 func (hr *HandRunner) broadcastGameUpdate() {
-	for _, bot := range hr.bots {
-		// Get pot total
-		pot := 0
-		for _, p := range hr.handState.Pots {
-			pot += p.Amount
-		}
-
-		// Create player states
+	totalPot := hr.totalPot()
+	for observerSeat, bot := range hr.bots {
 		players := make([]protocol.Player, len(hr.handState.Players))
-		for i, p := range hr.handState.Players {
-			players[i] = protocol.Player{
-				Name:   p.Name,
+		for seat, p := range hr.handState.Players {
+			players[seat] = protocol.Player{
+				Name:   hr.displayName(observerSeat, seat),
 				Chips:  p.Chips,
 				Bet:    p.Bet,
 				Folded: p.Folded,
@@ -559,7 +569,7 @@ func (hr *HandRunner) broadcastGameUpdate() {
 		msg := &protocol.GameUpdate{
 			Type:    "game_update",
 			HandID:  hr.handID,
-			Pot:     pot,
+			Pot:     totalPot,
 			Players: players,
 		}
 
@@ -771,42 +781,13 @@ func streetOrder(s game.Street) int {
 
 // broadcastHandResult sends the final hand result with showdown details
 func (hr *HandRunner) broadcastHandResult(winners []winnerSummary) {
-	// Evaluate all hands for showdown info
 	boardCards := hr.boardStrings()
 
-	// Prepare winner info with hole cards and hand ranks
-	winnerInfo := make([]protocol.Winner, len(winners))
-	winnerSeats := make(map[int]bool)
-	for i, winner := range winners {
-		player := hr.handState.Players[winner.seat]
-		holeCards := []string{
-			game.CardString(player.HoleCards.GetCard(0)),
-			game.CardString(player.HoleCards.GetCard(1)),
-		}
-
-		// Evaluate the hand
-		fullHand := player.HoleCards | hr.handState.Board
-		handRank := game.Evaluate7Cards(fullHand)
-
-		winnerInfo[i] = protocol.Winner{
-			Name:      winner.name,
-			Amount:    winner.amount,
-			HoleCards: holeCards,
-			HandRank:  handRank.String(),
-		}
-		winnerSeats[winner.seat] = true
-	}
-
-	// Collect showdown hands from non-winners who made it to showdown
-	var showdownHands []protocol.ShowdownHand
-	if hr.handState.Street == game.Showdown {
-		for _, player := range hr.handState.Players {
-			// Skip if folded, winner, or no hole cards
-			if player.Folded || winnerSeats[player.Seat] || player.HoleCards == 0 {
-				continue
-			}
-
-			// Only include if player was still in at showdown (not folded)
+	for observerSeat, bot := range hr.bots {
+		winnerInfo := make([]protocol.Winner, len(winners))
+		winnerSeats := make(map[int]bool)
+		for i, winner := range winners {
+			player := hr.handState.Players[winner.seat]
 			holeCards := []string{
 				game.CardString(player.HoleCards.GetCard(0)),
 				game.CardString(player.HoleCards.GetCard(1)),
@@ -815,15 +796,37 @@ func (hr *HandRunner) broadcastHandResult(winners []winnerSummary) {
 			fullHand := player.HoleCards | hr.handState.Board
 			handRank := game.Evaluate7Cards(fullHand)
 
-			showdownHands = append(showdownHands, protocol.ShowdownHand{
-				Name:      player.Name,
+			winnerInfo[i] = protocol.Winner{
+				Name:      hr.displayName(observerSeat, winner.seat),
+				Amount:    winner.amount,
 				HoleCards: holeCards,
 				HandRank:  handRank.String(),
-			})
+			}
+			winnerSeats[winner.seat] = true
 		}
-	}
 
-	for _, bot := range hr.bots {
+		var showdownHands []protocol.ShowdownHand
+		if hr.handState.Street == game.Showdown {
+			for _, player := range hr.handState.Players {
+				if player.Folded || winnerSeats[player.Seat] || player.HoleCards == 0 {
+					continue
+				}
+
+				holeCards := []string{
+					game.CardString(player.HoleCards.GetCard(0)),
+					game.CardString(player.HoleCards.GetCard(1)),
+				}
+				fullHand := player.HoleCards | hr.handState.Board
+				handRank := game.Evaluate7Cards(fullHand)
+
+				showdownHands = append(showdownHands, protocol.ShowdownHand{
+					Name:      hr.displayName(observerSeat, player.Seat),
+					HoleCards: holeCards,
+					HandRank:  handRank.String(),
+				})
+			}
+		}
+
 		msg := &protocol.HandResult{
 			Type:     "hand_result",
 			HandID:   hr.handID,
