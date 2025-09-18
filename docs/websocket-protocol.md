@@ -22,9 +22,25 @@ Sent immediately after WebSocket connection established.
 ```
 {
   "type": "connect",
-  "name": "BotName"        // Bot identifier (max 32 chars)
+  "name": "BotName",          // Bot identifier (max 32 chars)
+  "game": "default",          // Preferred game/table identifier (optional, defaults to server's default game)
+  "role": "player",           // "player" (must be present for dev bots) or "npc" (background sparring bot)
+  "auth_token": "..."         // (optional/TODO) Authentication credential
 }
 ```
+
+If `game` is omitted the server will place the bot in the default game (until the lobby/listing flow ships). `role` defaults to `"npc"`; game instances can require that at least one `player` be present before starting hands. `auth_token` is ignored today but reserved for future authentication.
+
+### Game Discovery & Selection *(TODO)*
+Planned additions to allow bots to list, join, and leave named game instances:
+
+- `list_games` (client → server): request current catalog.
+- `game_list` (server → client): respond with an array of `{id, blinds, seats, description}`.
+- `join_game` (client → server): ask to enter a specific game.
+- `game_joined` (server → client): confirmation with final configuration.
+- `leave_game` / `game_left`: explicit detachment back to lobby.
+
+Until these messages are implemented, bots are matched in the single default game as described elsewhere in this document.
 
 ### Action
 Response to action_request from server. Must be sent within timeout window.
@@ -197,6 +213,16 @@ Sent when bot sends invalid message or action.
 Notes:
 - The server does not support mid-hand reconnection. Every hand remains independent.
 - Future work will add bot authentication so a reconnecting bot can reclaim its bankroll balance when rejoining the idle pool, but it still starts fresh for upcoming hands.
+
+## Simulation Control *(TODO)*
+
+To support deterministic testing without restarting the process, a privileged control channel will be added:
+
+- `simulate` (client → server, auth required): describe a simulation session (`game_id`, `deck_seed`, `mirror_count`, `hands`, `bot_ids`).
+- `simulation_update` (server → client): stream progress for each generated hand, including mirror index and aggregated chip deltas.
+- `simulation_complete`: emit final statistics when the batch finishes.
+
+These messages are currently unimplemented; the existing protocol is sufficient for single-game bot play.
 
 ## Card Representation
 

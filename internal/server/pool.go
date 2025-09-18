@@ -38,12 +38,13 @@ type BotPool struct {
 // NewBotPool creates a new bot pool with explicit random source
 func NewBotPool(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand) *BotPool {
 	config := Config{
-		SmallBlind: 5,
-		BigBlind:   10,
-		StartChips: 1000,
-		Timeout:    100 * time.Millisecond,
-		MinPlayers: minPlayers,
-		MaxPlayers: maxPlayers,
+		SmallBlind:    5,
+		BigBlind:      10,
+		StartChips:    1000,
+		Timeout:       100 * time.Millisecond,
+		MinPlayers:    minPlayers,
+		MaxPlayers:    maxPlayers,
+		RequirePlayer: true,
 	}
 	return NewBotPoolWithConfig(logger, minPlayers, maxPlayers, rng, config)
 }
@@ -56,12 +57,13 @@ func NewBotPoolWithConfig(logger zerolog.Logger, minPlayers, maxPlayers int, rng
 // NewBotPoolWithLimit creates a new bot pool with explicit random source and hand limit
 func NewBotPoolWithLimit(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand, handLimit uint64) *BotPool {
 	config := Config{
-		SmallBlind: 5,
-		BigBlind:   10,
-		StartChips: 1000,
-		Timeout:    100 * time.Millisecond,
-		MinPlayers: minPlayers,
-		MaxPlayers: maxPlayers,
+		SmallBlind:    5,
+		BigBlind:      10,
+		StartChips:    1000,
+		Timeout:       100 * time.Millisecond,
+		MinPlayers:    minPlayers,
+		MaxPlayers:    maxPlayers,
+		RequirePlayer: true,
 	}
 	return NewBotPoolWithLimitAndConfig(logger, minPlayers, maxPlayers, rng, handLimit, config)
 }
@@ -208,6 +210,26 @@ collectLoop:
 	}
 	for i := 0; i < numPlayers; i++ {
 		bots = append(bots, allBots[i])
+	}
+
+	if p.config.RequirePlayer {
+		hasPlayer := false
+		for _, bot := range bots {
+			if bot.Role() == BotRolePlayer {
+				hasPlayer = true
+				break
+			}
+		}
+		if !hasPlayer {
+			// No player present; return bots to available queue and wait
+			for _, bot := range bots {
+				select {
+				case p.available <- bot:
+				default:
+				}
+			}
+			return
+		}
 	}
 
 	// Return unused bots to available queue

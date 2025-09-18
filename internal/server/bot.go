@@ -24,6 +24,9 @@ type Bot struct {
 	handRunnerMu sync.RWMutex
 	bankroll     int // Total chips the bot has
 	logger       zerolog.Logger
+	displayName  string
+	gameID       string
+	role         BotRole
 }
 
 func (b *Bot) close() {
@@ -71,6 +74,48 @@ func NewBot(logger zerolog.Logger, id string, conn *websocket.Conn, pool *BotPoo
 		bankroll: bankroll,
 		logger:   logger.With().Str("component", "bot").Str("bot_id", id).Logger(),
 	}
+}
+
+// SetDisplayName stores the bot's preferred display name from the connect message.
+func (b *Bot) SetDisplayName(name string) {
+	b.mu.Lock()
+	b.displayName = name
+	b.mu.Unlock()
+}
+
+// DisplayName returns the last recorded display name for the bot.
+func (b *Bot) DisplayName() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.displayName
+}
+
+// SetGameID records the game identifier the bot is currently assigned to.
+func (b *Bot) SetGameID(gameID string) {
+	b.mu.Lock()
+	b.gameID = gameID
+	b.mu.Unlock()
+}
+
+// GameID returns the identifier of the game the bot is assigned to.
+func (b *Bot) GameID() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.gameID
+}
+
+// SetRole sets the semantic role for the bot (player/npc).
+func (b *Bot) SetRole(role BotRole) {
+	b.mu.Lock()
+	b.role = role
+	b.mu.Unlock()
+}
+
+// Role returns the bot's role.
+func (b *Bot) Role() BotRole {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.role
 }
 
 // SendMessage sends a protocol message to the bot

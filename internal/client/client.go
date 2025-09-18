@@ -51,6 +51,7 @@ type handState struct {
 type client struct {
 	conn              *websocket.Conn
 	name              string
+	game              string
 	input             *bufio.Reader
 	mu                sync.Mutex
 	state             *handState
@@ -59,9 +60,10 @@ type client struct {
 	actionPromptLines int
 }
 
-func newClient(name string) *client {
+func newClient(name, game string) *client {
 	return &client{
 		name:  name,
+		game:  game,
 		input: bufio.NewReader(os.Stdin),
 	}
 }
@@ -79,7 +81,7 @@ func (c *client) connect(server string) error {
 
 	c.conn = conn
 
-	connectMsg := &protocol.Connect{Type: protocol.TypeConnect, Name: c.name}
+	connectMsg := &protocol.Connect{Type: protocol.TypeConnect, Name: c.name, Game: c.game, Role: "player"}
 	payload, err := protocol.Marshal(connectMsg)
 	if err != nil {
 		return fmt.Errorf("failed to encode connect message: %w", err)
@@ -1321,6 +1323,7 @@ func formatDelta(delta int) string {
 type Config struct {
 	Server string
 	Name   string
+	Game   string
 }
 
 func Run(cfg Config) error {
@@ -1338,7 +1341,12 @@ func Run(cfg Config) error {
 		name = "Player"
 	}
 
-	c := newClient(name)
+	game := strings.TrimSpace(cfg.Game)
+	if game == "" {
+		game = "default"
+	}
+
+	c := newClient(name, game)
 	if err := c.connect(serverURL); err != nil {
 		return err
 	}

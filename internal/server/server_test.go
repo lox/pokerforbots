@@ -131,6 +131,8 @@ func TestStatsEndpoint(t *testing.T) {
 func TestWebSocketConnection(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	srv := NewServer(testLogger(), rng)
+	srv.pool.minPlayers = 10
+	srv.pool.config.RequirePlayer = false
 	var poolWg sync.WaitGroup
 	poolWg.Add(1)
 	go func() {
@@ -155,6 +157,7 @@ func TestWebSocketConnection(t *testing.T) {
 		t.Fatalf("Failed to connect: %v", err)
 	}
 	defer ws.Close()
+	sendConnectMessage(t, ws, "TestBot", "", string(BotRolePlayer))
 
 	// Give the server time to register the bot
 	time.Sleep(100 * time.Millisecond)
@@ -178,6 +181,8 @@ func TestWebSocketConnection(t *testing.T) {
 func TestMultipleBotConnections(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	srv := NewServer(testLogger(), rng)
+	srv.pool.minPlayers = 10
+	srv.pool.config.RequirePlayer = false
 	var poolWg sync.WaitGroup
 	poolWg.Add(1)
 	go func() {
@@ -202,6 +207,7 @@ func TestMultipleBotConnections(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to connect bot %d: %v", i, err)
 		}
+		sendConnectMessage(t, ws, fmt.Sprintf("Bot%02d", i), "", string(BotRolePlayer))
 		bots = append(bots, ws)
 	}
 

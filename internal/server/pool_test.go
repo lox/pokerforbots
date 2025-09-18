@@ -135,6 +135,38 @@ func TestBotSendMessage(t *testing.T) {
 	}
 }
 
+func TestBotPoolRequiresPlayer(t *testing.T) {
+	config := Config{
+		SmallBlind:    5,
+		BigBlind:      10,
+		StartChips:    1000,
+		Timeout:       100 * time.Millisecond,
+		MinPlayers:    2,
+		MaxPlayers:    2,
+		RequirePlayer: true,
+	}
+
+	t.Run("no player bots stay idle", func(t *testing.T) {
+		pool := NewBotPoolWithConfig(testLogger(), 2, 2, rand.New(rand.NewSource(123)), config)
+		stop := startTestPool(t, pool)
+		defer stop()
+
+		npc1 := &Bot{ID: "npc1", send: make(chan []byte, 10), done: make(chan struct{}), pool: pool, bankroll: 1000}
+		npc1.SetRole(BotRoleNPC)
+		npc2 := &Bot{ID: "npc2", send: make(chan []byte, 10), done: make(chan struct{}), pool: pool, bankroll: 1000}
+		npc2.SetRole(BotRoleNPC)
+
+		pool.Register(npc1)
+		pool.Register(npc2)
+
+		time.Sleep(200 * time.Millisecond)
+
+		if handCount := pool.HandCount(); handCount != 0 {
+			t.Fatalf("expected no hands to run without player, got %d", handCount)
+		}
+	})
+}
+
 // waitForCondition waits for a condition to be true with timeout
 func waitForCondition(t *testing.T, condition func() bool, timeout time.Duration, errMsg string) {
 	deadline := time.Now().Add(timeout)

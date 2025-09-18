@@ -16,14 +16,15 @@ import (
 )
 
 type CLI struct {
-	Addr       string `kong:"default=':8080',help='Server address'"`
-	Debug      bool   `kong:"help='Enable debug logging'"`
-	SmallBlind int    `kong:"default='5',help='Small blind amount'"`
-	BigBlind   int    `kong:"default='10',help='Big blind amount'"`
-	StartChips int    `kong:"default='1000',help='Starting chip count'"`
-	TimeoutMs  int    `kong:"default='100',help='Decision timeout in milliseconds'"`
-	MinPlayers int    `kong:"default='2',help='Minimum players per hand'"`
-	MaxPlayers int    `kong:"default='9',help='Maximum players per hand'"`
+	Addr          string `kong:"default=':8080',help='Server address'"`
+	Debug         bool   `kong:"help='Enable debug logging'"`
+	SmallBlind    int    `kong:"default='5',help='Small blind amount'"`
+	BigBlind      int    `kong:"default='10',help='Big blind amount'"`
+	StartChips    int    `kong:"default='1000',help='Starting chip count'"`
+	TimeoutMs     int    `kong:"default='100',help='Decision timeout in milliseconds'"`
+	MinPlayers    int    `kong:"default='2',help='Minimum players per hand'"`
+	MaxPlayers    int    `kong:"default='9',help='Maximum players per hand'"`
+	RequirePlayer bool   `kong:"default='true',help='Require at least one player-role bot per hand'"`
 }
 
 func main() {
@@ -54,12 +55,13 @@ func main() {
 
 	// Create server configuration
 	config := server.Config{
-		SmallBlind: cli.SmallBlind,
-		BigBlind:   cli.BigBlind,
-		StartChips: cli.StartChips,
-		Timeout:    time.Duration(cli.TimeoutMs) * time.Millisecond,
-		MinPlayers: cli.MinPlayers,
-		MaxPlayers: cli.MaxPlayers,
+		SmallBlind:    cli.SmallBlind,
+		BigBlind:      cli.BigBlind,
+		StartChips:    cli.StartChips,
+		Timeout:       time.Duration(cli.TimeoutMs) * time.Millisecond,
+		MinPlayers:    cli.MinPlayers,
+		MaxPlayers:    cli.MaxPlayers,
+		RequirePlayer: cli.RequirePlayer,
 	}
 
 	// Create RNG instance for server

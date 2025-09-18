@@ -1,9 +1,9 @@
 # Binaries
-pokerforbots
+/pokerforbots
 /server
-testbot
-simulate
-singlehand
+/testbot
+/simulate
+/singlehand
 bin/
 dist/
 *.exe

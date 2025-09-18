@@ -27,6 +27,7 @@ type CLI struct {
 	SpawnServer bool   `kong:"help='Start an embedded poker server',short='s'"`
 	Server      string `kong:"default='ws://localhost:8080',help='Server WebSocket URL'"`
 	Port        int    `kong:"default='8080',help='Server port when spawning embedded server'"`
+	Game        string `kong:"default='default',help='Game/table identifier to join'"`
 
 	// Bot configuration
 	Bots       int `kong:"default='6',help='Total number of bots',short='b'"`
@@ -57,6 +58,7 @@ type BotOrchestrator struct {
 	handLogger  *HandLogger
 	targetHands int
 	logger      zerolog.Logger
+	gameID      string
 }
 
 type HandLogger struct {
@@ -161,8 +163,13 @@ func main() {
 	logEvent.Msg("Starting Poker Bot Orchestrator")
 
 	// Print reproduce arguments
-	reproduceArgs := fmt.Sprintf("--seed %d --bots %d --calling %d --random %d --aggressive %d",
-		cli.Seed, cli.Bots, cli.Calling, cli.Random, cli.Aggressive)
+	gameID := strings.TrimSpace(cli.Game)
+	if gameID == "" {
+		gameID = "default"
+	}
+
+	reproduceArgs := fmt.Sprintf("--seed %d --bots %d --calling %d --random %d --aggressive %d --game %s",
+		cli.Seed, cli.Bots, cli.Calling, cli.Random, cli.Aggressive, gameID)
 
 	if cli.Hands > 0 {
 		reproduceArgs += fmt.Sprintf(" --hands %d", cli.Hands)
@@ -180,6 +187,7 @@ func main() {
 		targetHands: cli.Hands,
 		handLogger:  &HandLogger{},
 		logger:      logger,
+		gameID:      gameID,
 	}
 
 	// Set up signal handling early
@@ -337,19 +345,19 @@ func (o *BotOrchestrator) createBots() error {
 
 	// Create calling station bots
 	for i := 0; i < cli.Calling; i++ {
-		o.bots[botIdx] = NewBotClient(botIdx, "calling-station", o.handLogger, o.logger)
+		o.bots[botIdx] = NewBotClient(botIdx, "calling-station", o.gameID, o.handLogger, o.logger)
 		botIdx++
 	}
 
 	// Create random bots
 	for i := 0; i < cli.Random; i++ {
-		o.bots[botIdx] = NewBotClient(botIdx, "random", o.handLogger, o.logger)
+		o.bots[botIdx] = NewBotClient(botIdx, "random", o.gameID, o.handLogger, o.logger)
 		botIdx++
 	}
 
 	// Create aggressive bots
 	for i := 0; i < cli.Aggressive; i++ {
-		o.bots[botIdx] = NewBotClient(botIdx, "aggressive", o.handLogger, o.logger)
+		o.bots[botIdx] = NewBotClient(botIdx, "aggressive", o.gameID, o.handLogger, o.logger)
 		botIdx++
 	}
 
@@ -490,14 +498,16 @@ type BotClient struct {
 	chips         int
 	holeCards     []string
 	currentStreet string
+	gameID        string
 }
 
-func NewBotClient(id int, strategy string, handLogger *HandLogger, logger zerolog.Logger) *BotClient {
+func NewBotClient(id int, strategy string, gameID string, handLogger *HandLogger, logger zerolog.Logger) *BotClient {
 	botName := fmt.Sprintf("Bot%d_%s", id, strategy)
 	return &BotClient{
 		id:         id,
 		name:       botName,
 		strategy:   strategy,
+		gameID:     gameID,
 		handLogger: handLogger,
 		logger:     logger.With().Str("component", "bot").Str("bot_name", botName).Str("strategy", strategy).Logger(),
 	}
@@ -523,8 +533,10 @@ func (b *BotClient) Connect(serverURL string) error {
 
 	// Send connect message
 	connectMsg := &protocol.Connect{
-		Type: "connect",
+		Type: protocol.TypeConnect,
 		Name: b.name,
+		Game: b.gameID,
+		Role: "npc",
 	}
 	data, _ := protocol.Marshal(connectMsg)
 	return conn.WriteMessage(websocket.BinaryMessage, data)
@@ -772,10 +784,10 @@ func (b *BotClient) handleHandResult(msg *protocol.HandResult) {
 			Ints("winner_amounts", winnerAmounts).
 			Msg("Hand completed")
 
-		// Print reproduce arguments to recreate the session up to and including this hand
-		// This will replay with the same seed and run exactly handNum hands
-		reproduceArgs := fmt.Sprintf("--seed %d --bots %d --calling %d --random %d --aggressive %d --hands %d",
-			cli.Seed, cli.Bots, cli.Calling, cli.Random, cli.Aggressive, handNum)
+			// Print reproduce arguments to recreate the session up to and including this hand
+			// This will replay with the same seed and run exactly handNum hands
+		reproduceArgs := fmt.Sprintf("--seed %d --bots %d --calling %d --random %d --aggressive %d --hands %d --game %s",
+			cli.Seed, cli.Bots, cli.Calling, cli.Random, cli.Aggressive, handNum, b.gameID)
 
 		if cli.SpawnServer {
 			reproduceArgs += fmt.Sprintf(" --spawn-server --port %d", cli.Port)

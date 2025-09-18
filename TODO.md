@@ -186,3 +186,36 @@ A successful demo should:
 3. Implement server and bot pool
 4. Create simple test bots
 5. Run demo and iterate on performance
+
+## Phase 4: Multi-Game & Simulation Harness (Planned)
+
+### 13. Game Manager & Lobby ✅
+- [x] Introduce a `GameManager` that tracks multiple named game instances with per-table configs
+- [x] Update connection flow: bots specify a game during connect (defaulting to `default`)
+- [x] Teach `protocol.Connect` new fields (`game`, `role`, `auth_token` placeholder)
+- [x] Ensure bots persist metadata (display name, game, role) for logging/hand runner usage
+- [x] **Tests:** updated integration helpers to send connect handshake before assertions
+
+TODO follow-up:
+- [ ] Implement lobby/list/leave protocol messages so clients can discover games dynamically
+- [ ] Add admin logging/API to inspect registered games at runtime
+
+### 14. Deterministic Testing Tools (TODO)
+- [ ] Add `--seed` and `--mirror` flags to `cmd/server`; propagate to `server.Config`
+- [ ] Allow game configs to opt into mirror runs (replay same deck across seat rotations)
+- [ ] Define deck/script injection format for dev mode (JSON or seed list)
+- [ ] Expose hand group metadata (`hand_group_id`, `mirror_index`) in logs/protocol
+- [ ] **Tests:** deterministic hand replay, mirror rotation correctness, CLI flag coverage
+
+### 15. Simulation Control Channel (TODO)
+- [ ] Add authenticated control endpoint (WebSocket or HTTP) for scheduling simulations
+- [ ] Implement `simulate` / `simulation_update` / `simulation_complete` protocol messages (docs marked TODO)
+- [ ] Support reserving specific bots for a simulation run without disrupting other games
+- [ ] Emit aggregated results (mean BB/hand, CI) per simulation session
+- [ ] **Tests:** integration covering multi-session scheduling and cleanup
+
+### 16. Optional Auth & Identity Enhancements (Future)
+- [ ] Extend `connect` to accept `auth_token`; wire minimal HMAC validator (behind flag)
+- [ ] Track bot identity metadata without persistent bankroll (ephemeral stacks per hand remain default)
+- [ ] Gate simulation control behind auth checks
+- [ ] **Tests:** auth handshake, failure cases, backwards compatibility with unauthenticated bots

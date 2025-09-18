@@ -50,8 +50,9 @@ func testEveryoneFolds(t *testing.T) {
 
 		// Send connect message
 		connectMsg := &protocol.Connect{
-			Type: "connect",
+			Type: protocol.TypeConnect,
 			Name: fmt.Sprintf("FoldBot%d", i),
+			Role: string(BotRolePlayer),
 		}
 		data, _ := protocol.Marshal(connectMsg)
 		conn.WriteMessage(websocket.BinaryMessage, data)
@@ -123,8 +124,9 @@ func testShowdownWithMultiplePlayers(t *testing.T) {
 
 		// Send connect message
 		connectMsg := &protocol.Connect{
-			Type: "connect",
+			Type: protocol.TypeConnect,
 			Name: fmt.Sprintf("ShowdownBot%d", i),
+			Role: string(BotRolePlayer),
 		}
 		data, _ := protocol.Marshal(connectMsg)
 		conn.WriteMessage(websocket.BinaryMessage, data)
@@ -226,8 +228,9 @@ func testAllInCascade(t *testing.T) {
 
 		// Send connect message
 		connectMsg := &protocol.Connect{
-			Type: "connect",
+			Type: protocol.TypeConnect,
 			Name: fmt.Sprintf("AllInBot%d", i),
+			Role: string(BotRolePlayer),
 		}
 		data, _ := protocol.Marshal(connectMsg)
 		conn.WriteMessage(websocket.BinaryMessage, data)
@@ -318,8 +321,9 @@ func testHeadsUpPlay(t *testing.T) {
 
 		// Send connect message
 		connectMsg := &protocol.Connect{
-			Type: "connect",
+			Type: protocol.TypeConnect,
 			Name: fmt.Sprintf("HeadsUpBot%d", i),
+			Role: string(BotRolePlayer),
 		}
 		data, _ := protocol.Marshal(connectMsg)
 		conn.WriteMessage(websocket.BinaryMessage, data)
@@ -434,8 +438,9 @@ func TestRapidConnectionDisconnection(t *testing.T) {
 
 			// Send connect message
 			connectMsg := &protocol.Connect{
-				Type: "connect",
+				Type: protocol.TypeConnect,
 				Name: fmt.Sprintf("RapidBot%d", botNum),
+				Role: string(BotRolePlayer),
 			}
 			data, _ := protocol.Marshal(connectMsg)
 			conn.WriteMessage(websocket.BinaryMessage, data)
@@ -494,8 +499,9 @@ func TestLoadWith20Bots(t *testing.T) {
 
 		// Send connect message
 		connectMsg := &protocol.Connect{
-			Type: "connect",
+			Type: protocol.TypeConnect,
 			Name: fmt.Sprintf("LoadBot%d", i),
+			Role: string(BotRolePlayer),
 		}
 		data, _ := protocol.Marshal(connectMsg)
 		conn.WriteMessage(websocket.BinaryMessage, data)

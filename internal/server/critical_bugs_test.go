@@ -47,8 +47,9 @@ func TestButtonAssignedToFirstSeat(t *testing.T) {
 		bots[i] = conn
 
 		connectMsg := &protocol.Connect{
-			Type: "connect",
+			Type: protocol.TypeConnect,
 			Name: fmt.Sprintf("ButtonTestBot%d", i),
+			Role: string(BotRolePlayer),
 		}
 		data, _ := protocol.Marshal(connectMsg)
 		if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {

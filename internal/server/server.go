@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/lox/pokerforbots/internal/protocol"
 	"github.com/rs/zerolog"
 )
 
@@ -33,24 +34,27 @@ var (
 
 // Config holds server configuration
 type Config struct {
-	SmallBlind int
-	BigBlind   int
-	StartChips int
-	Timeout    time.Duration
-	MinPlayers int
-	MaxPlayers int
+	SmallBlind    int
+	BigBlind      int
+	StartChips    int
+	Timeout       time.Duration
+	MinPlayers    int
+	MaxPlayers    int
+	RequirePlayer bool
 }
 
 // Server represents the poker server
 type Server struct {
-	pool       *BotPool
-	upgrader   websocket.Upgrader
-	botCount   atomic.Int64
-	mux        *http.ServeMux
-	logger     zerolog.Logger
-	httpServer *http.Server
-	botIDGen   func() string // Function to generate bot IDs
-	config     Config
+	pool          *BotPool
+	manager       *GameManager
+	defaultGameID string
+	upgrader      websocket.Upgrader
+	botCount      atomic.Int64
+	mux           *http.ServeMux
+	logger        zerolog.Logger
+	httpServer    *http.Server
+	botIDGen      func() string // Function to generate bot IDs
+	config        Config
 }
 
 // createDeterministicBotIDGen creates a deterministic bot ID generator using the provided RNG
@@ -78,12 +82,13 @@ func createDeterministicBotIDGen(rng *rand.Rand) func() string {
 // NewServer creates a new poker server with provided random source and default config
 func NewServer(logger zerolog.Logger, rng *rand.Rand) *Server {
 	config := Config{
-		SmallBlind: 5,
-		BigBlind:   10,
-		StartChips: 1000,
-		Timeout:    100 * time.Millisecond,
-		MinPlayers: 2,
-		MaxPlayers: 9,
+		SmallBlind:    5,
+		BigBlind:      10,
+		StartChips:    1000,
+		Timeout:       100 * time.Millisecond,
+		MinPlayers:    2,
+		MaxPlayers:    9,
+		RequirePlayer: true,
 	}
 	return NewServerWithConfig(logger, rng, config)
 }
@@ -108,22 +113,29 @@ func NewServerWithPool(logger zerolog.Logger, pool *BotPool) *Server {
 // NewServerWithBotIDGen creates a new poker server with custom bot pool and ID generator (for testing)
 func NewServerWithBotIDGen(logger zerolog.Logger, pool *BotPool, botIDGen func() string) *Server {
 	config := Config{
-		SmallBlind: 5,
-		BigBlind:   10,
-		StartChips: 1000,
-		Timeout:    100 * time.Millisecond,
-		MinPlayers: 2,
-		MaxPlayers: 9,
+		SmallBlind:    5,
+		BigBlind:      10,
+		StartChips:    1000,
+		Timeout:       100 * time.Millisecond,
+		MinPlayers:    2,
+		MaxPlayers:    9,
+		RequirePlayer: true,
 	}
 	return NewServerWithBotIDGenAndConfig(logger, pool, botIDGen, config)
 }
 
 // NewServerWithBotIDGenAndConfig creates a new poker server with custom bot pool, ID generator and config
 func NewServerWithBotIDGenAndConfig(logger zerolog.Logger, pool *BotPool, botIDGen func() string, config Config) *Server {
+	manager := NewGameManager(logger)
+	defaultGameID := "default"
+	manager.RegisterGame(defaultGameID, pool, config)
+
 	return &Server{
-		pool:     pool,
-		botIDGen: botIDGen,
-		config:   config,
+		pool:          pool,
+		manager:       manager,
+		defaultGameID: defaultGameID,
+		botIDGen:      botIDGen,
+		config:        config,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -139,8 +151,8 @@ func NewServerWithBotIDGenAndConfig(logger zerolog.Logger, pool *BotPool, botIDG
 
 // Start starts the server on the given address
 func (s *Server) Start(addr string) error {
-	// Start bot pool manager
-	go s.pool.Run()
+	// Start bot pools for all registered games
+	s.manager.StartAll()
 
 	// Set up HTTP routes
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
@@ -161,8 +173,8 @@ func (s *Server) Start(addr string) error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info().Msg("Starting graceful server shutdown")
 
-	// Stop the bot pool first
-	s.pool.Stop()
+	// Stop all game pools first
+	s.manager.StopAll()
 
 	// Shutdown the HTTP server
 	if s.httpServer != nil {
@@ -184,21 +196,71 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	msgType, payload, err := conn.ReadMessage()
+	if err != nil {
+		s.logger.Error().Err(err).Msg("Failed to read connect message")
+		_ = conn.Close()
+		return
+	}
+
+	if msgType != websocket.BinaryMessage {
+		s.logger.Error().Msg("Connect message must be binary")
+		_ = conn.Close()
+		return
+	}
+
+	var connectMsg protocol.Connect
+	if err := protocol.Unmarshal(payload, &connectMsg); err != nil || connectMsg.Type != protocol.TypeConnect {
+		if err != nil {
+			s.logger.Error().Err(err).Msg("Invalid connect payload")
+		} else {
+			s.logger.Error().Msg("First message was not a connect request")
+		}
+		_ = conn.Close()
+		return
+	}
+
+	requestedGame := connectMsg.Game
+	if requestedGame == "" {
+		requestedGame = s.defaultGameID
+	}
+
+	game, ok := s.manager.GetGame(requestedGame)
+	if !ok {
+		s.logger.Warn().Str("requested_game", requestedGame).Msg("Unknown game requested, falling back to default")
+		var fallback bool
+		game, fallback = s.manager.GetGame(s.defaultGameID)
+		if !fallback {
+			s.logger.Error().Msg("No default game available; closing connection")
+			_ = conn.Close()
+			return
+		}
+	}
+
 	// Generate unique bot ID
 	botID := s.botIDGen()
+
+	// Create bot instance tied to the selected game
+	bot := NewBot(s.logger, botID, conn, game.Pool)
+	bot.SetDisplayName(connectMsg.Name)
+	bot.SetGameID(game.ID)
+	bot.SetRole(normalizeRole(connectMsg.Role))
+
+	// Register with game pool
+	game.Pool.Register(bot)
+
 	s.botCount.Add(1)
-
-	// Create bot instance
-	bot := NewBot(s.logger, botID, conn, s.pool)
-
-	// Register with pool
-	s.pool.Register(bot)
 
 	// Start bot message pumps
 	go bot.WritePump()
 	go bot.ReadPump()
 
-	s.logger.Info().Str("bot_id", botID).Int64("total_bots", s.botCount.Load()).Msg("Bot connected")
+	s.logger.Info().
+		Str("bot_id", botID).
+		Str("game_id", game.ID).
+		Str("name", bot.DisplayName()).
+		Int64("total_bots", s.botCount.Load()).
+		Msg("Bot connected")
 }
 
 // handleHealth returns server health status

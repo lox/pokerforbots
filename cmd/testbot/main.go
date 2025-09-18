@@ -61,8 +61,9 @@ func (b *Bot) Connect(serverURL string) error {
 
 	// Send connect message
 	connectMsg := &protocol.Connect{
-		Type: "connect",
+		Type: protocol.TypeConnect,
 		Name: b.botID,
+		Role: "player",
 	}
 
 	data, err := protocol.Marshal(connectMsg)

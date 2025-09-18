@@ -61,28 +61,11 @@ func TestBotActionsAreProcessed(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws"
 
 	// Connect two bots
-	bot1Conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("Bot 1 failed to connect: %v", err)
-	}
+	bot1Conn := dialAndConnect(t, wsURL, "TestBot1", "", string(BotRolePlayer))
 	defer bot1Conn.Close()
 
-	bot2Conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("Bot 2 failed to connect: %v", err)
-	}
+	bot2Conn := dialAndConnect(t, wsURL, "TestBot2", "", string(BotRolePlayer))
 	defer bot2Conn.Close()
-
-	// Send connect messages
-	connect1 := &protocol.Connect{Type: "connect", Name: "TestBot1"}
-	if data, err := protocol.Marshal(connect1); err == nil {
-		bot1Conn.WriteMessage(websocket.BinaryMessage, data)
-	}
-
-	connect2 := &protocol.Connect{Type: "connect", Name: "TestBot2"}
-	if data, err := protocol.Marshal(connect2); err == nil {
-		bot2Conn.WriteMessage(websocket.BinaryMessage, data)
-	}
 
 	// Track what actions we receive
 	bot1Actions := make(chan string, 10)
@@ -150,28 +133,11 @@ func TestPotDistribution(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws"
 
 	// Connect two bots
-	bot1Conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("Bot 1 failed to connect: %v", err)
-	}
+	bot1Conn := dialAndConnect(t, wsURL, "PotBot1", "", string(BotRolePlayer))
 	defer bot1Conn.Close()
 
-	bot2Conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("Bot 2 failed to connect: %v", err)
-	}
+	bot2Conn := dialAndConnect(t, wsURL, "PotBot2", "", string(BotRolePlayer))
 	defer bot2Conn.Close()
-
-	// Send connect messages
-	connect1 := &protocol.Connect{Type: "connect", Name: "PotBot1"}
-	if data, err := protocol.Marshal(connect1); err == nil {
-		bot1Conn.WriteMessage(websocket.BinaryMessage, data)
-	}
-
-	connect2 := &protocol.Connect{Type: "connect", Name: "PotBot2"}
-	if data, err := protocol.Marshal(connect2); err == nil {
-		bot2Conn.WriteMessage(websocket.BinaryMessage, data)
-	}
 
 	// Track starting chips from hand start message
 	var startingChipsBot1, startingChipsBot2 int
@@ -305,28 +271,11 @@ func TestTimeoutActuallyFolds(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws"
 
 	// Connect two bots
-	bot1Conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("Bot 1 failed to connect: %v", err)
-	}
+	bot1Conn := dialAndConnect(t, wsURL, "TimeoutBot1", "", string(BotRolePlayer))
 	defer bot1Conn.Close()
 
-	bot2Conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("Bot 2 failed to connect: %v", err)
-	}
+	bot2Conn := dialAndConnect(t, wsURL, "TimeoutBot2", "", string(BotRolePlayer))
 	defer bot2Conn.Close()
-
-	// Send connect messages
-	connect1 := &protocol.Connect{Type: "connect", Name: "TimeoutBot1"}
-	if data, err := protocol.Marshal(connect1); err == nil {
-		bot1Conn.WriteMessage(websocket.BinaryMessage, data)
-	}
-
-	connect2 := &protocol.Connect{Type: "connect", Name: "TimeoutBot2"}
-	if data, err := protocol.Marshal(connect2); err == nil {
-		bot2Conn.WriteMessage(websocket.BinaryMessage, data)
-	}
 
 	bot2Actions := make(chan string, 10)
 	handCompleted := make(chan bool)

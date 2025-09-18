@@ -53,8 +53,9 @@ func TestNoEmptyValidActions(t *testing.T) {
 
 			// Send connect message
 			connectMsg := &protocol.Connect{
-				Type: "connect",
+				Type: protocol.TypeConnect,
 				Name: botName,
+				Role: string(BotRolePlayer),
 			}
 			if data, err := protocol.Marshal(connectMsg); err == nil {
 				conn.WriteMessage(websocket.BinaryMessage, data)

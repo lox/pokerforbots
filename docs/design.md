@@ -17,21 +17,25 @@ PokerForBots is a high-performance Texas Hold'em poker server optimized for bot-
 ### System Components
 
 ```
-Bot → WebSocket → Server → Bot Pool → Hand Runner → Game Engine
+Bot → WebSocket → Game Manager → Game Instance → Bot Pool → Hand Runner → Game Engine
 ```
 
 - **WebSocket Server**: Manages bot connections
-- **Bot Pool**: Queue of available bots waiting for hands
+- **Game Manager**: Mediates lobby/game selection and routes bots to the appropriate game instance
+- **Game Instance**: Encapsulates per-table configuration and lifecycle state
+- **Bot Pool**: Queue of available bots waiting for hands inside a game instance
 - **Hand Runner**: Executes individual poker hands in parallel
 - **Game Engine**: Core poker rules and hand evaluation
 
 ### Hand Lifecycle
 
-1. Bot connects and enters available pool
-2. When 2+ bots available, server starts new hand
-3. Bots receive hole cards and play through streets
-4. Hand completes (fold or showdown)
-5. Bots immediately return to pool
+1. Bot connects and lands in the lobby
+2. Bot requests to join a specific game configuration
+3. Game instance adds bot to its local pool
+4. When the game has enough ready bots, it starts a hand
+5. Bots receive hole cards and play through streets
+6. Hand completes (fold or showdown)
+7. Bots return to the same game pool or detach back to the lobby
 
 ## Protocol
 
@@ -44,7 +48,7 @@ Bot → WebSocket → Server → Bot Pool → Hand Runner → Game Engine
 ### Message Types
 
 **Client → Server:**
-- `Connect`: Join server with bot name
+- `Connect`: Join server with bot name, desired role (player/npc), and target game
 - `Action`: Send poker decision (fold/call/raise)
 
 **Server → Client:**
@@ -147,6 +151,7 @@ game:
   small_blind: 5
   big_blind: 10
   decision_timeout_ms: 100
+  require_player: true   # Hand will only start if at least one player-role bot is seated
 
 pool:
   match_interval_ms: 10
@@ -215,9 +220,16 @@ The server uses dependency injection for all random number generation. A single 
 
 ### Stateless Design
 Each hand is completely independent:
-- Random selection of 2-9 bots from the available pool
+- Random selection of 2-9 bots from the available pool (respecting per-game requirements such as "must include a player")
 - Button assigned to the first seat in that shuffled order (no rotation carried between hands), so the seating shuffle alone defines blinds/position
 - Fresh game state with no carryover
+
+### Game Manager & Simulation Roadmap
+- **Multiple Game Instances**: The server will expose multiple named "games", each with their own `Config` (blinds, timeouts, min/max seats) and bot pool. Bots join and leave games explicitly through the protocol.
+- **Bot Roles**: Connecting bots declare a role (`player` or `npc`). Game configs (default included) can require at least one `player` before starting a hand, keeping background sparring bots idle until a focus bot attaches.
+- **Mirrored Hands** *(planned)*: Game instances can optionally replay each shuffled deck across every seat rotation to reduce variance during testing.
+- **Scenario Scripts** *(planned)*: A game may accept scripted decks or seed lists for deterministic simulation runs without restarting the server.
+- **Simulation Control Channel** *(planned)*: Trusted tooling can request ad-hoc simulation sessions (e.g., `N` mirrored hands with specified bots) routed through dedicated game instances, leaving other tables unaffected.
 
 ## Testing Strategy
 
