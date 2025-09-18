@@ -284,6 +284,9 @@ func (p *BotPool) runHand(bots []*Bot) {
 	// Skip if any bot doesn't have a connection (for testing)
 	for _, bot := range bots {
 		if bot.conn == nil {
+			if bot.Role() == BotRoleNPC {
+				continue
+			}
 			return
 		}
 	}
