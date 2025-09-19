@@ -14,14 +14,16 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
+	"github.com/lox/pokerforbots/internal/server"
 	"github.com/rs/zerolog"
 )
 
 type CLI struct {
-	Bots   int    `kong:"default='6',help='Number of WebSocket bots'"`
-	Hands  int    `kong:"default='1000',help='Number of hands to benchmark'"`
-	Server string `kong:"default='ws://localhost:8080/ws',help='WebSocket server URL'"`
-	Quiet  bool   `kong:"default='false',help='Suppress bot logs'"`
+	Bots      int    `kong:"default='6',help='Number of WebSocket bots'"`
+	Hands     int    `kong:"default='1000',help='Number of hands to benchmark'"`
+	Port      string `kong:"default='8080',help='Server port to use'"`
+	TimeoutMs int    `kong:"default='5',help='Decision timeout in milliseconds'"`
+	Quiet     bool   `kong:"default='false',help='Suppress bot logs'"`
 }
 
 func main() {
@@ -36,7 +38,7 @@ func main() {
 	)
 
 	fmt.Printf("PokerForBots Benchmark\n")
-	fmt.Printf("Server: %s, Bots: %d, Hands: %d\n\n", cli.Server, cli.Bots, cli.Hands)
+	fmt.Printf("Port: %s, Bots: %d, Hands: %d, Timeout: %dms\n\n", cli.Port, cli.Bots, cli.Hands, cli.TimeoutMs)
 
 	// Set up logging
 	level := zerolog.InfoLevel
@@ -45,22 +47,15 @@ func main() {
 	}
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).Level(level)
 
-	// Wait for server availability
-	fmt.Print("Waiting for server")
-	for i := 0; i < 30; i++ {
-		conn, _, err := websocket.DefaultDialer.Dial(cli.Server, nil)
-		if err == nil {
-			conn.Close()
-			fmt.Println(" ✓")
-			break
-		}
-		fmt.Print(".")
-		time.Sleep(200 * time.Millisecond)
-		if i == 29 {
-			fmt.Println("\nServer not available")
-			return
-		}
+	// Start embedded server
+	fmt.Print("Starting server...")
+	serverURL, cleanup, err := startBenchmarkServer(cli.Port, cli.Bots, cli.TimeoutMs, logger)
+	if err != nil {
+		fmt.Printf("Failed to start server: %v\n", err)
+		return
 	}
+	defer cleanup()
+	fmt.Println(" ✓")
 
 	// Shared counter for completed hands
 	var handCount int64
@@ -74,7 +69,7 @@ func main() {
 
 	for i := 0; i < cli.Bots; i++ {
 		id := fmt.Sprintf("bench-%03d", i)
-		bot, err := newBenchBot(id, cli.Server, logger, &handCount)
+		bot, err := newBenchBot(id, serverURL, logger, &handCount)
 		if err != nil {
 			fmt.Printf("Failed to create bot %s: %v\n", id, err)
 			return
@@ -281,4 +276,69 @@ func (b *benchBot) pickAction(req protocol.ActionRequest) protocol.Action {
 
 	// Fallback
 	return protocol.Action{Type: protocol.TypeAction, Action: req.ValidActions[0]}
+}
+
+func startBenchmarkServer(port string, numBots, timeoutMs int, logger zerolog.Logger) (string, func(), error) {
+	// Create server configuration optimized for benchmarking
+	seed := time.Now().UnixNano()
+	rng := rand.New(rand.NewSource(seed))
+
+	config := server.Config{
+		SmallBlind:       5,
+		BigBlind:         10,
+		StartChips:       1000,
+		Timeout:          time.Duration(timeoutMs) * time.Millisecond,
+		MinPlayers:       numBots,
+		MaxPlayers:       numBots,
+		RequirePlayer:    false, // Don't require player role for benchmark
+		InfiniteBankroll: true,  // Prevent bots from running out of chips
+		HandLimit:        0,     // Unlimited - benchmark controls duration
+		Seed:             seed,
+		EnableStats:      false, // Disable for maximum performance
+	}
+
+	srv := server.NewServerWithConfig(logger, rng, config)
+
+	// Start server in background
+	serverErr := make(chan error, 1)
+	addr := ":" + port
+	go func() {
+		serverErr <- srv.Start(addr)
+	}()
+
+	// Wait for server to be ready
+	serverURL := fmt.Sprintf("ws://localhost:%s/ws", port)
+	ready := make(chan bool, 1)
+	go func() {
+		for i := 0; i < 50; i++ {
+			conn, _, err := websocket.DefaultDialer.Dial(serverURL, nil)
+			if err == nil {
+				conn.Close()
+				ready <- true
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		ready <- false
+	}()
+
+	select {
+	case err := <-serverErr:
+		return "", nil, fmt.Errorf("server failed to start: %w", err)
+	case isReady := <-ready:
+		if !isReady {
+			return "", nil, fmt.Errorf("server not ready after 5 seconds")
+		}
+	case <-time.After(5 * time.Second):
+		return "", nil, fmt.Errorf("timeout waiting for server")
+	}
+
+	// Return cleanup function
+	cleanup := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		srv.Shutdown(ctx)
+	}
+
+	return serverURL, cleanup, nil
 }

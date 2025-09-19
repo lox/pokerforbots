@@ -8,7 +8,7 @@ PokerForBots is a high-performance poker server designed specifically for bot-vs
 
 Please refer to these documents for context:
 
-1. [docs/development-workflow.md](docs/development-workflow.md) - Developing the server and the bots in examples
+1. **[docs/development-workflow.md](docs/development-workflow.md)** - Developing the server and the bots in examples
 2. **[docs/design.md](docs/design.md)** - Complete system design and architecture
 3. **[docs/websocket-protocol.md](docs/websocket-protocol.md)** - Binary msgpack protocol specification
 4. **[docs/poker-rules.md](docs/poker-rules.md)** - No-limit Hold'em rules reference
@@ -45,6 +45,8 @@ Each commit should include all tests for that milestone.
 Update @TODO.md after each task, and make sure all tests are passing before commit.
 
 YOU MUST NEVER COMMIT FAILING TESTS, EVEN IF THE TEST IS UNRELATED TO YOUR CHANGES.
+
+YOU MUST NEVER DISABLE THE LINTER TO ALLOW COMMITS. ASK THE USER WHAT TO DO IN THIS CASE.
 
 ## Key Implementation Patterns
 
