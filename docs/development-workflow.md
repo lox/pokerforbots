@@ -343,7 +343,7 @@ pkill -f "sdk/examples/complex"
 ```bash
 # 1. Start server for 20k hands
 tmux new-session -d -s poker \
-  'task server -- --infinite-bankroll --hands 20000 --timeout-ms 20 --npc-bots 3'
+  'task server -- --infinite-bankroll --hands 20000 --timeout-ms 20 --npc-bots 3 --require-player'
 
 # 2. Monitor initial state
 curl -s http://localhost:8080/games | jq '.[0]'

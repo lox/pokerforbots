@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,6 +14,9 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
 )
+
+// This file contains integration tests that verify end-to-end functionality
+// that cannot be easily tested with unit tests
 
 // newTestServerWithDeterministicRNG creates a server with deterministic random behavior for testing
 func newTestServerWithDeterministicRNG(t *testing.T, seed int64) *Server {
@@ -32,19 +34,7 @@ func newTestServerWithDeterministicRNG(t *testing.T, seed int64) *Server {
 	return NewServerWithBotIDGen(testLogger(), pool, botIDGen)
 }
 
-func startTestPool(t *testing.T, pool *BotPool) func() {
-	t.Helper()
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		pool.Run()
-	}()
-	return func() {
-		pool.Stop()
-		wg.Wait()
-	}
-}
+// startTestPool is now defined in test_helpers.go
 
 // TestBotActionsAreProcessed verifies that bot actions are actually processed
 // Updated to work with randomized bot ordering per stateless hand design
