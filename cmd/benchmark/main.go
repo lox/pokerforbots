@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
 	"os/signal"
 	"sync"
@@ -20,8 +21,8 @@ import (
 
 type CLI struct {
 	Bots      int    `kong:"default='6',help='Number of WebSocket bots'"`
-	Hands     int    `kong:"default='1000',help='Number of hands to benchmark'"`
-	Port      string `kong:"default='8080',help='Server port to use'"`
+	Hands     int    `kong:"default='50000',help='Number of hands to benchmark'"`
+	Port      string `kong:"default='0',help='Server port to use (0 for random port)'"`
 	TimeoutMs int    `kong:"default='5',help='Decision timeout in milliseconds'"`
 	Debug     bool   `kong:"default='false',help='Show debug logs'"`
 }
@@ -38,7 +39,6 @@ func main() {
 	)
 
 	fmt.Printf("PokerForBots Benchmark\n")
-	fmt.Printf("Port: %s, Bots: %d, Hands: %d, Timeout: %dms\n\n", cli.Port, cli.Bots, cli.Hands, cli.TimeoutMs)
 
 	// Set up logging
 	level := zerolog.Disabled // Default to no logging for maximum performance
@@ -69,15 +69,24 @@ func main() {
 
 	srv := server.NewServerWithConfig(logger, rng, config)
 
-	// Start server in background
+	// Create listener to get actual assigned port (supports port 0 for random)
+	listener, err := net.Listen("tcp", ":"+cli.Port)
+	if err != nil {
+		fmt.Printf("Failed to create listener: %v\n", err)
+		return
+	}
+
+	// Get the actual assigned port (important when using port 0)
+	actualPort := listener.Addr().(*net.TCPAddr).Port
+
+	// Start server in background using the listener
 	serverErr := make(chan error, 1)
-	addr := ":" + cli.Port
 	go func() {
-		serverErr <- srv.Start(addr)
+		serverErr <- srv.Serve(listener)
 	}()
 
 	// Wait for server to be healthy
-	baseURL := fmt.Sprintf("http://localhost%s", addr)
+	baseURL := fmt.Sprintf("http://localhost:%d", actualPort)
 	healthCtx, healthCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer healthCancel()
 
@@ -100,8 +109,9 @@ func main() {
 		srv.Shutdown(shutdownCtx)
 	}()
 
-	serverURL := fmt.Sprintf("ws://localhost%s/ws", addr)
-	fmt.Println(" ✓")
+	serverURL := fmt.Sprintf("ws://localhost:%d/ws", actualPort)
+	fmt.Printf(" ✓ (port %d)\n", actualPort)
+	fmt.Printf("Config: Bots: %d, Hands: %d, Timeout: %dms\n\n", cli.Bots, cli.Hands, cli.TimeoutMs)
 
 	// Shared counter for completed hands
 	var handCount int64
