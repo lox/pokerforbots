@@ -23,7 +23,7 @@ type CLI struct {
 	Hands     int    `kong:"default='1000',help='Number of hands to benchmark'"`
 	Port      string `kong:"default='8080',help='Server port to use'"`
 	TimeoutMs int    `kong:"default='5',help='Decision timeout in milliseconds'"`
-	Quiet     bool   `kong:"default='false',help='Suppress bot logs'"`
+	Debug     bool   `kong:"default='false',help='Show debug logs'"`
 }
 
 func main() {
@@ -41,9 +41,9 @@ func main() {
 	fmt.Printf("Port: %s, Bots: %d, Hands: %d, Timeout: %dms\n\n", cli.Port, cli.Bots, cli.Hands, cli.TimeoutMs)
 
 	// Set up logging
-	level := zerolog.InfoLevel
-	if cli.Quiet {
-		level = zerolog.ErrorLevel
+	level := zerolog.Disabled // Default to no logging for maximum performance
+	if cli.Debug {
+		level = zerolog.DebugLevel // Enable verbose logging
 	}
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).Level(level)
 
@@ -60,9 +60,9 @@ func main() {
 		Timeout:          time.Duration(cli.TimeoutMs) * time.Millisecond,
 		MinPlayers:       cli.Bots,
 		MaxPlayers:       cli.Bots,
-		RequirePlayer:    false, // Don't require player role for benchmark
-		InfiniteBankroll: true,  // Prevent bots from running out of chips
-		HandLimit:        0,     // Unlimited - benchmark controls duration
+		RequirePlayer:    false,             // Don't require player role for benchmark
+		InfiniteBankroll: true,              // Prevent bots from running out of chips
+		HandLimit:        uint64(cli.Hands), // Set server to stop after target hands
 		Seed:             seed,
 		EnableStats:      false, // Disable for maximum performance
 	}
@@ -261,10 +261,10 @@ func (b *benchBot) run(ctx context.Context) {
 			continue
 		}
 
-		// Count completed hands (first bot to see result increments)
+		// Check for hand result to count completed hands
 		var result protocol.HandResult
 		if err := protocol.Unmarshal(data, &result); err == nil && result.Type == protocol.TypeHandResult {
-			// Simple approach: first bot ID lexically increments counter
+			// Only the first bot increments to avoid double-counting
 			if b.id == "bench-000" {
 				atomic.AddInt64(b.counter, 1)
 			}
