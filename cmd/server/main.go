@@ -32,6 +32,9 @@ type CLI struct {
 	NPCAggro         int    `kong:"default='0',help='NPC aggressive bots (overrides auto distribution)'"`
 	Seed             *int64 `kong:"help='Deterministic RNG seed for the server (optional)'"`
 	Hands            uint64 `kong:"default='0',help='Maximum hands to run in the default game (0 = unlimited)'"`
+	EnableStats      bool   `kong:"default='false',help='Enable statistics collection for development (impacts performance)'"`
+	StatsDepth       string `kong:"default='basic',enum='basic,detailed,full',help='Statistics detail level: basic|detailed|full'"`
+	MaxStatsHands    int    `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
 }
 
 func main() {
@@ -72,6 +75,9 @@ func main() {
 		InfiniteBankroll: cli.InfiniteBankroll,
 		HandLimit:        cli.Hands,
 		Seed:             0,
+		EnableStats:      cli.EnableStats,
+		StatsDepth:       server.StatisticsDepth(cli.StatsDepth),
+		MaxStatsHands:    cli.MaxStatsHands,
 	}
 
 	// Create RNG instance for server
@@ -105,6 +111,9 @@ func main() {
 			Bool("infinite_bankroll", cli.InfiniteBankroll).
 			Uint64("hand_limit", cli.Hands).
 			Int64("seed", seed).
+			Bool("enable_stats", cli.EnableStats).
+			Str("stats_depth", cli.StatsDepth).
+			Int("max_stats_hands", cli.MaxStatsHands).
 			Msg("Server starting")
 		serverErr <- srv.Start(cli.Addr)
 	}()

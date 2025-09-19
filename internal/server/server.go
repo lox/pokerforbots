@@ -46,7 +46,10 @@ type Config struct {
 	RequirePlayer    bool
 	HandLimit        uint64
 	Seed             int64
-	InfiniteBankroll bool // When true, bots never run out of chips
+	InfiniteBankroll bool            // When true, bots never run out of chips
+	EnableStats      bool            // Enable detailed statistics collection
+	StatsDepth       StatisticsDepth // Level of detail for statistics
+	MaxStatsHands    int             // Maximum hands to track for stats (default 10000)
 }
 
 // Server represents the poker server

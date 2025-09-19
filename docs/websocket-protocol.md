@@ -195,13 +195,44 @@ Broadcast exactly once when a game instance stops creating new hands (for exampl
       "avg_per_hand": 25.7,
       "total_won": 94210,
       "total_lost": 81360,
-      "last_delta": 180
+      "last_delta": 180,
+      "detailed_stats": {  // Optional: only when server has --enable-stats
+        "bb_100": 257.0,
+        "mean": 25.7,
+        "std_dev": 68.2,
+        "win_rate": 22.4,
+        "showdown_win_rate": 55.8,
+        "position_stats": {
+          "Button": {"hands": 125, "net_bb": 450.5, "bb_per_hand": 3.6},
+          "Cutoff": {"hands": 125, "net_bb": 320.2, "bb_per_hand": 2.56},
+          // ... other positions
+        },
+        "street_stats": {
+          "preflop": {"hands_ended": 150, "net_bb": -45.0, "bb_per_hand": -0.3},
+          "river": {"hands_ended": 200, "net_bb": 1330.0, "bb_per_hand": 6.65}
+        },
+        "hand_category_stats": {  // Only when stats_depth=full
+          "Premium": {"hands": 25, "net_bb": 750.0, "bb_per_hand": 30.0},
+          "Strong": {"hands": 45, "net_bb": 400.0, "bb_per_hand": 8.89},
+          "Weak": {"hands": 280, "net_bb": -365.0, "bb_per_hand": -1.3}
+        }
+      }
     }
   ]
 }
 ```
 
 `reason` currently uses `hand_limit_reached`; additional values may appear as new shutdown triggers are implemented.
+
+**DetailedStats fields** (when server runs with `--enable-stats`):
+- `bb_100`: Big blinds won/lost per 100 hands
+- `mean`: Average BB won/lost per hand
+- `std_dev`: Standard deviation of results
+- `win_rate`: Percentage of hands won
+- `showdown_win_rate`: Win rate when reaching showdown
+- `position_stats`: Performance breakdown by table position (BTN, CO, etc.)
+- `street_stats`: Analysis of where hands end (preflop, flop, turn, river, showdown)
+- `hand_category_stats`: Performance by hand strength (Premium, Strong, Medium, Weak)
 
 ### Error
 Sent when bot sends invalid message or action.

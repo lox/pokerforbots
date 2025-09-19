@@ -38,6 +38,10 @@ type HandRunner struct {
 	rng           *rand.Rand
 	pool          *BotPool // Reference to pool for metrics
 	config        Config   // Server configuration
+
+	// Track actions for statistics (only if enabled)
+	trackActions bool
+	botActions   []map[string]string // Per-bot action tracking: street -> action
 }
 
 // ActionEnvelope wraps an action with the sender's bot ID for verification
@@ -94,6 +98,16 @@ func NewHandRunnerWithConfig(logger zerolog.Logger, bots []*Bot, handID string, 
 // SetPool sets the pool reference for metrics tracking
 func (hr *HandRunner) SetPool(pool *BotPool) {
 	hr.pool = pool
+
+	// Check if we should track actions for statistics
+	if pool != nil && pool.statsCollector != nil && pool.statsCollector.IsEnabled() &&
+		pool.config.StatsDepth == StatsDepthFull {
+		hr.trackActions = true
+		hr.botActions = make([]map[string]string, len(hr.bots))
+		for i := range hr.botActions {
+			hr.botActions[i] = make(map[string]string)
+		}
+	}
 }
 
 func (hr *HandRunner) displayName(observerSeat, targetSeat int) string {
@@ -612,6 +626,40 @@ func (hr *HandRunner) logPlayerAction(seat int, street string, action game.Actio
 		Int("bet", player.Bet).
 		Int("total_bet", player.TotalBet).
 		Msg("Player action")
+
+	// Track action for statistics if enabled
+	if hr.trackActions && seat >= 0 && seat < len(hr.botActions) {
+		// Store the most significant action per street (fold > check > call < raise < allin)
+		actionStr := strings.ToLower(action.String())
+		if action == game.AllIn {
+			actionStr = "allin"
+		}
+
+		// Only overwrite if this action is more significant than what we have
+		existing, hasAction := hr.botActions[seat][street]
+		if !hasAction || shouldReplaceAction(existing, actionStr) {
+			hr.botActions[seat][street] = actionStr
+		}
+	}
+}
+
+// shouldReplaceAction determines if newAction is more significant than oldAction
+func shouldReplaceAction(oldAction, newAction string) bool {
+	// Priority: fold < check < call < raise < allin
+	priority := map[string]int{
+		"fold":  1,
+		"check": 2,
+		"call":  3,
+		"raise": 4,
+		"allin": 5,
+		"bet":   4, // Treat bet like raise
+	}
+
+	oldPriority := priority[oldAction]
+	newPriority := priority[newAction]
+
+	// Replace if new action has higher priority
+	return newPriority > oldPriority
 }
 
 func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
@@ -623,6 +671,34 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 	pnlSummary := make([]string, len(hr.seatBuyIns))
 	deltas := make([]int, len(hr.seatBuyIns))
 
+	// Build detailed outcome if statistics are enabled
+	var detailedOutcome *HandOutcomeDetail
+	if hr.pool != nil && hr.pool.statsCollector != nil && hr.pool.statsCollector.IsEnabled() {
+		detailedOutcome = &HandOutcomeDetail{
+			HandID:         hr.handID,
+			ButtonPosition: hr.button,
+			StreetReached:  hr.lastStreet.String(),
+			Board:          boardCards,
+			BotOutcomes:    make([]BotHandOutcome, len(hr.bots)),
+		}
+	}
+
+	// Track who went to showdown and who won
+	wentToShowdown := make(map[int]bool)
+	wonAtShowdown := make(map[int]bool)
+	if hr.handState.Street == game.Showdown {
+		// Mark all non-folded players as going to showdown
+		for i, player := range hr.handState.Players {
+			if !player.Folded {
+				wentToShowdown[i] = true
+			}
+		}
+		// Mark winners
+		for _, winner := range winners {
+			wonAtShowdown[winner.seat] = true
+		}
+	}
+
 	for i := range hr.bots {
 		finalChips := hr.handState.Players[i].Chips
 		delta := finalChips - hr.seatBuyIns[i]
@@ -632,6 +708,39 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 		pnlSummary[i] = fmt.Sprintf("seat%d/%s/%+d", i, label, delta)
 		deltas[i] = delta
 		hr.bots[i].ApplyResult(delta)
+
+		// Add detailed outcome if tracking
+		if detailedOutcome != nil {
+			// Calculate button distance (0=button, 1=CO, 2=MP, etc.)
+			buttonDist := (i - hr.button + len(hr.bots)) % len(hr.bots)
+
+			// Get hole cards
+			holeCards := []string{}
+			player := hr.handState.Players[i]
+			if player.HoleCards != 0 {
+				holeCards = []string{
+					game.CardString(player.HoleCards.GetCard(0)),
+					game.CardString(player.HoleCards.GetCard(1)),
+				}
+			}
+
+			outcome := BotHandOutcome{
+				Bot:            hr.bots[i],
+				Position:       i,
+				ButtonDistance: buttonDist,
+				HoleCards:      holeCards,
+				NetChips:       delta,
+				WentToShowdown: wentToShowdown[i],
+				WonAtShowdown:  wonAtShowdown[i],
+			}
+
+			// Add actions if we tracked them
+			if hr.trackActions && i < len(hr.botActions) {
+				outcome.Actions = hr.botActions[i]
+			}
+
+			detailedOutcome.BotOutcomes[i] = outcome
+		}
 	}
 
 	winnerSummaries := make([]string, len(winners))
@@ -652,7 +761,12 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 		Msg("Hand summary")
 
 	if hr.pool != nil {
-		hr.pool.RecordHandOutcome(hr.handID, hr.bots, deltas)
+		// Use detailed outcome if available, otherwise fall back to simple version
+		if detailedOutcome != nil {
+			hr.pool.RecordHandOutcomeDetailed(*detailedOutcome)
+		} else {
+			hr.pool.RecordHandOutcome(hr.handID, hr.bots, deltas)
+		}
 	}
 }
 

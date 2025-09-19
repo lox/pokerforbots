@@ -44,6 +44,9 @@ type BotPool struct {
 	botStats  map[string]*botStats
 	lastHand  string
 	lastStamp time.Time
+
+	// Statistics collector (optional)
+	statsCollector StatsCollector
 }
 
 // WithRNG executes fn with exclusive access to the pool's RNG.
@@ -107,22 +110,43 @@ func NewBotPoolWithLimit(logger zerolog.Logger, minPlayers, maxPlayers int, rng 
 // NewBotPoolWithLimitAndConfig creates a new bot pool with explicit random source, hand limit and config
 
 func NewBotPoolWithLimitAndConfig(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand, handLimit uint64, config Config) *BotPool {
+	// Create appropriate stats collector based on config
+	var collector StatsCollector
+	if config.EnableStats {
+		maxHands := config.MaxStatsHands
+		if maxHands <= 0 {
+			maxHands = 10000 // Default limit
+		}
+		depth := config.StatsDepth
+		if depth == "" {
+			depth = StatsDepthBasic // Default to basic
+		}
+		collector = NewDetailedStatsCollector(depth, maxHands, config.BigBlind)
+		logger.Info().
+			Str("depth", string(depth)).
+			Int("max_hands", maxHands).
+			Msg("Statistics collection enabled")
+	} else {
+		collector = &NullStatsCollector{}
+	}
+
 	return &BotPool{
-		bots:          make(map[string]*Bot),
-		available:     make(chan *Bot, 100),
-		register:      make(chan *Bot),
-		unregister:    make(chan *Bot),
-		minPlayers:    minPlayers,
-		maxPlayers:    maxPlayers,
-		handLimit:     handLimit,
-		stopCh:        make(chan struct{}),
-		logger:        logger.With().Str("component", "pool").Logger(),
-		rng:           rng,
-		config:        config,
-		handStartTime: time.Now(),
-		botStats:      make(map[string]*botStats),
-		lastStamp:     time.Now(),
-		matchTrigger:  make(chan struct{}, 1),
+		bots:           make(map[string]*Bot),
+		available:      make(chan *Bot, 100),
+		register:       make(chan *Bot),
+		unregister:     make(chan *Bot),
+		minPlayers:     minPlayers,
+		maxPlayers:     maxPlayers,
+		handLimit:      handLimit,
+		stopCh:         make(chan struct{}),
+		logger:         logger.With().Str("component", "pool").Logger(),
+		rng:            rng,
+		config:         config,
+		handStartTime:  time.Now(),
+		botStats:       make(map[string]*botStats),
+		lastStamp:      time.Now(),
+		matchTrigger:   make(chan struct{}, 1),
+		statsCollector: collector,
 	}
 }
 
@@ -542,6 +566,28 @@ func (p *BotPool) RecordHandOutcome(handID string, bots []*Bot, deltas []int) {
 	p.maybeNotifyHandLimit()
 }
 
+// RecordHandOutcomeDetailed updates both basic and detailed statistics
+func (p *BotPool) RecordHandOutcomeDetailed(detail HandOutcomeDetail) {
+	// First update basic stats (for backward compatibility)
+	if len(detail.BotOutcomes) > 0 {
+		bots := make([]*Bot, len(detail.BotOutcomes))
+		deltas := make([]int, len(detail.BotOutcomes))
+		for i, outcome := range detail.BotOutcomes {
+			bots[i] = outcome.Bot
+			deltas[i] = outcome.NetChips
+		}
+		p.RecordHandOutcome(detail.HandID, bots, deltas)
+	}
+
+	// Then update detailed stats if collector is enabled
+	if p.statsCollector != nil && p.statsCollector.IsEnabled() {
+		if err := p.statsCollector.RecordHandOutcome(detail); err != nil {
+			// Log error but don't fail - statistics should never break the game
+			p.logger.Error().Err(err).Msg("Failed to record detailed hand statistics")
+		}
+	}
+}
+
 // PlayerStats returns a snapshot of aggregate statistics for all bots in the pool.
 func (p *BotPool) PlayerStats() []PlayerStats {
 	p.statsMu.RLock()
@@ -612,7 +658,7 @@ func (p *BotPool) notifyGameCompleted(reason string) {
 	playerStats := p.PlayerStats()
 	players := make([]protocol.GameCompletedPlayer, len(playerStats))
 	for i, ps := range playerStats {
-		players[i] = protocol.GameCompletedPlayer{
+		player := protocol.GameCompletedPlayer{
 			BotID:       ps.BotID,
 			DisplayName: ps.DisplayName,
 			Role:        ps.Role,
@@ -623,6 +669,15 @@ func (p *BotPool) notifyGameCompleted(reason string) {
 			TotalLost:   ps.TotalLost,
 			LastDelta:   ps.LastDelta,
 		}
+
+		// Add detailed stats if available
+		if p.statsCollector != nil && p.statsCollector.IsEnabled() {
+			if detailedStats := p.statsCollector.GetDetailedStats(ps.BotID); detailedStats != nil {
+				player.DetailedStats = convertToProtocolStats(detailedStats)
+			}
+		}
+
+		players[i] = player
 	}
 
 	completed := atomic.LoadUint64(&p.handCounter)
@@ -660,4 +715,91 @@ func (p *BotPool) notifyGameCompleted(reason string) {
 		Uint64("hand_limit", msg.HandLimit).
 		Str("reason", msg.Reason).
 		Msg("Broadcasted game_completed message")
+}
+
+// convertToProtocolStats converts server DetailedStats to protocol PlayerDetailedStats
+func convertToProtocolStats(stats *DetailedStats) *protocol.PlayerDetailedStats {
+	if stats == nil {
+		return nil
+	}
+
+	result := &protocol.PlayerDetailedStats{
+		BB100:           stats.BB100,
+		Mean:            stats.Mean,
+		StdDev:          stats.StdDev,
+		WinRate:         stats.WinRate,
+		ShowdownWinRate: stats.ShowdownWinRate,
+	}
+
+	// Convert position stats
+	if len(stats.PositionStats) > 0 {
+		result.PositionStats = make(map[string]protocol.PositionStatSummary)
+		for pos, stat := range stats.PositionStats {
+			result.PositionStats[pos] = protocol.PositionStatSummary{
+				Hands:     stat.Hands,
+				NetBB:     stat.NetBB,
+				BBPerHand: stat.BBPerHand,
+			}
+		}
+	}
+
+	// Convert street stats
+	if len(stats.StreetStats) > 0 {
+		result.StreetStats = make(map[string]protocol.StreetStatSummary)
+		for street, stat := range stats.StreetStats {
+			result.StreetStats[street] = protocol.StreetStatSummary{
+				HandsEnded: stat.HandsEnded,
+				NetBB:      stat.NetBB,
+				BBPerHand:  stat.BBPerHand,
+			}
+		}
+	}
+
+	// Convert hand category stats
+	if len(stats.HandCategoryStats) > 0 {
+		result.HandCategoryStats = make(map[string]protocol.CategoryStatSummary)
+		for cat, stat := range stats.HandCategoryStats {
+			result.HandCategoryStats[cat] = protocol.CategoryStatSummary{
+				Hands:     stat.Hands,
+				NetBB:     stat.NetBB,
+				BBPerHand: stat.BBPerHand,
+			}
+		}
+	}
+
+	return result
+}
+
+// PlayerStats captures aggregate performance metrics for a single bot within a game.
+type PlayerStats struct {
+	BotID       string    `json:"bot_id"`
+	DisplayName string    `json:"display_name"`
+	Role        string    `json:"role"`
+	Hands       int       `json:"hands"`
+	NetChips    int64     `json:"net_chips"`
+	AvgPerHand  float64   `json:"avg_per_hand"`
+	TotalWon    int64     `json:"total_won"`
+	TotalLost   int64     `json:"total_lost"`
+	LastDelta   int       `json:"last_delta"`
+	LastUpdated time.Time `json:"last_updated"`
+}
+
+// GameStats provides an aggregated snapshot for a game instance.
+type GameStats struct {
+	ID               string        `json:"id"`
+	SmallBlind       int           `json:"small_blind"`
+	BigBlind         int           `json:"big_blind"`
+	StartChips       int           `json:"start_chips"`
+	TimeoutMs        int           `json:"timeout_ms"`
+	MinPlayers       int           `json:"min_players"`
+	MaxPlayers       int           `json:"max_players"`
+	RequirePlayer    bool          `json:"require_player"`
+	InfiniteBankroll bool          `json:"infinite_bankroll"`
+	HandsCompleted   uint64        `json:"hands_completed"`
+	HandLimit        uint64        `json:"hand_limit"`
+	HandsRemaining   uint64        `json:"hands_remaining"`
+	Timeouts         uint64        `json:"timeouts"`
+	HandsPerSecond   float64       `json:"hands_per_second"`
+	Seed             int64         `json:"seed"`
+	Players          []PlayerStats `json:"players"`
 }

@@ -34,6 +34,17 @@ tmux new-session -d -s poker-server \
     --npc-calling 1 \
     --npc-random 1 \
     --npc-aggro 1'
+
+# With server-side statistics enabled (for bot development)
+tmux new-session -d -s poker-server \
+  'task server -- \
+    --infinite-bankroll \
+    --hands 10000 \
+    --timeout-ms 20 \
+    --npc-bots 3 \
+    --enable-stats \
+    --stats-depth=full \
+    --max-stats-hands=5000'
 ```
 
 ### 2. Monitor Server Logs
@@ -113,6 +124,24 @@ cat complex-bot-results-*.json | jq '.all_players |
     bb_per_100: ((.AvgPerHand / 10) * 100),
     win_rate: ((.TotalWon / (.TotalWon + .TotalLost)) * 100)
   }'
+
+# View detailed statistics (when server has --enable-stats)
+cat complex-bot-results-*.json | jq '.all_players[] | select(.Role == "player") | .DetailedStats | {
+  BB100,
+  WinRate,
+  ShowdownWinRate,
+  Mean,
+  StdDev
+}'
+
+# Analyze position performance
+cat complex-bot-results-*.json | jq '.all_players[] | select(.Role == "player") | .DetailedStats.PositionStats'
+
+# Check street statistics (where hands end)
+cat complex-bot-results-*.json | jq '.all_players[] | select(.Role == "player") | .DetailedStats.StreetStats'
+
+# Analyze hand category performance
+cat complex-bot-results-*.json | jq '.all_players[] | select(.Role == "player") | .DetailedStats.HandCategoryStats'
 ```
 
 ## Advanced Configurations
@@ -161,6 +190,23 @@ Adjust timeout for faster games:
 # Standard games (100ms timeout)
 ./server --timeout-ms 100
 ```
+
+### Server-Side Statistics
+
+Enable detailed statistics collection for bot development:
+
+```bash
+# Basic statistics (BB/100, win rate only)
+./server --enable-stats --stats-depth=basic
+
+# Detailed statistics (+ position and street analysis)
+./server --enable-stats --stats-depth=detailed
+
+# Full statistics (+ hand categories and action tracking)
+./server --enable-stats --stats-depth=full --max-stats-hands=10000
+```
+
+**Note:** Statistics have minimal performance impact (~309ns per hand) but should be disabled in production for maximum throughput.
 
 ## Development Loop
 
@@ -214,19 +260,34 @@ jq -s 'map(.all_players[] | select(.Role == "player")) |
 
 1. **BB/100** (Big Blinds per 100 hands)
    - Target: Positive value
-   - Current: Complex bot loses ~234 BB/100
+   - Current: Complex bot loses ~2569 BB/100 (catastrophic!)
 
-2. **Win Rate** (Percentage of chips won vs lost)
-   - Target: > 50%
-   - Track: `TotalWon / (TotalWon + TotalLost)`
+2. **Win Rate** (Percentage of hands won)
+   - Target: 15-25% in 6-max
+   - Current: Complex bot wins 11.4% (too low)
+   - Track via: `.DetailedStats.WinRate`
 
-3. **Hands Per Second**
-   - Server capability: 500+ hands/second
-   - Useful for quick iteration
+3. **Showdown Win Rate**
+   - Target: 50-60% when reaching showdown
+   - Current: Complex bot at 56.4% (good!)
+   - Track via: `.DetailedStats.ShowdownWinRate`
 
 4. **Position Performance**
-   - Track results by position (button, cutoff, early)
-   - Identify position-based leaks
+   - Button (BTN): Should be most profitable
+   - Cutoff (CO): Second most profitable
+   - Early positions: Tighter, less profitable
+   - Track via: `.DetailedStats.PositionStats`
+
+5. **Hand Category Analysis**
+   - Premium hands: Should be highly profitable
+   - Strong hands: Moderately profitable
+   - Medium/Weak: Should mostly fold pre-flop
+   - Track via: `.DetailedStats.HandCategoryStats`
+
+6. **Street Analysis**
+   - Where are hands ending?
+   - Current: Complex bot plays 99.9% to showdown (major leak!)
+   - Track via: `.DetailedStats.StreetStats`
 
 ### Debugging Tips
 

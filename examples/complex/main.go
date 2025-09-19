@@ -11,11 +11,13 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
+	"github.com/lox/pokerforbots/internal/server/statistics"
 	"github.com/rs/zerolog"
 )
 
@@ -33,6 +35,14 @@ type tableState struct {
 	Button       int
 	ActiveCount  int
 	BetsThisHand int
+
+	// For statistics tracking
+	StartingChips int
+	HandNum       int
+	PreflopAction string
+	FlopAction    string
+	TurnAction    string
+	RiverAction   string
 }
 
 // opponentProfile tracks opponent behavior
@@ -56,6 +66,59 @@ type complexBot struct {
 	state     tableState
 	opponents map[string]*opponentProfile
 	rng       *rand.Rand
+	stats     *statistics.Statistics
+	handNum   int
+	bigBlind  int // Track the big blind amount
+}
+
+// StatsSummary holds aggregated statistics
+type StatsSummary struct {
+	Hands           int     `json:"hands"`
+	NetBB           float64 `json:"net_bb"`
+	BB100           float64 `json:"bb_per_100"`
+	Mean            float64 `json:"mean_bb_hand"`
+	Median          float64 `json:"median_bb_hand"`
+	StdDev          float64 `json:"std_dev"`
+	CI95Low         float64 `json:"ci_95_low"`
+	CI95High        float64 `json:"ci_95_high"`
+	WinningHands    int     `json:"winning_hands"`
+	WinRate         float64 `json:"win_rate_pct"`
+	ShowdownWins    int     `json:"showdown_wins"`
+	NonShowdownWins int     `json:"non_showdown_wins"`
+	ShowdownWinRate float64 `json:"showdown_win_rate_pct"`
+	ShowdownBB      float64 `json:"showdown_bb"`
+	NonShowdownBB   float64 `json:"non_showdown_bb"`
+	MaxPotBB        float64 `json:"max_pot_bb"`
+	BigPots         int     `json:"big_pots_50bb_plus"`
+}
+
+// PositionSummary holds position-specific statistics
+type PositionSummary struct {
+	Name      string  `json:"name"`
+	Hands     int     `json:"hands"`
+	NetBB     float64 `json:"net_bb"`
+	BBPerHand float64 `json:"bb_per_hand"`
+	BB100     float64 `json:"bb_per_100"`
+	WinRate   float64 `json:"win_rate_pct"`
+}
+
+// StreetSummary holds street-specific statistics
+type StreetSummary struct {
+	HandsEnded int     `json:"hands_ended"`
+	NetBB      float64 `json:"net_bb"`
+	BBPerHand  float64 `json:"bb_per_hand"`
+	Wins       int     `json:"wins"`
+	Losses     int     `json:"losses"`
+}
+
+// CategorySummary holds hand category statistics
+type CategorySummary struct {
+	Hands        int     `json:"hands"`
+	NetBB        float64 `json:"net_bb"`
+	BBPerHand    float64 `json:"bb_per_hand"`
+	Wins         int     `json:"wins"`
+	ShowdownWins int     `json:"showdown_wins"`
+	ShowdownRate float64 `json:"showdown_rate_pct"`
 }
 
 func newComplexBot(logger zerolog.Logger) *complexBot {
@@ -65,6 +128,9 @@ func newComplexBot(logger zerolog.Logger) *complexBot {
 		logger:    logger.With().Str("bot_id", id).Logger(),
 		opponents: make(map[string]*opponentProfile),
 		rng:       rand.New(rand.NewSource(time.Now().UnixNano())),
+		stats:     statistics.NewStatistics(10), // Default to 10 chip big blind, will update when we get game info
+		handNum:   0,
+		bigBlind:  10, // Default big blind
 	}
 }
 
@@ -106,7 +172,7 @@ func (b *complexBot) run() error {
 }
 
 func (b *complexBot) handle(data []byte) error {
-	if b.tryHandStart(data) || b.tryGameUpdate(data) || b.tryPlayerAction(data) || b.tryStreetChange(data) {
+	if b.tryHandStart(data) || b.tryGameUpdate(data) || b.tryPlayerAction(data) || b.tryStreetChange(data) || b.tryHandResult(data) {
 		return nil
 	}
 
@@ -126,15 +192,31 @@ func (b *complexBot) tryHandStart(data []byte) bool {
 	if err := protocol.Unmarshal(data, &start); err != nil || start.Type != protocol.TypeHandStart {
 		return false
 	}
+	b.handNum++
+	// Update big blind if provided (it should be in every hand)
+	if start.BigBlind > 0 {
+		b.bigBlind = start.BigBlind
+		// Update statistics package with new big blind if it changed
+		if b.handNum == 1 {
+			b.stats = statistics.NewStatistics(b.bigBlind)
+		}
+	}
 	b.state.HandID = start.HandID
 	b.state.Seat = start.YourSeat
 	b.state.Players = start.Players
 	b.state.Chips = start.Players[start.YourSeat].Chips
+	b.state.StartingChips = start.Players[start.YourSeat].Chips
 	b.state.HoleCards = start.HoleCards
 	b.state.Board = nil
 	b.state.Street = "preflop"
 	b.state.Button = start.Button
 	b.state.BetsThisHand = 0
+	b.state.HandNum = b.handNum
+	// Reset action tracking
+	b.state.PreflopAction = ""
+	b.state.FlopAction = ""
+	b.state.TurnAction = ""
+	b.state.RiverAction = ""
 
 	// Count active players
 	active := 0
@@ -217,6 +299,80 @@ func (b *complexBot) tryStreetChange(data []byte) bool {
 	return true
 }
 
+func (b *complexBot) tryHandResult(data []byte) bool {
+	var result protocol.HandResult
+	if err := protocol.Unmarshal(data, &result); err != nil || result.Type != protocol.TypeHandResult {
+		return false
+	}
+
+	// Calculate net result for this hand
+	netChips := b.state.Chips - b.state.StartingChips
+	netBB := float64(netChips) / float64(b.bigBlind)
+
+	// Check if we won
+	won := false
+	wonAtShowdown := false
+	for _, winner := range result.Winners {
+		if winner.Name == b.id {
+			won = true
+			if len(result.Showdown) > 0 {
+				wonAtShowdown = true
+			}
+			break
+		}
+	}
+
+	// Calculate button distance
+	buttonDist := b.calculateButtonDistance()
+
+	// Categorize hole cards
+	handCategory := b.categorizeHoleCards()
+
+	// Get final street
+	finalStreet := b.determineFinalStreet()
+
+	// Count opponents
+	numOpponents := 0
+	for _, p := range b.state.Players {
+		if p.Name != b.id && !p.Folded {
+			numOpponents++
+		}
+	}
+
+	// Create hand result for statistics
+	handResult := statistics.HandResult{
+		HandNum:        b.state.HandNum,
+		NetBB:          netBB,
+		Position:       b.state.Seat,
+		ButtonDistance: buttonDist,
+		WentToShowdown: len(result.Showdown) > 0,
+		WonAtShowdown:  wonAtShowdown,
+		FinalPotBB:     float64(b.state.Pot) / float64(b.bigBlind),
+		StreetReached:  finalStreet,
+		HoleCards:      strings.Join(b.state.HoleCards, ""),
+		HandCategory:   handCategory,
+		PreflopAction:  b.state.PreflopAction,
+		FlopAction:     b.state.FlopAction,
+		TurnAction:     b.state.TurnAction,
+		RiverAction:    b.state.RiverAction,
+		NumOpponents:   numOpponents,
+	}
+
+	// Add to statistics
+	if err := b.stats.Add(handResult); err != nil {
+		b.logger.Error().Err(err).Msg("failed to add hand result to statistics")
+	}
+
+	b.logger.Info().
+		Float64("net_bb", netBB).
+		Bool("won", won).
+		Bool("showdown", len(result.Showdown) > 0).
+		Str("street", finalStreet).
+		Msg("hand completed")
+
+	return true
+}
+
 func (b *complexBot) tryGameCompleted(data []byte) (bool, error) {
 	var completed protocol.GameCompleted
 	if err := protocol.Unmarshal(data, &completed); err != nil || completed.Type != protocol.TypeGameCompleted {
@@ -233,6 +389,12 @@ func (b *complexBot) tryGameCompleted(data []byte) (bool, error) {
 		MyStats        *protocol.GameCompletedPlayer  `json:"my_stats"`
 		AllPlayers     []protocol.GameCompletedPlayer `json:"all_players"`
 		Won            bool                           `json:"won"`
+
+		// Detailed statistics
+		Statistics        *StatsSummary              `json:"statistics"`
+		PositionStats     map[string]PositionSummary `json:"position_stats"`
+		StreetStats       map[string]StreetSummary   `json:"street_stats"`
+		HandCategoryStats map[string]CategorySummary `json:"hand_category_stats"`
 	}
 
 	var myStats *protocol.GameCompletedPlayer
@@ -261,18 +423,120 @@ func (b *complexBot) tryGameCompleted(data []byte) (bool, error) {
 		}
 	}
 
+	// Compile statistics
+	statsSummary := &StatsSummary{}
+	hands := b.stats.Hands()
+	if hands > 0 {
+		hands, sumBB, winningHands, _, showdownWins, nonShowdownWins, showdownLosses, showdownBB, nonShowdownBB, maxPotBB, bigPots, _, _, _ := b.stats.GetStats()
+		low, high := b.stats.ConfidenceInterval95()
+		winRate := 0.0
+		if hands > 0 {
+			winRate = float64(winningHands) / float64(hands) * 100
+		}
+		showdownWinRate := 0.0
+		totalShowdowns := showdownWins + showdownLosses
+		if totalShowdowns > 0 {
+			showdownWinRate = float64(showdownWins) / float64(totalShowdowns) * 100
+		}
+
+		statsSummary = &StatsSummary{
+			Hands:           hands,
+			NetBB:           sumBB,
+			BB100:           b.stats.BB100(),
+			Mean:            b.stats.Mean(),
+			Median:          b.stats.Median(),
+			StdDev:          b.stats.StdDev(),
+			CI95Low:         low,
+			CI95High:        high,
+			WinningHands:    winningHands,
+			WinRate:         winRate,
+			ShowdownWins:    showdownWins,
+			NonShowdownWins: nonShowdownWins,
+			ShowdownWinRate: showdownWinRate,
+			ShowdownBB:      showdownBB,
+			NonShowdownBB:   nonShowdownBB,
+			MaxPotBB:        maxPotBB,
+			BigPots:         bigPots,
+		}
+	}
+
+	// Position statistics
+	positionStats := make(map[string]PositionSummary)
+	buttonDistResults := b.stats.ButtonDistanceResults()
+	for dist := 0; dist < 6; dist++ {
+		bd := buttonDistResults[dist]
+		if bd.Hands > 0 {
+			posMean := b.stats.ButtonDistanceMean(dist)
+			winRate := 0.0
+			if bd.Hands > 0 {
+				winRate = float64(bd.Wins) / float64(bd.Hands) * 100
+			}
+			positionStats[statistics.GetPositionName(dist)] = PositionSummary{
+				Name:      statistics.GetPositionName(dist),
+				Hands:     bd.Hands,
+				NetBB:     bd.SumBB,
+				BBPerHand: posMean,
+				BB100:     posMean * 100,
+				WinRate:   winRate,
+			}
+		}
+	}
+
+	// Street statistics
+	streetStats := make(map[string]StreetSummary)
+	for street, stat := range b.stats.StreetStats() {
+		if stat.HandsReached > 0 {
+			streetStats[street] = StreetSummary{
+				HandsEnded: stat.HandsReached,
+				NetBB:      stat.NetBB,
+				BBPerHand:  stat.NetBB / float64(stat.HandsReached),
+				Wins:       stat.Wins,
+				Losses:     stat.Losses,
+			}
+		}
+	}
+
+	// Hand category statistics
+	categoryStats := make(map[string]CategorySummary)
+	for cat, stat := range b.stats.CategoryStats() {
+		if stat.Hands > 0 {
+			showdownRate := 0.0
+			if stat.WentToShowdown > 0 {
+				showdownRate = float64(stat.WentToShowdown) / float64(stat.Hands) * 100
+			}
+			categoryStats[cat] = CategorySummary{
+				Hands:        stat.Hands,
+				NetBB:        stat.NetBB,
+				BBPerHand:    stat.NetBB / float64(stat.Hands),
+				Wins:         stat.Wins,
+				ShowdownWins: stat.ShowdownWins,
+				ShowdownRate: showdownRate,
+			}
+		}
+	}
+
 	results := BotResults{
-		Timestamp:      time.Now(),
-		BotID:          b.id,
-		GameID:         completed.GameID,
-		HandsCompleted: completed.HandsCompleted,
-		Seed:           completed.Seed,
-		MyStats:        myStats,
-		AllPlayers:     completed.Players,
-		Won:            won,
+		Timestamp:         time.Now(),
+		BotID:             b.id,
+		GameID:            completed.GameID,
+		HandsCompleted:    completed.HandsCompleted,
+		Seed:              completed.Seed,
+		MyStats:           myStats,
+		AllPlayers:        completed.Players,
+		Won:               won,
+		Statistics:        statsSummary,
+		PositionStats:     positionStats,
+		StreetStats:       streetStats,
+		HandCategoryStats: categoryStats,
 	}
 
 	// Write to JSON file
+	// Print summary to console
+	if b.stats.Hands() > 0 {
+		fmt.Println(b.stats.Summary())
+	}
+
+	// Save detailed results
 	filename := fmt.Sprintf("complex-bot-results-%s-%d.json", b.id, time.Now().Unix())
 	file, err := os.Create(filename)
 	if err != nil {
@@ -298,6 +562,20 @@ func (b *complexBot) respond(req protocol.ActionRequest) error {
 	potOdds := b.calculatePotOdds(req)
 
 	action, amount := b.makeStrategicDecision(req, handStrength, position, potOdds)
+
+	// Track the action for statistics
+	switch action {
+	case "fold":
+		b.trackAction("fold")
+	case "call":
+		if req.ToCall == 0 {
+			b.trackAction("check")
+		} else {
+			b.trackAction("call")
+		}
+	case "raise", "allin":
+		b.trackAction("raise")
+	}
 
 	b.logger.Debug().
 		Float64("hand_strength", handStrength).
@@ -591,6 +869,100 @@ func cardRank(card string) int {
 	default:
 		return 0
 	}
+}
+
+// trackAction records the action taken for statistics
+func (b *complexBot) trackAction(action string) {
+	switch b.state.Street {
+	case "preflop":
+		b.state.PreflopAction = action
+	case "flop":
+		b.state.FlopAction = action
+	case "turn":
+		b.state.TurnAction = action
+	case "river":
+		b.state.RiverAction = action
+	}
+}
+
+// calculateButtonDistance returns distance from button (0=button, 1=CO, etc)
+func (b *complexBot) calculateButtonDistance() int {
+	numPlayers := 0
+	for _, p := range b.state.Players {
+		if p.Chips > 0 {
+			numPlayers++
+		}
+	}
+
+	if numPlayers == 0 {
+		return 0
+	}
+
+	distance := b.state.Seat - b.state.Button
+	if distance <= 0 {
+		distance += numPlayers
+	}
+	return distance - 1
+}
+
+// categorizeHoleCards categorizes preflop hand strength
+func (b *complexBot) categorizeHoleCards() string {
+	if len(b.state.HoleCards) != 2 {
+		return "unknown"
+	}
+
+	h1, h2 := b.state.HoleCards[0], b.state.HoleCards[1]
+	r1, r2 := cardRank(h1), cardRank(h2)
+	suited := h1[1] == h2[1]
+
+	if r1 > r2 {
+		r1, r2 = r2, r1 // Ensure r1 <= r2
+	}
+
+	// Premium hands
+	if (r1 >= 12 && r2 >= 12) || // AA, KK, QQ, AK
+		(r1 == 11 && r2 == 11) { // JJ
+		return "Premium"
+	}
+
+	// Strong hands
+	if (r1 >= 10 && r2 >= 10) || // TT+, AQ, AJ
+		(r1 >= 12 && r2 >= 10) ||
+		(r1 == 9 && r2 == 9) || // 99
+		(suited && r1 >= 11 && r2 >= 11) { // KQs, QJs
+		return "Strong"
+	}
+
+	// Medium hands
+	if (r1 >= 7 && r2 >= 7) || // 77+
+		(r1 >= 12 && r2 >= 8) || // A9+
+		(suited && r1 >= 9 && r2 >= 10) || // Suited connectors/broadways
+		(r1 >= 10 && r2 >= 11) { // KJ, QJ, JT
+		return "Medium"
+	}
+
+	// Weak playable hands
+	if (r1 >= 5 && r2 >= 5) || // 55+
+		(suited && math.Abs(float64(r1-r2)) <= 2) || // Suited connectors
+		(r1 >= 12) { // Any ace
+		return "Weak"
+	}
+
+	return "Trash"
+}
+
+// determineFinalStreet returns the furthest street reached
+func (b *complexBot) determineFinalStreet() string {
+	if b.state.RiverAction != "" || len(b.state.Board) >= 5 {
+		return "River"
+	}
+	if b.state.TurnAction != "" || len(b.state.Board) >= 4 {
+		return "Turn"
+	}
+	if b.state.FlopAction != "" || len(b.state.Board) >= 3 {
+		return "Flop"
+	}
+	return "Preflop"
 }
 
 func main() {

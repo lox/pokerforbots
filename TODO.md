@@ -219,7 +219,17 @@ TODO follow-up:
 - [ ] Emit aggregated results (mean BB/hand, CI) per simulation session
 - [ ] **Tests:** integration covering multi-session scheduling and cleanup
 
-### 16. Optional Auth & Identity Enhancements (Future)
+### 16. Optional Server-Side Statistics ✅
+- [x] Create StatsCollector interface with Null and Full implementations
+- [x] Extend game configuration with `EnableStats` and `StatsDepth` flags
+- [x] Move statistics package to server with memory management controls
+- [x] Enhance HandRunner to collect detailed stats when enabled
+- [x] Wire StatsCollector integration with pool.RecordHandOutcome
+- [x] Update GameCompleted protocol with optional detailed stats
+- [x] Add memory management (circular buffer with automatic reset)
+- [x] **Tests:** comprehensive unit tests with benchmarks showing zero overhead when disabled
+
+### 17. Optional Auth & Identity Enhancements (Future)
 - [ ] Extend `connect` to accept `auth_token`; wire minimal HMAC validator (behind flag)
 - [ ] Track bot identity metadata without persistent bankroll (ephemeral stacks per hand remain default)
 - [ ] Gate simulation control behind auth checks
