@@ -24,6 +24,7 @@ tasks:
       - go build -o dist/simulate cmd/simulate/main.go
       - go build -o dist/spawn-bots cmd/spawn-bots/main.go
       - go build -o dist/client cmd/client/main.go
+      - go build -o dist/benchmark cmd/benchmark/main.go
     sources:
       - '**/*.go'
     generates:
@@ -32,6 +33,7 @@ tasks:
       - dist/simulate
       - dist/spawn-bots
       - dist/client
+      - dist/benchmark
 
   server:
     desc: Run the poker server
@@ -74,7 +76,13 @@ tasks:
       - bin/golangci-lint fmt ./...
 
   bench:
-    desc: Run benchmarks
+    desc: Run WebSocket performance benchmark
+    cmds:
+      - go run ./cmd/benchmark {{.CLI_ARGS}}
+    silent: false
+
+  bench:go:
+    desc: Run Go test benchmarks
     cmds:
       - go test -bench=. -benchmem ./...
 

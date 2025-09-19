@@ -1,4 +1,4 @@
-# Claude Project Context
+# AI Project Context
 
 ## Project Overview
 
@@ -8,10 +8,11 @@ PokerForBots is a high-performance poker server designed specifically for bot-vs
 
 Please refer to these documents for context:
 
-1. **[docs/design.md](docs/design.md)** - Complete system design and architecture
-2. **[docs/websocket-protocol.md](docs/websocket-protocol.md)** - Binary msgpack protocol specification
-3. **[docs/poker-rules.md](docs/poker-rules.md)** - No-limit Hold'em rules reference
-4. **[TODO.md](TODO.md)** - Implementation roadmap with test requirements
+1. [docs/development-workflow.md](docs/development-workflow.md) - Developing the server and the bots in examples
+2. **[docs/design.md](docs/design.md)** - Complete system design and architecture
+3. **[docs/websocket-protocol.md](docs/websocket-protocol.md)** - Binary msgpack protocol specification
+4. **[docs/poker-rules.md](docs/poker-rules.md)** - No-limit Hold'em rules reference
+5. **[TODO.md](TODO.md)** - Implementation roadmap with test requirements
 
 ## Performance Considerations
 
@@ -37,11 +38,7 @@ Use conventional commits and commit after each numbered milestone in TODO.md:
 - After 1. Project Setup → `feat: initial project setup with dependencies`
 - After 2. Protocol Layer → `feat: add msgpack protocol definitions`
 - After 3. Card & Game Logic → `feat: implement core game logic with bit-packed cards`
-- After 4. Server Core → `feat: add websocket server and bot management`
-- After 5. Hand Execution → `feat: implement hand runner and game integration`
-- After 6. Test Bots → `feat: add test bot implementations`
-- After 7. Demo Runner → `feat: add demo script and statistics`
-- After 8. Integration Testing → `test: add integration and load tests`
+etc.
 
 Each commit should include all tests for that milestone.
 

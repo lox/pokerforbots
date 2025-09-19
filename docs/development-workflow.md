@@ -4,9 +4,7 @@ This guide explains how to run a development loop for testing and improving poke
 
 ## Prerequisites
 
-- Go 1.21+ installed
-- tmux installed (`brew install tmux` on macOS)
-- Project built (`task build`)
+Uses CashApp's Hermit, `source bin/activate-hermit` or call things directly from bin.
 
 ## Quick Start
 

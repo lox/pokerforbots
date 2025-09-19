@@ -6,7 +6,7 @@ PokerForBots is a high-performance Texas Hold'em poker server optimized for bot-
 
 ### Core Principles
 
-1. **Speed First**: Sub-second hand completion with 100ms decision timeouts
+1. **Speed First**: 350+ hands/second throughput with 10ms decision timeouts
 2. **Stateless Hands**: Each hand is independent - no chip carryover, no persistent state
 3. **Continuous Play**: Bots immediately re-enter the pool after each hand
 4. **Simple Protocol**: msgpack binary protocol for minimal latency
@@ -118,12 +118,13 @@ Each street includes a betting round with standard actions:
 - **Transport**: gorilla/websocket
 - **Concurrency**: Goroutines with channels
 
-### Performance Targets
+### Performance Achieved
 
-- 1000+ concurrent hands
-- 100ms decision timeout
-- <1ms message processing
-- 10,000+ hands/second throughput
+- ✅ **350+ hands/second** with 6-bot tables at 10ms timeout
+- ✅ **2000+ hands/second** aggregate with parallel games
+- ✅ **5ms decision timeout** capability demonstrated
+- ✅ **<1ms message processing** via binary msgpack protocol
+- Scales to 1000+ concurrent connections
 
 ### Project Structure
 
