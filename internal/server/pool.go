@@ -464,6 +464,11 @@ func (p *BotPool) HandsRemaining() uint64 {
 	return p.handLimit - completed
 }
 
+// Done returns a channel that will be closed when the pool stops (hand limit reached or explicitly stopped)
+func (p *BotPool) Done() <-chan struct{} {
+	return p.stopCh
+}
+
 // IncrementTimeoutCounter increments the timeout counter
 func (p *BotPool) IncrementTimeoutCounter() {
 	atomic.AddUint64(&p.timeoutCounter, 1)

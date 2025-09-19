@@ -118,7 +118,18 @@ func main() {
 		serverErr <- srv.Start(cli.Addr)
 	}()
 
-	// Wait for either server error or interrupt signal
+	// Monitor for game completion if hand limit is set on default game
+	var gameCompleteNotifier <-chan struct{}
+	if cli.Hands > 0 {
+		// Server will automatically shut down when default game reaches hand limit
+		// This is useful for profiling and benchmarking scenarios
+		gameCompleteNotifier = srv.DefaultGameDone()
+		if gameCompleteNotifier != nil {
+			logger.Info().Uint64("hand_limit", cli.Hands).Msg("Will exit when default game completes")
+		}
+	}
+
+	// Wait for server error, interrupt signal, or game completion
 	select {
 	case err := <-serverErr:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -126,6 +137,21 @@ func main() {
 		}
 	case sig := <-sigChan:
 		logger.Info().Str("signal", sig.String()).Msg("Received signal, shutting down gracefully...")
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Error().Err(err).Msg("Graceful shutdown failed")
+		}
+
+		if err := <-serverErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error().Err(err).Msg("Server exited with error")
+		} else {
+			logger.Info().Msg("Server shutdown complete")
+		}
+	case <-gameCompleteNotifier:
+		logger.Info().Msg("Default game completed, shutting down for profiling...")
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

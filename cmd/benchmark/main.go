@@ -23,6 +23,7 @@ type CLI struct {
 	Bots      int    `kong:"default='6',help='Number of WebSocket bots'"`
 	Hands     int    `kong:"default='50000',help='Number of hands to benchmark'"`
 	Port      string `kong:"default='0',help='Server port to use (0 for random port)'"`
+	ServerURL string `kong:"help='External server URL (if set, uses external server instead of starting embedded one)'"`
 	TimeoutMs int    `kong:"default='5',help='Decision timeout in milliseconds'"`
 	Debug     bool   `kong:"default='false',help='Show debug logs'"`
 }
@@ -47,70 +48,82 @@ func main() {
 	}
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).Level(level)
 
-	// Start embedded server
-	fmt.Print("Starting server...")
+	var serverURL string
+	var srv *server.Server
 
-	// Create optimized server configuration for benchmarking
-	seed := time.Now().UnixNano()
-	rng := rand.New(rand.NewSource(seed))
-	config := server.Config{
-		SmallBlind:       5,
-		BigBlind:         10,
-		StartChips:       1000,
-		Timeout:          time.Duration(cli.TimeoutMs) * time.Millisecond,
-		MinPlayers:       cli.Bots,
-		MaxPlayers:       cli.Bots,
-		RequirePlayer:    false,             // Don't require player role for benchmark
-		InfiniteBankroll: true,              // Prevent bots from running out of chips
-		HandLimit:        uint64(cli.Hands), // Set server to stop after target hands
-		Seed:             seed,
-		EnableStats:      false, // Disable for maximum performance
-	}
+	if cli.ServerURL != "" {
+		// Use external server
+		serverURL = cli.ServerURL
+		fmt.Printf("Using external server: %s\n", serverURL)
+	} else {
+		// Start embedded server
+		fmt.Print("Starting embedded server...")
 
-	srv := server.NewServerWithConfig(logger, rng, config)
+		// Create optimized server configuration for benchmarking
+		seed := time.Now().UnixNano()
+		rng := rand.New(rand.NewSource(seed))
+		config := server.Config{
+			SmallBlind:       5,
+			BigBlind:         10,
+			StartChips:       1000,
+			Timeout:          time.Duration(cli.TimeoutMs) * time.Millisecond,
+			MinPlayers:       cli.Bots,
+			MaxPlayers:       cli.Bots,
+			RequirePlayer:    false,             // Don't require player role for benchmark
+			InfiniteBankroll: true,              // Prevent bots from running out of chips
+			HandLimit:        uint64(cli.Hands), // Set server to stop after target hands
+			Seed:             seed,
+			EnableStats:      false, // Disable for maximum performance
+		}
 
-	// Create listener to get actual assigned port (supports port 0 for random)
-	listener, err := net.Listen("tcp", ":"+cli.Port)
-	if err != nil {
-		fmt.Printf("Failed to create listener: %v\n", err)
-		return
-	}
+		srv = server.NewServerWithConfig(logger, rng, config)
 
-	// Get the actual assigned port (important when using port 0)
-	actualPort := listener.Addr().(*net.TCPAddr).Port
-
-	// Start server in background using the listener
-	serverErr := make(chan error, 1)
-	go func() {
-		serverErr <- srv.Serve(listener)
-	}()
-
-	// Wait for server to be healthy
-	baseURL := fmt.Sprintf("http://localhost:%d", actualPort)
-	healthCtx, healthCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer healthCancel()
-
-	select {
-	case err := <-serverErr:
-		fmt.Printf("Failed to start server: %v\n", err)
-		return
-	case <-time.After(100 * time.Millisecond):
-		// Give server a moment to start, then check health
-		if err := server.WaitForHealthy(healthCtx, baseURL); err != nil {
-			fmt.Printf("Server not healthy: %v\n", err)
+		// Create listener to get actual assigned port (supports port 0 for random)
+		listener, err := net.Listen("tcp", ":"+cli.Port)
+		if err != nil {
+			fmt.Printf("Failed to create listener: %v\n", err)
 			return
 		}
+
+		// Get the actual assigned port (important when using port 0)
+		actualPort := listener.Addr().(*net.TCPAddr).Port
+
+		// Start server in background using the listener
+		serverErr := make(chan error, 1)
+		go func() {
+			serverErr <- srv.Serve(listener)
+		}()
+
+		// Wait for server to be healthy
+		baseURL := fmt.Sprintf("http://localhost:%d", actualPort)
+		healthCtx, healthCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer healthCancel()
+
+		select {
+		case err := <-serverErr:
+			fmt.Printf("Failed to start server: %v\n", err)
+			return
+		case <-time.After(100 * time.Millisecond):
+			// Give server a moment to start, then check health
+			if err := server.WaitForHealthy(healthCtx, baseURL); err != nil {
+				fmt.Printf("Server not healthy: %v\n", err)
+				return
+			}
+		}
+
+		// Set up server cleanup
+		defer func() {
+			if srv != nil {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				srv.Shutdown(shutdownCtx)
+			}
+		}()
+
+		serverURL = fmt.Sprintf("ws://localhost:%d/ws", actualPort)
+		fmt.Printf(" ✓ (port %d)\n", actualPort)
 	}
 
-	// Set up server cleanup
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		srv.Shutdown(shutdownCtx)
-	}()
-
-	serverURL := fmt.Sprintf("ws://localhost:%d/ws", actualPort)
-	fmt.Printf(" ✓ (port %d)\n", actualPort)
 	fmt.Printf("Config: Bots: %d, Hands: %d, Timeout: %dms\n\n", cli.Bots, cli.Hands, cli.TimeoutMs)
 
 	// Shared counter for completed hands

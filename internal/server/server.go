@@ -244,6 +244,15 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+// DefaultGameDone returns a channel that will be closed when the default game completes.
+// Returns nil if no default game exists.
+func (s *Server) DefaultGameDone() <-chan struct{} {
+	if s.pool != nil {
+		return s.pool.Done()
+	}
+	return nil
+}
+
 // handleWebSocket handles WebSocket connections from bots
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
