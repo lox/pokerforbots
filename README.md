@@ -22,6 +22,7 @@ task test
 - [Poker Rules](docs/poker-rules.md) - No-limit Hold'em rules implementation
 - [Operations Guide](docs/operations.md) - Running and monitoring the server
 - [Development Workflow](docs/development-workflow.md) - Developing the server and the bots in examples
+- [Go SDK](docs/sdk.md) - Simplified Go bot development
 
 ## Human CLI Client
 

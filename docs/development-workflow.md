@@ -61,13 +61,13 @@ tmux capture-pane -t poker-server -p | tail -20
 
 ```bash
 # Run the complex bot (it will auto-terminate when game completes)
-go run ./examples/complex
+go run ./sdk/examples/complex
 
 # Or run in background
-go run ./examples/complex &
+go run ./sdk/examples/complex &
 
 # With debug logging
-go run ./examples/complex --debug
+go run ./sdk/examples/complex --debug
 ```
 
 ### 4. Monitor Performance Metrics
@@ -238,7 +238,7 @@ for i in $(seq 1 $RUNS); do
   sleep 2
 
   # Run bot and wait for completion
-  go run ./examples/complex
+  go run ./sdk/examples/complex
 
   # Save results
   mv complex-bot-results-*.json results/run-$i.json
@@ -335,7 +335,7 @@ rm complex-bot-results-*.json
 
 # Kill stuck processes
 pkill -f "task server"
-pkill -f "examples/complex"
+pkill -f "sdk/examples/complex"
 ```
 
 ## Example Analysis Session
@@ -349,7 +349,7 @@ tmux new-session -d -s poker \
 curl -s http://localhost:8080/games | jq '.[0]'
 
 # 3. Run bot
-go run ./examples/complex
+go run ./sdk/examples/complex
 
 # 4. Check final stats
 cat complex-bot-results-*.json | jq '.all_players |

@@ -119,29 +119,29 @@ type HandResult struct {
 
 // GameCompletedPlayer summarizes a bot's performance during the game run.
 type GameCompletedPlayer struct {
-	BotID       string  `msg:"bot_id"`
-	DisplayName string  `msg:"display_name"`
-	Role        string  `msg:"role"`
-	Hands       int     `msg:"hands"`
-	NetChips    int64   `msg:"net_chips"`
-	AvgPerHand  float64 `msg:"avg_per_hand"`
-	TotalWon    int64   `msg:"total_won"`
-	TotalLost   int64   `msg:"total_lost"`
-	LastDelta   int     `msg:"last_delta"`
+	BotID       string  `msg:"bot_id" json:"bot_id"`
+	DisplayName string  `msg:"display_name" json:"display_name"`
+	Role        string  `msg:"role" json:"role"`
+	Hands       int     `msg:"hands" json:"hands"`
+	NetChips    int64   `msg:"net_chips" json:"net_chips"`
+	AvgPerHand  float64 `msg:"avg_per_hand" json:"avg_per_hand"`
+	TotalWon    int64   `msg:"total_won" json:"total_won"`
+	TotalLost   int64   `msg:"total_lost" json:"total_lost"`
+	LastDelta   int     `msg:"last_delta" json:"last_delta"`
 
 	// Optional detailed statistics (only when server has statistics enabled)
-	DetailedStats *PlayerDetailedStats `msg:"detailed_stats,omitempty"`
+	DetailedStats *PlayerDetailedStats `msg:"detailed_stats,omitempty" json:"detailed_stats,omitempty"`
 }
 
 // GameCompleted is sent when a game instance stops spawning new hands (e.g. hand limit reached).
 type GameCompleted struct {
-	Type           string                `msg:"type"`
-	GameID         string                `msg:"game_id"`
-	HandsCompleted uint64                `msg:"hands_completed"`
-	HandLimit      uint64                `msg:"hand_limit"`
-	Reason         string                `msg:"reason"`
-	Seed           int64                 `msg:"seed"`
-	Players        []GameCompletedPlayer `msg:"players"`
+	Type           string                `msg:"type" json:"type"`
+	GameID         string                `msg:"game_id" json:"game_id"`
+	HandsCompleted uint64                `msg:"hands_completed" json:"hands_completed"`
+	HandLimit      uint64                `msg:"hand_limit" json:"hand_limit"`
+	Reason         string                `msg:"reason" json:"reason"`
+	Seed           int64                 `msg:"seed" json:"seed"`
+	Players        []GameCompletedPlayer `msg:"players" json:"players"`
 }
 
 // Winner info
@@ -168,33 +168,33 @@ type Error struct {
 
 // PlayerDetailedStats contains comprehensive statistics for a bot (when enabled)
 type PlayerDetailedStats struct {
-	BB100             float64                        `msg:"bb_100"`
-	Mean              float64                        `msg:"mean"`
-	StdDev            float64                        `msg:"std_dev"`
-	WinRate           float64                        `msg:"win_rate"`
-	ShowdownWinRate   float64                        `msg:"showdown_win_rate"`
-	PositionStats     map[string]PositionStatSummary `msg:"position_stats,omitempty"`
-	StreetStats       map[string]StreetStatSummary   `msg:"street_stats,omitempty"`
-	HandCategoryStats map[string]CategoryStatSummary `msg:"hand_category_stats,omitempty"`
+	BB100             float64                        `msg:"bb_100" json:"bb_100"`
+	Mean              float64                        `msg:"mean" json:"mean"`
+	StdDev            float64                        `msg:"std_dev" json:"std_dev"`
+	WinRate           float64                        `msg:"win_rate" json:"win_rate"`
+	ShowdownWinRate   float64                        `msg:"showdown_win_rate" json:"showdown_win_rate"`
+	PositionStats     map[string]PositionStatSummary `msg:"position_stats,omitempty" json:"position_stats,omitempty"`
+	StreetStats       map[string]StreetStatSummary   `msg:"street_stats,omitempty" json:"street_stats,omitempty"`
+	HandCategoryStats map[string]CategoryStatSummary `msg:"hand_category_stats,omitempty" json:"hand_category_stats,omitempty"`
 }
 
 // PositionStatSummary contains position-specific statistics
 type PositionStatSummary struct {
-	Hands     int     `msg:"hands"`
-	NetBB     float64 `msg:"net_bb"`
-	BBPerHand float64 `msg:"bb_per_hand"`
+	Hands     int     `msg:"hands" json:"hands"`
+	NetBB     float64 `msg:"net_bb" json:"net_bb"`
+	BBPerHand float64 `msg:"bb_per_hand" json:"bb_per_hand"`
 }
 
 // StreetStatSummary contains street-specific statistics
 type StreetStatSummary struct {
-	HandsEnded int     `msg:"hands_ended"`
-	NetBB      float64 `msg:"net_bb"`
-	BBPerHand  float64 `msg:"bb_per_hand"`
+	HandsEnded int     `msg:"hands_ended" json:"hands_ended"`
+	NetBB      float64 `msg:"net_bb" json:"net_bb"`
+	BBPerHand  float64 `msg:"bb_per_hand" json:"bb_per_hand"`
 }
 
 // CategoryStatSummary contains hand category statistics
 type CategoryStatSummary struct {
-	Hands     int     `msg:"hands"`
-	NetBB     float64 `msg:"net_bb"`
-	BBPerHand float64 `msg:"bb_per_hand"`
+	Hands     int     `msg:"hands" json:"hands"`
+	NetBB     float64 `msg:"net_bb" json:"net_bb"`
+	BBPerHand float64 `msg:"bb_per_hand" json:"bb_per_hand"`
 }

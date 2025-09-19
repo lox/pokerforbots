@@ -1,23 +1,22 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"math"
 	"math/rand"
-	"net/url"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
 	"github.com/lox/pokerforbots/internal/server/statistics"
+	"github.com/lox/pokerforbots/sdk"
 	"github.com/rs/zerolog"
 )
 
@@ -61,7 +60,6 @@ type opponentProfile struct {
 // complexBot implements advanced poker strategy.
 type complexBot struct {
 	id        string
-	conn      *websocket.Conn
 	logger    zerolog.Logger
 	state     tableState
 	opponents map[string]*opponentProfile
@@ -134,64 +132,8 @@ func newComplexBot(logger zerolog.Logger) *complexBot {
 	}
 }
 
-func (b *complexBot) connect(serverURL string) error {
-	u, err := url.Parse(serverURL)
-	if err != nil {
-		return err
-	}
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
-	if err != nil {
-		return err
-	}
-	b.conn = conn
-
-	connect := &protocol.Connect{Type: protocol.TypeConnect, Name: b.id, Role: "player"}
-	payload, err := protocol.Marshal(connect)
-	if err != nil {
-		return err
-	}
-	return conn.WriteMessage(websocket.BinaryMessage, payload)
-}
-
-func (b *complexBot) run() error {
-	for {
-		msgType, data, err := b.conn.ReadMessage()
-		if err != nil {
-			return err
-		}
-		if msgType != websocket.BinaryMessage {
-			continue
-		}
-		if err := b.handle(data); err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			b.logger.Error().Err(err).Msg("handler error")
-		}
-	}
-}
-
-func (b *complexBot) handle(data []byte) error {
-	if b.tryHandStart(data) || b.tryGameUpdate(data) || b.tryPlayerAction(data) || b.tryStreetChange(data) || b.tryHandResult(data) {
-		return nil
-	}
-
-	var req protocol.ActionRequest
-	if err := protocol.Unmarshal(data, &req); err == nil && req.Type == protocol.TypeActionRequest {
-		return b.respond(req)
-	}
-
-	if handled, err := b.tryGameCompleted(data); handled {
-		return err
-	}
-	return nil
-}
-
-func (b *complexBot) tryHandStart(data []byte) bool {
-	var start protocol.HandStart
-	if err := protocol.Unmarshal(data, &start); err != nil || start.Type != protocol.TypeHandStart {
-		return false
-	}
+// SDK Handler interface implementation
+func (b *complexBot) OnHandStart(state *sdk.GameState, start protocol.HandStart) error {
 	b.handNum++
 	// Update big blind if provided (it should be in every hand)
 	if start.BigBlind > 0 {
@@ -228,17 +170,46 @@ func (b *complexBot) tryHandStart(data []byte) bool {
 	b.state.ActiveCount = active
 
 	b.logger.Info().
-		Strs("holes", start.HoleCards).
+		Strs("holes", state.HoleCards).
 		Int("position", b.getPosition()).
 		Msg("hand start")
-	return true
+	return nil
 }
 
-func (b *complexBot) tryGameUpdate(data []byte) bool {
-	var update protocol.GameUpdate
-	if err := protocol.Unmarshal(data, &update); err != nil || update.Type != protocol.TypeGameUpdate {
-		return false
+func (b *complexBot) OnActionRequest(state *sdk.GameState, req protocol.ActionRequest) (string, int, error) {
+	// Calculate hand strength and make strategic decision
+	handStrength := b.evaluateHandStrength()
+	position := b.getPosition()
+	potOdds := b.calculatePotOdds(req)
+
+	action, amount := b.makeStrategicDecision(req, handStrength, position, potOdds)
+
+	// Track the action for statistics
+	switch action {
+	case "fold":
+		b.trackAction("fold")
+	case "call":
+		if req.ToCall == 0 {
+			b.trackAction("check")
+		} else {
+			b.trackAction("call")
+		}
+	case "raise", "allin":
+		b.trackAction("raise")
 	}
+
+	b.logger.Debug().
+		Float64("hand_strength", handStrength).
+		Int("position", position).
+		Float64("pot_odds", potOdds).
+		Str("action", action).
+		Int("amount", amount).
+		Msg("decision")
+
+	return action, amount, nil
+}
+
+func (b *complexBot) OnGameUpdate(state *sdk.GameState, update protocol.GameUpdate) error {
 	b.state.Pot = update.Pot
 	b.state.Players = update.Players
 	if b.state.Seat >= 0 && b.state.Seat < len(update.Players) {
@@ -253,14 +224,10 @@ func (b *complexBot) tryGameUpdate(data []byte) bool {
 		}
 	}
 	b.state.ActiveCount = active
-	return true
+	return nil
 }
 
-func (b *complexBot) tryPlayerAction(data []byte) bool {
-	var action protocol.PlayerAction
-	if err := protocol.Unmarshal(data, &action); err != nil || action.Type != protocol.TypePlayerAction {
-		return false
-	}
+func (b *complexBot) OnPlayerAction(state *sdk.GameState, action protocol.PlayerAction) error {
 	b.state.LastAction = action
 
 	// Track opponent behavior
@@ -286,25 +253,16 @@ func (b *complexBot) tryPlayerAction(data []byte) bool {
 			prof.AggroFactor = float64(prof.RaiseCount) / float64(prof.CallCount)
 		}
 	}
-	return true
+	return nil
 }
 
-func (b *complexBot) tryStreetChange(data []byte) bool {
-	var street protocol.StreetChange
-	if err := protocol.Unmarshal(data, &street); err != nil || street.Type != protocol.TypeStreetChange {
-		return false
-	}
+func (b *complexBot) OnStreetChange(state *sdk.GameState, street protocol.StreetChange) error {
 	b.state.Street = street.Street
 	b.state.Board = street.Board
-	return true
+	return nil
 }
 
-func (b *complexBot) tryHandResult(data []byte) bool {
-	var result protocol.HandResult
-	if err := protocol.Unmarshal(data, &result); err != nil || result.Type != protocol.TypeHandResult {
-		return false
-	}
-
+func (b *complexBot) OnHandResult(state *sdk.GameState, result protocol.HandResult) error {
 	// Calculate net result for this hand
 	netChips := b.state.Chips - b.state.StartingChips
 	netBB := float64(netChips) / float64(b.bigBlind)
@@ -370,15 +328,10 @@ func (b *complexBot) tryHandResult(data []byte) bool {
 		Str("street", finalStreet).
 		Msg("hand completed")
 
-	return true
+	return nil
 }
 
-func (b *complexBot) tryGameCompleted(data []byte) (bool, error) {
-	var completed protocol.GameCompleted
-	if err := protocol.Unmarshal(data, &completed); err != nil || completed.Type != protocol.TypeGameCompleted {
-		return false, nil
-	}
-
+func (b *complexBot) OnGameCompleted(state *sdk.GameState, completed protocol.GameCompleted) error {
 	// Save results to JSON file
 	type BotResults struct {
 		Timestamp      time.Time                      `json:"timestamp"`
@@ -552,50 +505,7 @@ func (b *complexBot) tryGameCompleted(data []byte) (bool, error) {
 		file.Close()
 	}
 
-	return true, io.EOF
-}
-
-func (b *complexBot) respond(req protocol.ActionRequest) error {
-	// Calculate hand strength and make strategic decision
-	handStrength := b.evaluateHandStrength()
-	position := b.getPosition()
-	potOdds := b.calculatePotOdds(req)
-
-	action, amount := b.makeStrategicDecision(req, handStrength, position, potOdds)
-
-	// Track the action for statistics
-	switch action {
-	case "fold":
-		b.trackAction("fold")
-	case "call":
-		if req.ToCall == 0 {
-			b.trackAction("check")
-		} else {
-			b.trackAction("call")
-		}
-	case "raise", "allin":
-		b.trackAction("raise")
-	}
-
-	b.logger.Debug().
-		Float64("hand_strength", handStrength).
-		Int("position", position).
-		Float64("pot_odds", potOdds).
-		Str("action", action).
-		Int("amount", amount).
-		Msg("decision")
-
-	act := protocol.Action{
-		Type:   protocol.TypeAction,
-		Action: action,
-		Amount: amount,
-	}
-
-	payload, err := protocol.Marshal(&act)
-	if err != nil {
-		return err
-	}
-	return b.conn.WriteMessage(websocket.BinaryMessage, payload)
+	return io.EOF
 }
 
 func (b *complexBot) evaluateHandStrength() float64 {
@@ -605,8 +515,8 @@ func (b *complexBot) evaluateHandStrength() float64 {
 
 	// Parse hole cards
 	h1, h2 := b.state.HoleCards[0], b.state.HoleCards[1]
-	r1, r2 := cardRank(h1), cardRank(h2)
-	suited := h1[1] == h2[1]
+	r1, r2 := sdk.CardRank(h1), sdk.CardRank(h2)
+	suited := sdk.IsSuited(h1, h2)
 
 	// Pre-flop strength calculation
 	if b.state.Street == "preflop" {
@@ -653,7 +563,7 @@ func (b *complexBot) evaluateHandStrength() float64 {
 
 	// Check for pairs with board
 	for _, boardCard := range b.state.Board {
-		br := cardRank(boardCard)
+		br := sdk.CardRank(boardCard)
 		if br == r1 || br == r2 {
 			strength += 0.2
 		}
@@ -835,42 +745,6 @@ func (b *complexBot) getOrCreateProfile(name string) *opponentProfile {
 	return prof
 }
 
-func cardRank(card string) int {
-	if len(card) < 1 {
-		return 0
-	}
-	switch card[0] {
-	case '2':
-		return 2
-	case '3':
-		return 3
-	case '4':
-		return 4
-	case '5':
-		return 5
-	case '6':
-		return 6
-	case '7':
-		return 7
-	case '8':
-		return 8
-	case '9':
-		return 9
-	case 'T':
-		return 10
-	case 'J':
-		return 11
-	case 'Q':
-		return 12
-	case 'K':
-		return 13
-	case 'A':
-		return 14
-	default:
-		return 0
-	}
-}
-
 // trackAction records the action taken for statistics
 func (b *complexBot) trackAction(action string) {
 	switch b.state.Street {
@@ -912,8 +786,8 @@ func (b *complexBot) categorizeHoleCards() string {
 	}
 
 	h1, h2 := b.state.HoleCards[0], b.state.HoleCards[1]
-	r1, r2 := cardRank(h1), cardRank(h2)
-	suited := h1[1] == h2[1]
+	r1, r2 := sdk.CardRank(h1), sdk.CardRank(h2)
+	suited := sdk.IsSuited(h1, h2)
 
 	if r1 > r2 {
 		r1, r2 = r2, r1 // Ensure r1 <= r2
@@ -977,21 +851,26 @@ func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).Level(level).With().Timestamp().Logger()
 
-	bot := newComplexBot(logger)
-	if err := bot.connect(*serverURL); err != nil {
+	complexBot := newComplexBot(logger)
+	bot := sdk.New(complexBot.id, complexBot, logger)
+
+	if err := bot.Connect(*serverURL); err != nil {
 		logger.Fatal().Err(err).Msg("connect failed")
 	}
 	logger.Info().Msg("complex bot connected")
 
+	// Handle shutdown gracefully
+	ctx, cancel := context.WithCancel(context.Background())
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 
 	runErr := make(chan error, 1)
-	go func() { runErr <- bot.run() }()
+	go func() { runErr <- bot.Run(ctx) }()
 
 	select {
 	case <-interrupt:
 		logger.Info().Msg("shutting down")
+		cancel()
 	case err := <-runErr:
 		if err != nil {
 			logger.Error().Err(err).Msg("run error")

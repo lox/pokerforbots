@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
-	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
 	"github.com/lox/pokerforbots/internal/server"
+	"github.com/lox/pokerforbots/sdk"
 	"github.com/rs/zerolog"
 )
 
@@ -133,22 +133,24 @@ func main() {
 
 	// Create bots
 	fmt.Printf("Starting %d bots...\n", cli.Bots)
-	bots := make([]*benchBot, cli.Bots)
+	bots := make([]*sdk.Bot, cli.Bots)
 	var wg sync.WaitGroup
 
 	for i := 0; i < cli.Bots; i++ {
 		id := fmt.Sprintf("bench-%03d", i)
-		bot, err := newBenchBot(id, serverURL, logger, &handCount)
-		if err != nil {
-			fmt.Printf("Failed to create bot %s: %v\n", id, err)
+		benchBot := newBenchBot(id, logger, &handCount)
+		bot := sdk.New(id, benchBot, logger)
+
+		if err := bot.Connect(serverURL); err != nil {
+			fmt.Printf("Failed to connect bot %s: %v\n", id, err)
 			return
 		}
 		bots[i] = bot
 
 		wg.Add(1)
-		go func(b *benchBot) {
+		go func(b *sdk.Bot) {
 			defer wg.Done()
-			b.run(ctx)
+			b.Run(ctx)
 		}(bot)
 	}
 
@@ -209,101 +211,41 @@ done:
 
 type benchBot struct {
 	id      string
-	conn    *websocket.Conn
 	logger  zerolog.Logger
 	rng     *rand.Rand
 	counter *int64 // Shared counter for hands completed
 }
 
-func newBenchBot(id string, serverURL string, logger zerolog.Logger, counter *int64) (*benchBot, error) {
-	conn, _, err := websocket.DefaultDialer.Dial(serverURL, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	bot := &benchBot{
+func newBenchBot(id string, logger zerolog.Logger, counter *int64) *benchBot {
+	return &benchBot{
 		id:      id,
-		conn:    conn,
 		logger:  logger.With().Str("bot_id", id).Logger(),
 		rng:     rand.New(rand.NewSource(rand.Int63())),
 		counter: counter,
 	}
-
-	// Send connect message
-	connect := &protocol.Connect{
-		Type: protocol.TypeConnect,
-		Name: id,
-		Role: "player",
-	}
-	payload, err := protocol.Marshal(connect)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-	if err := conn.WriteMessage(websocket.BinaryMessage, payload); err != nil {
-		conn.Close()
-		return nil, err
-	}
-
-	return bot, nil
 }
 
-func (b *benchBot) run(ctx context.Context) {
-	defer b.conn.Close()
+// SDK Handler interface implementation
+func (b *benchBot) OnHandStart(*sdk.GameState, protocol.HandStart) error       { return nil }
+func (b *benchBot) OnGameUpdate(*sdk.GameState, protocol.GameUpdate) error     { return nil }
+func (b *benchBot) OnPlayerAction(*sdk.GameState, protocol.PlayerAction) error { return nil }
+func (b *benchBot) OnStreetChange(*sdk.GameState, protocol.StreetChange) error { return nil }
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		// Set read timeout to avoid hanging
-		b.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-
-		msgType, data, err := b.conn.ReadMessage()
-		if err != nil {
-			// Connection closed or timeout - server probably finished
-			return
-		}
-		if msgType != websocket.BinaryMessage {
-			continue
-		}
-
-		// Handle action requests
-		var req protocol.ActionRequest
-		if err := protocol.Unmarshal(data, &req); err == nil && req.Type == protocol.TypeActionRequest {
-			action := b.pickAction(req)
-			resp, err := protocol.Marshal(&action)
-			if err != nil {
-				continue
-			}
-			if err := b.conn.WriteMessage(websocket.BinaryMessage, resp); err != nil {
-				return
-			}
-			continue
-		}
-
-		// Check for hand result to count completed hands
-		var result protocol.HandResult
-		if err := protocol.Unmarshal(data, &result); err == nil && result.Type == protocol.TypeHandResult {
-			// Only the first bot increments to avoid double-counting
-			if b.id == "bench-000" {
-				atomic.AddInt64(b.counter, 1)
-			}
-		}
-
-		// Check for game completion
-		var gameComplete protocol.GameCompleted
-		if err := protocol.Unmarshal(data, &gameComplete); err == nil && gameComplete.Type == protocol.TypeGameCompleted {
-			return
-		}
+func (b *benchBot) OnHandResult(state *sdk.GameState, result protocol.HandResult) error {
+	// Only the first bot increments to avoid double-counting
+	if b.id == "bench-000" {
+		atomic.AddInt64(b.counter, 1)
 	}
+	return nil
 }
 
-func (b *benchBot) pickAction(req protocol.ActionRequest) protocol.Action {
+func (b *benchBot) OnGameCompleted(*sdk.GameState, protocol.GameCompleted) error {
+	return nil
+}
+
+func (b *benchBot) OnActionRequest(state *sdk.GameState, req protocol.ActionRequest) (string, int, error) {
 	if len(req.ValidActions) == 0 {
-		return protocol.Action{Type: protocol.TypeAction, Action: "fold"}
+		return "fold", 0, nil
 	}
 
 	// Simple strategy: mostly call/check, occasionally fold/raise
@@ -314,18 +256,18 @@ func (b *benchBot) pickAction(req protocol.ActionRequest) protocol.Action {
 	case r < 0.7:
 		for _, action := range req.ValidActions {
 			if action == "check" {
-				return protocol.Action{Type: protocol.TypeAction, Action: "check"}
+				return "check", 0, nil
 			}
 		}
 		for _, action := range req.ValidActions {
 			if action == "call" {
-				return protocol.Action{Type: protocol.TypeAction, Action: "call"}
+				return "call", 0, nil
 			}
 		}
 	case r < 0.9:
 		for _, action := range req.ValidActions {
 			if action == "fold" {
-				return protocol.Action{Type: protocol.TypeAction, Action: "fold"}
+				return "fold", 0, nil
 			}
 		}
 	default:
@@ -338,11 +280,11 @@ func (b *benchBot) pickAction(req protocol.ActionRequest) protocol.Action {
 				if amount < req.MinBet {
 					amount = req.MinBet
 				}
-				return protocol.Action{Type: protocol.TypeAction, Action: "raise", Amount: amount}
+				return "raise", amount, nil
 			}
 		}
 	}
 
 	// Fallback
-	return protocol.Action{Type: protocol.TypeAction, Action: req.ValidActions[0]}
+	return req.ValidActions[0], 0, nil
 }

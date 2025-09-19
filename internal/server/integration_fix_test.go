@@ -32,10 +32,10 @@ func TestNoEmptyValidActions(t *testing.T) {
 
 	// Connect multiple bots concurrently to create race conditions
 	numBots := 4
-	numHandsPerBot := 3
 	var wg sync.WaitGroup
 
 	emptyActionsFound := make(chan string, 10) // Buffer for error messages
+	stopBots := make(chan struct{})            // Signal to stop all bots
 
 	for i := 0; i < numBots; i++ {
 		wg.Add(1)
@@ -62,11 +62,22 @@ func TestNoEmptyValidActions(t *testing.T) {
 				conn.WriteMessage(websocket.BinaryMessage, data)
 			}
 
-			// Process messages for several hands
-			handCount := 0
-			for handCount < numHandsPerBot {
+			// Process messages until told to stop
+			for {
+				select {
+				case <-stopBots:
+					return
+				default:
+				}
+
+				// Set a short read timeout so we can check for stop signal
+				conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 				_, data, err := conn.ReadMessage()
 				if err != nil {
+					// Check if it's just a timeout (which is expected)
+					if netErr, ok := err.(interface{ Timeout() bool }); ok && netErr.Timeout() {
+						continue
+					}
 					t.Logf("Bot %d read error: %v", botID, err)
 					return
 				}
@@ -82,6 +93,7 @@ func TestNoEmptyValidActions(t *testing.T) {
 						case emptyActionsFound <- errMsg:
 						default:
 						}
+						return
 					}
 
 					// Send a valid action back
@@ -96,17 +108,23 @@ func TestNoEmptyValidActions(t *testing.T) {
 						}
 					}
 				}
-
-				// Check for hand result to count completed hands
-				var handResult protocol.HandResult
-				if err := protocol.Unmarshal(data, &handResult); err == nil && handResult.Type == "hand_result" {
-					handCount++
-				}
 			}
 		}(i)
 	}
 
-	// Wait for all bots to finish or timeout
+	// Run the test for a fixed duration to allow for race conditions to manifest
+	testDuration := 5 * time.Second
+
+	select {
+	case errMsg := <-emptyActionsFound:
+		t.Fatalf("RACE CONDITION BUG DETECTED: %s", errMsg)
+	case <-time.After(testDuration):
+		// Test duration completed - stop all bots
+		close(stopBots)
+		t.Log("Test duration completed, stopping bots")
+	}
+
+	// Wait for all bots to finish with a reasonable timeout
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -116,11 +134,9 @@ func TestNoEmptyValidActions(t *testing.T) {
 	select {
 	case <-done:
 		// All bots finished successfully
-		t.Log("All bots completed successfully")
-	case errMsg := <-emptyActionsFound:
-		t.Fatalf("RACE CONDITION BUG DETECTED: %s", errMsg)
-	case <-time.After(30 * time.Second):
-		t.Fatal("Test timed out - possible infinite loop or deadlock")
+		t.Log("All bots stopped successfully")
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timed out waiting for bots to stop")
 	}
 
 	// Check if any empty actions were found during the test

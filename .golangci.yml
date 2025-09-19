@@ -24,7 +24,7 @@ linters:
           disabled: true # Too strict for short variable names
         - name: exported
           disabled: true # Let's start without requiring docs for all exports
-    
+
     forbidigo:
       forbid:
         - pattern: ^log\.
@@ -40,7 +40,7 @@ linters:
       - path: ^cmd/
         linters:
           - forbidigo # Allow log and fmt.Print in cmd/ binaries
-      - path: ^examples/
+      - path: ^sdk/examples/
         linters:
           - forbidigo # Examples may use log/fmt for simplicity
 

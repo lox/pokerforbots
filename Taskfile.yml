@@ -20,18 +20,12 @@ tasks:
     cmds:
       - mkdir -p dist
       - go build -o dist/server cmd/server/main.go
-      - go build -o dist/testbot cmd/testbot/main.go
-      - go build -o dist/simulate cmd/simulate/main.go
-      - go build -o dist/spawn-bots cmd/spawn-bots/main.go
       - go build -o dist/client cmd/client/main.go
       - go build -o dist/benchmark cmd/benchmark/main.go
     sources:
       - '**/*.go'
     generates:
       - dist/server
-      - dist/testbot
-      - dist/simulate
-      - dist/spawn-bots
       - dist/client
       - dist/benchmark
 
@@ -49,11 +43,6 @@ tasks:
     desc: Run single hand simulation (no networking)
     cmds:
       - go run ./cmd/simulate {{.CLI_ARGS}}
-
-  spawn-bots:
-    desc: Spawn bots to connect to server (or spawn server)
-    cmds:
-      - go run ./cmd/spawn-bots {{.CLI_ARGS}}
 
   test:
     desc: Run all tests with race detector
@@ -85,18 +74,6 @@ tasks:
     desc: Run Go test benchmarks
     cmds:
       - go test -bench=. -benchmem ./...
-
-  demo:
-    desc: Run interactive demo with 6 bots for 50 hands
-    deps: [build]
-    cmds:
-      - ./dist/spawn-bots --spawn-server --bots 6 --hands 50
-
-  test-1000:
-    desc: Test 1000 hands completion
-    deps: [build]
-    cmds:
-      - ./dist/spawn-bots --spawn-server --bots 6 --hands 1000 --quiet
 
   clean:
     desc: Clean build artifacts
