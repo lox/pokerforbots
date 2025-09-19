@@ -18,16 +18,17 @@ type GameInstance struct {
 
 // GameSummary holds lightweight metadata for clients.
 type GameSummary struct {
-	ID            string `json:"id"`
-	SmallBlind    int    `json:"small_blind"`
-	BigBlind      int    `json:"big_blind"`
-	StartChips    int    `json:"start_chips"`
-	TimeoutMs     int    `json:"timeout_ms"`
-	MinPlayers    int    `json:"min_players"`
-	MaxPlayers    int    `json:"max_players"`
-	RequirePlayer bool   `json:"require_player"`
-	ConnectedBots int    `json:"connected_bots"`
-	HandsPlayed   uint64 `json:"hands_played"`
+	ID               string `json:"id"`
+	SmallBlind       int    `json:"small_blind"`
+	BigBlind         int    `json:"big_blind"`
+	StartChips       int    `json:"start_chips"`
+	TimeoutMs        int    `json:"timeout_ms"`
+	MinPlayers       int    `json:"min_players"`
+	MaxPlayers       int    `json:"max_players"`
+	RequirePlayer    bool   `json:"require_player"`
+	InfiniteBankroll bool   `json:"infinite_bankroll"`
+	ConnectedBots    int    `json:"connected_bots"`
+	HandsPlayed      uint64 `json:"hands_played"`
 }
 
 // GameManager tracks available games and their bot pools.
@@ -140,16 +141,17 @@ func (gm *GameManager) ListGames() []GameSummary {
 	summaries := make([]GameSummary, 0, len(gm.games))
 	for _, game := range gm.games {
 		summary := GameSummary{
-			ID:            game.ID,
-			SmallBlind:    game.Config.SmallBlind,
-			BigBlind:      game.Config.BigBlind,
-			StartChips:    game.Config.StartChips,
-			TimeoutMs:     int(game.Config.Timeout / time.Millisecond),
-			MinPlayers:    game.Config.MinPlayers,
-			MaxPlayers:    game.Config.MaxPlayers,
-			RequirePlayer: game.RequirePlayer,
-			ConnectedBots: game.Pool.BotCount(),
-			HandsPlayed:   game.Pool.HandCount(),
+			ID:               game.ID,
+			SmallBlind:       game.Config.SmallBlind,
+			BigBlind:         game.Config.BigBlind,
+			StartChips:       game.Config.StartChips,
+			TimeoutMs:        int(game.Config.Timeout / time.Millisecond),
+			MinPlayers:       game.Config.MinPlayers,
+			MaxPlayers:       game.Config.MaxPlayers,
+			RequirePlayer:    game.RequirePlayer,
+			InfiniteBankroll: game.Config.InfiniteBankroll,
+			ConnectedBots:    game.Pool.BotCount(),
+			HandsPlayed:      game.Pool.HandCount(),
 		}
 		summaries = append(summaries, summary)
 	}
@@ -177,21 +179,22 @@ func (gi *GameInstance) Stats() GameStats {
 	handLimit := gi.Pool.HandLimit()
 
 	stats := GameStats{
-		ID:             gi.ID,
-		SmallBlind:     gi.Config.SmallBlind,
-		BigBlind:       gi.Config.BigBlind,
-		StartChips:     gi.Config.StartChips,
-		TimeoutMs:      timeoutMs,
-		MinPlayers:     gi.Config.MinPlayers,
-		MaxPlayers:     gi.Config.MaxPlayers,
-		RequirePlayer:  gi.RequirePlayer,
-		HandsCompleted: handsCompleted,
-		HandLimit:      handLimit,
-		HandsRemaining: gi.Pool.HandsRemaining(),
-		Timeouts:       gi.Pool.TimeoutCount(),
-		HandsPerSecond: gi.Pool.HandsPerSecond(),
-		Seed:           gi.Config.Seed,
-		Players:        gi.Pool.PlayerStats(),
+		ID:               gi.ID,
+		SmallBlind:       gi.Config.SmallBlind,
+		BigBlind:         gi.Config.BigBlind,
+		StartChips:       gi.Config.StartChips,
+		TimeoutMs:        timeoutMs,
+		MinPlayers:       gi.Config.MinPlayers,
+		MaxPlayers:       gi.Config.MaxPlayers,
+		RequirePlayer:    gi.RequirePlayer,
+		InfiniteBankroll: gi.Config.InfiniteBankroll,
+		HandsCompleted:   handsCompleted,
+		HandLimit:        handLimit,
+		HandsRemaining:   gi.Pool.HandsRemaining(),
+		Timeouts:         gi.Pool.TimeoutCount(),
+		HandsPerSecond:   gi.Pool.HandsPerSecond(),
+		Seed:             gi.Config.Seed,
+		Players:          gi.Pool.PlayerStats(),
 	}
 
 	return stats

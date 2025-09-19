@@ -37,15 +37,16 @@ var (
 
 // Config holds server configuration
 type Config struct {
-	SmallBlind    int
-	BigBlind      int
-	StartChips    int
-	Timeout       time.Duration
-	MinPlayers    int
-	MaxPlayers    int
-	RequirePlayer bool
-	HandLimit     uint64
-	Seed          int64
+	SmallBlind       int
+	BigBlind         int
+	StartChips       int
+	Timeout          time.Duration
+	MinPlayers       int
+	MaxPlayers       int
+	RequirePlayer    bool
+	HandLimit        uint64
+	Seed             int64
+	InfiniteBankroll bool // When true, bots never run out of chips
 }
 
 // Server represents the poker server
@@ -363,17 +364,18 @@ func (s *Server) AddBootstrapNPCs(gameID string, specs []NPCSpec) {
 }
 
 type adminGameRequest struct {
-	ID            string    `json:"id"`
-	SmallBlind    int       `json:"small_blind"`
-	BigBlind      int       `json:"big_blind"`
-	StartChips    int       `json:"start_chips"`
-	TimeoutMs     int       `json:"timeout_ms"`
-	MinPlayers    int       `json:"min_players"`
-	MaxPlayers    int       `json:"max_players"`
-	RequirePlayer *bool     `json:"require_player"`
-	NPCs          []NPCSpec `json:"npcs"`
-	Hands         *uint64   `json:"hands,omitempty"`
-	Seed          *int64    `json:"seed,omitempty"`
+	ID               string    `json:"id"`
+	SmallBlind       int       `json:"small_blind"`
+	BigBlind         int       `json:"big_blind"`
+	StartChips       int       `json:"start_chips"`
+	TimeoutMs        int       `json:"timeout_ms"`
+	MinPlayers       int       `json:"min_players"`
+	MaxPlayers       int       `json:"max_players"`
+	RequirePlayer    *bool     `json:"require_player"`
+	InfiniteBankroll *bool     `json:"infinite_bankroll"`
+	NPCs             []NPCSpec `json:"npcs"`
+	Hands            *uint64   `json:"hands,omitempty"`
+	Seed             *int64    `json:"seed,omitempty"`
 }
 
 func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
@@ -410,17 +412,21 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 	}
 
 	config := Config{
-		SmallBlind:    req.SmallBlind,
-		BigBlind:      req.BigBlind,
-		StartChips:    req.StartChips,
-		Timeout:       time.Duration(req.TimeoutMs) * time.Millisecond,
-		MinPlayers:    req.MinPlayers,
-		MaxPlayers:    req.MaxPlayers,
-		RequirePlayer: true,
-		HandLimit:     0,
+		SmallBlind:       req.SmallBlind,
+		BigBlind:         req.BigBlind,
+		StartChips:       req.StartChips,
+		Timeout:          time.Duration(req.TimeoutMs) * time.Millisecond,
+		MinPlayers:       req.MinPlayers,
+		MaxPlayers:       req.MaxPlayers,
+		RequirePlayer:    true,
+		InfiniteBankroll: false,
+		HandLimit:        0,
 	}
 	if req.RequirePlayer != nil {
 		config.RequirePlayer = *req.RequirePlayer
+	}
+	if req.InfiniteBankroll != nil {
+		config.InfiniteBankroll = *req.InfiniteBankroll
 	}
 
 	if req.Hands != nil {

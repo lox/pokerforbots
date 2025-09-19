@@ -16,21 +16,22 @@ import (
 )
 
 type CLI struct {
-	Addr          string `kong:"default=':8080',help='Server address'"`
-	Debug         bool   `kong:"help='Enable debug logging'"`
-	SmallBlind    int    `kong:"default='5',help='Small blind amount'"`
-	BigBlind      int    `kong:"default='10',help='Big blind amount'"`
-	StartChips    int    `kong:"default='1000',help='Starting chip count'"`
-	TimeoutMs     int    `kong:"default='100',help='Decision timeout in milliseconds'"`
-	MinPlayers    int    `kong:"default='2',help='Minimum players per hand'"`
-	MaxPlayers    int    `kong:"default='9',help='Maximum players per hand'"`
-	RequirePlayer bool   `kong:"default='true',help='Require at least one player-role bot per hand'"`
-	NPCBots       int    `kong:"default='0',help='Total NPC bots to spawn in default game (auto distribution)'"`
-	NPCCalling    int    `kong:"default='0',help='NPC calling-station bots (overrides auto distribution)'"`
-	NPCRandom     int    `kong:"default='0',help='NPC random bots (overrides auto distribution)'"`
-	NPCAggro      int    `kong:"default='0',help='NPC aggressive bots (overrides auto distribution)'"`
-	Seed          *int64 `kong:"help='Deterministic RNG seed for the server (optional)'"`
-	Hands         uint64 `kong:"default='0',help='Maximum hands to run in the default game (0 = unlimited)'"`
+	Addr             string `kong:"default=':8080',help='Server address'"`
+	Debug            bool   `kong:"help='Enable debug logging'"`
+	SmallBlind       int    `kong:"default='5',help='Small blind amount'"`
+	BigBlind         int    `kong:"default='10',help='Big blind amount'"`
+	StartChips       int    `kong:"default='1000',help='Starting chip count'"`
+	TimeoutMs        int    `kong:"default='100',help='Decision timeout in milliseconds'"`
+	MinPlayers       int    `kong:"default='2',help='Minimum players per hand'"`
+	MaxPlayers       int    `kong:"default='9',help='Maximum players per hand'"`
+	RequirePlayer    bool   `kong:"default='true',help='Require at least one player-role bot per hand'"`
+	InfiniteBankroll bool   `kong:"default='false',help='Bots never run out of chips (for simulations)'"`
+	NPCBots          int    `kong:"default='0',help='Total NPC bots to spawn in default game (auto distribution)'"`
+	NPCCalling       int    `kong:"default='0',help='NPC calling-station bots (overrides auto distribution)'"`
+	NPCRandom        int    `kong:"default='0',help='NPC random bots (overrides auto distribution)'"`
+	NPCAggro         int    `kong:"default='0',help='NPC aggressive bots (overrides auto distribution)'"`
+	Seed             *int64 `kong:"help='Deterministic RNG seed for the server (optional)'"`
+	Hands            uint64 `kong:"default='0',help='Maximum hands to run in the default game (0 = unlimited)'"`
 }
 
 func main() {
@@ -61,15 +62,16 @@ func main() {
 
 	// Create server configuration
 	config := server.Config{
-		SmallBlind:    cli.SmallBlind,
-		BigBlind:      cli.BigBlind,
-		StartChips:    cli.StartChips,
-		Timeout:       time.Duration(cli.TimeoutMs) * time.Millisecond,
-		MinPlayers:    cli.MinPlayers,
-		MaxPlayers:    cli.MaxPlayers,
-		RequirePlayer: cli.RequirePlayer,
-		HandLimit:     cli.Hands,
-		Seed:          0,
+		SmallBlind:       cli.SmallBlind,
+		BigBlind:         cli.BigBlind,
+		StartChips:       cli.StartChips,
+		Timeout:          time.Duration(cli.TimeoutMs) * time.Millisecond,
+		MinPlayers:       cli.MinPlayers,
+		MaxPlayers:       cli.MaxPlayers,
+		RequirePlayer:    cli.RequirePlayer,
+		InfiniteBankroll: cli.InfiniteBankroll,
+		HandLimit:        cli.Hands,
+		Seed:             0,
 	}
 
 	// Create RNG instance for server
@@ -100,6 +102,7 @@ func main() {
 			Int("timeout_ms", cli.TimeoutMs).
 			Int("min_players", cli.MinPlayers).
 			Int("max_players", cli.MaxPlayers).
+			Bool("infinite_bankroll", cli.InfiniteBankroll).
 			Uint64("hand_limit", cli.Hands).
 			Int64("seed", seed).
 			Msg("Server starting")

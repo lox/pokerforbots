@@ -18,19 +18,20 @@ type PlayerStats struct {
 
 // GameStats provides an aggregated snapshot for a game instance.
 type GameStats struct {
-	ID             string        `json:"id"`
-	SmallBlind     int           `json:"small_blind"`
-	BigBlind       int           `json:"big_blind"`
-	StartChips     int           `json:"start_chips"`
-	TimeoutMs      int           `json:"timeout_ms"`
-	MinPlayers     int           `json:"min_players"`
-	MaxPlayers     int           `json:"max_players"`
-	RequirePlayer  bool          `json:"require_player"`
-	HandsCompleted uint64        `json:"hands_completed"`
-	HandLimit      uint64        `json:"hand_limit"`
-	HandsRemaining uint64        `json:"hands_remaining"`
-	Timeouts       uint64        `json:"timeouts"`
-	HandsPerSecond float64       `json:"hands_per_second"`
-	Seed           int64         `json:"seed"`
-	Players        []PlayerStats `json:"players"`
+	ID               string        `json:"id"`
+	SmallBlind       int           `json:"small_blind"`
+	BigBlind         int           `json:"big_blind"`
+	StartChips       int           `json:"start_chips"`
+	TimeoutMs        int           `json:"timeout_ms"`
+	MinPlayers       int           `json:"min_players"`
+	MaxPlayers       int           `json:"max_players"`
+	RequirePlayer    bool          `json:"require_player"`
+	InfiniteBankroll bool          `json:"infinite_bankroll"`
+	HandsCompleted   uint64        `json:"hands_completed"`
+	HandLimit        uint64        `json:"hand_limit"`
+	HandsRemaining   uint64        `json:"hands_remaining"`
+	Timeouts         uint64        `json:"timeouts"`
+	HandsPerSecond   float64       `json:"hands_per_second"`
+	Seed             int64         `json:"seed"`
+	Players          []PlayerStats `json:"players"`
 }

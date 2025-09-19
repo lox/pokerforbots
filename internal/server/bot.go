@@ -175,6 +175,11 @@ func (b *Bot) GetBuyIn() int {
 		maxBuyIn = b.pool.config.StartChips
 	}
 
+	// With infinite bankroll, always return the max buy-in
+	if b.pool != nil && b.pool.config.InfiniteBankroll {
+		return maxBuyIn
+	}
+
 	if b.bankroll >= maxBuyIn {
 		return maxBuyIn
 	}
@@ -185,6 +190,11 @@ func (b *Bot) GetBuyIn() int {
 func (b *Bot) ApplyResult(delta int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	// Skip bankroll updates when infinite bankroll is enabled
+	if b.pool != nil && b.pool.config.InfiniteBankroll {
+		return
+	}
 
 	// Apply the delta (can be positive or negative)
 	b.bankroll += delta
@@ -199,6 +209,12 @@ func (b *Bot) ApplyResult(delta int) {
 func (b *Bot) HasChips() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
+
+	// If infinite bankroll is enabled, bots always have chips
+	if b.pool != nil && b.pool.config.InfiniteBankroll {
+		return true
+	}
+
 	return b.bankroll > 0
 }
 
