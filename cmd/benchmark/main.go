@@ -49,12 +49,58 @@ func main() {
 
 	// Start embedded server
 	fmt.Print("Starting server...")
-	serverURL, cleanup, err := startBenchmarkServer(cli.Port, cli.Bots, cli.TimeoutMs, logger)
-	if err != nil {
+
+	// Create optimized server configuration for benchmarking
+	seed := time.Now().UnixNano()
+	rng := rand.New(rand.NewSource(seed))
+	config := server.Config{
+		SmallBlind:       5,
+		BigBlind:         10,
+		StartChips:       1000,
+		Timeout:          time.Duration(cli.TimeoutMs) * time.Millisecond,
+		MinPlayers:       cli.Bots,
+		MaxPlayers:       cli.Bots,
+		RequirePlayer:    false, // Don't require player role for benchmark
+		InfiniteBankroll: true,  // Prevent bots from running out of chips
+		HandLimit:        0,     // Unlimited - benchmark controls duration
+		Seed:             seed,
+		EnableStats:      false, // Disable for maximum performance
+	}
+
+	srv := server.NewServerWithConfig(logger, rng, config)
+
+	// Start server in background
+	serverErr := make(chan error, 1)
+	addr := ":" + cli.Port
+	go func() {
+		serverErr <- srv.Start(addr)
+	}()
+
+	// Wait for server to be healthy
+	baseURL := fmt.Sprintf("http://localhost%s", addr)
+	healthCtx, healthCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer healthCancel()
+
+	select {
+	case err := <-serverErr:
 		fmt.Printf("Failed to start server: %v\n", err)
 		return
+	case <-time.After(100 * time.Millisecond):
+		// Give server a moment to start, then check health
+		if err := server.WaitForHealthy(healthCtx, baseURL); err != nil {
+			fmt.Printf("Server not healthy: %v\n", err)
+			return
+		}
 	}
-	defer cleanup()
+
+	// Set up server cleanup
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		srv.Shutdown(shutdownCtx)
+	}()
+
+	serverURL := fmt.Sprintf("ws://localhost%s/ws", addr)
 	fmt.Println(" ✓")
 
 	// Shared counter for completed hands
@@ -276,69 +322,4 @@ func (b *benchBot) pickAction(req protocol.ActionRequest) protocol.Action {
 
 	// Fallback
 	return protocol.Action{Type: protocol.TypeAction, Action: req.ValidActions[0]}
-}
-
-func startBenchmarkServer(port string, numBots, timeoutMs int, logger zerolog.Logger) (string, func(), error) {
-	// Create server configuration optimized for benchmarking
-	seed := time.Now().UnixNano()
-	rng := rand.New(rand.NewSource(seed))
-
-	config := server.Config{
-		SmallBlind:       5,
-		BigBlind:         10,
-		StartChips:       1000,
-		Timeout:          time.Duration(timeoutMs) * time.Millisecond,
-		MinPlayers:       numBots,
-		MaxPlayers:       numBots,
-		RequirePlayer:    false, // Don't require player role for benchmark
-		InfiniteBankroll: true,  // Prevent bots from running out of chips
-		HandLimit:        0,     // Unlimited - benchmark controls duration
-		Seed:             seed,
-		EnableStats:      false, // Disable for maximum performance
-	}
-
-	srv := server.NewServerWithConfig(logger, rng, config)
-
-	// Start server in background
-	serverErr := make(chan error, 1)
-	addr := ":" + port
-	go func() {
-		serverErr <- srv.Start(addr)
-	}()
-
-	// Wait for server to be ready
-	serverURL := fmt.Sprintf("ws://localhost:%s/ws", port)
-	ready := make(chan bool, 1)
-	go func() {
-		for i := 0; i < 50; i++ {
-			conn, _, err := websocket.DefaultDialer.Dial(serverURL, nil)
-			if err == nil {
-				conn.Close()
-				ready <- true
-				return
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		ready <- false
-	}()
-
-	select {
-	case err := <-serverErr:
-		return "", nil, fmt.Errorf("server failed to start: %w", err)
-	case isReady := <-ready:
-		if !isReady {
-			return "", nil, fmt.Errorf("server not ready after 5 seconds")
-		}
-	case <-time.After(5 * time.Second):
-		return "", nil, fmt.Errorf("timeout waiting for server")
-	}
-
-	// Return cleanup function
-	cleanup := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		srv.Shutdown(ctx)
-	}
-
-	return serverURL, cleanup, nil
 }
