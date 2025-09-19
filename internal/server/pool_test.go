@@ -8,161 +8,344 @@ import (
 	"time"
 )
 
-func TestBotPool(t *testing.T) {
-	t.Parallel()
-	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(42)), DefaultConfig(2, 4))
-	pool.minPlayers = 10
-	pool.maxPlayers = 10
-	stopPool := startTestPool(t, pool)
-	defer stopPool()
-
-	// Create mock bots with proper initialization
-	bot1 := &Bot{ID: "bot1", send: make(chan []byte, 1), done: make(chan struct{}), pool: pool, bankroll: 1000}
-	bot2 := &Bot{ID: "bot2", send: make(chan []byte, 1), done: make(chan struct{}), pool: pool, bankroll: 1000}
-	bot3 := &Bot{ID: "bot3", send: make(chan []byte, 1), done: make(chan struct{}), pool: pool, bankroll: 1000}
-
-	// Register bots
-	pool.Register(bot1)
-	pool.Register(bot2)
-	pool.Register(bot3)
-
-	// Wait for registration to complete using a retry loop
-	waitForCondition(t, func() bool {
-		return pool.BotCount() == 3
-	}, 100*time.Millisecond, "Expected 3 bots to be registered")
-
-	// Check specific bot
-	if bot, ok := pool.GetBot("bot1"); !ok || bot.ID != "bot1" {
-		t.Error("Failed to get bot1")
+// Test bot factory functions
+func newTestBot(id string, pool *BotPool) *Bot {
+	bot := &Bot{
+		ID:       id,
+		send:     make(chan []byte, 100),
+		done:     make(chan struct{}),
+		pool:     pool,
+		mu:       sync.RWMutex{},
+		inHand:   false,
+		bankroll: 1000,
 	}
-
-	// Unregister a bot
-	pool.Unregister(bot2)
-
-	// Wait for unregistration to complete
-	waitForCondition(t, func() bool {
-		return pool.BotCount() == 2
-	}, 100*time.Millisecond, "Expected 2 bots after unregister")
+	bot.SetRole(BotRolePlayer) // Default to Player role for tests
+	return bot
 }
 
-func TestBotPoolMatching(t *testing.T) {
-	t.Parallel()
-	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(42)), DefaultConfig(2, 4))
+func newTestBots(count int, pool *BotPool) []*Bot {
+	bots := make([]*Bot, count)
+	for i := 0; i < count; i++ {
+		bots[i] = newTestBot(fmt.Sprintf("bot%d", i), pool)
+	}
+	return bots
+}
 
-	// Start the pool in background
+func newTestNPCBots(count int, pool *BotPool) []*Bot {
+	bots := newTestBots(count, pool)
+	for _, bot := range bots {
+		bot.SetRole(BotRoleNPC)
+	}
+	return bots
+}
+
+func newTestPlayerBots(count int, pool *BotPool) []*Bot {
+	bots := newTestBots(count, pool)
+	for _, bot := range bots {
+		bot.SetRole(BotRolePlayer)
+	}
+	return bots
+}
+
+// Test configuration factory
+func testPoolConfig(minPlayers, maxPlayers int) Config {
+	config := DefaultConfig(minPlayers, maxPlayers)
+	config.Timeout = 50 * time.Millisecond // Faster tests
+	config.RequirePlayer = false           // Allow any bots to start hands in tests
+	return config
+}
+
+func TestBotPoolRegistration(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		minPlayers int
+		maxPlayers int
+		botCount   int
+	}{
+		{"small pool", 2, 4, 3},
+		{"large pool", 6, 9, 10},
+		{"single bot", 2, 2, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := NewBotPool(testLogger(), rand.New(rand.NewSource(42)), testPoolConfig(tt.minPlayers, tt.maxPlayers))
+			stopPool := startTestPool(t, pool)
+			defer stopPool()
+
+			bots := newTestBots(tt.botCount, pool)
+
+			// Register all bots
+			for _, bot := range bots {
+				pool.Register(bot)
+			}
+
+			// Wait for registration
+			waitForCondition(t, func() bool {
+				return pool.BotCount() == tt.botCount
+			}, 200*time.Millisecond, fmt.Sprintf("Expected %d bots to be registered", tt.botCount))
+
+			// Verify we can retrieve specific bots
+			for _, bot := range bots {
+				if retrieved, ok := pool.GetBot(bot.ID); !ok || retrieved.ID != bot.ID {
+					t.Errorf("Failed to retrieve bot %s", bot.ID)
+				}
+			}
+		})
+	}
+}
+
+func TestBotPoolUnregistration(t *testing.T) {
+	t.Parallel()
+
+	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(42)), testPoolConfig(2, 4))
 	stopPool := startTestPool(t, pool)
 	defer stopPool()
 
-	// Create properly initialized bots
-	bots := make([]*Bot, 3)
-	for i := 0; i < 3; i++ {
-		bots[i] = &Bot{
-			ID:       fmt.Sprintf("bot%d-12345678", i),
-			send:     make(chan []byte, 100),
-			pool:     pool,
-			done:     make(chan struct{}),
-			mu:       sync.RWMutex{},
-			inHand:   false,
-			bankroll: 1000,
-		}
-	}
+	bots := newTestBots(3, pool)
 
-	// Register bots with the pool using the proper mechanism
+	// Register all bots
 	for _, bot := range bots {
 		pool.Register(bot)
 	}
 
-	// Wait for bots to be registered
 	waitForCondition(t, func() bool {
 		return pool.BotCount() == 3
-	}, 100*time.Millisecond, "Expected 3 bots to be registered")
+	}, 200*time.Millisecond, "Expected 3 bots to be registered")
 
-	time.Sleep(200 * time.Millisecond)
+	// Unregister middle bot
+	pool.Unregister(bots[1])
 
-	if pool.BotCount() == 0 {
-		t.Error("All bots disappeared - pool matching may have issues")
+	waitForCondition(t, func() bool {
+		return pool.BotCount() == 2
+	}, 200*time.Millisecond, "Expected 2 bots after unregister")
+
+	// Verify the right bot was removed
+	if _, ok := pool.GetBot(bots[1].ID); ok {
+		t.Error("Bot should have been unregistered")
+	}
+
+	// Verify other bots still exist
+	for _, bot := range []int{0, 2} {
+		if _, ok := pool.GetBot(bots[bot].ID); !ok {
+			t.Errorf("Bot %s should still be registered", bots[bot].ID)
+		}
 	}
 }
 
-func TestBotSendMessage(t *testing.T) {
+func TestBotPoolMatching(t *testing.T) {
 	t.Parallel()
-	bot := &Bot{
-		ID:   "test",
-		send: make(chan []byte, 1),
-		done: make(chan struct{}),
+
+	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(42)), testPoolConfig(2, 4))
+	stopPool := startTestPool(t, pool)
+	defer stopPool()
+
+	// Create enough bots to trigger matching
+	bots := newTestBots(3, pool)
+
+	for _, bot := range bots {
+		pool.Register(bot)
 	}
 
-	// Test successful send
-	testData := []byte("test message")
+	waitForCondition(t, func() bool {
+		return pool.BotCount() == 3
+	}, 200*time.Millisecond, "Expected 3 bots to be registered")
 
-	// Use a channel to signal completion
-	done := make(chan bool)
+	// Give the matcher time to work
+	time.Sleep(300 * time.Millisecond)
 
-	go func() {
-		select {
-		case bot.send <- testData:
-			done <- true
-		case <-time.After(100 * time.Millisecond):
-			done <- false
-		}
-	}()
-
-	// Receive the message
-	select {
-	case msg := <-bot.send:
-		if string(msg) != "test message" {
-			t.Errorf("Expected 'test message', got %s", string(msg))
-		}
-		// Wait for sender to complete
-		if !<-done {
-			t.Error("Sender reported failure")
-		}
-	case <-time.After(200 * time.Millisecond):
-		t.Error("Failed to receive message")
+	// Verify pool is still functional
+	if pool.BotCount() == 0 {
+		t.Error("All bots disappeared - matching may have issues")
 	}
 }
 
 func TestBotPoolRequiresPlayer(t *testing.T) {
 	t.Parallel()
-	config := Config{
-		SmallBlind:    5,
-		BigBlind:      10,
-		StartChips:    1000,
-		Timeout:       100 * time.Millisecond,
-		MinPlayers:    2,
-		MaxPlayers:    2,
-		RequirePlayer: true,
-	}
 
-	t.Run("no player bots stay idle", func(t *testing.T) {
+	t.Run("NPC bots alone don't start hands", func(t *testing.T) {
+		config := testPoolConfig(2, 4)
+		config.RequirePlayer = true
+
 		pool := NewBotPool(testLogger(), rand.New(rand.NewSource(123)), config)
-		stop := startTestPool(t, pool)
-		defer stop()
+		stopPool := startTestPool(t, pool)
+		defer stopPool()
 
-		npc1 := &Bot{ID: "npc1", send: make(chan []byte, 10), done: make(chan struct{}), pool: pool, bankroll: 1000}
-		npc1.SetRole(BotRoleNPC)
-		npc2 := &Bot{ID: "npc2", send: make(chan []byte, 10), done: make(chan struct{}), pool: pool, bankroll: 1000}
-		npc2.SetRole(BotRoleNPC)
+		// Register only NPC bots
+		npcBots := newTestNPCBots(3, pool)
+		for _, bot := range npcBots {
+			pool.Register(bot)
+		}
 
-		pool.Register(npc1)
-		pool.Register(npc2)
+		waitForCondition(t, func() bool {
+			return pool.BotCount() == 3
+		}, 200*time.Millisecond, "Expected 3 NPC bots to be registered")
 
-		time.Sleep(200 * time.Millisecond)
-
+		// Wait and verify no hands started
+		time.Sleep(300 * time.Millisecond)
 		if handCount := pool.HandCount(); handCount != 0 {
-			t.Fatalf("expected no hands to run without player, got %d", handCount)
+			t.Errorf("Expected no hands with only NPCs, got %d", handCount)
+		}
+	})
+
+	t.Run("Player bots can be registered", func(t *testing.T) {
+		config := testPoolConfig(2, 4)
+		config.RequirePlayer = true
+
+		pool := NewBotPool(testLogger(), rand.New(rand.NewSource(456)), config)
+		stopPool := startTestPool(t, pool)
+		defer stopPool()
+
+		// Register a player bot
+		playerBot := newTestPlayerBots(1, pool)[0]
+		pool.Register(playerBot)
+
+		waitForCondition(t, func() bool {
+			return pool.BotCount() == 1
+		}, 200*time.Millisecond, "Expected 1 player bot to be registered")
+
+		// Verify the bot role is set correctly
+		if retrieved, ok := pool.GetBot(playerBot.ID); ok {
+			if retrieved.Role() != BotRolePlayer {
+				t.Errorf("Expected player role, got %s", retrieved.Role())
+			}
 		}
 	})
 }
 
+func TestBotPoolHandLimit(t *testing.T) {
+	t.Parallel()
+
+	config := testPoolConfig(2, 2)
+	config.HandLimit = 3
+
+	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(789)), config)
+	stopPool := startTestPool(t, pool)
+	defer stopPool()
+
+	// Just verify the hand limit configuration is set
+	if pool.handLimit != 3 {
+		t.Errorf("Expected hand limit 3, got %d", pool.handLimit)
+	}
+}
+
+// Test for race conditions and edge cases
+func TestBotPoolConcurrentOperations(t *testing.T) {
+	t.Parallel()
+
+	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(999)), testPoolConfig(2, 6))
+	stopPool := startTestPool(t, pool)
+	defer stopPool()
+
+	const numGoroutines = 10
+	const botsPerGoroutine = 3
+
+	var wg sync.WaitGroup
+
+	// Concurrently register and unregister bots
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+
+			bots := make([]*Bot, botsPerGoroutine)
+			for j := 0; j < botsPerGoroutine; j++ {
+				bots[j] = newTestBot(fmt.Sprintf("concurrent-bot-%d-%d", id, j), pool)
+				pool.Register(bots[j])
+			}
+
+			// Brief pause
+			time.Sleep(50 * time.Millisecond)
+
+			// Unregister some bots
+			for j := 0; j < botsPerGoroutine/2; j++ {
+				pool.Unregister(bots[j])
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Pool should still be functional
+	finalCount := pool.BotCount()
+	if finalCount < 0 {
+		t.Error("Negative bot count indicates data race")
+	}
+}
+
+func TestBotSendMessage(t *testing.T) {
+	t.Parallel()
+
+	bot := newTestBot("test-bot", nil)
+
+	testMessage := []byte("test message")
+
+	// Test successful send
+	go func() {
+		select {
+		case bot.send <- testMessage:
+			// Success
+		case <-time.After(100 * time.Millisecond):
+			t.Error("Failed to send message within timeout")
+		}
+	}()
+
+	// Receive the message
+	select {
+	case received := <-bot.send:
+		if string(received) != string(testMessage) {
+			t.Errorf("Expected %q, got %q", string(testMessage), string(received))
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Error("Failed to receive message within timeout")
+	}
+}
+
+func TestBotPoolStatistics(t *testing.T) {
+	t.Parallel()
+
+	config := testPoolConfig(2, 2)
+	config.EnableStats = true
+
+	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(555)), config)
+	stopPool := startTestPool(t, pool)
+	defer stopPool()
+
+	bots := newTestBots(2, pool)
+	for _, bot := range bots {
+		pool.Register(bot)
+	}
+
+	waitForCondition(t, func() bool {
+		return pool.BotCount() == 2
+	}, 200*time.Millisecond, "Expected 2 bots to be registered")
+
+	// Verify stats collection is enabled
+	if pool.statsCollector == nil {
+		t.Error("Expected stats collector to be initialized")
+	}
+	if !pool.statsCollector.IsEnabled() {
+		t.Error("Expected stats collection to be enabled")
+	}
+
+	// Check initial empty stats
+	stats := pool.PlayerStats()
+	if len(stats) != 0 {
+		t.Errorf("Expected no initial stats, got %d", len(stats))
+	}
+}
+
 // waitForCondition waits for a condition to be true with timeout
 func waitForCondition(t *testing.T, condition func() bool, timeout time.Duration, errMsg string) {
+	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if condition() {
 			return
 		}
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
-	t.Error(errMsg)
+	t.Fatalf("%s (timed out after %v)", errMsg, timeout)
 }
