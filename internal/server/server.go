@@ -115,13 +115,15 @@ func NewServer(logger zerolog.Logger, rng *rand.Rand) *Server {
 
 // NewServerWithConfig creates a new poker server with provided random source and config
 func NewServerWithConfig(logger zerolog.Logger, rng *rand.Rand, config Config) *Server {
-	pool := NewBotPoolWithLimitAndConfig(logger, config.MinPlayers, config.MaxPlayers, rng, config.HandLimit, config)
+	pool := NewBotPool(logger, rng, config)
 	return NewServerWithBotIDGenAndConfig(logger, pool, createDeterministicBotIDGen(rng, pool.WithRNG), config)
 }
 
 // NewServerWithHandLimit creates a new poker server with a hand limit
 func NewServerWithHandLimit(logger zerolog.Logger, rng *rand.Rand, handLimit uint64) *Server {
-	pool := NewBotPoolWithLimit(logger, 2, 9, rng, handLimit)
+	config := DefaultConfig(2, 9)
+	config.HandLimit = handLimit
+	pool := NewBotPool(logger, rng, config)
 	return NewServerWithBotIDGen(logger, pool, createDeterministicBotIDGen(rng, pool.WithRNG))
 }
 
@@ -443,7 +445,7 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 
 	config.Seed = seed
 	rng := rand.New(rand.NewSource(seed))
-	pool := NewBotPoolWithLimitAndConfig(s.logger, config.MinPlayers, config.MaxPlayers, rng, config.HandLimit, config)
+	pool := NewBotPool(s.logger, rng, config)
 	instance := s.manager.RegisterGame(req.ID, pool, config)
 	go pool.Run()
 

@@ -22,8 +22,8 @@ type BotPool struct {
 	minPlayers        int
 	maxPlayers        int
 	handCounter       uint64
-	handLimit         uint64 // 0 means unlimited
-	handLimitLogged   bool   // Track if we've logged the hand limit message
+	handLimit         uint64      // 0 means unlimited
+	handLimitLogged   atomic.Bool // Track if we've logged the hand limit message
 	handLimitNotified atomic.Bool
 	stopCh            chan struct{}
 	stopOnce          sync.Once
@@ -70,9 +70,9 @@ type botStats struct {
 
 const reasonHandLimitReached = "hand_limit_reached"
 
-// NewBotPool creates a new bot pool with explicit random source
-func NewBotPool(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand) *BotPool {
-	config := Config{
+// DefaultConfig returns a config with sensible defaults
+func DefaultConfig(minPlayers, maxPlayers int) Config {
+	return Config{
 		SmallBlind:    5,
 		BigBlind:      10,
 		StartChips:    1000,
@@ -83,33 +83,10 @@ func NewBotPool(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Ran
 		HandLimit:     0,
 		Seed:          0,
 	}
-	return NewBotPoolWithConfig(logger, minPlayers, maxPlayers, rng, config)
 }
 
-// NewBotPoolWithConfig creates a new bot pool with explicit random source and config
-func NewBotPoolWithConfig(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand, config Config) *BotPool {
-	return NewBotPoolWithLimitAndConfig(logger, minPlayers, maxPlayers, rng, 0, config) // 0 = unlimited
-}
-
-// NewBotPoolWithLimit creates a new bot pool with explicit random source and hand limit
-func NewBotPoolWithLimit(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand, handLimit uint64) *BotPool {
-	config := Config{
-		SmallBlind:    5,
-		BigBlind:      10,
-		StartChips:    1000,
-		Timeout:       100 * time.Millisecond,
-		MinPlayers:    minPlayers,
-		MaxPlayers:    maxPlayers,
-		RequirePlayer: true,
-		HandLimit:     0,
-		Seed:          0,
-	}
-	return NewBotPoolWithLimitAndConfig(logger, minPlayers, maxPlayers, rng, handLimit, config)
-}
-
-// NewBotPoolWithLimitAndConfig creates a new bot pool with explicit random source, hand limit and config
-
-func NewBotPoolWithLimitAndConfig(logger zerolog.Logger, minPlayers, maxPlayers int, rng *rand.Rand, handLimit uint64, config Config) *BotPool {
+// NewBotPool creates a new bot pool with explicit random source and config
+func NewBotPool(logger zerolog.Logger, rng *rand.Rand, config Config) *BotPool {
 	// Create appropriate stats collector based on config
 	var collector StatsCollector
 	if config.EnableStats {
@@ -135,9 +112,9 @@ func NewBotPoolWithLimitAndConfig(logger zerolog.Logger, minPlayers, maxPlayers 
 		available:      make(chan *Bot, 100),
 		register:       make(chan *Bot),
 		unregister:     make(chan *Bot),
-		minPlayers:     minPlayers,
-		maxPlayers:     maxPlayers,
-		handLimit:      handLimit,
+		minPlayers:     config.MinPlayers,
+		maxPlayers:     config.MaxPlayers,
+		handLimit:      config.HandLimit,
 		stopCh:         make(chan struct{}),
 		logger:         logger.With().Str("component", "pool").Logger(),
 		rng:            rng,
@@ -243,8 +220,7 @@ func (p *BotPool) tryMatch() {
 	// Check if we've reached the hand limit
 	if p.handLimit > 0 && atomic.LoadUint64(&p.handCounter) >= p.handLimit {
 		// Only log once to avoid spam
-		if !p.handLimitLogged {
-			p.handLimitLogged = true
+		if p.handLimitLogged.CompareAndSwap(false, true) {
 			p.logger.Info().Uint64("hands_completed", atomic.LoadUint64(&p.handCounter)).
 				Uint64("hand_limit", p.handLimit).
 				Msg("Hand limit reached - stopping new hand creation")

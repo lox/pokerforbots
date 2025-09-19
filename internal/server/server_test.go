@@ -392,7 +392,9 @@ func TestHandLimitLogic(t *testing.T) {
 	handLimit := uint64(2) // Allow exactly 2 hands
 
 	// Create pool with hand limit
-	pool := NewBotPoolWithLimit(logger, 2, 4, rng, handLimit)
+	config := DefaultConfig(2, 4)
+	config.HandLimit = handLimit
+	pool := NewBotPool(logger, rng, config)
 	pool.SetGameID("test-hand-limit")
 
 	// Start pool
@@ -502,7 +504,9 @@ func TestUnlimitedHandsWithZeroLimit(t *testing.T) {
 	rng := rand.New(rand.NewSource(456))
 
 	// Create pool with no hand limit (0 = unlimited)
-	pool := NewBotPoolWithLimit(logger, 2, 4, rng, 0)
+	config := DefaultConfig(2, 4)
+	config.HandLimit = 0
+	pool := NewBotPool(logger, rng, config)
 
 	// Directly test that the tryMatch method doesn't stop when hand limit is 0
 	// Set a high hand counter to simulate many hands completed

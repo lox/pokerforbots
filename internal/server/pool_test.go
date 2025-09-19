@@ -10,7 +10,7 @@ import (
 
 func TestBotPool(t *testing.T) {
 	t.Parallel()
-	pool := NewBotPool(testLogger(), 2, 4, rand.New(rand.NewSource(42)))
+	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(42)), DefaultConfig(2, 4))
 	pool.minPlayers = 10
 	pool.maxPlayers = 10
 	stopPool := startTestPool(t, pool)
@@ -47,7 +47,7 @@ func TestBotPool(t *testing.T) {
 
 func TestBotPoolMatching(t *testing.T) {
 	t.Parallel()
-	pool := NewBotPool(testLogger(), 2, 4, rand.New(rand.NewSource(42)))
+	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(42)), DefaultConfig(2, 4))
 
 	// Start the pool in background
 	stopPool := startTestPool(t, pool)
@@ -135,7 +135,7 @@ func TestBotPoolRequiresPlayer(t *testing.T) {
 	}
 
 	t.Run("no player bots stay idle", func(t *testing.T) {
-		pool := NewBotPoolWithConfig(testLogger(), 2, 2, rand.New(rand.NewSource(123)), config)
+		pool := NewBotPool(testLogger(), rand.New(rand.NewSource(123)), config)
 		stop := startTestPool(t, pool)
 		defer stop()
 

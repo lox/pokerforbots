@@ -20,7 +20,7 @@ import (
 func newTestServerWithDeterministicRNG(t *testing.T, seed int64) *Server {
 	t.Helper()
 	rng := rand.New(rand.NewSource(seed))
-	pool := NewBotPool(testLogger(), 2, 9, rng)
+	pool := NewBotPool(testLogger(), rng, DefaultConfig(2, 9))
 
 	// Deterministic bot ID generator with atomic counter for race-free access
 	var counter atomic.Int64
