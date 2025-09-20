@@ -53,8 +53,11 @@ type opponentProfile struct {
 	RaiseCount  int
 	AggroFactor float64 // (raises + bets) / calls
 	VPIP        float64 // voluntary put in pot
-	LastAction  string
-	LastStreet  string
+	// internal counters
+	vpipVoluntary int  // count of hands where player VPIP'd preflop
+	vpipThisHand  bool // whether player VPIP'd this hand (preflop call/raise/all-in excluding blinds)
+	LastAction    string
+	LastStreet    string
 }
 
 // complexBot implements advanced poker strategy.
@@ -160,6 +163,11 @@ func (b *complexBot) OnHandStart(state *sdk.GameState, start protocol.HandStart)
 	b.state.TurnAction = ""
 	b.state.RiverAction = ""
 
+	// Reset per-hand opponent VPIP flags
+	for _, prof := range b.opponents {
+		prof.vpipThisHand = false
+	}
+
 	// Count active players
 	active := 0
 	for _, p := range start.Players {
@@ -247,8 +255,16 @@ func (b *complexBot) OnPlayerAction(state *sdk.GameState, action protocol.Player
 			prof.FoldCount++
 		case "call", "post_big_blind", "post_small_blind":
 			prof.CallCount++
+			// VPIP tracking: preflop voluntary money excludes blinds
+			if action.Street == "preflop" && action.Action == "call" {
+				prof.vpipThisHand = true
+			}
 		case "raise", "allin":
 			prof.RaiseCount++
+			// VPIP: any preflop raise or all-in counts as voluntary
+			if action.Street == "preflop" {
+				prof.vpipThisHand = true
+			}
 			if action.Seat == b.state.Seat {
 				b.state.BetsThisHand++
 			}
@@ -272,6 +288,23 @@ func (b *complexBot) OnHandResult(state *sdk.GameState, result protocol.HandResu
 	// Calculate net result for this hand (use SDK state which includes final payout)
 	netChips := state.Chips - state.StartingChips
 	netBB := float64(netChips) / float64(b.bigBlind)
+
+	// Update opponent VPIP stats for this hand
+	for _, p := range b.state.Players {
+		if p.Seat == b.state.Seat {
+			continue
+		}
+		prof := b.getOrCreateProfile(p.Name)
+		prof.HandsSeen++
+		if prof.vpipThisHand {
+			prof.vpipVoluntary++
+		}
+		if prof.HandsSeen > 0 {
+			prof.VPIP = float64(prof.vpipVoluntary) / float64(prof.HandsSeen)
+		}
+		// Reset per hand flag
+		prof.vpipThisHand = false
+	}
 
 	// Check if we won (server sends winner.Name as our perspective display name: first 8 chars of ID)
 	won := false
@@ -706,6 +739,35 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 		pot = 1
 	}
 	betPct := float64(req.ToCall) / float64(pot)
+
+	// Opponent exploitation based on last aggressor profile
+	if req.ToCall > 0 {
+		last := b.state.LastAction
+		if (last.Action == "raise" || last.Action == "allin") && last.PlayerName != "" && last.Seat != b.state.Seat {
+			prof := b.getOrCreateProfile(last.PlayerName)
+			isPassive := prof.AggroFactor > 0 && prof.AggroFactor <= 0.7
+			isAggro := prof.AggroFactor >= 1.7
+			// If passive villain makes a big bet and we are marginal, overfold
+			if isPassive && betPct >= 0.5 {
+				switch class {
+				case "TripsPlus", "Overpair", "TwoPair", "TPTK":
+					// continue with normal flow
+				default:
+					return "fold", 0
+				}
+			}
+			// If aggro villain uses small bets, apply pressure more often
+			if isAggro && betPct <= 0.33 && !avoidRaise {
+				if class == "ComboDraw" || class == "StrongDraw" || equity >= 0.50 {
+					for _, a := range req.ValidActions {
+						if a == "raise" {
+							return "raise", b.betSize(req, 0.33)
+						}
+					}
+				}
+			}
+		}
+	}
 
 	// Raise for value with very strong hands
 	if equity >= 0.75 && !avoidRaise {
@@ -1222,6 +1284,14 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 
 	// Case 3: Facing an open raise (≈2-3bb)
 	if facing > bb && facing <= 3*bb {
+		// Identify opener profile if available
+		opener := b.state.LastAction
+		prof := &opponentProfile{}
+		if opener.Action == "raise" && opener.PlayerName != "" && opener.Seat != b.state.Seat {
+			prof = b.getOrCreateProfile(opener.PlayerName)
+		}
+		openerNit := prof.VPIP > 0 && prof.VPIP <= 0.18
+		openerLoose := prof.VPIP >= 0.40
 		// 3-bet value / bluff, else call some, else fold
 		if hasAction(req.ValidActions, "raise") && inValue3Bet() {
 			amt := threeBetOOP
@@ -1233,7 +1303,7 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 			}
 			return "raise", amt
 		}
-		if hasAction(req.ValidActions, "raise") && inBluff3Bet() {
+		if hasAction(req.ValidActions, "raise") && inBluff3Bet() && !openerNit {
 			amt := threeBetIP
 			if !inPosition {
 				amt = threeBetOOP
@@ -1244,6 +1314,23 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 			return "raise", amt
 		}
 		if hasAction(req.ValidActions, "call") && inDefendCall() {
+			if openerNit {
+				// tighten vs nits: prefer pairs 77+ or suited broadways
+				if !pairAtLeast(7) && !suitedBroadway {
+					return "fold", 0
+				}
+			}
+			// slightly widen vs loose openers
+			if openerLoose && !inDefendCall() && hasAction(req.ValidActions, "raise") && inBluff3Bet() && inPosition {
+				// occasionally apply pressure
+				if b.rng.Float64() < 0.25 {
+					amt := threeBetIP
+					if amt > b.state.Chips {
+						amt = b.state.Chips
+					}
+					return "raise", amt
+				}
+			}
 			return "call", 0
 		}
 		return "fold", 0
