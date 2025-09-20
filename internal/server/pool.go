@@ -601,7 +601,7 @@ func (p *BotPool) PlayerStats() []PlayerStats {
 		// Attach detailed stats if collector is enabled
 		if p.statsCollector != nil && p.statsCollector.IsEnabled() {
 			if detailed := p.statsCollector.GetDetailedStats(stats.BotID); detailed != nil {
-				ps.DetailedStats = convertToProtocolStats(detailed)
+				ps.DetailedStats = detailed
 			}
 		}
 		players = append(players, ps)
@@ -661,7 +661,7 @@ func (p *BotPool) notifyGameCompleted(reason string) {
 		// Add detailed stats if available
 		if p.statsCollector != nil && p.statsCollector.IsEnabled() {
 			if detailedStats := p.statsCollector.GetDetailedStats(ps.BotID); detailedStats != nil {
-				player.DetailedStats = convertToProtocolStats(detailedStats)
+				player.DetailedStats = detailedStats
 			}
 		}
 
@@ -703,71 +703,6 @@ func (p *BotPool) notifyGameCompleted(reason string) {
 		Uint64("hand_limit", msg.HandLimit).
 		Str("reason", msg.Reason).
 		Msg("Broadcasted game_completed message")
-}
-
-// convertToProtocolStats converts server DetailedStats to protocol PlayerDetailedStats
-func convertToProtocolStats(stats *DetailedStats) *protocol.PlayerDetailedStats {
-	if stats == nil {
-		return nil
-	}
-
-	result := &protocol.PlayerDetailedStats{
-		Hands:           stats.Hands,
-		NetBB:           stats.NetBB,
-		BB100:           stats.BB100,
-		Mean:            stats.Mean,
-		Median:          stats.Median,
-		StdDev:          stats.StdDev,
-		CI95Low:         stats.CI95Low,
-		CI95High:        stats.CI95High,
-		WinningHands:    stats.WinningHands,
-		WinRate:         stats.WinRate,
-		ShowdownWins:    stats.ShowdownWins,
-		NonShowdownWins: stats.NonShowdownWins,
-		ShowdownWinRate: stats.ShowdownWinRate,
-		ShowdownBB:      stats.ShowdownBB,
-		NonShowdownBB:   stats.NonShowdownBB,
-		MaxPotBB:        stats.MaxPotBB,
-		BigPots:         stats.BigPots,
-	}
-
-	// Convert position stats
-	if len(stats.PositionStats) > 0 {
-		result.PositionStats = make(map[string]protocol.PositionStatSummary)
-		for pos, stat := range stats.PositionStats {
-			result.PositionStats[pos] = protocol.PositionStatSummary{
-				Hands:     stat.Hands,
-				NetBB:     stat.NetBB,
-				BBPerHand: stat.BBPerHand,
-			}
-		}
-	}
-
-	// Convert street stats
-	if len(stats.StreetStats) > 0 {
-		result.StreetStats = make(map[string]protocol.StreetStatSummary)
-		for street, stat := range stats.StreetStats {
-			result.StreetStats[street] = protocol.StreetStatSummary{
-				HandsEnded: stat.HandsEnded,
-				NetBB:      stat.NetBB,
-				BBPerHand:  stat.BBPerHand,
-			}
-		}
-	}
-
-	// Convert hand category stats
-	if len(stats.HandCategoryStats) > 0 {
-		result.HandCategoryStats = make(map[string]protocol.CategoryStatSummary)
-		for cat, stat := range stats.HandCategoryStats {
-			result.HandCategoryStats[cat] = protocol.CategoryStatSummary{
-				Hands:     stat.Hands,
-				NetBB:     stat.NetBB,
-				BBPerHand: stat.BBPerHand,
-			}
-		}
-	}
-
-	return result
 }
 
 // PlayerStats captures aggregate performance metrics for a single bot within a game.

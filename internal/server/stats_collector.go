@@ -3,6 +3,7 @@ package server
 import (
 	"sync"
 
+	"github.com/lox/pokerforbots/internal/protocol"
 	"github.com/lox/pokerforbots/internal/server/statistics"
 )
 
@@ -41,11 +42,11 @@ type StatsCollector interface {
 	// RecordHandOutcome records the outcome of a completed hand
 	RecordHandOutcome(detail HandOutcomeDetail) error
 
-	// GetPlayerStats returns basic statistics for all players
+	// GetPlayerStats returns basic statistics for all players (collectors may return nil)
 	GetPlayerStats() []PlayerStats
 
 	// GetDetailedStats returns comprehensive statistics for a specific bot
-	GetDetailedStats(botID string) *DetailedStats
+	GetDetailedStats(botID string) *protocol.PlayerDetailedStats
 
 	// Reset clears all statistics
 	Reset()
@@ -62,15 +63,11 @@ func (n *NullStatsCollector) RecordHandOutcome(HandOutcomeDetail) error {
 	return nil
 }
 
-// GetPlayerStats returns empty slice
-func (n *NullStatsCollector) GetPlayerStats() []PlayerStats {
-	return nil
-}
+// GetPlayerStats returns nil
+func (n *NullStatsCollector) GetPlayerStats() []PlayerStats { return nil }
 
 // GetDetailedStats returns nil
-func (n *NullStatsCollector) GetDetailedStats(botID string) *DetailedStats {
-	return nil
-}
+func (n *NullStatsCollector) GetDetailedStats(botID string) *protocol.PlayerDetailedStats { return nil }
 
 // Reset does nothing
 func (n *NullStatsCollector) Reset() {}
@@ -174,13 +171,10 @@ func (d *DetailedStatsCollector) RecordHandOutcome(detail HandOutcomeDetail) err
 }
 
 // GetPlayerStats returns nil - basic stats are maintained by BotPool
-func (d *DetailedStatsCollector) GetPlayerStats() []PlayerStats {
-	// Basic stats are maintained by BotPool, not here
-	return nil
-}
+func (d *DetailedStatsCollector) GetPlayerStats() []PlayerStats { return nil }
 
 // GetDetailedStats returns comprehensive statistics for a specific bot
-func (d *DetailedStatsCollector) GetDetailedStats(botID string) *DetailedStats {
+func (d *DetailedStatsCollector) GetDetailedStats(botID string) *protocol.PlayerDetailedStats {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -202,7 +196,7 @@ func (d *DetailedStatsCollector) GetDetailedStats(botID string) *DetailedStats {
 	stdDev := stats.StdDev()
 	low, high := stats.ConfidenceInterval95()
 
-	detailed := &DetailedStats{
+	detailed := &protocol.PlayerDetailedStats{
 		Hands:           hands,
 		NetBB:           sumBB,
 		BB100:           bb100,
@@ -231,13 +225,13 @@ func (d *DetailedStatsCollector) GetDetailedStats(botID string) *DetailedStats {
 
 	// Add position stats if detailed or full depth
 	if d.depth == StatsDepthDetailed || d.depth == StatsDepthFull {
-		detailed.PositionStats = make(map[string]PositionSummary)
+		detailed.PositionStats = make(map[string]protocol.PositionStatSummary)
 		buttonDist := stats.ButtonDistanceResults()
 		for dist := 0; dist < 6; dist++ {
 			bd := buttonDist[dist]
 			if bd.Hands > 0 {
 				posName := statistics.GetPositionName(dist)
-				detailed.PositionStats[posName] = PositionSummary{
+				detailed.PositionStats[posName] = protocol.PositionStatSummary{
 					Hands:     bd.Hands,
 					NetBB:     bd.SumBB,
 					BBPerHand: bd.SumBB / float64(bd.Hands),
@@ -248,10 +242,10 @@ func (d *DetailedStatsCollector) GetDetailedStats(botID string) *DetailedStats {
 
 	// Add street stats if detailed or full depth
 	if d.depth == StatsDepthDetailed || d.depth == StatsDepthFull {
-		detailed.StreetStats = make(map[string]StreetSummary)
+		detailed.StreetStats = make(map[string]protocol.StreetStatSummary)
 		for street, stat := range stats.StreetStats() {
 			if stat.HandsReached > 0 {
-				detailed.StreetStats[street] = StreetSummary{
+				detailed.StreetStats[street] = protocol.StreetStatSummary{
 					HandsEnded: stat.HandsReached,
 					NetBB:      stat.NetBB,
 					BBPerHand:  stat.NetBB / float64(stat.HandsReached),
@@ -262,10 +256,10 @@ func (d *DetailedStatsCollector) GetDetailedStats(botID string) *DetailedStats {
 
 	// Add hand category stats if full depth
 	if d.depth == StatsDepthFull {
-		detailed.HandCategoryStats = make(map[string]CategorySummary)
+		detailed.HandCategoryStats = make(map[string]protocol.CategoryStatSummary)
 		for cat, stat := range stats.CategoryStats() {
 			if stat.Hands > 0 {
-				detailed.HandCategoryStats[cat] = CategorySummary{
+				detailed.HandCategoryStats[cat] = protocol.CategoryStatSummary{
 					Hands:     stat.Hands,
 					NetBB:     stat.NetBB,
 					BBPerHand: stat.NetBB / float64(stat.Hands),
@@ -298,71 +292,9 @@ func (d *DetailedStatsCollector) GetMemoryUsage() (currentHands int, maxHands in
 	return d.currentHands, d.maxHands
 }
 
-// Helper function to categorize hole cards
+// Helper function to categorize hole cards (delegates to statistics)
 func categorizeHoleCards(cards []string) string {
-	if len(cards) != 2 {
-		return "unknown"
-	}
-
-	// Simple categorization - would be more sophisticated in production
-	r1, r2 := cardRank(cards[0]), cardRank(cards[1])
-	suited := cards[0][1] == cards[1][1]
-
-	if r1 > r2 {
-		r1, r2 = r2, r1
-	}
-
-	// Premium: AA, KK, QQ, JJ, AK
-	if (r1 >= 11 && r2 >= 11) || (r1 == 12 && r2 == 13) {
-		return "Premium"
-	}
-
-	// Strong: TT+, AQ, AJ
-	if (r1 >= 10 && r2 >= 10) || (r1 >= 12 && r2 >= 11) {
-		return "Strong"
-	}
-
-	// Medium: 77+, suited broadway
-	if (r1 >= 7 && r2 >= 7) || (suited && r1 >= 10 && r2 >= 10) {
-		return "Medium"
-	}
-
-	// Weak: small pairs, suited connectors
-	if r1 >= 2 || (suited && absDiff(r1, r2) <= 2) {
-		return "Weak"
-	}
-
-	return "Trash"
-}
-
-func cardRank(card string) int {
-	if len(card) < 1 {
-		return 0
-	}
-	switch card[0] {
-	case 'A':
-		return 14
-	case 'K':
-		return 13
-	case 'Q':
-		return 12
-	case 'J':
-		return 11
-	case 'T':
-		return 10
-	default:
-		if card[0] >= '2' && card[0] <= '9' {
-			return int(card[0] - '0')
-		}
-		return 0
-	}
-}
-
-func absDiff(a, b int) int {
-	if a > b {
-		return a - b
-	}
-	return b - a
+	return statistics.CategorizeHoleCards(cards)
 }
 
 func joinCards(cards []string) string {

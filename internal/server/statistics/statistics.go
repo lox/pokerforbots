@@ -7,6 +7,62 @@ import (
 	"sync"
 )
 
+// CategorizeHoleCards provides a simple preflop hand categorization used by development stats.
+// Categories: Premium, Strong, Medium, Weak, Trash. Input cards like ["As","Kd"].
+func CategorizeHoleCards(cards []string) string {
+	if len(cards) != 2 {
+		return "unknown"
+	}
+	r1, r2 := cardRank(cards[0]), cardRank(cards[1])
+	suited := len(cards[0]) >= 2 && len(cards[1]) >= 2 && cards[0][1] == cards[1][1]
+	if r1 > r2 {
+		r1, r2 = r2, r1
+	}
+	if (r1 >= 11 && r2 >= 11) || (r1 == 12 && r2 == 13) { // JJ+, AK
+		return "Premium"
+	}
+	if (r1 >= 10 && r2 >= 10) || (r1 >= 12 && r2 >= 11) { // TT+, AQ/AJ
+		return "Strong"
+	}
+	if (r1 >= 7 && r2 >= 7) || (suited && r1 >= 10 && r2 >= 10) { // 77+, suited broadway
+		return "Medium"
+	}
+	if r1 >= 2 || (suited && absDiff(r1, r2) <= 2) { // small pairs / suited connectors
+		return "Weak"
+	}
+	return "Trash"
+}
+
+func cardRank(card string) int {
+	if len(card) < 1 {
+		return 0
+	}
+	switch card[0] {
+	case 'A':
+		return 14
+	case 'K':
+		return 13
+	case 'Q':
+		return 12
+	case 'J':
+		return 11
+	case 'T':
+		return 10
+	default:
+		if card[0] >= '2' && card[0] <= '9' {
+			return int(card[0] - '0')
+		}
+		return 0
+	}
+}
+
+func absDiff(a, b int) int {
+	if a > b {
+		return a - b
+	}
+	return b - a
+}
+
 // HandResult represents the outcome of a single poker hand
 type HandResult struct {
 	HandNum        int     // Hand number in sequence
