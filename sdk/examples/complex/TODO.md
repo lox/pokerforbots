@@ -5,7 +5,9 @@ This plan upgrades the "complex" bot into a consistent winner versus the built�
 ## Current Status
 - SDK plumbing fixed: chip payouts applied on hand_result; `StartingChips` tracked in state.
 - Patch 1 implemented: preflop ranges/sizing, fold thresholds, SPR guards, standardized bet sizes.
+- Patch 2 foundation implemented: coarse postflop `classifyPostflop()` integrated into decisions; min-raise sizing respected (uses `MinRaise` and `MinBet`).
 - Validation (3k hands): Net +5228.5 BB (+174.28 BB/100), Win rate 2.2% (67 wins), Showdown WR 28.7%, CO/Button positive; MP slightly negative.
+- Batch (5×10k, no infinite bankroll): per-run BB/100 ≈ [63.3, 45.5, 37.6, 38.9, 56.8], mean ≈ +48.4 BB/100. CO still slightly negative; non-showdown slightly negative (expected pre-Patch 2 refinement).
 
 ## Remaining Issues
 - Postflop strength still heuristic; lacks hand/draw classification and board texture handling.
@@ -80,7 +82,6 @@ Status: initial 3k-hand run achieved +174.3 BB/100 with Showdown WR 28.7% (frequ
 ## Patch 2: Postflop hand/draw classifier (coarse buckets)
 Implement `classifyPostflop()` returning enum + equity bucket; adjust −0.05 per extra villain beyond HU.
 
-
 Class                 | Equity (HU)
 --------------------- | -----------
 Overpair/Trips+       | 0.80
@@ -90,7 +91,6 @@ Second Pair           | 0.42
 8+‑out draw           | 0.40
 4–7‑out draw          | 0.25
 Air                   | 0.10
-
 
 Use bucket equity in `shouldFold()` and bet‑size selection.
 
