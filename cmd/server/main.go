@@ -40,6 +40,7 @@ type CLI struct {
 	StatsDepth       string   `kong:"default='basic',enum='basic,detailed,full',help='Statistics detail level: basic|detailed|full'"`
 	MaxStatsHands    int      `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
 	BotCmd           []string `kong:"help='Command to run a local bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME'"`
+	NPCBotCmd        []string `kong:"name='npc-bot-cmd',help='Command to run an external NPC bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME, POKERFORBOTS_ROLE=npc'"`
 	PrintStatsOnExit bool     `kong:"help='Print /admin/games/default/stats JSON on exit'"`
 }
 
@@ -124,13 +125,22 @@ func main() {
 		serverErr <- srv.Start(cli.Addr)
 	}()
 
-	// Bootstrap external bot if requested (run only once)
+	// Bootstrap external bots if requested (run each command)
 	botProcsCtx, botProcsCancel := context.WithCancel(context.Background())
 	defer botProcsCancel()
-	var botDone <-chan error
-	if len(cli.BotCmd) > 0 {
+	var anyBotDone <-chan error
+	var allBotsDone <-chan error
+	{
 		serverWS := toWSURL(cli.Addr)
-		botDone = spawnBot(logger, botProcsCtx, cli.BotCmd[0], serverWS, "default")
+		var chans []<-chan error
+		for _, cmd := range cli.BotCmd {
+			chans = append(chans, spawnBot(logger, botProcsCtx, cmd, serverWS, "default"))
+		}
+		for _, cmd := range cli.NPCBotCmd {
+			chans = append(chans, spawnBotWithRole(logger, botProcsCtx, cmd, serverWS, "default", "npc"))
+		}
+		anyBotDone = firstDone(chans)
+		allBotsDone = waitAll(chans)
 	}
 
 	// Monitor for game completion if hand limit is set on default game
@@ -153,10 +163,10 @@ func main() {
 	case sig := <-sigChan:
 		logger.Info().Str("signal", sig.String()).Msg("Received signal, shutting down gracefully...")
 
-		// If a bot was started, wait for it to exit
-		if botDone != nil {
-			logger.Info().Msg("Waiting for bot process to exit...")
-			<-botDone
+		// If bots were started, wait for them to exit
+		if allBotsDone != nil {
+			logger.Info().Msg("Waiting for bot processes to exit...")
+			<-allBotsDone
 		}
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -178,10 +188,10 @@ func main() {
 			printStats(toHTTPBase(cli.Addr))
 		}
 
-		// Wait for the bot process to exit before shutting down the server
-		if botDone != nil {
-			logger.Info().Msg("Waiting for bot process to exit...")
-			<-botDone
+		// Wait for bot processes to exit before shutting down the server
+		if allBotsDone != nil {
+			logger.Info().Msg("Waiting for bot processes to exit...")
+			<-allBotsDone
 		}
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -196,8 +206,8 @@ func main() {
 		} else {
 			logger.Info().Msg("Server shutdown complete")
 		}
-	case err := <-botDone:
-		logger.Info().Err(err).Msg("Bot process exited, shutting down server...")
+	case err := <-anyBotDone:
+		logger.Info().Err(err).Msg("One or more bot processes exited, shutting down server...")
 
 		if cli.PrintStatsOnExit {
 			printStats(toHTTPBase(cli.Addr))
@@ -246,12 +256,20 @@ func toHTTPBase(addr string) string {
 }
 
 func spawnBot(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, gameID string) <-chan error {
-	logger.Info().Str("cmd", cmdStr).Str("server", serverWS).Str("game", gameID).Msg("Spawning bot")
+	return spawnBotWithRole(logger, ctx, cmdStr, serverWS, gameID, "")
+}
+
+func spawnBotWithRole(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, gameID, role string) <-chan error {
+	logger.Info().Str("cmd", cmdStr).Str("server", serverWS).Str("game", gameID).Str("role", role).Msg("Spawning bot")
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
-	cmd.Env = append(os.Environ(),
+	env := append(os.Environ(),
 		"POKERFORBOTS_SERVER="+serverWS,
 		"POKERFORBOTS_GAME="+gameID,
 	)
+	if role != "" {
+		env = append(env, "POKERFORBOTS_ROLE="+role)
+	}
+	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	done := make(chan error, 1)
@@ -272,6 +290,42 @@ func spawnBot(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, game
 		close(done)
 	}()
 	return done
+}
+
+func firstDone(chans []<-chan error) <-chan error {
+	if len(chans) == 0 {
+		return nil
+	}
+	out := make(chan error, 1)
+	for _, ch := range chans {
+		c := ch
+		go func() {
+			if err := <-c; err != nil {
+				out <- err
+			} else {
+				out <- nil
+			}
+		}()
+	}
+	return out
+}
+
+func waitAll(chans []<-chan error) <-chan error {
+	if len(chans) == 0 {
+		return nil
+	}
+	out := make(chan error, 1)
+	go func() {
+		var firstErr error
+		for _, ch := range chans {
+			if err := <-ch; err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		out <- firstErr
+		close(out)
+	}()
+	return out
 }
 
 func printStats(httpBase string) {
