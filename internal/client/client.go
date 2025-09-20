@@ -59,6 +59,7 @@ type client struct {
 	closed            bool
 	actionPromptLines int
 	pauseForTimeout   bool
+	pausedMessages    [][]byte
 }
 
 func newClient(name, game string) *client {
@@ -166,9 +167,15 @@ func (c *client) inputLoop() {
 		c.mu.Lock()
 		paused := c.pauseForTimeout
 		if paused {
+			// Unpause and flush any buffered messages before resuming normal input.
 			c.pauseForTimeout = false
+			msgs := c.pausedMessages
+			c.pausedMessages = nil
 			c.mu.Unlock()
 			stdoutln(colorize("Continuing...", colorDim))
+			for _, m := range msgs {
+				_ = c.handleMessage(m)
+			}
 			c.printPrompt()
 			continue
 		}
@@ -179,6 +186,17 @@ func (c *client) inputLoop() {
 }
 
 func (c *client) handleMessage(data []byte) error {
+	// If paused due to timeout, buffer messages until the user presses Enter.
+	c.mu.Lock()
+	if c.pauseForTimeout {
+		copyData := make([]byte, len(data))
+		copy(copyData, data)
+		c.pausedMessages = append(c.pausedMessages, copyData)
+		c.mu.Unlock()
+		return nil
+	}
+	c.mu.Unlock()
+
 	var actionReq protocol.ActionRequest
 	if err := protocol.Unmarshal(data, &actionReq); err == nil && actionReq.Type == protocol.TypeActionRequest {
 		return c.handleActionRequest(&actionReq)
