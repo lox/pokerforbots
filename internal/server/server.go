@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
+	statistics "github.com/lox/pokerforbots/internal/server/statistics"
 	"github.com/rs/zerolog"
 )
 
@@ -487,46 +489,271 @@ func (s *Server) handleAdminGame(w http.ResponseWriter, r *http.Request) {
 
 	parts := strings.Split(path, "/")
 	id := parts[0]
+	sub := ""
+	if len(parts) > 1 {
+		sub = parts[1]
+	}
 
 	switch r.Method {
 	case http.MethodDelete:
-		if len(parts) != 1 {
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte("game not found"))
-			return
-		}
-
-		instance, ok := s.manager.DeleteGame(id)
-		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte("game not found"))
-			return
-		}
-
-		instance.StopNPCs()
-		instance.Pool.Stop()
-		s.logger.Info().Str("game_id", id).Msg("Admin deleted game")
-		w.WriteHeader(http.StatusNoContent)
+		s.serveAdminGameDelete(w, id, len(parts))
 	case http.MethodGet:
-		if len(parts) != 2 || parts[1] != "stats" {
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte("endpoint not found"))
-			return
-		}
-
-		stats, ok := s.manager.GameStats(id)
-		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte("game not found"))
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(stats); err != nil {
-			s.logger.Error().Err(err).Msg("failed to encode game stats response")
-			w.WriteHeader(http.StatusInternalServerError)
-		}
+		s.serveAdminGameGet(w, id, sub)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) serveAdminGameDelete(w http.ResponseWriter, id string, partsLen int) {
+	if partsLen != 1 {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("game not found"))
+		return
+	}
+
+	instance, ok := s.manager.DeleteGame(id)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("game not found"))
+		return
+	}
+
+	instance.StopNPCs()
+	instance.Pool.Stop()
+	s.logger.Info().Str("game_id", id).Msg("Admin deleted game")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) serveAdminGameGet(w http.ResponseWriter, id, sub string) {
+	if sub == "stats.md" {
+		s.serveAdminGameStatsMarkdown(w, id)
+		return
+	}
+	if sub == "stats.txt" {
+		s.serveAdminGameStatsText(w, id)
+		return
+	}
+	if sub == "stats" {
+		s.serveAdminGameStatsJSON(w, id)
+		return
+	}
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = w.Write([]byte("endpoint not found"))
+}
+
+func (s *Server) serveAdminGameStatsJSON(w http.ResponseWriter, id string) {
+	stats, ok := s.manager.GameStats(id)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("game not found"))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(stats); err != nil {
+		s.logger.Error().Err(err).Msg("failed to encode game stats response")
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) serveAdminGameStatsText(w http.ResponseWriter, id string) {
+	instance, ok := s.manager.GetGame(id)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("game not found"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	players := instance.Pool.PlayerStats()
+	for _, ps := range players {
+		_, _ = w.Write([]byte("=== PLAYER: " + ps.DisplayName + " (" + ps.Role + ") ===\n"))
+		if instance.Pool.statsCollector != nil && instance.Pool.statsCollector.IsEnabled() {
+			if d, ok := instance.Pool.statsCollector.(*DetailedStatsCollector); ok {
+				d.mu.RLock()
+				stat := d.stats[ps.BotID]
+				d.mu.RUnlock()
+				if stat != nil {
+					_, _ = w.Write([]byte(stat.Summary()))
+					_, _ = w.Write([]byte("\n"))
+					continue
+				}
+			}
+		}
+		_, _ = w.Write([]byte("Hands: "))
+		_, _ = fmt.Fprintf(w, "%d\n", ps.Hands)
+		_, _ = w.Write([]byte("Net chips: "))
+		_, _ = fmt.Fprintf(w, "%d\n\n", ps.NetChips)
+	}
+}
+
+func (s *Server) serveAdminGameStatsMarkdown(w http.ResponseWriter, id string) {
+	instance, ok := s.manager.GetGame(id)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("game not found"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	_, _ = fmt.Fprintf(w, "# Game %s Statistics\n\n", instance.ID)
+	// Game overview
+	gs, _ := s.manager.GameStats(id)
+	_, _ = fmt.Fprintf(w, "## Game overview\n\n")
+	_, _ = fmt.Fprintf(w, "- Blinds: %d/%d\n", gs.SmallBlind, gs.BigBlind)
+	_, _ = fmt.Fprintf(w, "- Start chips: %d\n", gs.StartChips)
+	_, _ = fmt.Fprintf(w, "- Timeout: %d ms\n", gs.TimeoutMs)
+	_, _ = fmt.Fprintf(w, "- Players: %d-%d\n", gs.MinPlayers, gs.MaxPlayers)
+	if gs.HandLimit > 0 {
+		_, _ = fmt.Fprintf(w, "- Hand limit: %d (remaining: %d)\n", gs.HandLimit, gs.HandsRemaining)
+	} else {
+		_, _ = fmt.Fprintf(w, "- Hand limit: unlimited\n")
+	}
+	_, _ = fmt.Fprintf(w, "- Hands completed: %d\n", gs.HandsCompleted)
+	_, _ = fmt.Fprintf(w, "- Hands per second: %.2f\n", gs.HandsPerSecond)
+	_, _ = fmt.Fprintf(w, "- Timeouts: %d\n", gs.Timeouts)
+	_, _ = fmt.Fprintf(w, "- Seed: %d\n", gs.Seed)
+	_, _ = fmt.Fprintf(w, "- Active bots: %d\n\n", instance.Pool.BotCount())
+	// Leaderboard
+	_, _ = fmt.Fprintf(w, "## Leaderboard\n\n")
+	players := instance.Pool.PlayerStats()
+	sort.Slice(players, func(i, j int) bool { return players[i].NetChips > players[j].NetChips })
+	_, _ = fmt.Fprintf(w, "| Player | Role | Hands | Net Chips | BB/100 |\n|---|---:|---:|---:|---:|\n")
+	for _, p := range players {
+		bb100 := 0.0
+		if gs.BigBlind > 0 {
+			bb100 = (p.AvgPerHand / float64(gs.BigBlind)) * 100
+		}
+		_, _ = fmt.Fprintf(w, "| %s | %s | %d | %d | %.2f |\n", p.DisplayName, p.Role, p.Hands, p.NetChips, bb100)
+	}
+	_, _ = fmt.Fprintf(w, "\n")
+	// Aggregate analyses (when stats enabled)
+	if instance.Pool.statsCollector != nil && instance.Pool.statsCollector.IsEnabled() {
+		if d, ok := instance.Pool.statsCollector.(*DetailedStatsCollector); ok {
+			// Aggregate position analysis
+			type aggPos struct {
+				hands int
+				sumBB float64
+			}
+			var pos [6]aggPos
+			// Aggregate street analysis
+			type aggStreet struct {
+				hands int
+				sumBB float64
+			}
+			streetsAgg := map[string]*aggStreet{}
+			d.mu.RLock()
+			for _, stat := range d.stats {
+				bd := stat.ButtonDistanceResults()
+				for dist := 0; dist < 6; dist++ {
+					pbd := bd[dist]
+					if pbd.Hands > 0 {
+						pos[dist].hands += pbd.Hands
+						pos[dist].sumBB += pbd.SumBB
+					}
+				}
+				for street, ss := range stat.StreetStats() {
+					if ss.HandsReached <= 0 {
+						continue
+					}
+					as, ok := streetsAgg[street]
+					if !ok {
+						as = &aggStreet{}
+						streetsAgg[street] = as
+					}
+					as.hands += ss.HandsReached
+					as.sumBB += ss.NetBB
+				}
+			}
+			d.mu.RUnlock()
+			_, _ = fmt.Fprintf(w, "## Aggregate position analysis\n\n")
+			for dist := 0; dist < 6; dist++ {
+				if pos[dist].hands == 0 {
+					continue
+				}
+				mean := pos[dist].sumBB / float64(pos[dist].hands)
+				_, _ = fmt.Fprintf(w, "- %s: %d hands, %.3f BB/hand (%.1f BB/100)\n", statistics.GetPositionName(dist), pos[dist].hands, mean, mean*100)
+			}
+			_, _ = fmt.Fprintf(w, "\n")
+			_, _ = fmt.Fprintf(w, "## Aggregate street analysis\n\n")
+			order := []string{"Preflop", "Flop", "Turn", "River"}
+			for _, street := range order {
+				if as, ok := streetsAgg[street]; ok && as.hands > 0 {
+					avg := as.sumBB / float64(as.hands)
+					_, _ = fmt.Fprintf(w, "- %s: %d hands ended, %.3f BB/hand\n", street, as.hands, avg)
+				}
+			}
+			_, _ = fmt.Fprintf(w, "\n")
+		}
+	}
+	for _, ps := range players {
+		_, _ = fmt.Fprintf(w, "## Player: %s (%s)\n\n", ps.DisplayName, ps.Role)
+		if instance.Pool.statsCollector != nil && instance.Pool.statsCollector.IsEnabled() {
+			if d, ok := instance.Pool.statsCollector.(*DetailedStatsCollector); ok {
+				d.mu.RLock()
+				stat := d.stats[ps.BotID]
+				d.mu.RUnlock()
+				if stat != nil {
+					hands, sumBB, winningHands, losingHands, showdownWins, nonShowdownWins, showdownLosses, showdownBB, nonShowdownBB, _, _, _, _, _ := stat.GetStats()
+					mean := stat.Mean()
+					bb100 := stat.BB100()
+					median := stat.Median()
+					stdDev := stat.StdDev()
+					low, high := stat.ConfidenceInterval95()
+					_, _ = fmt.Fprintf(w, "### Results summary\n\n")
+					_, _ = fmt.Fprintf(w, "- Hands played: %d\n", hands)
+					_, _ = fmt.Fprintf(w, "- Net result: %.2f BB (%.2f BB/100)\n", sumBB, bb100)
+					_, _ = fmt.Fprintf(w, "- Mean: %.4f BB/hand | Median: %.4f BB/hand\n", mean, median)
+					_, _ = fmt.Fprintf(w, "- Std Dev: %.4f BB | 95%% CI: [%.4f, %.4f]\n\n", stdDev, low, high)
+
+					winRate := 0.0
+					if hands > 0 {
+						winRate = float64(winningHands) / float64(hands) * 100
+					}
+					_, _ = fmt.Fprintf(w, "### Win/Loss breakdown\n\n")
+					_, _ = fmt.Fprintf(w, "- Winning hands: %d (%.1f%%)\n", winningHands, winRate)
+					_, _ = fmt.Fprintf(w, "  - Showdown wins: %d | Non-showdown wins: %d\n", showdownWins, nonShowdownWins)
+					_, _ = fmt.Fprintf(w, "- Losing hands: %d (%.1f%%)\n", losingHands, 100-winRate)
+					_, _ = fmt.Fprintf(w, "  - Showdown losses: %d\n\n", showdownLosses)
+
+					totalShowdowns := showdownWins + showdownLosses
+					showdownRate := 0.0
+					if totalShowdowns > 0 {
+						showdownRate = float64(showdownWins) / float64(totalShowdowns) * 100
+					}
+					_, _ = fmt.Fprintf(w, "### Showdown analysis\n\n")
+					_, _ = fmt.Fprintf(w, "- Went to showdown: %d hands\n", totalShowdowns)
+					_, _ = fmt.Fprintf(w, "- Showdown win rate: %.1f%%%%\n", showdownRate)
+					_, _ = fmt.Fprintf(w, "- Showdown BB: %.2f | Non-showdown BB: %.2f\n\n", showdownBB, nonShowdownBB)
+
+					_, _ = fmt.Fprintf(w, "### Position analysis\n\n")
+					bd := stat.ButtonDistanceResults()
+					for dist := 0; dist < 6; dist++ {
+						pbd := bd[dist]
+						if pbd.Hands > 0 {
+							posMean := stat.ButtonDistanceMean(dist)
+							posName := statistics.GetPositionName(dist)
+							_, _ = fmt.Fprintf(w, "- %s: %d hands, %.3f BB/hand (%.1f BB/100)\n", posName, pbd.Hands, posMean, posMean*100)
+						}
+					}
+					_, _ = fmt.Fprintf(w, "\n")
+
+					_, _ = fmt.Fprintf(w, "### Street analysis\n\n")
+					streets := []string{"Preflop", "Flop", "Turn", "River"}
+					ssMap := stat.StreetStats()
+					for _, street := range streets {
+						if ss, ok := ssMap[street]; ok && ss.HandsReached > 0 {
+							avg := ss.NetBB / float64(ss.HandsReached)
+							_, _ = fmt.Fprintf(w, "- %s: %d hands ended, %.3f BB/hand\n", street, ss.HandsReached, avg)
+						}
+					}
+					_, _ = fmt.Fprintf(w, "\n")
+					continue
+				}
+			}
+		}
+		_, _ = fmt.Fprintf(w, "### Results summary\n\n")
+		_, _ = fmt.Fprintf(w, "- Hands: %d\n", ps.Hands)
+		_, _ = fmt.Fprintf(w, "- Net chips: %d\n\n", ps.NetChips)
+		// No per-player street analysis available without detailed stats
+		_, _ = fmt.Fprintf(w, "### Street analysis\n\n")
+		_, _ = fmt.Fprintf(w, "- No street-level data. Enable --enable-stats with --stats-depth=detailed or full.\n\n")
 	}
 }

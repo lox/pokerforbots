@@ -195,14 +195,30 @@ func (d *DetailedStatsCollector) GetDetailedStats(botID string) *DetailedStats {
 	}
 
 	// Build detailed statistics summary
-	detailed := &DetailedStats{
-		BB100:  stats.BB100(),
-		Mean:   stats.Mean(),
-		StdDev: stats.StdDev(),
-	}
+	hands, sumBB, winningHands, _, showdownWins, nonShowdownWins, showdownLosses, showdownBB, nonShowdownBB, maxPotBB, bigPots, _, _, _ := stats.GetStats()
+	mean := stats.Mean()
+	bb100 := stats.BB100()
+	median := stats.Median()
+	stdDev := stats.StdDev()
+	low, high := stats.ConfidenceInterval95()
 
-	// Get aggregated stats
-	hands, _, winningHands, _, showdownWins, _, showdownLosses, _, _, _, _, _, _, _ := stats.GetStats()
+	detailed := &DetailedStats{
+		Hands:           hands,
+		NetBB:           sumBB,
+		BB100:           bb100,
+		Mean:            mean,
+		Median:          median,
+		StdDev:          stdDev,
+		CI95Low:         low,
+		CI95High:        high,
+		WinningHands:    winningHands,
+		ShowdownWins:    showdownWins,
+		NonShowdownWins: nonShowdownWins,
+		ShowdownBB:      showdownBB,
+		NonShowdownBB:   nonShowdownBB,
+		MaxPotBB:        maxPotBB,
+		BigPots:         bigPots,
+	}
 
 	if hands > 0 {
 		detailed.WinRate = float64(winningHands) / float64(hands) * 100
@@ -362,11 +378,30 @@ func joinCards(cards []string) string {
 
 // DetailedStats contains comprehensive statistics for protocol messages
 type DetailedStats struct {
-	BB100             float64                    `json:"bb_100"`
-	Mean              float64                    `json:"mean"`
-	StdDev            float64                    `json:"std_dev"`
-	WinRate           float64                    `json:"win_rate"`
-	ShowdownWinRate   float64                    `json:"showdown_win_rate"`
+	// Summary
+	Hands    int     `json:"hands"`
+	NetBB    float64 `json:"net_bb"`
+	BB100    float64 `json:"bb_per_100"`
+	Mean     float64 `json:"mean"`
+	Median   float64 `json:"median"`
+	StdDev   float64 `json:"std_dev"`
+	CI95Low  float64 `json:"ci_95_low"`
+	CI95High float64 `json:"ci_95_high"`
+
+	// Win/loss
+	WinningHands    int     `json:"winning_hands"`
+	WinRate         float64 `json:"win_rate"`
+	ShowdownWins    int     `json:"showdown_wins"`
+	NonShowdownWins int     `json:"non_showdown_wins"`
+	ShowdownWinRate float64 `json:"showdown_win_rate"`
+	ShowdownBB      float64 `json:"showdown_bb"`
+	NonShowdownBB   float64 `json:"non_showdown_bb"`
+
+	// Pots
+	MaxPotBB float64 `json:"max_pot_bb"`
+	BigPots  int     `json:"big_pots"`
+
+	// Breakdown (optional by depth)
 	PositionStats     map[string]PositionSummary `json:"position_stats,omitempty"`
 	StreetStats       map[string]StreetSummary   `json:"street_stats,omitempty"`
 	HandCategoryStats map[string]CategorySummary `json:"hand_category_stats,omitempty"`

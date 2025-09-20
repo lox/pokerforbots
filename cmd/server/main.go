@@ -357,8 +357,31 @@ func waitAll(chans []<-chan error) <-chan error {
 }
 
 func printStats(httpBase string) {
-	url := fmt.Sprintf("%s/admin/games/default/stats", httpBase)
-	resp, err := http.Get(url)
+	// Prefer markdown format when available
+	urlMD := fmt.Sprintf("%s/admin/games/default/stats.md", httpBase)
+	resp, err := http.Get(urlMD)
+	if err == nil && resp.StatusCode == http.StatusOK {
+		defer resp.Body.Close()
+		_, _ = io.Copy(os.Stdout, resp.Body)
+		return
+	}
+	if resp != nil {
+		resp.Body.Close()
+	}
+	// Fallback to pretty text
+	urlTxt := fmt.Sprintf("%s/admin/games/default/stats.txt", httpBase)
+	resp, err = http.Get(urlTxt)
+	if err == nil && resp.StatusCode == http.StatusOK {
+		defer resp.Body.Close()
+		_, _ = io.Copy(os.Stdout, resp.Body)
+		return
+	}
+	if resp != nil {
+		resp.Body.Close()
+	}
+	// Fallback to JSON
+	urlJSON := fmt.Sprintf("%s/admin/games/default/stats", httpBase)
+	resp, err = http.Get(urlJSON)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to fetch stats: %v\n", err)
 		return
@@ -368,7 +391,7 @@ func printStats(httpBase string) {
 		fmt.Fprintf(os.Stderr, "stats request failed: %s\n", resp.Status)
 		return
 	}
-	io.Copy(os.Stdout, resp.Body)
+	_, _ = io.Copy(os.Stdout, resp.Body)
 	fmt.Fprintln(os.Stdout)
 }
 

@@ -168,11 +168,30 @@ type Error struct {
 
 // PlayerDetailedStats contains comprehensive statistics for a bot (when enabled)
 type PlayerDetailedStats struct {
-	BB100             float64                        `msg:"bb_100" json:"bb_100"`
-	Mean              float64                        `msg:"mean" json:"mean"`
-	StdDev            float64                        `msg:"std_dev" json:"std_dev"`
-	WinRate           float64                        `msg:"win_rate" json:"win_rate"`
-	ShowdownWinRate   float64                        `msg:"showdown_win_rate" json:"showdown_win_rate"`
+	// Summary
+	Hands    int     `msg:"hands" json:"hands"`
+	NetBB    float64 `msg:"net_bb" json:"net_bb"`
+	BB100    float64 `msg:"bb_per_100" json:"bb_per_100"`
+	Mean     float64 `msg:"mean" json:"mean"`
+	Median   float64 `msg:"median" json:"median"`
+	StdDev   float64 `msg:"std_dev" json:"std_dev"`
+	CI95Low  float64 `msg:"ci_95_low" json:"ci_95_low"`
+	CI95High float64 `msg:"ci_95_high" json:"ci_95_high"`
+
+	// Win/loss
+	WinningHands    int     `msg:"winning_hands" json:"winning_hands"`
+	WinRate         float64 `msg:"win_rate" json:"win_rate"`
+	ShowdownWins    int     `msg:"showdown_wins" json:"showdown_wins"`
+	NonShowdownWins int     `msg:"non_showdown_wins" json:"non_showdown_wins"`
+	ShowdownWinRate float64 `msg:"showdown_win_rate" json:"showdown_win_rate"`
+	ShowdownBB      float64 `msg:"showdown_bb" json:"showdown_bb"`
+	NonShowdownBB   float64 `msg:"non_showdown_bb" json:"non_showdown_bb"`
+
+	// Pots
+	MaxPotBB float64 `msg:"max_pot_bb" json:"max_pot_bb"`
+	BigPots  int     `msg:"big_pots" json:"big_pots"`
+
+	// Breakdown (optional by depth)
 	PositionStats     map[string]PositionStatSummary `msg:"position_stats,omitempty" json:"position_stats,omitempty"`
 	StreetStats       map[string]StreetStatSummary   `msg:"street_stats,omitempty" json:"street_stats,omitempty"`
 	HandCategoryStats map[string]CategoryStatSummary `msg:"hand_category_stats,omitempty" json:"hand_category_stats,omitempty"`

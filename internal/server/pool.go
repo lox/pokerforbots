@@ -586,7 +586,7 @@ func (p *BotPool) PlayerStats() []PlayerStats {
 			avg = float64(stats.NetChips) / float64(stats.Hands)
 		}
 
-		players = append(players, PlayerStats{
+		ps := PlayerStats{
 			BotID:       stats.BotID,
 			DisplayName: stats.DisplayName,
 			Role:        role,
@@ -597,7 +597,14 @@ func (p *BotPool) PlayerStats() []PlayerStats {
 			TotalLost:   stats.TotalLost,
 			LastDelta:   stats.LastDelta,
 			LastUpdated: stats.LastUpdated,
-		})
+		}
+		// Attach detailed stats if collector is enabled
+		if p.statsCollector != nil && p.statsCollector.IsEnabled() {
+			if detailed := p.statsCollector.GetDetailedStats(stats.BotID); detailed != nil {
+				ps.DetailedStats = convertToProtocolStats(detailed)
+			}
+		}
+		players = append(players, ps)
 	}
 
 	sort.Slice(players, func(i, j int) bool {
@@ -705,11 +712,23 @@ func convertToProtocolStats(stats *DetailedStats) *protocol.PlayerDetailedStats 
 	}
 
 	result := &protocol.PlayerDetailedStats{
+		Hands:           stats.Hands,
+		NetBB:           stats.NetBB,
 		BB100:           stats.BB100,
 		Mean:            stats.Mean,
+		Median:          stats.Median,
 		StdDev:          stats.StdDev,
+		CI95Low:         stats.CI95Low,
+		CI95High:        stats.CI95High,
+		WinningHands:    stats.WinningHands,
 		WinRate:         stats.WinRate,
+		ShowdownWins:    stats.ShowdownWins,
+		NonShowdownWins: stats.NonShowdownWins,
 		ShowdownWinRate: stats.ShowdownWinRate,
+		ShowdownBB:      stats.ShowdownBB,
+		NonShowdownBB:   stats.NonShowdownBB,
+		MaxPotBB:        stats.MaxPotBB,
+		BigPots:         stats.BigPots,
 	}
 
 	// Convert position stats
@@ -753,16 +772,17 @@ func convertToProtocolStats(stats *DetailedStats) *protocol.PlayerDetailedStats 
 
 // PlayerStats captures aggregate performance metrics for a single bot within a game.
 type PlayerStats struct {
-	BotID       string    `json:"bot_id"`
-	DisplayName string    `json:"display_name"`
-	Role        string    `json:"role"`
-	Hands       int       `json:"hands"`
-	NetChips    int64     `json:"net_chips"`
-	AvgPerHand  float64   `json:"avg_per_hand"`
-	TotalWon    int64     `json:"total_won"`
-	TotalLost   int64     `json:"total_lost"`
-	LastDelta   int       `json:"last_delta"`
-	LastUpdated time.Time `json:"last_updated"`
+	BotID         string                        `json:"bot_id"`
+	DisplayName   string                        `json:"display_name"`
+	Role          string                        `json:"role"`
+	Hands         int                           `json:"hands"`
+	NetChips      int64                         `json:"net_chips"`
+	AvgPerHand    float64                       `json:"avg_per_hand"`
+	TotalWon      int64                         `json:"total_won"`
+	TotalLost     int64                         `json:"total_lost"`
+	LastDelta     int                           `json:"last_delta"`
+	LastUpdated   time.Time                     `json:"last_updated"`
+	DetailedStats *protocol.PlayerDetailedStats `json:"detailed_stats,omitempty"`
 }
 
 // GameStats provides an aggregated snapshot for a game instance.
