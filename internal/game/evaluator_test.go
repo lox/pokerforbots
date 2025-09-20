@@ -1,7 +1,10 @@
 package game
 
 import (
+	"math/rand"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func parseCards(strs ...string) Hand {
@@ -178,6 +181,66 @@ func BenchmarkEvaluateFullHouse(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = Evaluate7Cards(hand)
+	}
+}
+
+// Rigorous large-sample benchmarks
+var benchSink HandRank
+
+func generateRandomHands(n int, seed int64) []Hand {
+	rng := rand.New(rand.NewSource(seed))
+	deck := NewDeck(rng)
+	hands := make([]Hand, n)
+	for i := 0; i < n; i++ {
+		// Ensure enough cards remain; reshuffle if needed
+		if deck.next+7 > 52 {
+			deck.Shuffle()
+		}
+		cards := deck.Deal(7)
+		hands[i] = NewHand(cards...)
+	}
+	return hands
+}
+
+// BenchmarkEvaluate7Cards_LargeSample reports hands/sec over a large random sample
+func BenchmarkEvaluate7Cards_LargeSample(b *testing.B) {
+	const sampleSize = 100_000
+	hands := generateRandomHands(sampleSize, 42)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	start := time.Now()
+	for i := 0; i < b.N; i++ {
+		h := hands[i%len(hands)]
+		benchSink = Evaluate7Cards(h)
+	}
+	elapsed := time.Since(start)
+	if elapsed > 0 {
+		hps := float64(b.N) / elapsed.Seconds()
+		b.ReportMetric(hps, "hands/sec")
+	}
+}
+
+// BenchmarkEvaluate7Cards_LargeSample_Parallel stresses concurrency and reports hands/sec
+func BenchmarkEvaluate7Cards_LargeSample_Parallel(b *testing.B) {
+	const sampleSize = 100_000
+	hands := generateRandomHands(sampleSize, 1337)
+
+	var idx uint64
+	b.ReportAllocs()
+	b.ResetTimer()
+	start := time.Now()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			i := atomic.AddUint64(&idx, 1) - 1
+			h := hands[i%uint64(len(hands))]
+			benchSink = Evaluate7Cards(h)
+		}
+	})
+	elapsed := time.Since(start)
+	if elapsed > 0 {
+		hps := float64(b.N) / elapsed.Seconds()
+		b.ReportMetric(hps, "hands/sec")
 	}
 }
 
