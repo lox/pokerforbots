@@ -196,6 +196,25 @@ func main() {
 		} else {
 			logger.Info().Msg("Server shutdown complete")
 		}
+	case err := <-botDone:
+		logger.Info().Err(err).Msg("Bot process exited, shutting down server...")
+
+		if cli.PrintStatsOnExit {
+			printStats(toHTTPBase(cli.Addr))
+		}
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Error().Err(err).Msg("Graceful shutdown failed")
+		}
+
+		if err := <-serverErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error().Err(err).Msg("Server exited with error")
+		} else {
+			logger.Info().Msg("Server shutdown complete")
+		}
 	}
 }
 
