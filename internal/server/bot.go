@@ -245,7 +245,7 @@ func (b *Bot) ReadPump() {
 	for {
 		_, message, err := b.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				b.logger.Error().Err(err).Msg("Unexpected WebSocket close error")
 			}
 			break

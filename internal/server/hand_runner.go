@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"sort"
@@ -213,7 +214,9 @@ func (hr *HandRunner) Run() {
 			continue
 		}
 		if err := hr.sendActionRequest(bot, activePlayer, validActions); err != nil {
-			hr.logger.Error().Err(err).Msg("Failed to send action request")
+			if !errors.Is(err, ErrBotClosed) {
+				hr.logger.Error().Err(err).Msg("Failed to send action request")
+			}
 			executed := hr.processAction(activePlayer, game.Fold, 0)
 			hr.logPlayerAction(activePlayer, streetName, executed, 0, toCall)
 			continue
@@ -288,8 +291,13 @@ func (hr *HandRunner) broadcastHandStart() {
 			BigBlind:   hr.config.BigBlind,
 		}
 
+		if bot.IsClosed() {
+			continue
+		}
 		if err := bot.SendMessage(msg); err != nil {
-			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send hand start")
+			if !errors.Is(err, ErrBotClosed) {
+				hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send hand start")
+			}
 		}
 	}
 }
@@ -558,8 +566,13 @@ func (hr *HandRunner) broadcastPlayerAction(seat int, action string, amountPaid 
 			Pot:         pot,
 		}
 
+		if bot.IsClosed() {
+			continue
+		}
 		if err := bot.SendMessage(msg); err != nil {
-			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send player action")
+			if !errors.Is(err, ErrBotClosed) {
+				hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send player action")
+			}
 		}
 	}
 }
@@ -586,8 +599,13 @@ func (hr *HandRunner) broadcastGameUpdate() {
 			Players: players,
 		}
 
+		if bot.IsClosed() {
+			continue
+		}
 		if err := bot.SendMessage(msg); err != nil {
-			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send game update")
+			if !errors.Is(err, ErrBotClosed) {
+				hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send game update")
+			}
 		}
 	}
 }
@@ -894,8 +912,13 @@ func (hr *HandRunner) broadcastSpecificStreet(previous, current game.Street, boa
 			Board:  board,
 		}
 
+		if bot.IsClosed() {
+			continue
+		}
 		if err := bot.SendMessage(msg); err != nil {
-			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send street change")
+			if !errors.Is(err, ErrBotClosed) {
+				hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send street change")
+			}
 		}
 	}
 }
@@ -1000,8 +1023,13 @@ func (hr *HandRunner) broadcastHandResult(winners []winnerSummary) {
 			Showdown: showdownHands,
 		}
 
+		if bot.IsClosed() {
+			continue
+		}
 		if err := bot.SendMessage(msg); err != nil {
-			hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send hand result")
+			if !errors.Is(err, ErrBotClosed) {
+				hr.logger.Error().Err(err).Str("bot_id", bot.ID).Msg("Failed to send hand result")
+			}
 		}
 	}
 }
