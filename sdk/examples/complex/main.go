@@ -758,11 +758,33 @@ func (b *complexBot) classifyPostflop() (string, float64) {
 		boardRanks = append(boardRanks, sdk.CardRank(c))
 		boardSuits = append(boardSuits, sdk.CardSuit(c))
 	}
-	// Frequency maps
+	// Frequency maps and texture
 	rankCount := map[int]int{}
-	for _, r := range boardRanks {
+	suitCount := map[byte]int{}
+	minBoard := 99
+	maxBoard := 0
+	for i, r := range boardRanks {
 		rankCount[r]++
+		if r < minBoard {
+			minBoard = r
+		}
+		if r > maxBoard {
+			maxBoard = r
+		}
+		suitCount[boardSuits[i]]++
 	}
+	numDistinctSuits := len(suitCount)
+	monotone := numDistinctSuits == 1 && len(boardSuits) >= 3
+	twoTone := numDistinctSuits == 2 && len(boardSuits) >= 3
+	pairedBoard := false
+	for _, cnt := range rankCount {
+		if cnt >= 2 {
+			pairedBoard = true
+			break
+		}
+	}
+	wet := len(boardRanks) >= 3 && (maxBoard-minBoard) <= 4
+	_ = monotone
 
 	// Combined counts for made hands
 	combinedCount := map[int]int{}
@@ -803,7 +825,7 @@ func (b *complexBot) classifyPostflop() (string, float64) {
 	}
 
 	// Top pair vs second pair
-	maxBoard := 0
+	maxBoard = 0
 	secondBoard := 0
 	for _, r := range boardRanks {
 		if r > maxBoard {
@@ -823,12 +845,36 @@ func (b *complexBot) classifyPostflop() (string, float64) {
 			kicker = hr2
 		}
 		if kicker >= 13 { // K or A kicker ~ TPTK
-			return "TPTK", 0.65
+			eq := 0.65
+			if wet || twoTone {
+				eq -= 0.05
+			}
+			if eq < 0.55 {
+				eq = 0.55
+			}
+			return "TPTK", eq
 		}
-		return "TopPair", 0.55
+		eq := 0.55
+		if wet || twoTone {
+			eq -= 0.05
+		}
+		if pairedBoard {
+			eq -= 0.03
+		}
+		if eq < 0.45 {
+			eq = 0.45
+		}
+		return "TopPair", eq
 	}
 	if isSecondPair {
-		return "SecondPair", 0.42
+		eq := 0.42
+		if wet {
+			eq -= 0.03
+		}
+		if eq < 0.35 {
+			eq = 0.35
+		}
+		return "SecondPair", eq
 	}
 
 	// Draws: flush draw

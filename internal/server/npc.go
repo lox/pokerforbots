@@ -190,6 +190,25 @@ func (aggressiveStrategy) Decide(req *protocol.ActionRequest, st npcState, rng *
 				if amount <= 0 {
 					return "fold", 0
 				}
+				// If stack is below min required, prefer all-in (if allowed) or fallback to call/check
+				if st.Chips < minRequired {
+					for _, a := range req.ValidActions {
+						if a == "allin" {
+							return "allin", 0
+						}
+					}
+					for _, a := range req.ValidActions {
+						if a == "call" {
+							return "call", 0
+						}
+					}
+					for _, a := range req.ValidActions {
+						if a == "check" {
+							return "check", 0
+						}
+					}
+					return "fold", 0
+				}
 				return "raise", amount
 			}
 		}
