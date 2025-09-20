@@ -259,7 +259,7 @@ collectLoop:
 				allBots = append(allBots, bot)
 			case connected && !bot.HasChips():
 				// Bot is out of chips, remove from pool
-				p.logger.Info().Str("bot_id", bot.ID).Msg("Bot out of chips, removing from pool")
+				p.logger.Debug().Str("bot_id", bot.ID).Msg("Bot out of chips, removing from pool")
 				p.Unregister(bot)
 			case connected:
 				// Return bot to available queue if it's valid
@@ -356,7 +356,7 @@ func (p *BotPool) runHand(bots []*Bot) {
 					// Queue full
 				}
 			} else {
-				p.logger.Info().Str("bot_id", bot.ID).Msg("Bot out of chips after hand, removing from pool")
+				p.logger.Debug().Str("bot_id", bot.ID).Msg("Bot out of chips after hand, removing from pool")
 				p.Unregister(bot)
 			}
 		}
@@ -385,7 +385,7 @@ func (p *BotPool) runHand(bots []*Bot) {
 	button := 0 // With freshly shuffled seats, seat 0 acts as the button every hand
 
 	handRNG := rand.New(rand.NewSource(handRNGSeed))
-	p.logger.Info().
+	p.logger.Debug().
 		Str("hand_id", handID).
 		Int("button_position", button).
 		Int("player_count", len(bots)).
@@ -396,7 +396,7 @@ func (p *BotPool) runHand(bots []*Bot) {
 	runner.SetPool(p) // Pass pool for metrics tracking
 	runner.Run()
 
-	p.logger.Info().
+	p.logger.Debug().
 		Str("hand_id", handID).
 		Msg("Hand complete")
 }

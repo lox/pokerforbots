@@ -320,7 +320,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	go bot.WritePump()
 	go bot.ReadPump()
 
-	s.logger.Info().
+	s.logger.Debug().
 		Str("bot_id", botID).
 		Str("game_id", game.ID).
 		Str("name", bot.DisplayName()).

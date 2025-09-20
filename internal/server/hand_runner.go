@@ -126,7 +126,7 @@ func (hr *HandRunner) displayName(observerSeat, targetSeat int) string {
 // Run executes the hand
 func (hr *HandRunner) Run() {
 	startTime := time.Now()
-	hr.logger.Info().Int("player_count", len(hr.bots)).Msg("Hand starting")
+	hr.logger.Debug().Int("player_count", len(hr.bots)).Msg("Hand starting")
 
 	// Create player names and get buy-ins from bots
 	playerNames := make([]string, len(hr.bots))
@@ -181,7 +181,7 @@ func (hr *HandRunner) Run() {
 		// Get current player
 		activePlayer := hr.handState.ActivePlayer
 		if activePlayer == -1 {
-			hr.logger.Info().Msg("No active players, ending hand")
+			hr.logger.Debug().Msg("No active players, ending hand")
 			break // No active players
 		}
 
@@ -249,7 +249,7 @@ func (hr *HandRunner) Run() {
 
 	// Log hand completion time
 	elapsed := time.Since(startTime)
-	hr.logger.Info().
+	hr.logger.Debug().
 		Dur("duration_ms", elapsed).
 		Msg("Hand completed")
 
@@ -614,7 +614,7 @@ func (hr *HandRunner) totalPot() int {
 
 func (hr *HandRunner) logPlayerAction(seat int, street string, action game.Action, declaredAmount int, toCall int) {
 	player := hr.handState.Players[seat]
-	hr.logger.Info().
+	hr.logger.Debug().
 		Int("seat", seat).
 		Str("bot", hr.playerLabels[seat]).
 		Str("street", street).
@@ -749,7 +749,7 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 		winnerSummaries[i] = fmt.Sprintf("seat%d/%s/%d", winner.seat, label, winner.amount)
 	}
 
-	hr.logger.Info().
+	hr.logger.Debug().
 		Int("player_count", len(hr.bots)).
 		Int("button_seat", hr.button).
 		Int("pot_final", totalPot).

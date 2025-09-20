@@ -169,7 +169,7 @@ func (b *complexBot) OnHandStart(state *sdk.GameState, start protocol.HandStart)
 	}
 	b.state.ActiveCount = active
 
-	b.logger.Info().
+	b.logger.Debug().
 		Strs("holes", state.HoleCards).
 		Int("position", b.getPosition()).
 		Msg("hand start")
@@ -321,7 +321,7 @@ func (b *complexBot) OnHandResult(state *sdk.GameState, result protocol.HandResu
 		b.logger.Error().Err(err).Msg("failed to add hand result to statistics")
 	}
 
-	b.logger.Info().
+	b.logger.Debug().
 		Float64("net_bb", netBB).
 		Bool("won", won).
 		Bool("showdown", len(result.Showdown) > 0).
