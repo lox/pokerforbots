@@ -235,11 +235,11 @@ TODO follow-up:
 - [ ] Gate simulation control behind auth checks
 - [ ] **Tests:** auth handshake, failure cases, backwards compatibility with unauthenticated bots
 
-### 18. Mirror Deals & Snapshotting (Server)
+### 18. Snapshotting & Self-Play Harness
 
-- [ ] Add `--mirror` and `--mirror-count` flags to `cmd/server`; propagate to `server.Config`.
-- [ ] Allow deck/script injection (JSON) and reuse the same deck across mirrors; rotate seat-to-card mapping per mirror in HandRunner.
-- [ ] (Optional) Protocol metadata: `hand_group_id`, `mirror_index` for logging/analysis.
-- [ ] Tests: deterministic hand replay across mirrors; CLI flag coverage.
-- [ ] Snapshot strategy: create git tag `complex-bot-snapshot-YYYYMMDD`; store artifacts under `snapshots/complex-YYYYMMDD-<commit>/` (ensure `snapshots/` is gitignored).
+- [ ] Snapshot current complex bot: create git tag `complex-bot-snapshot-YYYYMMDD`.
+- [ ] Store artifacts under `snapshots/complex-YYYYMMDD-<commit>/` (ensure `snapshots/` is gitignored).
+- [ ] Self-play harness: run multiple complex bots in a single game and collect results.
+- [ ] Batch runs: execute 5×50k–100k hands with `--seed` and mirror mode (see Phase 14) to reduce variance.
+- [ ] Reporting: aggregate BB/100 with 95% CI across runs; persist summaries to JSON in snapshots.
 
