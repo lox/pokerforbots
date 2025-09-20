@@ -1277,7 +1277,7 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 	if facing == 0 && hasAction(req.ValidActions, "check") {
 		// Optional BB iso-raise with strong hands; keep simple: check most
 		if inOpenRange(position) && hasAction(req.ValidActions, "raise") {
-			return "raise", openSize
+			return b.raiseOrJam(req, openSize)
 		}
 		return "check", 0
 	}
@@ -1285,7 +1285,7 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 	// Case 2: Unopened / limp-sized to call (treat as open spot)
 	if facing <= bb {
 		if hasAction(req.ValidActions, "raise") && inOpenRange(position) {
-			return "raise", openSize
+			return b.raiseOrJam(req, openSize)
 		}
 		// No limping strategy: fold if cannot/should not raise
 		if hasAction(req.ValidActions, "check") {
@@ -1313,7 +1313,7 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 			if amt > b.state.Chips {
 				amt = b.state.Chips
 			}
-			return "raise", amt
+			return b.raiseOrJam(req, amt)
 		}
 		if hasAction(req.ValidActions, "raise") && inBluff3Bet() && !openerNit {
 			amt := threeBetIP
@@ -1323,7 +1323,7 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 			if amt > b.state.Chips {
 				amt = b.state.Chips
 			}
-			return "raise", amt
+			return b.raiseOrJam(req, amt)
 		}
 		if hasAction(req.ValidActions, "call") && inDefendCall() {
 			if openerNit {
@@ -1340,7 +1340,7 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 					if amt > b.state.Chips {
 						amt = b.state.Chips
 					}
-					return "raise", amt
+					return b.raiseOrJam(req, amt)
 				}
 			}
 			return "call", 0
@@ -1359,7 +1359,7 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 			if amt > b.state.Chips {
 				amt = b.state.Chips
 			}
-			return "raise", amt
+			return b.raiseOrJam(req, amt)
 		}
 		if hasAction(req.ValidActions, "call") && pairAtLeast(10) && inPosition { // flats TT/JJ IP sometimes
 			return "call", 0
