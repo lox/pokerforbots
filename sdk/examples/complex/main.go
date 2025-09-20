@@ -263,15 +263,16 @@ func (b *complexBot) OnStreetChange(state *sdk.GameState, street protocol.Street
 }
 
 func (b *complexBot) OnHandResult(state *sdk.GameState, result protocol.HandResult) error {
-	// Calculate net result for this hand
-	netChips := b.state.Chips - b.state.StartingChips
+	// Calculate net result for this hand (use SDK state which includes final payout)
+	netChips := state.Chips - state.StartingChips
 	netBB := float64(netChips) / float64(b.bigBlind)
 
-	// Check if we won
+	// Check if we won (server sends winner.Name as our perspective display name: first 8 chars of ID)
 	won := false
 	wonAtShowdown := false
+	myWinnerName := b.ownWinnerName()
 	for _, winner := range result.Winners {
-		if winner.Name == b.id {
+		if winner.Name == myWinnerName {
 			won = true
 			if len(result.Showdown) > 0 {
 				wonAtShowdown = true
@@ -367,7 +368,7 @@ func (b *complexBot) OnGameCompleted(state *sdk.GameState, completed protocol.Ga
 
 			b.logger.Info().
 				Str("game_id", completed.GameID).
-				Float64("bb_per_100", ps.AvgPerHand*100).
+				Float64("bb_per_100", (ps.AvgPerHand/float64(b.bigBlind))*100).
 				Int64("net_chips", ps.NetChips).
 				Uint64("hands", completed.HandsCompleted).
 				Bool("won", won).
@@ -629,111 +630,413 @@ func (b *complexBot) calculatePotOdds(req protocol.ActionRequest) float64 {
 }
 
 func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStrength float64, position int, potOdds float64) (string, int) {
-	// Calculate required equity based on pot odds
-	requiredEquity := 1.0 / (potOdds + 1.0)
-
-	// Position-based adjustments
-	positionBonus := 0.0
-	if position <= 1 { // Late position
-		positionBonus = 0.1
-	} else if position >= 3 { // Early position
-		positionBonus = -0.1
+	// Preflop handled by a dedicated policy
+	if b.state.Street == "preflop" {
+		return b.preflopDecision(req, position)
 	}
 
-	adjustedStrength := handStrength + positionBonus
-
-	// Check if we can check
+	// Postflop: apply fold thresholds, SPR awareness, and standardized sizing
 	canCheck := false
-	for _, action := range req.ValidActions {
-		if action == "check" {
+	for _, a := range req.ValidActions {
+		if a == "check" {
 			canCheck = true
 			break
 		}
 	}
 
-	// Decision logic
-	if adjustedStrength > 0.85 || (adjustedStrength > 0.7 && b.state.Street != "preflop") {
-		// Very strong hand - raise or go all in
-		for _, action := range req.ValidActions {
-			if action == "raise" {
-				// Size bet based on pot
-				betSize := req.Pot
-				if b.state.Street == "river" {
-					betSize = int(float64(req.Pot) * 1.5)
-				}
-				if betSize < req.MinBet {
-					betSize = req.MinBet
-				}
-				if betSize > b.state.Chips {
-					betSize = b.state.Chips
-				}
-				return "raise", betSize
-			}
+	equity := handStrength // use current evaluator as equity proxy
+	if b.shouldFold(req, equity) {
+		if canCheck {
+			return "check", 0
 		}
-		for _, action := range req.ValidActions {
-			if action == "allin" {
+		return "fold", 0
+	}
+
+	// SPR based guardrails
+	spr := b.calcSPR(req)
+	// If very low SPR with strong equity, prefer jamming when available
+	if spr < 2.0 && equity > 0.60 {
+		for _, a := range req.ValidActions {
+			if a == "allin" {
 				return "allin", 0
 			}
 		}
 	}
 
-	if adjustedStrength > requiredEquity {
-		// Good odds to continue
-		if canCheck {
-			// Mix between checking and betting
-			if b.rng.Float64() < 0.3 && adjustedStrength > 0.6 {
-				// Sometimes bet with good hands
-				for _, action := range req.ValidActions {
-					if action == "raise" {
-						betSize := req.Pot / 2
-						if betSize < req.MinBet {
-							betSize = req.MinBet
-						}
-						return "raise", betSize
-					}
-				}
-			}
-			return "check", 0
-		}
+	// With high SPR and marginal equity, avoid raising
+	avoidRaise := spr > 8.0 && equity < 0.55
 
-		// Call if we can't check
-		for _, action := range req.ValidActions {
-			if action == "call" {
-				return "call", 0
-			}
-		}
-	}
-
-	// Bluff occasionally in position
-	if position <= 1 && canCheck && b.state.ActiveCount <= 3 && b.rng.Float64() < 0.15 {
-		for _, action := range req.ValidActions {
-			if action == "raise" {
-				bluffSize := req.Pot / 3
-				if bluffSize < req.MinBet {
-					bluffSize = req.MinBet
-				}
-				if bluffSize <= b.state.Chips/4 { // Don't bluff more than 25% of stack
-					return "raise", bluffSize
-				}
-			}
-		}
-	}
-
-	// Weak hand - check or fold
+	// Choose action and size
 	if canCheck {
+		// Decide to value bet / semi-bluff or pot control
+		if equity >= 0.70 && !avoidRaise {
+			// Strong value
+			return "raise", b.betSize(req, 0.50)
+		}
+		if equity >= 0.55 && !avoidRaise {
+			// Thin value or strong draw
+			pct := 0.33
+			if b.state.ActiveCount > 2 {
+				pct = 0.50 // bigger in multiway if we choose to bet at all
+			}
+			return "raise", b.betSize(req, pct)
+		}
+		// Pot control
 		return "check", 0
 	}
 
-	// Only call very small bets with marginal hands
-	if req.ToCall > 0 && float64(req.ToCall) < float64(req.Pot)*0.1 && adjustedStrength > 0.3 {
-		for _, action := range req.ValidActions {
-			if action == "call" {
-				return "call", 0
+	// Facing a bet: prefer call unless very strong
+	if equity >= 0.75 && !avoidRaise {
+		// Raise for value
+		for _, a := range req.ValidActions {
+			if a == "raise" {
+				return "raise", b.betSize(req, 0.50)
 			}
 		}
 	}
+	// Otherwise continue by calling
+	for _, a := range req.ValidActions {
+		if a == "call" {
+			return "call", 0
+		}
+	}
+
+	// Fallback
+	return "fold", 0
+}
+
+// --- Helpers for Patch 1: sizing, thresholds, preflop policy ---
+
+func (b *complexBot) betSize(req protocol.ActionRequest, pct float64) int {
+	size := int(float64(req.Pot) * pct)
+	if size < req.MinBet {
+		size = req.MinBet
+	}
+	if size > b.state.Chips {
+		size = b.state.Chips
+	}
+	if size < 0 {
+		size = 0
+	}
+	return size
+}
+
+func (b *complexBot) calcSPR(req protocol.ActionRequest) float64 {
+	if req.Pot <= 0 {
+		return 99.0
+	}
+	return float64(b.state.Chips) / float64(req.Pot)
+}
+
+func (b *complexBot) shouldFold(req protocol.ActionRequest, equity float64) bool {
+	pot := req.Pot
+	if pot <= 0 {
+		pot = 1
+	}
+	betPct := float64(req.ToCall) / float64(pot)
+
+	// Fallback guard
+	if equity < 0.20 && betPct > 0.60 {
+		return true
+	}
+
+	switch b.state.Street {
+	case "flop":
+		if betPct <= 0.33 {
+			return equity <= 0.15
+		} else if betPct <= 0.66 {
+			return equity <= 0.35
+		}
+		return equity <= 0.50
+	case "turn":
+		if betPct <= 0.50 {
+			return equity <= 0.30
+		} else if betPct < 1.00 {
+			return equity <= 0.50
+		}
+		return equity < 0.60
+	case "river":
+		if betPct <= 0.25 {
+			return equity <= 0.30
+		}
+		if betPct <= 0.50 {
+			return equity <= 0.45
+		}
+		return equity <= 0.60
+	default:
+		return false
+	}
+}
+
+// --- Preflop decision policy (tighten & size) ---
+
+func hasAction(valid []string, target string) bool {
+	for _, a := range valid {
+		if a == target {
+			return true
+		}
+	}
+	return false
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (string, int) {
+	// Extract ranks/suited
+	if len(b.state.HoleCards) != 2 {
+		if hasAction(req.ValidActions, "check") {
+			return "check", 0
+		}
+		return "fold", 0
+	}
+	h1, h2 := b.state.HoleCards[0], b.state.HoleCards[1]
+	r1, r2 := sdk.CardRank(h1), sdk.CardRank(h2)
+	suited := sdk.IsSuited(h1, h2)
+	low, high := r1, r2
+	if low > high {
+		low, high = high, low
+	}
+
+	bb := b.bigBlind
+	// Detect scenario
+	facing := req.ToCall
+
+	// Open sizes
+	openSize := maxInt(req.MinBet, int(2.5*float64(bb)))
+	threeBetIP := maxInt(req.MinBet, int(8.5*float64(bb)))
+	threeBetOOP := maxInt(req.MinBet, int(10.0*float64(bb)))
+	fourBetSize := maxInt(req.MinBet, int(22.0*float64(bb)))
+
+	inPosition := position <= 1 // approximate
+
+	// Helper predicates
+	isPair := r1 == r2
+	pairAtLeast := func(min int) bool { return isPair && high >= min }
+	anyAce := high == 14
+	suitedBroadway := suited && high >= 11 && low >= 10 // KQs, QJs, KJs etc.
+	offBroadway := !suited && high >= 13 && low >= 10   // KQo, KJo, QJo
+	suitedConnector := suited && (high-low == 1) && high >= 8
+	suitedWheelAce := suited && anyAce && low >= 2 && low <= 5 // A5s-A2s
+
+	inOpenRange := func(pos int) bool {
+		switch {
+		case pos >= 3: // early (UTG/LJ)
+			if pairAtLeast(7) {
+				return true
+			}
+			if anyAce && !suited && low >= 11 {
+				return true
+			} // AJo+
+			if offBroadway && high == 13 && low == 12 {
+				return true
+			} // KQo
+			if anyAce && suited && low >= 5 {
+				return true
+			} // A5s+
+			if suited && high == 13 && low >= 10 {
+				return true
+			} // KTs+
+			if suited && high == 12 && low >= 10 {
+				return true
+			} // QTs+
+			if suited && high == 11 && low == 10 {
+				return true
+			} // JTs
+			if suited && high == 10 && low == 9 {
+				return true
+			} // T9s
+			return false
+		case pos == 2: // CO
+			if pairAtLeast(5) {
+				return true
+			}
+			if anyAce && suited && low >= 9 {
+				return true
+			} // A9s+
+			if anyAce && !suited && low >= 11 {
+				return true
+			} // AJo+
+			if !suited && high == 13 && low >= 11 {
+				return true
+			} // KJo+
+			if suited && high == 13 && low >= 9 {
+				return true
+			} // K9s+
+			if suited && high == 12 && low >= 10 {
+				return true
+			} // QTs+
+			if suited && high == 11 && low == 10 {
+				return true
+			} // JTs
+			if suited && high == 10 && low == 9 {
+				return true
+			} // T9s
+			if suited && high == 9 && low == 8 {
+				return true
+			} // 98s
+			return false
+		default: // BTN and later (pos 0/1)
+			if isPair {
+				return true
+			}
+			if anyAce {
+				return true
+			}
+			if suited && high == 13 && low >= 8 {
+				return true
+			} // K8s+
+			if suited && high == 12 && low >= 9 {
+				return true
+			} // Q9s+
+			if suited && high == 11 && low >= 9 {
+				return true
+			} // J9s+
+			if suited && high >= 10 && low >= 8 {
+				return true
+			} // T8s+
+			if suitedConnector {
+				return true
+			} // 65s+
+			if !suited && high >= 13 && low >= 10 {
+				return true
+			} // KTo+, QTo+, JTo
+			return false
+		}
+	}
+
+	inValue3Bet := func() bool {
+		if pairAtLeast(10) {
+			return true
+		} // TT+
+		if anyAce && suited && low >= 12 {
+			return true
+		} // AQs+
+		if anyAce && !suited && low == 13 {
+			return true
+		} // AKo
+		return false
+	}
+
+	inBluff3Bet := func() bool {
+		if position <= 1 { // BTN/CO only
+			if suitedWheelAce {
+				return true
+			}
+			if suited && high == 13 && low >= 9 {
+				return true
+			} // K9s+
+			if suitedBroadway && high != 14 {
+				return true
+			} // QTs, KQs already covered by value sometimes
+		}
+		return false
+	}
+
+	inDefendCall := func() bool {
+		// Simple defend set: small pairs, suited broadways, good suited connectors
+		if pairAtLeast(2) && high <= 9 {
+			return true
+		} // 22-99
+		if suitedBroadway {
+			return true
+		}
+		if suitedConnector {
+			return true
+		}
+		return false
+	}
+
+	// Case 1: BB can check
+	if facing == 0 && hasAction(req.ValidActions, "check") {
+		// Optional BB iso-raise with strong hands; keep simple: check most
+		if inOpenRange(position) && hasAction(req.ValidActions, "raise") {
+			return "raise", openSize
+		}
+		return "check", 0
+	}
+
+	// Case 2: Unopened / limp-sized to call (treat as open spot)
+	if facing <= bb {
+		if hasAction(req.ValidActions, "raise") && inOpenRange(position) {
+			return "raise", openSize
+		}
+		// No limping strategy: fold if cannot/should not raise
+		if hasAction(req.ValidActions, "check") {
+			return "check", 0
+		}
+		return "fold", 0
+	}
+
+	// Case 3: Facing an open raise (≈2-3bb)
+	if facing > bb && facing <= 3*bb {
+		// 3-bet value / bluff, else call some, else fold
+		if hasAction(req.ValidActions, "raise") && inValue3Bet() {
+			amt := threeBetOOP
+			if inPosition {
+				amt = threeBetIP
+			}
+			if amt > b.state.Chips {
+				amt = b.state.Chips
+			}
+			return "raise", amt
+		}
+		if hasAction(req.ValidActions, "raise") && inBluff3Bet() {
+			amt := threeBetIP
+			if !inPosition {
+				amt = threeBetOOP
+			}
+			if amt > b.state.Chips {
+				amt = b.state.Chips
+			}
+			return "raise", amt
+		}
+		if hasAction(req.ValidActions, "call") && inDefendCall() {
+			return "call", 0
+		}
+		return "fold", 0
+	}
+
+	// Case 4: Facing a 3-bet (large ToCall) → 4-bet only with QQ+/AK
+	if facing > 3*bb {
+		qqPlusAK := (pairAtLeast(12) || (anyAce && (low == 13 || (suited && low >= 12))))
+		if hasAction(req.ValidActions, "allin") && qqPlusAK && b.calcSPR(req) < 4.0 {
+			return "allin", 0
+		}
+		if hasAction(req.ValidActions, "raise") && qqPlusAK {
+			amt := fourBetSize
+			if amt > b.state.Chips {
+				amt = b.state.Chips
+			}
+			return "raise", amt
+		}
+		if hasAction(req.ValidActions, "call") && pairAtLeast(10) && inPosition { // flats TT/JJ IP sometimes
+			return "call", 0
+		}
+		return "fold", 0
+	}
 
 	return "fold", 0
+}
+
+func (b *complexBot) ownWinnerName() string {
+	candidates := []string{b.id}
+	if len(b.id) >= 8 {
+		candidates = append(candidates, b.id[:8])
+	}
+	candidates = append(candidates, fmt.Sprintf("player-%d", b.state.Seat+1))
+	candidates = append(candidates, fmt.Sprintf("bot-%d", b.state.Seat+1))
+	// Prefer truncated ID if present
+	for _, c := range candidates {
+		if len(c) == 8 || c == b.id {
+			return c
+		}
+	}
+	return candidates[0]
 }
 
 func (b *complexBot) getOrCreateProfile(name string) *opponentProfile {
