@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"time"
@@ -38,17 +39,18 @@ type Handler interface {
 
 // GameState holds the current table state
 type GameState struct {
-	HandID      string
-	Seat        int
-	Pot         int
-	Chips       int
-	Players     []protocol.Player
-	LastAction  protocol.PlayerAction
-	HoleCards   []string
-	Board       []string
-	Street      string
-	Button      int
-	ActiveCount int
+	HandID        string
+	Seat          int
+	Pot           int
+	Chips         int
+	StartingChips int
+	Players       []protocol.Player
+	LastAction    protocol.PlayerAction
+	HoleCards     []string
+	Board         []string
+	Street        string
+	Button        int
+	ActiveCount   int
 }
 
 // Bot provides a simple framework for poker bot implementations
@@ -175,6 +177,7 @@ func (b *Bot) tryHandStart(data []byte) bool {
 	b.state.Seat = start.YourSeat
 	b.state.Players = start.Players
 	b.state.Chips = start.Players[start.YourSeat].Chips
+	b.state.StartingChips = b.state.Chips
 	b.state.HoleCards = start.HoleCards
 	b.state.Board = nil
 	b.state.Street = "preflop"
@@ -239,6 +242,37 @@ func (b *Bot) tryHandResult(data []byte) bool {
 	var result protocol.HandResult
 	if err := protocol.Unmarshal(data, &result); err != nil || result.Type != protocol.TypeHandResult {
 		return false
+	}
+
+	// Adjust our chip count with payout from winners, since no post-award GameUpdate is sent.
+	// Determine our displayed name as seen in this message
+	labels := []string{b.id}
+	if len(b.id) >= 8 {
+		labels = append(labels, b.id[:8])
+	}
+	labels = append(labels, fmt.Sprintf("player-%d", b.state.Seat+1))
+	labels = append(labels, fmt.Sprintf("bot-%d", b.state.Seat+1))
+
+	payout := 0
+	for _, w := range result.Winners {
+		// Prefer matching by hole cards when available
+		if len(w.HoleCards) == 2 && len(b.state.HoleCards) == 2 {
+			wc1, wc2 := w.HoleCards[0], w.HoleCards[1]
+			mc1, mc2 := b.state.HoleCards[0], b.state.HoleCards[1]
+			if (wc1 == mc1 && wc2 == mc2) || (wc1 == mc2 && wc2 == mc1) {
+				payout += w.Amount
+				continue
+			}
+		}
+		for _, lab := range labels {
+			if w.Name == lab {
+				payout += w.Amount
+				break
+			}
+		}
+	}
+	if payout > 0 {
+		b.state.Chips += payout
 	}
 
 	if err := b.handler.OnHandResult(b.state, result); err != nil {
