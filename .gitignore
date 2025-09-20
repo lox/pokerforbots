@@ -42,5 +42,8 @@ logs/
 # Results
 /*.json
 
+# Snapshots (local artifacts, not tracked)
+snapshots/
+ 
 # Built binaries
 /complex
