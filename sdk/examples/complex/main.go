@@ -1027,15 +1027,33 @@ func (b *complexBot) betSize(req protocol.ActionRequest, pct float64) int {
 	return size
 }
 
-// raiseOrJam chooses "allin" when target size is capped below MinRaise by our stack
+// raiseOrJam chooses "allin" when target size is capped below MinRaise by our stack.
+// If all-in is not a valid action and we can't meet MinRaise, fallback to call/check.
 func (b *complexBot) raiseOrJam(req protocol.ActionRequest, amt int) (string, int) {
-	if amt >= b.state.Chips {
-		for _, a := range req.ValidActions {
-			if a == "allin" {
-				return "allin", 0
+	// If the amount doesn't meet MinRaise, handle special cases
+	if amt < req.MinRaise {
+		// Try to jam if allowed and we're effectively jamming
+		if amt >= b.state.Chips {
+			for _, a := range req.ValidActions {
+				if a == "allin" {
+					return "allin", 0
+				}
 			}
 		}
+		// Otherwise we cannot legally raise; prefer call/check
+		for _, a := range req.ValidActions {
+			if a == "call" {
+				return "call", 0
+			}
+		}
+		for _, a := range req.ValidActions {
+			if a == "check" {
+				return "check", 0
+			}
+		}
+		return "fold", 0
 	}
+	// Otherwise, standard raise
 	return "raise", amt
 }
 
