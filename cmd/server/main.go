@@ -124,14 +124,13 @@ func main() {
 		serverErr <- srv.Start(cli.Addr)
 	}()
 
-	// Bootstrap external bots if requested
+	// Bootstrap external bot if requested (run only once)
 	botProcsCtx, botProcsCancel := context.WithCancel(context.Background())
 	defer botProcsCancel()
+	var botDone <-chan error
 	if len(cli.BotCmd) > 0 {
 		serverWS := toWSURL(cli.Addr)
-		for _, cmd := range cli.BotCmd {
-			spawnBot(logger, botProcsCtx, cmd, serverWS, "default")
-		}
+		botDone = spawnBot(logger, botProcsCtx, cli.BotCmd[0], serverWS, "default")
 	}
 
 	// Monitor for game completion if hand limit is set on default game
@@ -154,6 +153,12 @@ func main() {
 	case sig := <-sigChan:
 		logger.Info().Str("signal", sig.String()).Msg("Received signal, shutting down gracefully...")
 
+		// If a bot was started, wait for it to exit
+		if botDone != nil {
+			logger.Info().Msg("Waiting for bot process to exit...")
+			<-botDone
+		}
+
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -167,10 +172,16 @@ func main() {
 			logger.Info().Msg("Server shutdown complete")
 		}
 	case <-gameCompleteNotifier:
-		logger.Info().Msg("Default game completed, shutting down for profiling...")
+		logger.Info().Msg("Default game completed, waiting for bot and shutting down...")
 
 		if cli.PrintStatsOnExit {
 			printStats(toHTTPBase(cli.Addr))
+		}
+
+		// Wait for the bot process to exit before shutting down the server
+		if botDone != nil {
+			logger.Info().Msg("Waiting for bot process to exit...")
+			<-botDone
 		}
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -215,7 +226,7 @@ func toHTTPBase(addr string) string {
 	return "http://" + base
 }
 
-func spawnBot(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, gameID string) {
+func spawnBot(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, gameID string) <-chan error {
 	logger.Info().Str("cmd", cmdStr).Str("server", serverWS).Str("game", gameID).Msg("Spawning bot")
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
 	cmd.Env = append(os.Environ(),
@@ -224,17 +235,24 @@ func spawnBot(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, game
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	done := make(chan error, 1)
 	if err := cmd.Start(); err != nil {
 		logger.Error().Err(err).Str("cmd", cmdStr).Msg("Failed to start bot process")
-		return
+		done <- err
+		close(done)
+		return done
 	}
 	go func() {
 		if err := cmd.Wait(); err != nil {
 			logger.Error().Err(err).Str("cmd", cmdStr).Msg("Bot process exited with error")
+			done <- err
 		} else {
 			logger.Info().Str("cmd", cmdStr).Msg("Bot process exited")
+			done <- nil
 		}
+		close(done)
 	}()
+	return done
 }
 
 func printStats(httpBase string) {
