@@ -45,6 +45,16 @@ tmux new-session -d -s poker-server \
     --max-stats-hands=5000'
 ```
 
+### One-liner: Run server and complex bot together
+
+This runs a 3k-hand session with 3 NPCs, spawns the complex bot once, prints stats on exit, and terminates automatically:
+
+```bash
+task server -- --hands 3000 --npc-bots 3 --bot-cmd 'go run ./sdk/examples/complex' --print-stats-on-exit
+```
+
+Tip: add flags like `--timeout-ms 20`, `--enable-stats`, and `--stats-depth=full` as needed.
+
 ### 2. Monitor Server Logs
 
 ```bash
