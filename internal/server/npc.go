@@ -170,12 +170,16 @@ func (aggressiveStrategy) Decide(req *protocol.ActionRequest, st npcState, rng *
 	if rng.Float32() < 0.7 {
 		for _, action := range req.ValidActions {
 			if action == "raise" {
-				amount := req.MinBet
+				minRequired := req.MinBet
+				if req.MinRaise > minRequired {
+					minRequired = req.MinRaise
+				}
+				amount := minRequired
 				if req.Pot > 0 {
 					amount = req.Pot * (2 + rng.Intn(2))
 				}
-				if amount < req.MinBet {
-					amount = req.MinBet
+				if amount < minRequired {
+					amount = minRequired
 				}
 				if amount > st.Chips {
 					amount = st.Chips
@@ -217,6 +221,9 @@ func (randomStrategy) Decide(req *protocol.ActionRequest, st npcState, rng *rand
 	action := req.ValidActions[rng.Intn(len(req.ValidActions))]
 	if action == "raise" {
 		min := req.MinBet
+		if req.MinRaise > min {
+			min = req.MinRaise
+		}
 		max := st.Chips
 		if max < min {
 			return "allin", 0
