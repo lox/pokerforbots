@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"time"
+	"os"
 
 	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/internal/protocol"
@@ -90,6 +90,13 @@ func (b *Bot) Connect(serverURL string) error {
 		Name: b.id,
 		Role: "player",
 	}
+	// Allow environment overrides for game and role when launched by server
+	if game := os.Getenv("POKERFORBOTS_GAME"); game != "" {
+		connect.Game = game
+	}
+	if role := os.Getenv("POKERFORBOTS_ROLE"); role != "" {
+		connect.Role = role
+	}
 	payload, err := protocol.Marshal(connect)
 	if err != nil {
 		return err
@@ -111,9 +118,7 @@ func (b *Bot) Run(ctx context.Context) error {
 		default:
 		}
 
-		// Set read timeout to avoid hanging on shutdown
-		b.conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-
+		// Block on reads; a separate closer on ctx.Done will unblock if needed
 		msgType, data, err := b.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {

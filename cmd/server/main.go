@@ -132,15 +132,20 @@ func main() {
 	var allBotsDone <-chan error
 	{
 		serverWS := toWSURL(cli.Addr)
-		var chans []<-chan error
+		var playerChans []<-chan error
+		var npcChans []<-chan error
 		for _, cmd := range cli.BotCmd {
-			chans = append(chans, spawnBot(logger, botProcsCtx, cmd, serverWS, "default"))
+			playerChans = append(playerChans, spawnBot(logger, botProcsCtx, cmd, serverWS, "default"))
 		}
 		for _, cmd := range cli.NPCBotCmd {
-			chans = append(chans, spawnBotWithRole(logger, botProcsCtx, cmd, serverWS, "default", "npc"))
+			npcChans = append(npcChans, spawnBotWithRole(logger, botProcsCtx, cmd, serverWS, "default", "npc"))
 		}
-		anyBotDone = firstDone(chans)
-		allBotsDone = waitAll(chans)
+		// Only treat player bot exits as a shutdown trigger
+		anyBotDone = firstDone(playerChans)
+		// Wait for all bots (players and NPCs) on shutdown paths
+		allBots := append([]<-chan error{}, playerChans...)
+		allBots = append(allBots, npcChans...)
+		allBotsDone = waitAll(allBots)
 	}
 
 	// Monitor for game completion if hand limit is set on default game
