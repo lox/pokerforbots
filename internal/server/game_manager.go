@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lox/pokerforbots/internal/protocol"
 	"github.com/rs/zerolog"
 )
 
@@ -194,8 +195,15 @@ func (gi *GameInstance) Stats() GameStats {
 		Timeouts:         gi.Pool.TimeoutCount(),
 		HandsPerSecond:   gi.Pool.HandsPerSecond(),
 		Seed:             gi.Config.Seed,
-		Players:          gi.Pool.PlayerStats(),
 	}
+
+	// Map pool player stats into protocol players for admin JSON
+	poolPlayers := gi.Pool.PlayerStats()
+	players := make([]protocol.GameCompletedPlayer, 0, len(poolPlayers))
+	for _, ps := range poolPlayers {
+		players = append(players, ps.GameCompletedPlayer)
+	}
+	stats.Players = players
 
 	return stats
 }
