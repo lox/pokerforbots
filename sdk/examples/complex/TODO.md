@@ -6,12 +6,13 @@ This plan upgrades the "complex" bot into a consistent winner versus the built�
 - SDK plumbing fixed: chip payouts applied on hand_result; `StartingChips` tracked in state.
 - Patch 1 implemented: preflop ranges/sizing, fold thresholds, SPR guards, standardized bet sizes.
 - Patch 2 foundation implemented: coarse postflop `classifyPostflop()` integrated into decisions; min-raise sizing respected (uses `MinRaise` and `MinBet`).
-- Validation (3k hands): Net +5228.5 BB (+174.28 BB/100), Win rate 2.2% (67 wins), Showdown WR 28.7%, CO/Button positive; MP slightly negative.
-- Batch (5×10k, no infinite bankroll): per-run BB/100 ≈ [63.3, 45.5, 37.6, 38.9, 56.8], mean ≈ +48.4 BB/100. CO still slightly negative; non-showdown slightly negative (expected pre-Patch 2 refinement).
+- Patch 3 basics implemented: track per-opponent VPIP and AF; preflop exploit (no bluff 3-bet vs nits, occasional pressure vs loose openers IP); postflop exploit vs passive (overfold big bets) and aggressive (apply pressure vs small bets) villains.
+- Validation (1k hands, infinite bankroll): +433.01 BB/100, Showdown WR 36.0%, Non-showdown BB +467.5. Quick sanity check only; requires larger batches.
+- Prior batch (5×10k, no infinite bankroll): per-run BB/100 ≈ [63.3, 45.5, 37.6, 38.9, 56.8], mean ≈ +48.4 BB/100. CO still slightly negative; non-showdown slightly negative (pre-Patch 2 refinement).
 
 ## Remaining Issues
-- Postflop strength still heuristic; lacks hand/draw classification and board texture handling.
-- Opponent profiling not yet used to adapt frequencies/sizes.
+- Postflop strength still heuristic; board texture handling is coarse.
+- Opponent tags not yet fully integrated into all lines (e.g., check-raise frequencies, river thin value).
 
 ## Success Criteria
 - Primary: BB/100 > 0 over 50k hands vs default 3‑NPC mix (target +20 to +80 BB/100).
@@ -128,8 +129,9 @@ Log per decision: handNum, street, position, SPR, villainTag, equityBucket, acti
 - Keep `evaluateHandStrength` as a thin wrapper over `classifyPostflop` for now.
 
 ## Validation Loop
+- Quick sanity: `go run ./cmd/server --npc-bots=5 --bot-cmd "go run ./sdk/examples/complex" --hands=1000 --infinite-bankroll --enable-stats --print-stats-on-exit`
 - Run 5×10k hands with stats enabled:
-  - `task server -- --infinite-bankroll --hands 10000 --timeout-ms 20 --npc-bots 3 --enable-stats --stats-depth=full` (per run)
+  - `task server -- --infinite-bankroll --hands 10000 --timeout-ms 20 --npc-bots 3 --enable-stats --stats-depth=full`
   - `go run ./sdk/examples/complex`
 - Pass if:
   - Mean BB/100 > 0 and 95% CI lower bound > −20.
