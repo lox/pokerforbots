@@ -94,13 +94,8 @@ func NewBotPool(logger zerolog.Logger, rng *rand.Rand, config Config) *BotPool {
 		if maxHands <= 0 {
 			maxHands = 10000 // Default limit
 		}
-		depth := config.StatsDepth
-		if depth == "" {
-			depth = StatsDepthBasic // Default to basic
-		}
-		collector = NewDetailedStatsCollector(depth, maxHands, config.BigBlind)
+		collector = NewDetailedStatsCollector(maxHands, config.BigBlind)
 		logger.Info().
-			Str("depth", string(depth)).
 			Int("max_hands", maxHands).
 			Msg("Statistics collection enabled")
 	} else {

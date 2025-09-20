@@ -39,8 +39,7 @@ type CLI struct {
 	NPCAggro         int      `kong:"default='0',help='NPC aggressive bots (overrides auto distribution)'"`
 	Seed             *int64   `kong:"help='Deterministic RNG seed for the server (optional)'"`
 	Hands            uint64   `kong:"default='0',help='Maximum hands to run in the default game (0 = unlimited)'"`
-	EnableStats      bool     `kong:"default='false',help='Enable statistics collection for development (impacts performance)'"`
-	StatsDepth       string   `kong:"default='basic',enum='basic,detailed,full',help='Statistics detail level: basic|detailed|full'"`
+	CollectDetailed  bool     `kong:"name='collect-detailed-stats',default='false',help='Collect detailed statistics (impacts performance)'"`
 	MaxStatsHands    int      `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
 	BotCmd           []string `kong:"help='Command to run a local bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME'"`
 	NPCBotCmd        []string `kong:"name='npc-bot-cmd',help='Command to run an external NPC bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME, POKERFORBOTS_ROLE=npc'"`
@@ -85,8 +84,7 @@ func main() {
 		InfiniteBankroll: cli.InfiniteBankroll,
 		HandLimit:        cli.Hands,
 		Seed:             0,
-		EnableStats:      cli.EnableStats,
-		StatsDepth:       server.StatisticsDepth(cli.StatsDepth),
+		EnableStats:      cli.CollectDetailed,
 		MaxStatsHands:    cli.MaxStatsHands,
 	}
 
@@ -121,8 +119,7 @@ func main() {
 			Bool("infinite_bankroll", cli.InfiniteBankroll).
 			Uint64("hand_limit", cli.Hands).
 			Int64("seed", seed).
-			Bool("enable_stats", cli.EnableStats).
-			Str("stats_depth", cli.StatsDepth).
+			Bool("collect_detailed_stats", cli.CollectDetailed).
 			Int("max_stats_hands", cli.MaxStatsHands).
 			Msg("Server starting")
 		serverErr <- srv.Start(cli.Addr)

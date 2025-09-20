@@ -33,7 +33,7 @@ func TestNullStatsCollector(t *testing.T) {
 }
 
 func TestDetailedStatsCollector(t *testing.T) {
-	collector := NewDetailedStatsCollector(StatsDepthFull, 100, 10)
+	collector := NewDetailedStatsCollector(100, 10)
 
 	// Test that it's enabled
 	if !collector.IsEnabled() {
@@ -131,17 +131,15 @@ func TestDetailedStatsCollector(t *testing.T) {
 		t.Error("Expected street stats")
 	}
 
-	// Check hand category stats (only for full depth)
-	if collector.depth == StatsDepthFull {
-		if len(detailedStats.HandCategoryStats) == 0 {
-			t.Error("Expected hand category stats for full depth")
-		}
+	// Check hand category stats are present in detailed mode
+	if len(detailedStats.HandCategoryStats) == 0 {
+		t.Error("Expected hand category stats")
 	}
 }
 
 func TestDetailedStatsCollectorMemoryLimit(t *testing.T) {
 	// Create collector with max 2 hands
-	collector := NewDetailedStatsCollector(StatsDepthBasic, 2, 10)
+	collector := NewDetailedStatsCollector(2, 10)
 
 	bot := &Bot{ID: "bot1", displayName: "TestBot", role: "player"}
 
@@ -186,7 +184,7 @@ func TestDetailedStatsCollectorMemoryLimit(t *testing.T) {
 }
 
 func TestDetailedStatsCollectorReset(t *testing.T) {
-	collector := NewDetailedStatsCollector(StatsDepthDetailed, 100, 10)
+	collector := NewDetailedStatsCollector(100, 10)
 
 	bot := &Bot{ID: "bot1", displayName: "TestBot", role: "player"}
 
@@ -232,81 +230,6 @@ func TestDetailedStatsCollectorReset(t *testing.T) {
 	}
 }
 
-func TestStatsDepthLevels(t *testing.T) {
-	tests := []struct {
-		depth               StatisticsDepth
-		expectPositionStats bool
-		expectStreetStats   bool
-		expectCategoryStats bool
-	}{
-		{StatsDepthBasic, false, false, false},
-		{StatsDepthDetailed, true, true, false},
-		{StatsDepthFull, true, true, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(string(tt.depth), func(t *testing.T) {
-			collector := NewDetailedStatsCollector(tt.depth, 100, 10)
-
-			bot := &Bot{ID: "bot1", displayName: "TestBot", role: "player"}
-
-			detail := HandOutcomeDetail{
-				HandID:         "hand1",
-				ButtonPosition: 0,
-				StreetReached:  "river",
-				BotOutcomes: []BotHandOutcome{
-					{
-						Bot:            bot,
-						Position:       0,
-						ButtonDistance: 2, // Middle position
-						HoleCards:      []string{"As", "Ks"},
-						NetChips:       30,
-						WentToShowdown: true,
-						WonAtShowdown:  true,
-						Actions: map[string]string{
-							"preflop": "raise",
-							"flop":    "bet",
-							"turn":    "bet",
-							"river":   "check",
-						},
-					},
-				},
-			}
-
-			err := collector.RecordHandOutcome(detail)
-			if err != nil {
-				t.Errorf("RecordHandOutcome failed: %v", err)
-			}
-
-			detailedStats := collector.GetDetailedStats("bot1")
-			if tt.depth == StatsDepthBasic {
-				if detailedStats != nil {
-					t.Error("Basic depth should not return detailed stats")
-				}
-			} else {
-				if detailedStats == nil {
-					t.Fatal("Expected detailed stats")
-				}
-
-				hasPositionStats := len(detailedStats.PositionStats) > 0
-				if hasPositionStats != tt.expectPositionStats {
-					t.Errorf("Position stats: expected %v, got %v", tt.expectPositionStats, hasPositionStats)
-				}
-
-				hasStreetStats := len(detailedStats.StreetStats) > 0
-				if hasStreetStats != tt.expectStreetStats {
-					t.Errorf("Street stats: expected %v, got %v", tt.expectStreetStats, hasStreetStats)
-				}
-
-				hasCategoryStats := len(detailedStats.HandCategoryStats) > 0
-				if hasCategoryStats != tt.expectCategoryStats {
-					t.Errorf("Category stats: expected %v, got %v", tt.expectCategoryStats, hasCategoryStats)
-				}
-			}
-		})
-	}
-}
-
 func TestHandCategorization(t *testing.T) {
 	tests := []struct {
 		cards    []string
@@ -335,7 +258,7 @@ func TestHandCategorization(t *testing.T) {
 }
 
 func BenchmarkStatsCollection(b *testing.B) {
-	collector := NewDetailedStatsCollector(StatsDepthFull, 10000, 10)
+	collector := NewDetailedStatsCollector(10000, 10)
 	bot := &Bot{ID: "bot1", displayName: "TestBot", role: "player"}
 
 	detail := HandOutcomeDetail{

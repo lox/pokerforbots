@@ -100,8 +100,7 @@ func (hr *HandRunner) SetPool(pool *BotPool) {
 	hr.pool = pool
 
 	// Check if we should track actions for statistics
-	if pool != nil && pool.statsCollector != nil && pool.statsCollector.IsEnabled() &&
-		pool.config.StatsDepth == StatsDepthFull {
+	if pool != nil && pool.statsCollector != nil && pool.statsCollector.IsEnabled() {
 		hr.trackActions = true
 		hr.botActions = make([]map[string]string, len(hr.bots))
 		for i := range hr.botActions {

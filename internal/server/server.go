@@ -48,10 +48,9 @@ type Config struct {
 	RequirePlayer    bool
 	HandLimit        uint64
 	Seed             int64
-	InfiniteBankroll bool            // When true, bots never run out of chips
-	EnableStats      bool            // Enable detailed statistics collection
-	StatsDepth       StatisticsDepth // Level of detail for statistics
-	MaxStatsHands    int             // Maximum hands to track for stats (default 10000)
+	InfiniteBankroll bool // When true, bots never run out of chips
+	EnableStats      bool // Collect detailed statistics
+	MaxStatsHands    int  // Maximum hands to track for stats (default 10000)
 }
 
 // Server represents the poker server
@@ -673,11 +672,13 @@ func (s *Server) serveAdminGameStatsMarkdown(w http.ResponseWriter, id string) {
 			}
 			_, _ = fmt.Fprintf(w, "\n")
 			_, _ = fmt.Fprintf(w, "## Aggregate street analysis\n\n")
-			order := []string{"Preflop", "Flop", "Turn", "River"}
-			for _, street := range order {
-				if as, ok := streetsAgg[street]; ok && as.hands > 0 {
+			order := []struct{ key, label string }{
+				{"preflop", "Preflop"}, {"flop", "Flop"}, {"turn", "Turn"}, {"river", "River"},
+			}
+			for _, o := range order {
+				if as, ok := streetsAgg[o.key]; ok && as.hands > 0 {
 					avg := as.sumBB / float64(as.hands)
-					_, _ = fmt.Fprintf(w, "- %s: %d hands ended, %.3f BB/hand\n", street, as.hands, avg)
+					_, _ = fmt.Fprintf(w, "- %s: %d hands ended, %.3f BB/hand\n", o.label, as.hands, avg)
 				}
 			}
 			_, _ = fmt.Fprintf(w, "\n")
@@ -736,12 +737,14 @@ func (s *Server) serveAdminGameStatsMarkdown(w http.ResponseWriter, id string) {
 					_, _ = fmt.Fprintf(w, "\n")
 
 					_, _ = fmt.Fprintf(w, "### Street analysis\n\n")
-					streets := []string{"Preflop", "Flop", "Turn", "River"}
+					order := []struct{ key, label string }{
+						{"preflop", "Preflop"}, {"flop", "Flop"}, {"turn", "Turn"}, {"river", "River"},
+					}
 					ssMap := stat.StreetStats()
-					for _, street := range streets {
-						if ss, ok := ssMap[street]; ok && ss.HandsReached > 0 {
+					for _, o := range order {
+						if ss, ok := ssMap[o.key]; ok && ss.HandsReached > 0 {
 							avg := ss.NetBB / float64(ss.HandsReached)
-							_, _ = fmt.Fprintf(w, "- %s: %d hands ended, %.3f BB/hand\n", street, ss.HandsReached, avg)
+							_, _ = fmt.Fprintf(w, "- %s: %d hands ended, %.3f BB/hand\n", o.label, ss.HandsReached, avg)
 						}
 					}
 					_, _ = fmt.Fprintf(w, "\n")

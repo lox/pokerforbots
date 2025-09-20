@@ -7,14 +7,8 @@ import (
 	"github.com/lox/pokerforbots/internal/server/statistics"
 )
 
-// StatisticsDepth defines the level of detail for statistics collection
-type StatisticsDepth string
-
-const (
-	StatsDepthBasic    StatisticsDepth = "basic"    // Just BB/100 and win rate
-	StatsDepthDetailed StatisticsDepth = "detailed" // + position and street stats
-	StatsDepthFull     StatisticsDepth = "full"     // + hand categories and action tracking
-)
+// Detailed stats are collected when a DetailedStatsCollector is used.
+// Basic stats are always collected in BotPool regardless.
 
 // HandOutcomeDetail contains comprehensive information about a completed hand
 type HandOutcomeDetail struct {
@@ -82,20 +76,18 @@ func (n *NullStatsCollector) IsEnabled() bool {
 type DetailedStatsCollector struct {
 	mu           sync.RWMutex
 	stats        map[string]*statistics.Statistics // Per-bot advanced statistics
-	depth        StatisticsDepth
-	maxHands     int // Maximum hands to track (memory limit)
+	maxHands     int                               // Maximum hands to track (memory limit)
 	currentHands int
 	bigBlind     int
 }
 
 // NewDetailedStatsCollector creates a new detailed statistics collector
-func NewDetailedStatsCollector(depth StatisticsDepth, maxHands int, bigBlind int) *DetailedStatsCollector {
+func NewDetailedStatsCollector(maxHands int, bigBlind int) *DetailedStatsCollector {
 	if maxHands <= 0 {
 		maxHands = 10000 // Default limit
 	}
 	return &DetailedStatsCollector{
 		stats:    make(map[string]*statistics.Statistics),
-		depth:    depth,
 		maxHands: maxHands,
 		bigBlind: bigBlind,
 	}
@@ -123,7 +115,7 @@ func (d *DetailedStatsCollector) RecordHandOutcome(detail HandOutcomeDetail) err
 		botID := outcome.Bot.ID
 
 		// Only track detailed stats - basic stats are handled by BotPool
-		if d.depth != StatsDepthBasic {
+		{
 			if _, exists := d.stats[botID]; !exists {
 				d.stats[botID] = statistics.NewStatistics(d.bigBlind)
 			}
@@ -131,9 +123,9 @@ func (d *DetailedStatsCollector) RecordHandOutcome(detail HandOutcomeDetail) err
 			// Convert to BB
 			netBB := float64(outcome.NetChips) / float64(d.bigBlind)
 
-			// Determine hand category (if full depth)
+			// Determine hand category
 			handCategory := ""
-			if d.depth == StatsDepthFull && len(outcome.HoleCards) == 2 {
+			if len(outcome.HoleCards) == 2 {
 				handCategory = categorizeHoleCards(outcome.HoleCards)
 			}
 
@@ -151,8 +143,8 @@ func (d *DetailedStatsCollector) RecordHandOutcome(detail HandOutcomeDetail) err
 				HandCategory:   handCategory,
 			}
 
-			// Add actions if tracking full depth
-			if d.depth == StatsDepthFull && outcome.Actions != nil {
+			// Add actions if present
+			if outcome.Actions != nil {
 				handResult.PreflopAction = outcome.Actions["preflop"]
 				handResult.FlopAction = outcome.Actions["flop"]
 				handResult.TurnAction = outcome.Actions["turn"]
@@ -177,11 +169,6 @@ func (d *DetailedStatsCollector) GetPlayerStats() []PlayerStats { return nil }
 func (d *DetailedStatsCollector) GetDetailedStats(botID string) *protocol.PlayerDetailedStats {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-
-	// Only return detailed stats if we're tracking them
-	if d.depth == StatsDepthBasic {
-		return nil
-	}
 
 	stats, exists := d.stats[botID]
 	if !exists {
@@ -223,47 +210,41 @@ func (d *DetailedStatsCollector) GetDetailedStats(botID string) *protocol.Player
 		detailed.ShowdownWinRate = float64(showdownWins) / float64(totalShowdowns) * 100
 	}
 
-	// Add position stats if detailed or full depth
-	if d.depth == StatsDepthDetailed || d.depth == StatsDepthFull {
-		detailed.PositionStats = make(map[string]protocol.PositionStatSummary)
-		buttonDist := stats.ButtonDistanceResults()
-		for dist := 0; dist < 6; dist++ {
-			bd := buttonDist[dist]
-			if bd.Hands > 0 {
-				posName := statistics.GetPositionName(dist)
-				detailed.PositionStats[posName] = protocol.PositionStatSummary{
-					Hands:     bd.Hands,
-					NetBB:     bd.SumBB,
-					BBPerHand: bd.SumBB / float64(bd.Hands),
-				}
+	// Add position stats
+	detailed.PositionStats = make(map[string]protocol.PositionStatSummary)
+	buttonDist := stats.ButtonDistanceResults()
+	for dist := 0; dist < 6; dist++ {
+		bd := buttonDist[dist]
+		if bd.Hands > 0 {
+			posName := statistics.GetPositionName(dist)
+			detailed.PositionStats[posName] = protocol.PositionStatSummary{
+				Hands:     bd.Hands,
+				NetBB:     bd.SumBB,
+				BBPerHand: bd.SumBB / float64(bd.Hands),
 			}
 		}
 	}
 
-	// Add street stats if detailed or full depth
-	if d.depth == StatsDepthDetailed || d.depth == StatsDepthFull {
-		detailed.StreetStats = make(map[string]protocol.StreetStatSummary)
-		for street, stat := range stats.StreetStats() {
-			if stat.HandsReached > 0 {
-				detailed.StreetStats[street] = protocol.StreetStatSummary{
-					HandsEnded: stat.HandsReached,
-					NetBB:      stat.NetBB,
-					BBPerHand:  stat.NetBB / float64(stat.HandsReached),
-				}
+	// Add street stats
+	detailed.StreetStats = make(map[string]protocol.StreetStatSummary)
+	for street, stat := range stats.StreetStats() {
+		if stat.HandsReached > 0 {
+			detailed.StreetStats[street] = protocol.StreetStatSummary{
+				HandsEnded: stat.HandsReached,
+				NetBB:      stat.NetBB,
+				BBPerHand:  stat.NetBB / float64(stat.HandsReached),
 			}
 		}
 	}
 
-	// Add hand category stats if full depth
-	if d.depth == StatsDepthFull {
-		detailed.HandCategoryStats = make(map[string]protocol.CategoryStatSummary)
-		for cat, stat := range stats.CategoryStats() {
-			if stat.Hands > 0 {
-				detailed.HandCategoryStats[cat] = protocol.CategoryStatSummary{
-					Hands:     stat.Hands,
-					NetBB:     stat.NetBB,
-					BBPerHand: stat.NetBB / float64(stat.Hands),
-				}
+	// Add hand category stats
+	detailed.HandCategoryStats = make(map[string]protocol.CategoryStatSummary)
+	for cat, stat := range stats.CategoryStats() {
+		if stat.Hands > 0 {
+			detailed.HandCategoryStats[cat] = protocol.CategoryStatSummary{
+				Hands:     stat.Hands,
+				NetBB:     stat.NetBB,
+				BBPerHand: stat.NetBB / float64(stat.Hands),
 			}
 		}
 	}
