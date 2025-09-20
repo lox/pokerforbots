@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -259,6 +262,8 @@ func spawnBot(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, game
 	return spawnBotWithRole(logger, ctx, cmdStr, serverWS, gameID, "")
 }
 
+var externalBotSeq int64
+
 func spawnBotWithRole(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, gameID, role string) <-chan error {
 	logger.Info().Str("cmd", cmdStr).Str("server", serverWS).Str("game", gameID).Str("role", role).Msg("Spawning bot")
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
@@ -270,8 +275,22 @@ func spawnBotWithRole(logger zerolog.Logger, ctx context.Context, cmdStr, server
 		env = append(env, "POKERFORBOTS_ROLE="+role)
 	}
 	cmd.Env = env
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+
+	// Prefixed output
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+	seq := atomic.AddInt64(&externalBotSeq, 1)
+	base := strings.Fields(cmdStr)
+	label := role
+	if label == "" {
+		label = "player"
+	}
+	cmdName := ""
+	if len(base) > 0 {
+		cmdName = filepath.Base(base[0])
+	}
+	prefix := fmt.Sprintf("[%s#%d %s] ", label, seq, cmdName)
+
 	done := make(chan error, 1)
 	if err := cmd.Start(); err != nil {
 		logger.Error().Err(err).Str("cmd", cmdStr).Msg("Failed to start bot process")
@@ -279,6 +298,8 @@ func spawnBotWithRole(logger zerolog.Logger, ctx context.Context, cmdStr, server
 		close(done)
 		return done
 	}
+	go copyWithPrefix(os.Stdout, stdout, prefix)
+	go copyWithPrefix(os.Stderr, stderr, prefix)
 	go func() {
 		if err := cmd.Wait(); err != nil {
 			logger.Error().Err(err).Str("cmd", cmdStr).Msg("Bot process exited with error")
@@ -290,6 +311,13 @@ func spawnBotWithRole(logger zerolog.Logger, ctx context.Context, cmdStr, server
 		close(done)
 	}()
 	return done
+}
+
+func copyWithPrefix(dst *os.File, src io.Reader, prefix string) {
+	s := bufio.NewScanner(src)
+	for s.Scan() {
+		fmt.Fprintln(dst, prefix+s.Text())
+	}
 }
 
 func firstDone(chans []<-chan error) <-chan error {
