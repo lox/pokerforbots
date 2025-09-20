@@ -718,15 +718,15 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 		switch class {
 		case "TripsPlus", "Overpair", "TwoPair", "TPTK":
 			if !avoidRaise {
-				return "raise", b.betSize(req, 0.50)
+				return b.raiseOrJam(req, b.betSize(req, 0.50))
 			}
 		case "TopPair":
 			if !avoidRaise {
-				return "raise", b.betSize(req, 0.33)
+				return b.raiseOrJam(req, b.betSize(req, 0.33))
 			}
 		case "ComboDraw", "StrongDraw":
 			if !avoidRaise {
-				return "raise", b.betSize(req, 0.33)
+				return b.raiseOrJam(req, b.betSize(req, 0.33))
 			}
 		}
 		// Pot control
@@ -761,7 +761,7 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 				if class == "ComboDraw" || class == "StrongDraw" || equity >= 0.50 {
 					for _, a := range req.ValidActions {
 						if a == "raise" {
-							return "raise", b.betSize(req, 0.33)
+							return b.raiseOrJam(req, b.betSize(req, 0.33))
 						}
 					}
 				}
@@ -773,7 +773,7 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 	if equity >= 0.75 && !avoidRaise {
 		for _, a := range req.ValidActions {
 			if a == "raise" {
-				return "raise", b.betSize(req, 0.50)
+				return b.raiseOrJam(req, b.betSize(req, 0.50))
 			}
 		}
 	}
@@ -783,7 +783,7 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 		if b.rng.Float64() < 0.25 { // 25% frequency
 			for _, a := range req.ValidActions {
 				if a == "raise" {
-					return "raise", b.betSize(req, 0.33)
+					return b.raiseOrJam(req, b.betSize(req, 0.33))
 				}
 			}
 		}
@@ -1025,6 +1025,18 @@ func (b *complexBot) betSize(req protocol.ActionRequest, pct float64) int {
 		size = 0
 	}
 	return size
+}
+
+// raiseOrJam chooses "allin" when target size is capped below MinRaise by our stack
+func (b *complexBot) raiseOrJam(req protocol.ActionRequest, amt int) (string, int) {
+	if amt >= b.state.Chips {
+		for _, a := range req.ValidActions {
+			if a == "allin" {
+				return "allin", 0
+			}
+		}
+	}
+	return "raise", amt
 }
 
 func (b *complexBot) calcSPR(req protocol.ActionRequest) float64 {
