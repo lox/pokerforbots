@@ -137,7 +137,7 @@ func (d *DetailedStatsCollector) RecordHandOutcome(detail HandOutcomeDetail) err
 				handCategory = categorizeHoleCards(outcome.HoleCards)
 			}
 
-			// Build hand result
+			// Build HandResult
 			handResult := statistics.HandResult{
 				HandNum:        d.currentHands,
 				NetBB:          netBB,
