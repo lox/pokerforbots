@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,25 +20,27 @@ import (
 )
 
 type CLI struct {
-	Addr             string `kong:"default=':8080',help='Server address'"`
-	Debug            bool   `kong:"help='Enable debug logging'"`
-	SmallBlind       int    `kong:"default='5',help='Small blind amount'"`
-	BigBlind         int    `kong:"default='10',help='Big blind amount'"`
-	StartChips       int    `kong:"default='1000',help='Starting chip count'"`
-	TimeoutMs        int    `kong:"default='100',help='Decision timeout in milliseconds'"`
-	MinPlayers       int    `kong:"default='2',help='Minimum players per hand'"`
-	MaxPlayers       int    `kong:"default='9',help='Maximum players per hand'"`
-	RequirePlayer    bool   `kong:"default='true',help='Require at least one player-role bot per hand'"`
-	InfiniteBankroll bool   `kong:"default='false',help='Bots never run out of chips (for simulations)'"`
-	NPCBots          int    `kong:"default='0',help='Total NPC bots to spawn in default game (auto distribution)'"`
-	NPCCalling       int    `kong:"default='0',help='NPC calling-station bots (overrides auto distribution)'"`
-	NPCRandom        int    `kong:"default='0',help='NPC random bots (overrides auto distribution)'"`
-	NPCAggro         int    `kong:"default='0',help='NPC aggressive bots (overrides auto distribution)'"`
-	Seed             *int64 `kong:"help='Deterministic RNG seed for the server (optional)'"`
-	Hands            uint64 `kong:"default='0',help='Maximum hands to run in the default game (0 = unlimited)'"`
-	EnableStats      bool   `kong:"default='false',help='Enable statistics collection for development (impacts performance)'"`
-	StatsDepth       string `kong:"default='basic',enum='basic,detailed,full',help='Statistics detail level: basic|detailed|full'"`
-	MaxStatsHands    int    `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
+	Addr             string   `kong:"default=':8080',help='Server address'"`
+	Debug            bool     `kong:"help='Enable debug logging'"`
+	SmallBlind       int      `kong:"default='5',help='Small blind amount'"`
+	BigBlind         int      `kong:"default='10',help='Big blind amount'"`
+	StartChips       int      `kong:"default='1000',help='Starting chip count'"`
+	TimeoutMs        int      `kong:"default='100',help='Decision timeout in milliseconds'"`
+	MinPlayers       int      `kong:"default='2',help='Minimum players per hand'"`
+	MaxPlayers       int      `kong:"default='9',help='Maximum players per hand'"`
+	RequirePlayer    bool     `kong:"default='true',help='Require at least one player-role bot per hand'"`
+	InfiniteBankroll bool     `kong:"default='false',help='Bots never run out of chips (for simulations)'"`
+	NPCBots          int      `kong:"default='0',help='Total NPC bots to spawn in default game (auto distribution)'"`
+	NPCCalling       int      `kong:"default='0',help='NPC calling-station bots (overrides auto distribution)'"`
+	NPCRandom        int      `kong:"default='0',help='NPC random bots (overrides auto distribution)'"`
+	NPCAggro         int      `kong:"default='0',help='NPC aggressive bots (overrides auto distribution)'"`
+	Seed             *int64   `kong:"help='Deterministic RNG seed for the server (optional)'"`
+	Hands            uint64   `kong:"default='0',help='Maximum hands to run in the default game (0 = unlimited)'"`
+	EnableStats      bool     `kong:"default='false',help='Enable statistics collection for development (impacts performance)'"`
+	StatsDepth       string   `kong:"default='basic',enum='basic,detailed,full',help='Statistics detail level: basic|detailed|full'"`
+	MaxStatsHands    int      `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
+	BotCmd           []string `kong:"help='Command to run a local bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME'"`
+	PrintStatsOnExit bool     `kong:"help='Print /admin/games/default/stats JSON on exit'"`
 }
 
 func main() {
@@ -118,6 +124,16 @@ func main() {
 		serverErr <- srv.Start(cli.Addr)
 	}()
 
+	// Bootstrap external bots if requested
+	botProcsCtx, botProcsCancel := context.WithCancel(context.Background())
+	defer botProcsCancel()
+	if len(cli.BotCmd) > 0 {
+		serverWS := toWSURL(cli.Addr)
+		for _, cmd := range cli.BotCmd {
+			spawnBot(logger, botProcsCtx, cmd, serverWS, "default")
+		}
+	}
+
 	// Monitor for game completion if hand limit is set on default game
 	var gameCompleteNotifier <-chan struct{}
 	if cli.Hands > 0 {
@@ -153,6 +169,10 @@ func main() {
 	case <-gameCompleteNotifier:
 		logger.Info().Msg("Default game completed, shutting down for profiling...")
 
+		if cli.PrintStatsOnExit {
+			printStats(toHTTPBase(cli.Addr))
+		}
+
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -166,6 +186,71 @@ func main() {
 			logger.Info().Msg("Server shutdown complete")
 		}
 	}
+}
+
+// toWSURL converts server listen addr (e.g. ":8080" or "0.0.0.0:8080") to a ws URL.
+func toWSURL(addr string) string {
+	base := addr
+	if strings.HasPrefix(base, ":") {
+		base = "localhost" + base
+	}
+	if strings.HasPrefix(base, "0.0.0.0:") || strings.HasPrefix(base, "[::]:") {
+		parts := strings.Split(base, ":")
+		port := parts[len(parts)-1]
+		base = "localhost:" + port
+	}
+	return "ws://" + base + "/ws"
+}
+
+func toHTTPBase(addr string) string {
+	base := addr
+	if strings.HasPrefix(base, ":") {
+		base = "localhost" + base
+	}
+	if strings.HasPrefix(base, "0.0.0.0:") || strings.HasPrefix(base, "[::]:") {
+		parts := strings.Split(base, ":")
+		port := parts[len(parts)-1]
+		base = "localhost:" + port
+	}
+	return "http://" + base
+}
+
+func spawnBot(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, gameID string) {
+	logger.Info().Str("cmd", cmdStr).Str("server", serverWS).Str("game", gameID).Msg("Spawning bot")
+	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
+	cmd.Env = append(os.Environ(),
+		"POKERFORBOTS_SERVER="+serverWS,
+		"POKERFORBOTS_GAME="+gameID,
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		logger.Error().Err(err).Str("cmd", cmdStr).Msg("Failed to start bot process")
+		return
+	}
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			logger.Error().Err(err).Str("cmd", cmdStr).Msg("Bot process exited with error")
+		} else {
+			logger.Info().Str("cmd", cmdStr).Msg("Bot process exited")
+		}
+	}()
+}
+
+func printStats(httpBase string) {
+	url := fmt.Sprintf("%s/admin/games/default/stats", httpBase)
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to fetch stats: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "stats request failed: %s\n", resp.Status)
+		return
+	}
+	io.Copy(os.Stdout, resp.Body)
+	fmt.Fprintln(os.Stdout)
 }
 
 func computeDefaultNPCSpecs(total, calling, random, aggro int) []server.NPCSpec {
