@@ -58,6 +58,7 @@ type client struct {
 	pendingAction     *protocol.ActionRequest
 	closed            bool
 	actionPromptLines int
+	pauseForTimeout   bool
 }
 
 func newClient(name, game string) *client {
@@ -159,7 +160,21 @@ func (c *client) inputLoop() {
 			return
 		}
 
-		c.handleInputLine(strings.TrimRight(line, "\r\n"))
+		trimmed := strings.TrimRight(line, "\r\n")
+
+		// If we've paused due to a timeout, require an Enter press to continue.
+		c.mu.Lock()
+		paused := c.pauseForTimeout
+		if paused {
+			c.pauseForTimeout = false
+			c.mu.Unlock()
+			stdoutln(colorize("Continuing...", colorDim))
+			c.printPrompt()
+			continue
+		}
+		c.mu.Unlock()
+
+		c.handleInputLine(trimmed)
 	}
 }
 
@@ -284,10 +299,15 @@ func (c *client) handleGameUpdate(msg *protocol.GameUpdate) error {
 	if c.state != nil && c.pendingAction != nil && c.state.yourSeat < len(c.state.players) {
 		your := c.state.players[c.state.yourSeat]
 		if your.Folded {
+			alreadyPaused := c.pauseForTimeout
 			c.pendingAction = nil
+			c.pauseForTimeout = true
 			c.mu.Unlock()
 			c.clearActionPrompt()
 			stdoutln(colorize("\nServer folded you due to timeout or invalid action.", colorDim+colorRed))
+			if !alreadyPaused {
+				stdoutln(colorize("Timed out — press Enter to continue.", colorRed))
+			}
 			return nil
 		}
 	}
@@ -1106,6 +1126,9 @@ func (c *client) clearActionPrompt() {
 }
 
 func (c *client) printPromptLocked() {
+	if c.pauseForTimeout {
+		return
+	}
 	if c.pendingAction != nil {
 		stdout(colorize("> ", colorYellow+colorBold))
 	}
@@ -1121,8 +1144,15 @@ func (c *client) handleServerError(msg *protocol.Error) {
 	stdoutf("%s\n", colorize(fmt.Sprintf("Server error: %s (%s)", msg.Message, msg.Code), colorRed))
 	if msg.Code == "action_timeout" {
 		c.mu.Lock()
+		alreadyPaused := c.pauseForTimeout
 		c.pendingAction = nil
+		c.pauseForTimeout = true
 		c.mu.Unlock()
+		if !alreadyPaused {
+			// Prompt once; subsequent timeouts while paused won't spam.
+			c.clearActionPrompt()
+			stdoutln(colorize("Timed out — press Enter to continue.", colorRed))
+		}
 	}
 }
 

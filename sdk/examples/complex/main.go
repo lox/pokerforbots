@@ -179,6 +179,12 @@ func (b *complexBot) OnHandStart(state *sdk.GameState, start protocol.HandStart)
 func (b *complexBot) OnActionRequest(state *sdk.GameState, req protocol.ActionRequest) (string, int, error) {
 	// Calculate hand strength and make strategic decision
 	handStrength := b.evaluateHandStrength()
+	if b.state.Street != "preflop" {
+		_, eq := b.classifyPostflop()
+		if eq > 0 {
+			handStrength = eq
+		}
+	}
 	position := b.getPosition()
 	potOdds := b.calculatePotOdds(req)
 
@@ -644,7 +650,10 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 		}
 	}
 
-	equity := handStrength // use current evaluator as equity proxy
+	class, equity := b.classifyPostflop()
+	if equity <= 0 {
+		equity = handStrength // fallback
+	}
 	if b.shouldFold(req, equity) {
 		if canCheck {
 			return "check", 0
@@ -668,33 +677,57 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 
 	// Choose action and size
 	if canCheck {
-		// Decide to value bet / semi-bluff or pot control
-		if equity >= 0.70 && !avoidRaise {
-			// Strong value
-			return "raise", b.betSize(req, 0.50)
+		// Multiway pot control unless strong
+		if b.state.ActiveCount > 2 && equity < 0.60 {
+			return "check", 0
 		}
-		if equity >= 0.55 && !avoidRaise {
-			// Thin value or strong draw
-			pct := 0.33
-			if b.state.ActiveCount > 2 {
-				pct = 0.50 // bigger in multiway if we choose to bet at all
+		// Decide to value bet / semi-bluff or pot control
+		switch class {
+		case "TripsPlus", "Overpair", "TwoPair", "TPTK":
+			if !avoidRaise {
+				return "raise", b.betSize(req, 0.50)
 			}
-			return "raise", b.betSize(req, pct)
+		case "TopPair":
+			if !avoidRaise {
+				return "raise", b.betSize(req, 0.33)
+			}
+		case "ComboDraw", "StrongDraw":
+			if !avoidRaise {
+				return "raise", b.betSize(req, 0.33)
+			}
 		}
 		// Pot control
 		return "check", 0
 	}
 
-	// Facing a bet: prefer call unless very strong
+	// Facing a bet
+	pot := req.Pot
+	if pot <= 0 {
+		pot = 1
+	}
+	betPct := float64(req.ToCall) / float64(pot)
+
+	// Raise for value with very strong hands
 	if equity >= 0.75 && !avoidRaise {
-		// Raise for value
 		for _, a := range req.ValidActions {
 			if a == "raise" {
 				return "raise", b.betSize(req, 0.50)
 			}
 		}
 	}
-	// Otherwise continue by calling
+
+	// Semi-bluff occasionally with strong draws vs small bets
+	if (class == "ComboDraw" || class == "StrongDraw") && betPct <= 0.5 && !avoidRaise && position <= 1 {
+		if b.rng.Float64() < 0.25 { // 25% frequency
+			for _, a := range req.ValidActions {
+				if a == "raise" {
+					return "raise", b.betSize(req, 0.33)
+				}
+			}
+		}
+	}
+
+	// Otherwise continue by calling if possible
 	for _, a := range req.ValidActions {
 		if a == "call" {
 			return "call", 0
@@ -705,12 +738,177 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 	return "fold", 0
 }
 
+// --- Helpers for Patch 2: postflop classification (coarse buckets) ---
+
+// classifyPostflop returns a coarse class and equity bucket in [0,1]
+func (b *complexBot) classifyPostflop() (string, float64) {
+	// Basic info
+	if len(b.state.HoleCards) != 2 {
+		return "unknown", 0.3
+	}
+	h1, h2 := b.state.HoleCards[0], b.state.HoleCards[1]
+	hr1, hr2 := sdk.CardRank(h1), sdk.CardRank(h2)
+	s1, s2 := sdk.CardSuit(h1), sdk.CardSuit(h2)
+	board := b.state.Board
+
+	// Build board ranks/suits
+	boardRanks := make([]int, 0, len(board))
+	boardSuits := make([]byte, 0, len(board))
+	for _, c := range board {
+		boardRanks = append(boardRanks, sdk.CardRank(c))
+		boardSuits = append(boardSuits, sdk.CardSuit(c))
+	}
+	// Frequency maps
+	rankCount := map[int]int{}
+	for _, r := range boardRanks {
+		rankCount[r]++
+	}
+
+	// Combined counts for made hands
+	combinedCount := map[int]int{}
+	for _, r := range boardRanks {
+		combinedCount[r]++
+	}
+	combinedCount[hr1]++
+	combinedCount[hr2]++
+
+	// Detect trips+ and two pair
+	for r, cnt := range combinedCount {
+		if cnt >= 4 { // quads/full house
+			return "TripsPlus", 0.85
+		}
+		_ = r
+	}
+	pairs := 0
+	for _, cnt := range combinedCount {
+		if cnt >= 2 {
+			pairs++
+		}
+	}
+	if pairs >= 2 { // two pair or better
+		return "TwoPair", 0.70
+	}
+
+	// Overpair: pocket pair higher than any board rank
+	if hr1 == hr2 {
+		maxBoard := 0
+		for _, r := range boardRanks {
+			if r > maxBoard {
+				maxBoard = r
+			}
+		}
+		if hr1 > maxBoard {
+			return "Overpair", 0.80
+		}
+	}
+
+	// Top pair vs second pair
+	maxBoard := 0
+	secondBoard := 0
+	for _, r := range boardRanks {
+		if r > maxBoard {
+			maxBoard = r
+		}
+	}
+	for _, r := range boardRanks {
+		if r > secondBoard && r < maxBoard {
+			secondBoard = r
+		}
+	}
+	isTopPair := (hr1 == maxBoard || hr2 == maxBoard)
+	isSecondPair := (hr1 == secondBoard || hr2 == secondBoard)
+	if isTopPair {
+		kicker := hr1
+		if hr1 == maxBoard {
+			kicker = hr2
+		}
+		if kicker >= 13 { // K or A kicker ~ TPTK
+			return "TPTK", 0.65
+		}
+		return "TopPair", 0.55
+	}
+	if isSecondPair {
+		return "SecondPair", 0.42
+	}
+
+	// Draws: flush draw
+	fd := false
+	suitCounts := map[byte]int{}
+	suitCounts[s1]++
+	suitCounts[s2]++
+	for _, s := range boardSuits {
+		suitCounts[s]++
+	}
+	for _, c := range suitCounts {
+		if c >= 4 {
+			fd = true
+			break
+		}
+	}
+
+	// Straight draws (approx): check for 4 out of 5 consecutive ranks
+	uniq := map[int]bool{}
+	for _, r := range boardRanks {
+		uniq[r] = true
+	}
+	uniq[hr1] = true
+	uniq[hr2] = true
+	// simple scan
+	oesd := false
+	gut := false
+	for start := 2; start <= 10; start++ {
+		need := 0
+		have := 0
+		for d := 0; d < 5; d++ {
+			r := start + d
+			if uniq[r] {
+				have++
+			} else {
+				need++
+			}
+		}
+		if have >= 4 && need == 1 {
+			gut = true
+		}
+		if have >= 4 && (uniq[start] && uniq[start+4]) { // ends present, closer to OESD
+			oesd = true
+		}
+	}
+
+	// Combo draws weighting
+	if fd && oesd {
+		return "ComboDraw", 0.55
+	}
+	if fd || oesd {
+		return "StrongDraw", 0.40
+	}
+	if gut {
+		return "WeakDraw", 0.25
+	}
+
+	// Air fallback
+	class := "Air"
+	eq := 0.10
+	// Multiway adjust
+	if b.state.ActiveCount > 2 {
+		eq -= 0.05 * float64(b.state.ActiveCount-2)
+		if eq < 0.05 {
+			eq = 0.05
+		}
+	}
+	return class, eq
+}
+
 // --- Helpers for Patch 1: sizing, thresholds, preflop policy ---
 
 func (b *complexBot) betSize(req protocol.ActionRequest, pct float64) int {
 	size := int(float64(req.Pot) * pct)
-	if size < req.MinBet {
-		size = req.MinBet
+	minRequired := req.MinBet
+	if req.MinRaise > minRequired {
+		minRequired = req.MinRaise
+	}
+	if size < minRequired {
+		size = minRequired
 	}
 	if size > b.state.Chips {
 		size = b.state.Chips
@@ -806,11 +1004,15 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 	// Detect scenario
 	facing := req.ToCall
 
-	// Open sizes
-	openSize := maxInt(req.MinBet, int(2.5*float64(bb)))
-	threeBetIP := maxInt(req.MinBet, int(8.5*float64(bb)))
-	threeBetOOP := maxInt(req.MinBet, int(10.0*float64(bb)))
-	fourBetSize := maxInt(req.MinBet, int(22.0*float64(bb)))
+	// Open sizes (respect min raise requirements)
+	minR := req.MinRaise
+	if minR < req.MinBet {
+		minR = req.MinBet
+	}
+	openSize := maxInt(minR, int(2.5*float64(bb)))
+	threeBetIP := maxInt(minR, int(8.5*float64(bb)))
+	threeBetOOP := maxInt(minR, int(10.0*float64(bb)))
+	fourBetSize := maxInt(minR, int(22.0*float64(bb)))
 
 	inPosition := position <= 1 // approximate
 

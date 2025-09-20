@@ -86,7 +86,7 @@ tasks:
     cmds:
       - mkdir -p dist
       - go test -c -o dist/evaluator.test ./internal/game
-      - ./dist/evaluator.test -test.run=^$ -test.bench=BenchmarkEvaluate7Cards_LargeSample -test.count=1 -test.benchtime=10s -test.cpuprofile=dist/eval-seq.pprof {{.CLI_ARGS}}
+      - ./dist/evaluator.test -test.run=^$ -test.bench=^BenchmarkEvaluate7Cards_LargeSample$ -test.count=1 -test.benchtime=10s -test.cpuprofile=dist/eval-seq.pprof {{.CLI_ARGS}}
       - go tool pprof -top -nodecount=10 ./dist/evaluator.test dist/eval-seq.pprof
 
   clean:
