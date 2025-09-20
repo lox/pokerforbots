@@ -587,15 +587,17 @@ func (p *BotPool) PlayerStats() []PlayerStats {
 		}
 
 		ps := PlayerStats{
-			BotID:       stats.BotID,
-			DisplayName: stats.DisplayName,
-			Role:        role,
-			Hands:       stats.Hands,
-			NetChips:    stats.NetChips,
-			AvgPerHand:  avg,
-			TotalWon:    stats.TotalWon,
-			TotalLost:   stats.TotalLost,
-			LastDelta:   stats.LastDelta,
+			GameCompletedPlayer: protocol.GameCompletedPlayer{
+				BotID:       stats.BotID,
+				DisplayName: stats.DisplayName,
+				Role:        role,
+				Hands:       stats.Hands,
+				NetChips:    stats.NetChips,
+				AvgPerHand:  avg,
+				TotalWon:    stats.TotalWon,
+				TotalLost:   stats.TotalLost,
+				LastDelta:   stats.LastDelta,
+			},
 			LastUpdated: stats.LastUpdated,
 		}
 		// Attach detailed stats if collector is enabled
@@ -646,17 +648,7 @@ func (p *BotPool) notifyGameCompleted(reason string) {
 	playerStats := p.PlayerStats()
 	players := make([]protocol.GameCompletedPlayer, len(playerStats))
 	for i, ps := range playerStats {
-		player := protocol.GameCompletedPlayer{
-			BotID:       ps.BotID,
-			DisplayName: ps.DisplayName,
-			Role:        ps.Role,
-			Hands:       ps.Hands,
-			NetChips:    ps.NetChips,
-			AvgPerHand:  ps.AvgPerHand,
-			TotalWon:    ps.TotalWon,
-			TotalLost:   ps.TotalLost,
-			LastDelta:   ps.LastDelta,
-		}
+		player := ps.GameCompletedPlayer
 
 		// Add detailed stats if available
 		if p.statsCollector != nil && p.statsCollector.IsEnabled() {
@@ -707,17 +699,8 @@ func (p *BotPool) notifyGameCompleted(reason string) {
 
 // PlayerStats captures aggregate performance metrics for a single bot within a game.
 type PlayerStats struct {
-	BotID         string                        `json:"bot_id"`
-	DisplayName   string                        `json:"display_name"`
-	Role          string                        `json:"role"`
-	Hands         int                           `json:"hands"`
-	NetChips      int64                         `json:"net_chips"`
-	AvgPerHand    float64                       `json:"avg_per_hand"`
-	TotalWon      int64                         `json:"total_won"`
-	TotalLost     int64                         `json:"total_lost"`
-	LastDelta     int                           `json:"last_delta"`
-	LastUpdated   time.Time                     `json:"last_updated"`
-	DetailedStats *protocol.PlayerDetailedStats `json:"detailed_stats,omitempty"`
+	protocol.GameCompletedPlayer
+	LastUpdated time.Time `json:"last_updated"`
 }
 
 // GameStats provides an aggregated snapshot for a game instance.
