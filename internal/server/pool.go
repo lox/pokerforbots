@@ -38,6 +38,7 @@ type BotPool struct {
 	// Metrics
 	timeoutCounter uint64
 	handStartTime  time.Time
+	gameEndTime    time.Time
 	metricsLock    sync.RWMutex
 
 	statsMu   sync.RWMutex
@@ -114,7 +115,7 @@ func NewBotPool(logger zerolog.Logger, rng *rand.Rand, config Config) *BotPool {
 		logger:         logger.With().Str("component", "pool").Logger(),
 		rng:            rng,
 		config:         config,
-		handStartTime:  time.Now(),
+		handStartTime:  time.Time{},
 		botStats:       make(map[string]*botStats),
 		lastStamp:      time.Now(),
 		matchTrigger:   make(chan struct{}, 1),
@@ -220,6 +221,12 @@ func (p *BotPool) tryMatch() {
 				Uint64("hand_limit", p.handLimit).
 				Msg("Hand limit reached - stopping new hand creation")
 		}
+		// Record game end time once when we reach the limit
+		p.metricsLock.Lock()
+		if p.gameEndTime.IsZero() {
+			p.gameEndTime = time.Now()
+		}
+		p.metricsLock.Unlock()
 		p.notifyGameCompleted(reasonHandLimitReached)
 		return
 	}
@@ -319,6 +326,15 @@ collectLoop:
 
 	// If we got enough bots, start a hand
 	if len(bots) >= p.minPlayers {
+		// On first actual hand start, record game start time
+		if atomic.LoadUint64(&p.handCounter) == 0 {
+			p.metricsLock.Lock()
+			if p.handStartTime.IsZero() {
+				p.handStartTime = time.Now()
+			}
+			p.metricsLock.Unlock()
+		}
+
 		for _, bot := range bots {
 			bot.SetInHand(true)
 		}
@@ -417,6 +433,13 @@ func (p *BotPool) Unregister(bot *Bot) {
 // Stop signals the pool manager to halt and prevents new registrations.
 func (p *BotPool) Stop() {
 	p.stopOnce.Do(func() {
+		// Record end time if not already set
+		p.metricsLock.Lock()
+		if p.gameEndTime.IsZero() {
+			p.gameEndTime = time.Now()
+		}
+		p.metricsLock.Unlock()
+
 		close(p.stopCh)
 		p.matcherWG.Wait()
 	})
@@ -477,15 +500,38 @@ func (p *BotPool) TimeoutCount() uint64 {
 // HandsPerSecond returns the current hands per second rate
 func (p *BotPool) HandsPerSecond() float64 {
 	p.metricsLock.RLock()
-	defer p.metricsLock.RUnlock()
+	start := p.handStartTime
+	end := p.gameEndTime
+	p.metricsLock.RUnlock()
 
-	elapsed := time.Since(p.handStartTime).Seconds()
-	if elapsed < 1.0 {
+	if start.IsZero() {
 		return 0
 	}
-
+	var elapsed float64
+	if !end.IsZero() {
+		elapsed = end.Sub(start).Seconds()
+	} else {
+		elapsed = time.Since(start).Seconds()
+	}
 	handCount := float64(atomic.LoadUint64(&p.handCounter))
+	if handCount == 0 || elapsed <= 0 {
+		return 0
+	}
 	return handCount / elapsed
+}
+
+// StartTime returns the timestamp when the first hand in the game began (respecting RequirePlayer).
+func (p *BotPool) StartTime() time.Time {
+	p.metricsLock.RLock()
+	defer p.metricsLock.RUnlock()
+	return p.handStartTime
+}
+
+// EndTime returns the timestamp when the game stopped (hand limit reached or Stop called), if set.
+func (p *BotPool) EndTime() time.Time {
+	p.metricsLock.RLock()
+	defer p.metricsLock.RUnlock()
+	return p.gameEndTime
 }
 
 // RecordHandOutcome updates aggregate statistics for the bots that participated in a hand.
@@ -714,6 +760,9 @@ type GameStats struct {
 	HandsRemaining   uint64                         `json:"hands_remaining"`
 	Timeouts         uint64                         `json:"timeouts"`
 	HandsPerSecond   float64                        `json:"hands_per_second"`
+	StartTime        time.Time                      `json:"start_time"`
+	EndTime          time.Time                      `json:"end_time"`
+	DurationSeconds  float64                        `json:"duration_seconds"`
 	Seed             int64                          `json:"seed"`
 	Players          []protocol.GameCompletedPlayer `json:"players"`
 }

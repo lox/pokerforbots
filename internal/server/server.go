@@ -607,6 +607,16 @@ func (s *Server) serveAdminGameStatsMarkdown(w http.ResponseWriter, id string) {
 	}
 	_, _ = fmt.Fprintf(w, "- Hands completed: %d\n", gs.HandsCompleted)
 	_, _ = fmt.Fprintf(w, "- Hands per second: %.2f\n", gs.HandsPerSecond)
+	// Start/end/duration
+	if !gs.StartTime.IsZero() {
+		_, _ = fmt.Fprintf(w, "- Start time: %s\n", gs.StartTime.Format(time.RFC3339))
+	}
+	if !gs.EndTime.IsZero() {
+		_, _ = fmt.Fprintf(w, "- End time: %s\n", gs.EndTime.Format(time.RFC3339))
+	}
+	if gs.DurationSeconds > 0 {
+		_, _ = fmt.Fprintf(w, "- Duration: %.2f s\n", gs.DurationSeconds)
+	}
 	_, _ = fmt.Fprintf(w, "- Timeouts: %d\n", gs.Timeouts)
 	_, _ = fmt.Fprintf(w, "- Seed: %d\n", gs.Seed)
 	_, _ = fmt.Fprintf(w, "- Active bots: %d\n\n", instance.Pool.BotCount())
@@ -623,67 +633,7 @@ func (s *Server) serveAdminGameStatsMarkdown(w http.ResponseWriter, id string) {
 		_, _ = fmt.Fprintf(w, "| %s | %s | %d | %d | %.2f |\n", p.DisplayName, p.Role, p.Hands, p.NetChips, bb100)
 	}
 	_, _ = fmt.Fprintf(w, "\n")
-	// Aggregate analyses (when stats enabled)
-	if instance.Pool.statsCollector != nil && instance.Pool.statsCollector.IsEnabled() {
-		if d, ok := instance.Pool.statsCollector.(*DetailedStatsCollector); ok {
-			// Aggregate position analysis
-			type aggPos struct {
-				hands int
-				sumBB float64
-			}
-			var pos [6]aggPos
-			// Aggregate street analysis
-			type aggStreet struct {
-				hands int
-				sumBB float64
-			}
-			streetsAgg := map[string]*aggStreet{}
-			d.mu.RLock()
-			for _, stat := range d.stats {
-				bd := stat.ButtonDistanceResults()
-				for dist := 0; dist < 6; dist++ {
-					pbd := bd[dist]
-					if pbd.Hands > 0 {
-						pos[dist].hands += pbd.Hands
-						pos[dist].sumBB += pbd.SumBB
-					}
-				}
-				for street, ss := range stat.StreetStats() {
-					if ss.HandsReached <= 0 {
-						continue
-					}
-					as, ok := streetsAgg[street]
-					if !ok {
-						as = &aggStreet{}
-						streetsAgg[street] = as
-					}
-					as.hands += ss.HandsReached
-					as.sumBB += ss.NetBB
-				}
-			}
-			d.mu.RUnlock()
-			_, _ = fmt.Fprintf(w, "## Aggregate position analysis\n\n")
-			for dist := 0; dist < 6; dist++ {
-				if pos[dist].hands == 0 {
-					continue
-				}
-				mean := pos[dist].sumBB / float64(pos[dist].hands)
-				_, _ = fmt.Fprintf(w, "- %s: %d hands, %.3f BB/hand (%.1f BB/100)\n", statistics.GetPositionName(dist), pos[dist].hands, mean, mean*100)
-			}
-			_, _ = fmt.Fprintf(w, "\n")
-			_, _ = fmt.Fprintf(w, "## Aggregate street analysis\n\n")
-			order := []struct{ key, label string }{
-				{"preflop", "Preflop"}, {"flop", "Flop"}, {"turn", "Turn"}, {"river", "River"},
-			}
-			for _, o := range order {
-				if as, ok := streetsAgg[o.key]; ok && as.hands > 0 {
-					avg := as.sumBB / float64(as.hands)
-					_, _ = fmt.Fprintf(w, "- %s: %d hands ended, %.3f BB/hand\n", o.label, as.hands, avg)
-				}
-			}
-			_, _ = fmt.Fprintf(w, "\n")
-		}
-	}
+	// Aggregate analyses (when stats enabled) omitted intentionally
 	for _, ps := range players {
 		_, _ = fmt.Fprintf(w, "## Player: %s (%s)\n\n", ps.DisplayName, ps.Role)
 		if instance.Pool.statsCollector != nil && instance.Pool.statsCollector.IsEnabled() {

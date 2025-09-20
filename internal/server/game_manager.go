@@ -179,6 +179,17 @@ func (gi *GameInstance) Stats() GameStats {
 	handsCompleted := gi.Pool.HandCount()
 	handLimit := gi.Pool.HandLimit()
 
+	start := gi.Pool.StartTime()
+	end := gi.Pool.EndTime()
+	var durSec float64
+	if !start.IsZero() {
+		if !end.IsZero() {
+			durSec = end.Sub(start).Seconds()
+		} else {
+			durSec = time.Since(start).Seconds()
+		}
+	}
+
 	stats := GameStats{
 		ID:               gi.ID,
 		SmallBlind:       gi.Config.SmallBlind,
@@ -194,6 +205,9 @@ func (gi *GameInstance) Stats() GameStats {
 		HandsRemaining:   gi.Pool.HandsRemaining(),
 		Timeouts:         gi.Pool.TimeoutCount(),
 		HandsPerSecond:   gi.Pool.HandsPerSecond(),
+		StartTime:        start,
+		EndTime:          end,
+		DurationSeconds:  durSec,
 		Seed:             gi.Config.Seed,
 	}
 

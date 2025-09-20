@@ -129,6 +129,11 @@ func (d *DetailedStatsCollector) RecordHandOutcome(detail HandOutcomeDetail) err
 				handCategory = categorizeHoleCards(outcome.HoleCards)
 			}
 
+			// Normalize street: treat showdown as river for street aggregation
+			nStreet := detail.StreetReached
+			if nStreet == "showdown" {
+				nStreet = "river"
+			}
 			// Build HandResult
 			handResult := statistics.HandResult{
 				HandNum:        d.currentHands,
@@ -138,7 +143,7 @@ func (d *DetailedStatsCollector) RecordHandOutcome(detail HandOutcomeDetail) err
 				WentToShowdown: outcome.WentToShowdown,
 				WonAtShowdown:  outcome.WonAtShowdown,
 				FinalPotBB:     0, // Would need to calculate from detail
-				StreetReached:  detail.StreetReached,
+				StreetReached:  nStreet,
 				HoleCards:      joinCards(outcome.HoleCards),
 				HandCategory:   handCategory,
 			}

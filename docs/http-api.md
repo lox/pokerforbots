@@ -41,8 +41,12 @@ completed, timeouts, etc.). Use this for quick health checks.
 Mutating and inspection operations live under `/admin/*`:
 
 - `POST /admin/games` – create a new game. Payload mirrors the `GET /games` fields.
-- `GET /admin/games/{id}/stats` – return aggregate statistics for a specific game (hands played, bot performance, timeouts, etc.).
+- `GET /admin/games/{id}/stats` – JSON aggregate statistics for a specific game (hands played, per-bot performance, timeouts, etc.).
+- `GET /admin/games/{id}/stats.txt` – human-readable plaintext summary per player (pretty format).
+- `GET /admin/games/{id}/stats.md` – Markdown summary including game overview, leaderboard, aggregate position/street analysis, and per-player sections.
 - `DELETE /admin/games/{id}` – remove an existing game (current hands are allowed to finish before the pool stops).
+
+When detailed stats are enabled (`--collect-detailed-stats`), per-player objects in both `game_completed` and admin JSON include `detailed_stats` with BB/100, position, street and category breakdowns.
 
 ⚠️ **Authentication:** currently open for convenience; add shared-secret or mTLS before exposing outside trusted environments. (TODO)
 

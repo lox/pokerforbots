@@ -661,6 +661,45 @@ func shouldReplaceAction(oldAction, newAction string) bool {
 	return newPriority > oldPriority
 }
 
+// furthestActionStreet returns the furthest betting street at which any player took an action.
+// It inspects the tracked per-seat action maps and returns one of: "preflop", "flop", "turn", "river".
+// If no actions are recorded (or tracking disabled), it returns an empty string.
+func (hr *HandRunner) furthestActionStreet() string {
+	if !hr.trackActions || len(hr.botActions) == 0 {
+		return ""
+	}
+
+	order := map[string]int{
+		"preflop": 0,
+		"flop":    1,
+		"turn":    2,
+		"river":   3,
+	}
+
+	maxOrder := -1
+	furthest := ""
+	for _, seatActions := range hr.botActions {
+		for street := range seatActions {
+			// Normalize showdown to river for aggregation
+			s := street
+			if s == "showdown" {
+				s = "river"
+			}
+			if o, ok := order[s]; ok {
+				if o > maxOrder {
+					maxOrder = o
+					furthest = s
+				}
+			}
+		}
+	}
+
+	if maxOrder >= 0 {
+		return furthest
+	}
+	return ""
+}
+
 func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 	boardCards := hr.boardStrings()
 	totalPot := hr.totalPot()
@@ -739,6 +778,13 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 			}
 
 			detailedOutcome.BotOutcomes[i] = outcome
+		}
+	}
+
+	// If we collected detailed outcome, refine StreetReached to the furthest street where any action occurred
+	if detailedOutcome != nil && hr.trackActions {
+		if s := hr.furthestActionStreet(); s != "" {
+			detailedOutcome.StreetReached = s
 		}
 	}
 

@@ -19,11 +19,12 @@ go run ./cmd/server --npc-calling 2 --npc-random 3 --npc-aggro 1
 # Deterministic simulation run (fixed seed, auto-shutdown after 500 hands)
 go run ./cmd/server --seed 1337 --hands 500 --npc-bots 3
 
-# Enable server-side statistics for bot development
-go run ./cmd/server --enable-stats --stats-depth=full --max-stats-hands=10000
+# Collect detailed server-side statistics for development (impacts performance)
+# Basic per-bot chip deltas are always tracked; this flag enables rich stats
+go run ./cmd/server --collect-detailed-stats --max-stats-hands=10000
 
-# Production mode (statistics disabled for maximum performance)
-go run ./cmd/server --npc-bots 6  # Default: stats disabled
+# Production mode (detailed stats disabled for maximum performance)
+go run ./cmd/server --npc-bots 6  # Default: detailed stats disabled
 ```
 
 ### Demo with Test Bots
