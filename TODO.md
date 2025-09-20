@@ -234,3 +234,80 @@ TODO follow-up:
 - [ ] Track bot identity metadata without persistent bankroll (ephemeral stacks per hand remain default)
 - [ ] Gate simulation control behind auth checks
 - [ ] **Tests:** auth handshake, failure cases, backwards compatibility with unauthenticated bots
+
+## Complex Bot: Winner vs NPCs (Refined)
+
+- Goal: upgrade the "complex" bot into a consistent winner versus built‑in NPCs by tightening preflop ranges, adding fold discipline, standardized bet sizing, simple postflop heuristics, opponent exploitation, and SPR awareness — all localized to `sdk/examples/complex/main.go`.
+
+### Current Status
+- SDK plumbing fixed: chip payouts applied on hand_result; `StartingChips` tracked in state.
+- Patch 1 implemented: preflop ranges/sizing, fold thresholds, SPR guards, standardized bet sizes.
+- Patch 2 foundation implemented: coarse postflop `classifyPostflop()` integrated into decisions; min-raise sizing respected (uses `MinRaise` and `MinBet`).
+- Patch 3 basics implemented: track per-opponent VPIP and AF; preflop exploit (no bluff 3-bet vs nits, occasional pressure vs loose openers IP); postflop exploit vs passive (overfold big bets) and aggressive (apply pressure vs small bets) villains.
+- Validation (1k hands, infinite bankroll): +433.01 BB/100, Showdown WR 36.0%, Non-showdown BB +467.5. Quick sanity check only; requires larger batches.
+- Prior batch (5×10k, no infinite bankroll): per-run BB/100 ≈ [63.3, 45.5, 37.6, 38.9, 56.8], mean ≈ +48.4 BB/100. CO still slightly negative; non-showdown slightly negative (pre-Patch 2 refinement).
+
+### Remaining Issues
+- Postflop strength still heuristic; board texture handling is coarse.
+- Opponent tags not yet fully integrated into all lines (e.g., check-raise frequencies, river thin value).
+
+### Success Criteria
+- Primary: BB/100 > 0 over 50k hands vs default 3‑NPC mix (target +20 to +80 BB/100).
+- Showdown Win Rate ~55% with substantially lower showdown frequency (<25%).
+- BTN/CO clearly positive; early positions tighter and near breakeven.
+- 95% CI lower bound on BB/100 after 5×10k runs > −20.
+
+### Implementation Notes (single file)
+- Modify `sdk/examples/complex/main.go` only.
+- Add helpers:
+  - `betSize(req, pct float64) int`
+  - `shouldFold(req protocol.ActionRequest, equity float64) bool`
+  - `classifyPostflop() (class string, equity float64)`
+  - `deriveVillainTag(seat int) string`
+  - `calcSPR(req protocol.ActionRequest) float64`
+- In `makeStrategicDecision`:
+  - Route preflop → `preflopDecision(req)` with the ranges and sizes above.
+  - Postflop → use `classifyPostflop`, `shouldFold`, sizing table, and SPR rules.
+- Keep `evaluateHandStrength` as a thin wrapper over `classifyPostflop` for now.
+
+### Validation Loop
+- Quick sanity: `go run ./cmd/server --npc-bots=5 --bot-cmd "go run ./sdk/examples/complex" --hands=1000 --infinite-bankroll --enable-stats --print-stats-on-exit`
+- Run 5×10k hands with stats enabled:
+  - `task server -- --infinite-bankroll --hands 10000 --timeout-ms 20 --npc-bots 3 --enable-stats --stats-depth=full`
+  - `go run ./sdk/examples/complex`
+- Pass if:
+  - Mean BB/100 > 0 and 95% CI lower bound > −20.
+  - Showdown frequency falls below 35% after Patch 1; to ≤25% after Patch 2.
+- Scenario checks (single 20k hand runs):
+  - 3 calling stations → should be clearly profitable (value heavy).
+  - 3 aggro bots → around breakeven or better (fold discipline working).
+  - 2 random + 1 tight → BTN steals show strong positive result.
+
+### Benchmarks / Targets
+- Short‑term: eliminate catastrophic leaks (BB/100 > −50), showdown rate < 40%.
+- Mid‑term: BB/100 > 0 in 50k hands; BTN/CO strongly positive; showdown ≤ 25%.
+- Long‑term: BB/100 +20 to +80 vs default NPC mix; stable across seeds.
+
+### Nice‑to‑Have (later)
+- Board texture classifier (A‑high dry vs low/connected/wet) to refine c‑betting.
+- Mixed frequencies by RNG for balance.
+- Simple range heatmaps for self‑checks in logs.
+
+## Mirror Deals and Self-Play (Deterministic Testing Tools)
+
+- Add `--mirror` and `--mirror-count` flags to `cmd/server`, propagate to `server.Config`.
+- Deck injection:
+  - Add `NewDeckFromCards` and basic JSON deck format in `internal/game/cards.go` for dev mode.
+  - HandRunner to reuse the same deck across N mirrors and rotate seat-to-card mapping per mirror.
+- Metadata (optional but useful): add `hand_group_id` and `mirror_index` to protocol messages for logging.
+- Tests:
+  - Deterministic hand replay across mirrors with identical boards and rotated hole cards.
+  - CLI coverage for `--mirror`/`--mirror-count`.
+
+## Snapshot & Self-Play Benchmarking
+
+- Snapshot current bot: tag repo `complex-bot-snapshot-YYYYMMDD`.
+- Self-play harness:
+  - Run mirrors with multiple instances of the complex bot (mirror mode on) to reduce variance.
+  - Record BB/100 and CI over 5×50k–100k hands; disable NPC respawns for controlled matchups.
+

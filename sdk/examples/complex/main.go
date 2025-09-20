@@ -1011,12 +1011,9 @@ func (b *complexBot) classifyPostflop() (string, float64) {
 
 func (b *complexBot) betSize(req protocol.ActionRequest, pct float64) int {
 	size := int(float64(req.Pot) * pct)
-	minRequired := req.MinBet
-	if req.MinRaise > minRequired {
-		minRequired = req.MinRaise
-	}
-	if size < minRequired {
-		size = minRequired
+	// Clamp to server's required total bet amount for a legal raise
+	if size < req.MinBet {
+		size = req.MinBet
 	}
 	if size > b.state.Chips {
 		size = b.state.Chips
@@ -1030,8 +1027,8 @@ func (b *complexBot) betSize(req protocol.ActionRequest, pct float64) int {
 // raiseOrJam chooses "allin" when target size is capped below MinRaise by our stack.
 // If all-in is not a valid action and we can't meet MinRaise, fallback to call/check.
 func (b *complexBot) raiseOrJam(req protocol.ActionRequest, amt int) (string, int) {
-	// If the amount doesn't meet MinRaise, handle special cases
-	if amt < req.MinRaise {
+	// If the amount doesn't meet the server-required total (MinBet), handle special cases
+	if amt < req.MinBet {
 		// Try to jam if allowed and we're effectively jamming
 		if amt >= b.state.Chips {
 			for _, a := range req.ValidActions {
