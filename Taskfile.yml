@@ -7,13 +7,29 @@ tasks:
       - task --list
 
   generate:
-    desc: Generate msgpack code
+    desc: Generate all code (protocol and preflop tables)
+    deps:
+      - generate:protocol
+      - generate:preflop
+
+  generate:protocol:
+    desc: Generate msgpack protocol code
     cmds:
-      - go generate ./...
+      - go generate ./protocol
     sources:
       - protocol/messages.go
     generates:
       - protocol/messages_gen.go
+
+  generate:preflop:
+    desc: Generate preflop equity tables
+    cmds:
+      - go generate ./sdk/analysis
+    sources:
+      - sdk/analysis/preflop.go
+      - cmd/gen-preflop/main.go
+    generates:
+      - sdk/analysis/preflop_gen.go
 
   build:
     desc: Build all binaries

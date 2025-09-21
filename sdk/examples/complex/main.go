@@ -10,11 +10,9 @@ import (
 	"os"
 	"os/signal"
 	"slices"
-	"strings"
 	"syscall"
 	"time"
 
-	"github.com/lox/pokerforbots/internal/server/statistics"
 	"github.com/lox/pokerforbots/poker"
 	"github.com/lox/pokerforbots/protocol"
 	"github.com/lox/pokerforbots/sdk/analysis"
@@ -40,53 +38,29 @@ type tableState struct {
 	ActiveCount  int
 	BetsThisHand int
 
-	// For statistics tracking
+	// For simple tracking
 	StartingChips int
 	HandNum       int
-	PreflopAction string
-	FlopAction    string
-	TurnAction    string
-	RiverAction   string
-}
-
-// opponentProfile tracks opponent behavior
-type opponentProfile struct {
-	Name        string
-	HandsSeen   int
-	FoldCount   int
-	CallCount   int
-	RaiseCount  int
-	AggroFactor float64 // (raises + bets) / calls
-	VPIP        float64 // voluntary put in pot
-	// internal counters
-	vpipVoluntary int  // count of hands where player VPIP'd preflop
-	vpipThisHand  bool // whether player VPIP'd this hand (preflop call/raise/all-in excluding blinds)
-	LastAction    string
-	LastStreet    string
 }
 
 // complexImprovedBot implements advanced poker strategy with SDK components.
 type complexImprovedBot struct {
-	id        string
-	logger    zerolog.Logger
-	state     tableState
-	opponents map[string]*opponentProfile
-	rng       *rand.Rand
-	stats     *statistics.Statistics
-	handNum   int
-	bigBlind  int // Track the big blind amount
+	id       string
+	logger   zerolog.Logger
+	state    tableState
+	rng      *rand.Rand
+	handNum  int
+	bigBlind int // Track the big blind amount
 }
 
 func newComplexImprovedBot(logger zerolog.Logger) *complexImprovedBot {
 	id := fmt.Sprintf("complex-improved-%04d", rand.Intn(10000))
 	return &complexImprovedBot{
-		id:        id,
-		logger:    logger.With().Str("bot_id", id).Logger(),
-		opponents: make(map[string]*opponentProfile),
-		rng:       rand.New(rand.NewSource(time.Now().UnixNano())),
-		stats:     statistics.NewStatistics(10), // Default to 10 chip big blind, will update when we get game info
-		handNum:   0,
-		bigBlind:  10, // Default big blind
+		id:       id,
+		logger:   logger.With().Str("bot_id", id).Logger(),
+		rng:      rand.New(rand.NewSource(time.Now().UnixNano())),
+		handNum:  0,
+		bigBlind: 10, // Default big blind
 	}
 }
 
@@ -96,10 +70,6 @@ func (b *complexImprovedBot) OnHandStart(state *client.GameState, start protocol
 	// Update big blind if provided (it should be in every hand)
 	if start.BigBlind > 0 {
 		b.bigBlind = start.BigBlind
-		// Update statistics package with new big blind if it changed
-		if b.handNum == 1 {
-			b.stats = statistics.NewStatistics(b.bigBlind)
-		}
 	}
 	b.state.HandID = start.HandID
 	b.state.Seat = start.YourSeat
@@ -122,16 +92,6 @@ func (b *complexImprovedBot) OnHandStart(state *client.GameState, start protocol
 	b.state.Button = start.Button
 	b.state.BetsThisHand = 0
 	b.state.HandNum = b.handNum
-	// Reset action tracking
-	b.state.PreflopAction = ""
-	b.state.FlopAction = ""
-	b.state.TurnAction = ""
-	b.state.RiverAction = ""
-
-	// Reset per-hand opponent VPIP flags
-	for _, prof := range b.opponents {
-		prof.vpipThisHand = false
-	}
 
 	// Count active players
 	active := 0
@@ -162,20 +122,6 @@ func (b *complexImprovedBot) OnActionRequest(state *client.GameState, req protoc
 	potOdds := b.calculatePotOdds(req)
 
 	action, amount := b.makeStrategicDecision(req, handStrength, position, potOdds)
-
-	// Track the action for statistics
-	switch action {
-	case "fold":
-		b.trackAction("fold")
-	case "call":
-		if req.ToCall == 0 {
-			b.trackAction("check")
-		} else {
-			b.trackAction("call")
-		}
-	case "raise", "allin":
-		b.trackAction("raise")
-	}
 
 	b.logger.Debug().
 		Float64("hand_strength", handStrength).
@@ -209,36 +155,9 @@ func (b *complexImprovedBot) OnGameUpdate(state *client.GameState, update protoc
 func (b *complexImprovedBot) OnPlayerAction(state *client.GameState, action protocol.PlayerAction) error {
 	b.state.LastAction = action
 
-	// Track opponent behavior
-	if action.Seat != b.state.Seat {
-		prof := b.getOrCreateProfile(action.PlayerName)
-		prof.LastAction = action.Action
-		prof.LastStreet = action.Street
-
-		switch action.Action {
-		case "fold":
-			prof.FoldCount++
-		case "call", "post_big_blind", "post_small_blind":
-			prof.CallCount++
-			// VPIP tracking: preflop voluntary money excludes blinds
-			if action.Street == "preflop" && action.Action == "call" {
-				prof.vpipThisHand = true
-			}
-		case "raise", "allin":
-			prof.RaiseCount++
-			// VPIP: any preflop raise or all-in counts as voluntary
-			if action.Street == "preflop" {
-				prof.vpipThisHand = true
-			}
-			if action.Seat == b.state.Seat {
-				b.state.BetsThisHand++
-			}
-		}
-
-		// Update aggression factor
-		if prof.CallCount > 0 {
-			prof.AggroFactor = float64(prof.RaiseCount) / float64(prof.CallCount)
-		}
+	// Just track if we bet/raised for simple logic
+	if action.Seat == b.state.Seat && (action.Action == "raise" || action.Action == "allin") {
+		b.state.BetsThisHand++
 	}
 	return nil
 }
@@ -258,87 +177,24 @@ func (b *complexImprovedBot) OnStreetChange(state *client.GameState, street prot
 }
 
 func (b *complexImprovedBot) OnHandResult(state *client.GameState, result protocol.HandResult) error {
-	// Calculate net result for this hand (use SDK state which includes final payout)
+	// Simple logging of result
 	netChips := state.Chips - state.StartingChips
 	netBB := float64(netChips) / float64(b.bigBlind)
 
-	// Update opponent VPIP stats for this hand
-	for _, p := range b.state.Players {
-		if p.Seat == b.state.Seat {
-			continue
-		}
-		prof := b.getOrCreateProfile(p.Name)
-		prof.HandsSeen++
-		if prof.vpipThisHand {
-			prof.vpipVoluntary++
-		}
-		if prof.HandsSeen > 0 {
-			prof.VPIP = float64(prof.vpipVoluntary) / float64(prof.HandsSeen)
-		}
-		// Reset per hand flag
-		prof.vpipThisHand = false
-	}
-
-	// Check if we won (server sends winner.Name as our perspective display name: first 8 chars of ID)
+	// Check if we won
 	won := false
-	wonAtShowdown := false
 	myWinnerName := b.ownWinnerName()
 	for _, winner := range result.Winners {
 		if winner.Name == myWinnerName {
 			won = true
-			if len(result.Showdown) > 0 {
-				wonAtShowdown = true
-			}
 			break
 		}
-	}
-
-	// Calculate button distance
-	buttonDist := b.calculateButtonDistance()
-
-	// Categorize hole cards
-	handCategory := b.categorizeHoleCards()
-
-	// Get final street
-	finalStreet := b.determineFinalStreet()
-
-	// Count opponents
-	numOpponents := 0
-	for _, p := range b.state.Players {
-		if p.Name != b.id && !p.Folded {
-			numOpponents++
-		}
-	}
-
-	// Create hand result for statistics
-	handResult := statistics.HandResult{
-		HandNum:        b.state.HandNum,
-		NetBB:          netBB,
-		Position:       b.state.Seat,
-		ButtonDistance: buttonDist,
-		WentToShowdown: len(result.Showdown) > 0,
-		WonAtShowdown:  wonAtShowdown,
-		FinalPotBB:     float64(b.state.Pot) / float64(b.bigBlind),
-		StreetReached:  finalStreet,
-		HoleCards:      strings.Join(b.state.HoleCardsStr, ""),
-		HandCategory:   handCategory,
-		PreflopAction:  b.state.PreflopAction,
-		FlopAction:     b.state.FlopAction,
-		TurnAction:     b.state.TurnAction,
-		RiverAction:    b.state.RiverAction,
-		NumOpponents:   numOpponents,
-	}
-
-	// Add to statistics
-	if err := b.stats.Add(handResult); err != nil {
-		b.logger.Error().Err(err).Msg("failed to add hand result to statistics")
 	}
 
 	b.logger.Debug().
 		Float64("net_bb", netBB).
 		Bool("won", won).
 		Bool("showdown", len(result.Showdown) > 0).
-		Str("street", finalStreet).
 		Msg("hand completed")
 
 	return nil
@@ -354,51 +210,29 @@ func (b *complexImprovedBot) evaluateHandStrength() float64 {
 		return 0.5
 	}
 
-	// Use string format for preflop calculations (until we refactor those helpers)
+	// Use string format for preflop calculations
 	if len(b.state.HoleCardsStr) != 2 {
 		return 0.5
 	}
-	h1, h2 := b.state.HoleCardsStr[0], b.state.HoleCardsStr[1]
-	r1, r2 := client.CardRank(h1), client.CardRank(h2)
-	suited := client.IsSuited(h1, h2)
 
-	// Pre-flop strength calculation
+	// Pre-flop: Use accurate Monte Carlo equity table
 	if b.state.Street == "preflop" {
-		strength := 0.0
-
-		// Pocket pairs
-		if r1 == r2 {
-			strength = 0.5 + float64(r1)*0.035
-			if r1 >= 10 { // TT+
-				strength += 0.2
-			}
-		} else {
-			// High cards
-			maxRank := math.Max(float64(r1), float64(r2))
-			minRank := math.Min(float64(r1), float64(r2))
-			strength = 0.15 + maxRank*0.025 + minRank*0.015
-
-			// Suited bonus
-			if suited {
-				strength += 0.1
-			}
-
-			// Connected cards
-			gap := math.Abs(float64(r1) - float64(r2))
-			switch gap {
-			case 1:
-				strength += 0.08
-			case 2:
-				strength += 0.04
-			}
-
-			// Premium hands
-			if (r1 == 14 && r2 >= 10) || (r2 == 14 && r1 >= 10) {
-				strength += 0.15
-			}
+		// Get hand category (e.g., "AA", "AKs", "72o")
+		category := analysis.GetHandCategory(b.state.HoleCardsStr[0], b.state.HoleCardsStr[1])
+		if category == "" {
+			return 0.5 // Default if can't categorize
 		}
 
-		return math.Min(strength, 0.95)
+		// Get equity based on number of active opponents
+		opponents := max(b.state.ActiveCount-1, 1)
+
+		equity := analysis.GetPreflopEquity(category, opponents)
+		if equity == 0 {
+			// Fallback to basic estimate if not in table
+			return 0.3
+		}
+
+		return equity
 	}
 
 	// Post-flop: Use SDK equity calculator for accurate strength evaluation
@@ -610,29 +444,16 @@ func (b *complexImprovedBot) makeStrategicDecision(req protocol.ActionRequest, h
 	}
 	betPct := float64(req.ToCall) / float64(pot)
 
-	// Opponent exploitation based on last aggressor profile
-	if req.ToCall > 0 {
-		last := b.state.LastAction
-		if (last.Action == "raise" || last.Action == "allin") && last.PlayerName != "" && last.Seat != b.state.Seat {
-			prof := b.getOrCreateProfile(last.PlayerName)
-			isPassive := prof.AggroFactor > 0 && prof.AggroFactor <= 0.7
-			isAggro := prof.AggroFactor >= 1.7
-			// If passive villain makes a big bet and we are marginal, overfold
-			if isPassive && betPct >= 0.5 {
-				switch class {
-				case "TripsPlus", "Overpair", "TwoPair", "TPTK":
-					// continue with normal flow
-				default:
-					return "fold", 0
-				}
-			}
-			// If aggro villain uses small bets, apply pressure more often
-			if isAggro && betPct <= 0.33 && !avoidRaise {
-				if class == "ComboDraw" || class == "StrongDraw" || equity >= 0.50 {
-					if slices.Contains(req.ValidActions, "raise") {
-						return b.raiseOrJam(req, b.betSize(req, 0.33))
-					}
-				}
+	// Simple adjustment based on bet size
+	// Against large bets, be more selective
+	if req.ToCall > 0 && betPct >= 0.75 {
+		switch class {
+		case "TripsPlus", "Overpair", "TwoPair", "TPTK":
+			// continue with strong hands
+		default:
+			// fold marginal hands vs large bets
+			if equity < 0.45 {
+				return "fold", 0
 			}
 		}
 	}
@@ -934,14 +755,6 @@ func (b *complexImprovedBot) preflopDecision(req protocol.ActionRequest, positio
 
 	// Case 3: Facing an open raise (≈2-3bb)
 	if facing > bb && facing <= 3*bb {
-		// Identify opener profile if available
-		opener := b.state.LastAction
-		prof := &opponentProfile{}
-		if opener.Action == "raise" && opener.PlayerName != "" && opener.Seat != b.state.Seat {
-			prof = b.getOrCreateProfile(opener.PlayerName)
-		}
-		openerNit := prof.VPIP > 0 && prof.VPIP <= 0.18
-		openerLoose := prof.VPIP >= 0.40
 		// 3-bet value / bluff, else call some, else fold
 		if hasAction(req.ValidActions, "raise") && inValue3Bet() {
 			amt := threeBetOOP
@@ -953,7 +766,8 @@ func (b *complexImprovedBot) preflopDecision(req protocol.ActionRequest, positio
 			}
 			return b.raiseOrJam(req, amt)
 		}
-		if hasAction(req.ValidActions, "raise") && inBluff3Bet() && !openerNit {
+		// Only bluff 3-bet occasionally (25% of the time) to avoid being too aggressive
+		if hasAction(req.ValidActions, "raise") && inBluff3Bet() && b.rng.Float64() < 0.25 {
 			amt := threeBetIP
 			if !inPosition {
 				amt = threeBetOOP
@@ -964,20 +778,6 @@ func (b *complexImprovedBot) preflopDecision(req protocol.ActionRequest, positio
 			return b.raiseOrJam(req, amt)
 		}
 		if hasAction(req.ValidActions, "call") && inDefendCall() {
-			if openerNit {
-				// tighten vs nits: prefer pairs 77+ or suited broadways
-				if !pairAtLeast(7) && !suitedBroadway {
-					return "fold", 0
-				}
-			}
-			// slightly widen vs loose openers
-			if openerLoose && !inDefendCall() && hasAction(req.ValidActions, "raise") && inBluff3Bet() && inPosition {
-				// occasionally apply pressure
-				if b.rng.Float64() < 0.25 {
-					amt := min(threeBetIP, b.state.Chips)
-					return b.raiseOrJam(req, amt)
-				}
-			}
 			return "call", 0
 		}
 		return "fold", 0
@@ -1016,109 +816,6 @@ func (b *complexImprovedBot) ownWinnerName() string {
 		}
 	}
 	return candidates[0]
-}
-
-func (b *complexImprovedBot) getOrCreateProfile(name string) *opponentProfile {
-	if prof, ok := b.opponents[name]; ok {
-		return prof
-	}
-	prof := &opponentProfile{Name: name}
-	b.opponents[name] = prof
-	return prof
-}
-
-// trackAction records the action taken for statistics
-func (b *complexImprovedBot) trackAction(action string) {
-	switch b.state.Street {
-	case "preflop":
-		b.state.PreflopAction = action
-	case "flop":
-		b.state.FlopAction = action
-	case "turn":
-		b.state.TurnAction = action
-	case "river":
-		b.state.RiverAction = action
-	}
-}
-
-// calculateButtonDistance returns distance from button (0=button, 1=CO, etc)
-func (b *complexImprovedBot) calculateButtonDistance() int {
-	numPlayers := 0
-	for _, p := range b.state.Players {
-		if p.Chips > 0 {
-			numPlayers++
-		}
-	}
-
-	if numPlayers == 0 {
-		return 0
-	}
-
-	distance := b.state.Seat - b.state.Button
-	if distance <= 0 {
-		distance += numPlayers
-	}
-	return distance - 1
-}
-
-// categorizeHoleCards categorizes preflop hand strength
-func (b *complexImprovedBot) categorizeHoleCards() string {
-	if len(b.state.HoleCardsStr) != 2 {
-		return "unknown"
-	}
-
-	h1, h2 := b.state.HoleCardsStr[0], b.state.HoleCardsStr[1]
-	r1, r2 := client.CardRank(h1), client.CardRank(h2)
-	suited := client.IsSuited(h1, h2)
-
-	if r1 > r2 {
-		r1, r2 = r2, r1 // Ensure r1 <= r2
-	}
-
-	// Premium hands
-	if (r1 >= 12 && r2 >= 12) || // AA, KK, QQ, AK
-		(r1 == 11 && r2 == 11) { // JJ
-		return "Premium"
-	}
-
-	// Strong hands
-	if (r1 >= 10 && r2 >= 10) || // TT+, AQ, AJ
-		(r1 >= 12 && r2 >= 10) ||
-		(r1 == 9 && r2 == 9) || // 99
-		(suited && r1 >= 11 && r2 >= 11) { // KQs, QJs
-		return "Strong"
-	}
-
-	// Medium hands
-	if (r1 >= 7 && r2 >= 7) || // 77+
-		(r1 >= 12 && r2 >= 8) || // A9+
-		(suited && r1 >= 9 && r2 >= 10) || // Suited connectors/broadways
-		(r1 >= 10 && r2 >= 11) { // KJ, QJ, JT
-		return "Medium"
-	}
-
-	// Weak playable hands
-	if (r1 >= 5 && r2 >= 5) || // 55+
-		(suited && math.Abs(float64(r1-r2)) <= 2) || // Suited connectors
-		(r1 >= 12) { // Any ace
-		return "Weak"
-	}
-
-	return "Trash"
-}
-
-// determineFinalStreet returns the furthest street reached
-func (b *complexImprovedBot) determineFinalStreet() string {
-	if b.state.RiverAction != "" || b.state.Board.CountCards() >= 5 {
-		return "River"
-	}
-	if b.state.TurnAction != "" || b.state.Board.CountCards() >= 4 {
-		return "Turn"
-	}
-	if b.state.FlopAction != "" || b.state.Board.CountCards() >= 3 {
-		return "Flop"
-	}
-	return "Preflop"
 }
 
 func main() {
