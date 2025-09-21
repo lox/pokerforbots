@@ -44,6 +44,7 @@ type HandRunner struct {
 	// Track actions for statistics (only if enabled)
 	trackActions bool
 	botActions   []map[string]string // Per-bot action tracking: street -> action
+	botTimeouts  []bool              // Track which bots timed out
 }
 
 // ActionEnvelope wraps an action with the sender's bot ID for verification
@@ -108,6 +109,7 @@ func (hr *HandRunner) SetPool(pool *BotPool) {
 		for i := range hr.botActions {
 			hr.botActions[i] = make(map[string]string)
 		}
+		hr.botTimeouts = make([]bool, len(hr.bots))
 	}
 }
 
@@ -363,6 +365,9 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 		hr.logger.Warn().Str("bot_id", hr.bots[botIndex].ID).Msg("Bot timed out")
 		if hr.pool != nil {
 			hr.pool.IncrementTimeoutCounter()
+		}
+		if hr.botTimeouts != nil {
+			hr.botTimeouts[botIndex] = true
 		}
 		return game.Fold, 0
 	}
@@ -795,6 +800,16 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 			// Add actions if we tracked them
 			if hr.trackActions && i < len(hr.botActions) {
 				outcome.Actions = hr.botActions[i]
+			}
+
+			// Add timeout tracking
+			if hr.botTimeouts != nil && i < len(hr.botTimeouts) {
+				outcome.TimedOut = hr.botTimeouts[i]
+			}
+
+			// Check if bot went broke (final stack is 0)
+			if hr.handState.Players[i].Chips == 0 {
+				outcome.WentBroke = true
 			}
 
 			detailedOutcome.BotOutcomes[i] = outcome

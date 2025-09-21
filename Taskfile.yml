@@ -38,12 +38,14 @@ tasks:
       - go build -o dist/server cmd/server/main.go
       - go build -o dist/client cmd/client/main.go
       - go build -o dist/benchmark cmd/benchmark/main.go
+      - go build -o dist/complex-bot sdk/examples/complex/main.go
     sources:
       - '**/*.go'
     generates:
       - dist/server
       - dist/client
       - dist/benchmark
+      - dist/complex-bot
 
   server:
     desc: Run the poker server

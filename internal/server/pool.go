@@ -58,15 +58,17 @@ func (p *BotPool) WithRNG(fn func(*rand.Rand)) {
 }
 
 type botStats struct {
-	BotID       string
-	DisplayName string
-	Role        BotRole
-	Hands       int
-	NetChips    int64
-	TotalWon    int64
-	TotalLost   int64
-	LastDelta   int
-	LastUpdated time.Time
+	BotID        string
+	DisplayName  string
+	BotCommand   string // Original bot command (e.g., "./snapshots/complex-20250921")
+	Role         BotRole
+	ConnectOrder int // Order in which the bot connected (1st, 2nd, etc.)
+	Hands        int
+	NetChips     int64
+	TotalWon     int64
+	TotalLost    int64
+	LastDelta    int
+	LastUpdated  time.Time
 }
 
 const reasonHandLimitReached = "hand_limit_reached"
@@ -556,7 +558,10 @@ func (p *BotPool) RecordHandOutcome(handID string, bots []*Bot, deltas []int) {
 		key := bot.ID
 		stats, exists := p.botStats[key]
 		if !exists {
-			stats = &botStats{BotID: key}
+			stats = &botStats{
+				BotID:        key,
+				ConnectOrder: len(p.botStats) + 1, // Track order of connection
+			}
 			p.botStats[key] = stats
 		}
 
@@ -567,6 +572,7 @@ func (p *BotPool) RecordHandOutcome(handID string, bots []*Bot, deltas []int) {
 
 		stats.DisplayName = displayName
 		stats.Role = bot.Role()
+		stats.BotCommand = bot.BotCommand()
 		stats.Hands++
 
 		delta := deltas[i]
@@ -616,8 +622,20 @@ func (p *BotPool) PlayerStats() []PlayerStats {
 		return []PlayerStats{}
 	}
 
-	players := make([]PlayerStats, 0, len(p.botStats))
+	// Collect all stats first
+	allStats := make([]*botStats, 0, len(p.botStats))
 	for _, stats := range p.botStats {
+		allStats = append(allStats, stats)
+	}
+
+	// Sort by ConnectOrder to ensure deterministic ordering
+	// This ensures Bot A (first --bot-cmd) comes before Bot B (second --bot-cmd)
+	sort.Slice(allStats, func(i, j int) bool {
+		return allStats[i].ConnectOrder < allStats[j].ConnectOrder
+	})
+
+	players := make([]PlayerStats, 0, len(allStats))
+	for _, stats := range allStats {
 		role := string(stats.Role)
 		avg := 0.0
 		if stats.Hands > 0 {

@@ -191,6 +191,14 @@ type PlayerDetailedStats struct {
 	MaxPotBB float64 `msg:"max_pot_bb" json:"max_pot_bb"`
 	BigPots  int     `msg:"big_pots" json:"big_pots"`
 
+	// Preflop stats
+	VPIP float64 `msg:"vpip" json:"vpip"` // Voluntarily Put In Pot %
+	PFR  float64 `msg:"pfr" json:"pfr"`   // Preflop Raise %
+
+	// Error tracking
+	Timeouts int `msg:"timeouts" json:"timeouts"`
+	Busts    int `msg:"busts" json:"busts"` // Times went broke
+
 	// Breakdown (optional by depth)
 	PositionStats     map[string]PositionStatSummary `msg:"position_stats,omitempty" json:"position_stats,omitempty"`
 	StreetStats       map[string]StreetStatSummary   `msg:"street_stats,omitempty" json:"street_stats,omitempty"`

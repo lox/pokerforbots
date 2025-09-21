@@ -27,6 +27,7 @@ type Bot struct {
 	displayName  string
 	gameID       string
 	role         BotRole
+	botCommand   string // Original bot command for tracking
 }
 
 func (b *Bot) close() {
@@ -117,6 +118,13 @@ func (b *Bot) Role() BotRole {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.role
+}
+
+// BotCommand returns the original bot command
+func (b *Bot) BotCommand() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.botCommand
 }
 
 // SendMessage sends a protocol message to the bot

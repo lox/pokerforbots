@@ -44,6 +44,7 @@ type CLI struct {
 	BotCmd           []string `kong:"help='Command to run a local bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME'"`
 	NPCBotCmd        []string `kong:"name='npc-bot-cmd',help='Command to run an external NPC bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME, POKERFORBOTS_ROLE=npc'"`
 	PrintStatsOnExit bool     `kong:"help='Print /admin/games/default/stats JSON on exit'"`
+	WriteStatsOnExit string   `kong:"help='Write /admin/games/default/stats JSON to file on exit'"`
 }
 
 func main() {
@@ -192,6 +193,9 @@ func main() {
 		if cli.PrintStatsOnExit {
 			printStats(toHTTPBase(cli.Addr))
 		}
+		if cli.WriteStatsOnExit != "" {
+			writeStatsToFile(toHTTPBase(cli.Addr), cli.WriteStatsOnExit)
+		}
 
 		// Wait for bot processes to exit before shutting down the server
 		if allBotsDone != nil {
@@ -216,6 +220,9 @@ func main() {
 
 		if cli.PrintStatsOnExit {
 			printStats(toHTTPBase(cli.Addr))
+		}
+		if cli.WriteStatsOnExit != "" {
+			writeStatsToFile(toHTTPBase(cli.Addr), cli.WriteStatsOnExit)
 		}
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -395,6 +402,35 @@ func printStats(httpBase string) {
 	}
 	_, _ = io.Copy(os.Stdout, resp.Body)
 	fmt.Fprintln(os.Stdout)
+}
+
+func writeStatsToFile(httpBase string, filename string) {
+	// Always write JSON format to file
+	url := fmt.Sprintf("%s/admin/games/default/stats", httpBase)
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to fetch stats for file: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "Failed to fetch stats for file: HTTP %d\n", resp.StatusCode)
+		return
+	}
+
+	// Read the JSON response
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to read stats: %v\n", err)
+		return
+	}
+
+	// Write to file
+	if err := os.WriteFile(filename, data, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to write stats to %s: %v\n", filename, err)
+		return
+	}
 }
 
 func computeDefaultNPCSpecs(total, calling, random, aggro int) []server.NPCSpec {

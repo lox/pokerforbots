@@ -29,6 +29,8 @@ type BotHandOutcome struct {
 	WentToShowdown bool
 	WonAtShowdown  bool
 	Actions        map[string]string // Street -> action taken
+	TimedOut       bool              // Whether this bot timed out
+	WentBroke      bool              // Whether this bot went broke
 }
 
 // StatsCollector defines the interface for collecting game statistics
@@ -161,6 +163,14 @@ func (d *DetailedStatsCollector) RecordHandOutcome(detail HandOutcomeDetail) err
 				// Log but don't fail - statistics should never break the game
 				return nil
 			}
+
+			// Track timeouts and busts
+			if outcome.TimedOut {
+				d.stats[botID].IncrementTimeouts()
+			}
+			if outcome.WentBroke {
+				d.stats[botID].IncrementBusts()
+			}
 		}
 	}
 
@@ -204,6 +214,10 @@ func (d *DetailedStatsCollector) GetDetailedStats(botID string) *protocol.Player
 		NonShowdownBB:   nonShowdownBB,
 		MaxPotBB:        maxPotBB,
 		BigPots:         bigPots,
+		VPIP:            stats.GetVPIP(),
+		PFR:             stats.GetPFR(),
+		Timeouts:        stats.GetTimeouts(),
+		Busts:           stats.GetBusts(),
 	}
 
 	if hands > 0 {

@@ -137,6 +137,12 @@ type Statistics struct {
 
 	// Detailed hand results for analysis
 	handResults []HandResult
+
+	// Additional tracking for new stats
+	vpipCount int // Hands where player voluntarily put money in pot
+	pfrCount  int // Hands where player raised preflop
+	timeouts  int // Number of timeout actions
+	busts     int // Number of times player went broke
 }
 
 // PositionStats tracks statistics for a specific position
@@ -282,6 +288,16 @@ func (s *Statistics) Add(result HandResult) error {
 	if result.PreflopAction != "" {
 		s.preflopActions[result.PreflopAction]++
 		s.totalActions[result.PreflopAction]++
+
+		// Track VPIP (call or raise preflop)
+		if result.PreflopAction == "call" || result.PreflopAction == "raise" {
+			s.vpipCount++
+		}
+
+		// Track PFR (raise preflop)
+		if result.PreflopAction == "raise" {
+			s.pfrCount++
+		}
 	}
 	for _, action := range []string{result.FlopAction, result.TurnAction, result.RiverAction} {
 		if action != "" {
@@ -485,6 +501,54 @@ func (s *Statistics) CategoryStats() map[string]*CategoryStat {
 	copy := make(map[string]*CategoryStat)
 	maps.Copy(copy, s.categoryStats)
 	return copy
+}
+
+// GetVPIP returns the VPIP percentage
+func (s *Statistics) GetVPIP() float64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.hands == 0 {
+		return 0
+	}
+	return float64(s.vpipCount) / float64(s.hands)
+}
+
+// GetPFR returns the PFR percentage
+func (s *Statistics) GetPFR() float64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.hands == 0 {
+		return 0
+	}
+	return float64(s.pfrCount) / float64(s.hands)
+}
+
+// GetTimeouts returns the number of timeouts
+func (s *Statistics) GetTimeouts() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.timeouts
+}
+
+// GetBusts returns the number of busts
+func (s *Statistics) GetBusts() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.busts
+}
+
+// IncrementTimeouts increments the timeout counter
+func (s *Statistics) IncrementTimeouts() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.timeouts++
+}
+
+// IncrementBusts increments the bust counter
+func (s *Statistics) IncrementBusts() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.busts++
 }
 
 // Summary returns a formatted summary of statistics
