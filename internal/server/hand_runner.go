@@ -157,7 +157,7 @@ func (hr *HandRunner) Run() {
 		hr.button,
 		hr.config.SmallBlind,
 		hr.config.BigBlind,
-		game.WithChips(chipCounts),
+		game.WithChipsByPlayer(chipCounts),
 		game.WithDeck(deck),
 	)
 	hr.lastStreet = hr.handState.Street

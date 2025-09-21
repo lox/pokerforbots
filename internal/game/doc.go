@@ -29,11 +29,11 @@
 //
 //	// With individual chip counts
 //	h := game.NewHandState(rng, players, button, sb, bb,
-//	    game.WithChips([]int{1000, 800, 1200}))
+//	    game.WithChipsByPlayer([]int{1000, 800, 1200}))
 //
 //	// With uniform chip counts
 //	h := game.NewHandState(rng, players, button, sb, bb,
-//	    game.WithUniformChips(500))
+//	    game.WithChips(500))
 //
 //	// With pre-shuffled deck
 //	deck := poker.NewDeck(rng)

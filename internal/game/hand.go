@@ -44,7 +44,7 @@ type handConfig struct {
 //
 //	// With options
 //	h := NewHandState(rng, players, 0, 5, 10,
-//	    WithChips([]int{1000, 800, 1200}))
+//	    WithChipsByPlayer([]int{1000, 800, 1200}))
 func NewHandState(rng *rand.Rand, playerNames []string, button int, smallBlind, bigBlind int, opts ...HandOption) *HandState {
 	if rng == nil {
 		panic("rng is required for hand creation")
@@ -121,18 +121,18 @@ func NewHandState(rng *rand.Rand, playerNames []string, button int, smallBlind, 
 
 // Option Functions
 
-// WithUniformChips sets the same starting chips for all players.
+// WithChips sets the same starting chips for all players.
 // Default is 1000 if not specified.
-func WithUniformChips(chips int) HandOption {
+func WithChips(chips int) HandOption {
 	return func(c *handConfig) {
 		c.startChips = chips
 		c.chipCounts = nil // Clear any individual counts
 	}
 }
 
-// WithChips sets individual chip counts for each player.
+// WithChipsByPlayer sets individual chip counts for each player.
 // The length must match the number of players.
-func WithChips(chipCounts []int) HandOption {
+func WithChipsByPlayer(chipCounts []int) HandOption {
 	return func(c *handConfig) {
 		c.chipCounts = chipCounts
 	}

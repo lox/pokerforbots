@@ -53,7 +53,7 @@ func BenchmarkGameEngine(b *testing.B) {
 					0,  // button
 					5,  // small blind
 					10, // big blind
-					game.WithChips(chipCounts),
+					game.WithChipsByPlayer(chipCounts),
 					game.WithDeck(deck),
 				)
 
