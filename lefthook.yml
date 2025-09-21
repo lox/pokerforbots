@@ -32,3 +32,45 @@ pre-commit:
     #  run: go run golang.org/x/tools/gopls/internal/analysis/unusedparams@latest -test -fix ./...
     #  fail_text: "Unused parameters detected! Auto-fixed where possible; review and commit."
     #  stage_fixed: true
+
+    # Check for large files (>1MB) and binary files
+    check-large-files:
+      run: |
+        MAX_SIZE=1048576  # 1MB in bytes
+        for file in {staged_files}; do
+          # Skip if file doesn't exist (deleted files)
+          [ ! -f "$file" ] && continue
+
+          # Get file size (cross-platform)
+          if command -v stat >/dev/null 2>&1; then
+            # Linux
+            size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null || echo 0)
+          else
+            size=$(wc -c < "$file")
+          fi
+
+          # Check file size
+          if [ "$size" -gt "$MAX_SIZE" ]; then
+            echo "❌ Error: $file is larger than 1MB ($(($size / 1024))KB)"
+            echo "   Large files should not be committed to the repository."
+            echo "   Consider using Git LFS or excluding this file."
+            exit 1
+          fi
+
+          # Check if file is binary (excluding allowed extensions)
+          case "$file" in
+            *.go|*.md|*.yml|*.yaml|*.json|*.txt|*.mod|*.sum|*.toml|*.sh|*.proto)
+              # Text files - skip binary check
+              ;;
+            *)
+              # Check if file is binary using git's detection
+              if git diff --cached --numstat HEAD -- "$file" 2>/dev/null | grep -q "^-"; then
+                echo "❌ Error: $file appears to be a binary file"
+                echo "   Binary files should be added to .gitignore"
+                echo "   If this is a necessary binary, consider using Git LFS"
+                exit 1
+              fi
+              ;;
+          esac
+        done
+      fail_text: "Large or binary files detected! Add them to .gitignore or use Git LFS."
