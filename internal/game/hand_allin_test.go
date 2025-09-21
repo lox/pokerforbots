@@ -1,6 +1,7 @@
 package game
 
 import (
+	"math/rand"
 	"testing"
 )
 
@@ -11,7 +12,7 @@ func TestAllInRaiseBelowMinimum(t *testing.T) {
 	// Create a hand with varied chip stacks
 	players := []string{"Alice", "Bob", "Charlie"}
 	chipCounts := []int{100, 15, 100} // Bob only has 15 chips
-	h := NewHandStateWithChips(players, chipCounts, 0, 5, 10)
+	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(chipCounts))
 
 	// Alice (UTG) raises to 30
 	if err := h.ProcessAction(Raise, 30); err != nil {
@@ -50,7 +51,7 @@ func TestAllInRaiseAboveCurrentBetButBelowMinimum(t *testing.T) {
 	// Create a hand with varied chip stacks
 	players := []string{"Alice", "Bob", "Charlie"}
 	chipCounts := []int{100, 35, 100} // Bob has 35 chips
-	h := NewHandStateWithChips(players, chipCounts, 0, 5, 10)
+	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(chipCounts))
 
 	// Alice (UTG) raises to 30
 	if err := h.ProcessAction(Raise, 30); err != nil {
@@ -94,7 +95,7 @@ func TestRegularRaiseBelowMinimumStillRejected(t *testing.T) {
 	t.Parallel()
 	// Create a hand with players having plenty of chips
 	players := []string{"Alice", "Bob", "Charlie"}
-	h := NewHandState(players, 0, 5, 10, 1000)
+	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithUniformChips(1000))
 
 	// Alice raises to 30
 	if err := h.ProcessAction(Raise, 30); err != nil {
@@ -117,7 +118,7 @@ func TestAllInPlayerSkippedForActions(t *testing.T) {
 	// Bob has more chips than Alice so he won't go all-in when calling
 	players := []string{"Alice", "Bob", "Charlie"}
 	chipCounts := []int{100, 500, 500}
-	h := NewHandStateWithChips(players, chipCounts, 0, 5, 10)
+	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(chipCounts))
 
 	// Alice (UTG) goes all-in
 	if err := h.ProcessAction(AllIn, 0); err != nil {
@@ -176,7 +177,7 @@ func TestAllPlayersAllInAutoComplete(t *testing.T) {
 	// Create a 2-player game
 	players := []string{"Alice", "Bob"}
 	chipCounts := []int{100, 150}
-	h := NewHandStateWithChips(players, chipCounts, 0, 5, 10)
+	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(chipCounts))
 
 	// Alice (SB/Button in heads-up) raises to 50
 	if err := h.ProcessAction(Raise, 50); err != nil {
@@ -225,7 +226,7 @@ func TestMixedAllInAndActivePlayers(t *testing.T) {
 	// - Position 3 (Dave) is UTG and acts first
 	players := []string{"Alice", "Bob", "Charlie", "Dave"}
 	chipCounts := []int{200, 200, 200, 50} // Dave has the short stack
-	h := NewHandStateWithChips(players, chipCounts, 0, 5, 10)
+	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(chipCounts))
 
 	// Dave (UTG with 50 chips) goes all-in
 	if err := h.ProcessAction(AllIn, 0); err != nil {
@@ -285,7 +286,7 @@ func TestAllInShowdownCompletes(t *testing.T) {
 	// Create a game with different chip counts
 	players := []string{"Alice", "Bob", "Charlie"}
 	chipCounts := []int{100, 200, 150}
-	h := NewHandStateWithChips(players, chipCounts, 0, 5, 10)
+	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(chipCounts))
 
 	// All players go all-in
 	if err := h.ProcessAction(AllIn, 0); err != nil {

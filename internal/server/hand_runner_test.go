@@ -24,11 +24,12 @@ func TestHandRunner(t *testing.T) {
 
 	// Initialize hand state
 	runner.handState = game.NewHandState(
+		rand.New(rand.NewSource(42)),
 		[]string{"bot1", "bot2", "bot3"},
 		0,
 		5,
 		10,
-		1000,
+		game.WithUniformChips(1000),
 	)
 
 	// Test that we can broadcast messages
@@ -58,11 +59,12 @@ func TestHandRunnerMessages(t *testing.T) {
 
 	// Send hand start (but don't run full hand)
 	runner.handState = game.NewHandState(
+		rand.New(rand.NewSource(42)),
 		[]string{"alice", "bob"},
 		0,
 		5,
 		10,
-		1000,
+		game.WithUniformChips(1000),
 	)
 
 	runner.broadcastHandStart()
@@ -93,11 +95,12 @@ func TestHandRunnerActionRequest(t *testing.T) {
 	bot2 := &Bot{ID: "test-bot-2", send: make(chan []byte, 10)}
 	runner := NewHandRunner(testLogger(), []*Bot{bot, bot2}, "test-hand-3", 0, rand.New(rand.NewSource(42)))
 	runner.handState = game.NewHandState(
+		rand.New(rand.NewSource(42)),
 		[]string{"player1", "player2"},
 		0,
 		5,
 		10,
-		1000,
+		game.WithUniformChips(1000),
 	)
 
 	// Send action request
@@ -162,11 +165,12 @@ func TestHandRunnerComplete(t *testing.T) {
 
 	// Manually setup a simple scenario where one player folds
 	runner.handState = game.NewHandState(
+		rand.New(rand.NewSource(42)),
 		[]string{"alice", "bob"},
 		0,
 		5,
 		10,
-		1000,
+		game.WithUniformChips(1000),
 	)
 
 	// Process alice folding
@@ -201,7 +205,7 @@ func TestHandRunnerForceFoldOnDisconnect(t *testing.T) {
 	}
 
 	runner := NewHandRunner(testLogger(), bots, "disconnect-test", 0, rand.New(rand.NewSource(42)))
-	runner.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
+	runner.handState = game.NewHandState(rand.New(rand.NewSource(42)), []string{"bot1", "bot2"}, 0, 5, 10, game.WithUniformChips(1000))
 	runner.playerLabels = []string{"bot1", "bot2"}
 	runner.lastStreet = runner.handState.Street
 
@@ -241,7 +245,7 @@ func TestValidActionsGeneration(t *testing.T) {
 				bot1 := &Bot{ID: "bot1", send: make(chan []byte, 10)}
 				bot2 := &Bot{ID: "bot2", send: make(chan []byte, 10)}
 				hr := NewHandRunner(testLogger(), []*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
-				hr.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
+				hr.handState = game.NewHandState(rand.New(rand.NewSource(42)), []string{"bot1", "bot2"}, 0, 5, 10, game.WithUniformChips(1000))
 				hr.handState.Street = game.Preflop
 				hr.handState.ActivePlayer = 0
 				return hr
@@ -255,7 +259,7 @@ func TestValidActionsGeneration(t *testing.T) {
 				bot1 := &Bot{ID: "bot1", send: make(chan []byte, 10)}
 				bot2 := &Bot{ID: "bot2", send: make(chan []byte, 10)}
 				hr := NewHandRunner(testLogger(), []*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
-				hr.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
+				hr.handState = game.NewHandState(rand.New(rand.NewSource(42)), []string{"bot1", "bot2"}, 0, 5, 10, game.WithUniformChips(1000))
 				hr.handState.Street = game.Preflop
 				// Simulate SB calling
 				hr.handState.Players[0].Bet = 10
@@ -272,7 +276,7 @@ func TestValidActionsGeneration(t *testing.T) {
 				bot1 := &Bot{ID: "bot1", send: make(chan []byte, 10)}
 				bot2 := &Bot{ID: "bot2", send: make(chan []byte, 10)}
 				hr := NewHandRunner(testLogger(), []*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
-				hr.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
+				hr.handState = game.NewHandState(rand.New(rand.NewSource(42)), []string{"bot1", "bot2"}, 0, 5, 10, game.WithUniformChips(1000))
 				hr.handState.Street = game.Flop
 				hr.handState.Betting.CurrentBet = 0
 				hr.handState.Betting.MinRaise = 10
@@ -290,7 +294,7 @@ func TestValidActionsGeneration(t *testing.T) {
 				bot1 := &Bot{ID: "bot1", send: make(chan []byte, 10)}
 				bot2 := &Bot{ID: "bot2", send: make(chan []byte, 10)}
 				hr := NewHandRunner(testLogger(), []*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
-				hr.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
+				hr.handState = game.NewHandState(rand.New(rand.NewSource(42)), []string{"bot1", "bot2"}, 0, 5, 10, game.WithUniformChips(1000))
 				hr.handState.Street = game.Flop
 				hr.handState.Betting.CurrentBet = 1000
 				hr.handState.Players[0].Bet = 1000
@@ -310,7 +314,7 @@ func TestValidActionsGeneration(t *testing.T) {
 				bot1 := &Bot{ID: "bot1", send: make(chan []byte, 10)}
 				bot2 := &Bot{ID: "bot2", send: make(chan []byte, 10)}
 				hr := NewHandRunner(testLogger(), []*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
-				hr.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
+				hr.handState = game.NewHandState(rand.New(rand.NewSource(42)), []string{"bot1", "bot2"}, 0, 5, 10, game.WithUniformChips(1000))
 				hr.handState.Street = game.Preflop
 				hr.handState.Betting.CurrentBet = 10
 				hr.handState.Betting.MinRaise = 10
@@ -373,7 +377,7 @@ func TestActionRequestMessagePopulation(t *testing.T) {
 	bot := &Bot{ID: "test-bot", send: make(chan []byte, 10)}
 	bot2 := &Bot{ID: "test-bot-2", send: make(chan []byte, 10)}
 	hr := NewHandRunner(testLogger(), []*Bot{bot, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
-	hr.handState = game.NewHandState([]string{"player1", "player2"}, 0, 5, 10, 1000)
+	hr.handState = game.NewHandState(rand.New(rand.NewSource(42)), []string{"player1", "player2"}, 0, 5, 10, game.WithUniformChips(1000))
 
 	// Get valid actions
 	validActions := hr.handState.GetValidActions()
@@ -433,7 +437,7 @@ func TestActivePlayerAfterActions(t *testing.T) {
 		{
 			name: "after_fold_in_3way",
 			setup: func() *game.HandState {
-				h := game.NewHandState([]string{"p1", "p2", "p3"}, 0, 5, 10, 1000)
+				h := game.NewHandState(rand.New(rand.NewSource(42)), []string{"p1", "p2", "p3"}, 0, 5, 10, game.WithUniformChips(1000))
 				h.ProcessAction(game.Fold, 0) // p1 folds
 				return h
 			},
@@ -449,7 +453,7 @@ func TestActivePlayerAfterActions(t *testing.T) {
 		{
 			name: "after_all_in",
 			setup: func() *game.HandState {
-				h := game.NewHandState([]string{"p1", "p2"}, 0, 5, 10, 1000)
+				h := game.NewHandState(rand.New(rand.NewSource(42)), []string{"p1", "p2"}, 0, 5, 10, game.WithUniformChips(1000))
 				h.ProcessAction(game.AllIn, 0) // p1 goes all-in
 				return h
 			},
@@ -468,7 +472,7 @@ func TestActivePlayerAfterActions(t *testing.T) {
 		{
 			name: "street_transition_headsup",
 			setup: func() *game.HandState {
-				h := game.NewHandState([]string{"p1", "p2"}, 0, 5, 10, 1000)
+				h := game.NewHandState(rand.New(rand.NewSource(42)), []string{"p1", "p2"}, 0, 5, 10, game.WithUniformChips(1000))
 				// Complete preflop betting
 				h.ProcessAction(game.Call, 0)  // SB calls
 				h.ProcessAction(game.Check, 0) // BB checks
@@ -513,7 +517,7 @@ func TestEmptyValidActionsScenarios(t *testing.T) {
 		{
 			name: "negative_active_player",
 			setup: func() *game.HandState {
-				h := game.NewHandState([]string{"p1", "p2"}, 0, 5, 10, 1000)
+				h := game.NewHandState(rand.New(rand.NewSource(42)), []string{"p1", "p2"}, 0, 5, 10, game.WithUniformChips(1000))
 				h.ActivePlayer = -1 // Invalid state
 				return h
 			},
@@ -522,7 +526,7 @@ func TestEmptyValidActionsScenarios(t *testing.T) {
 		{
 			name: "out_of_bounds_active_player",
 			setup: func() *game.HandState {
-				h := game.NewHandState([]string{"p1", "p2"}, 0, 5, 10, 1000)
+				h := game.NewHandState(rand.New(rand.NewSource(42)), []string{"p1", "p2"}, 0, 5, 10, game.WithUniformChips(1000))
 				h.ActivePlayer = 5 // Out of bounds
 				return h
 			},
@@ -531,7 +535,7 @@ func TestEmptyValidActionsScenarios(t *testing.T) {
 		{
 			name: "all_players_folded",
 			setup: func() *game.HandState {
-				h := game.NewHandState([]string{"p1", "p2", "p3"}, 0, 5, 10, 1000)
+				h := game.NewHandState(rand.New(rand.NewSource(42)), []string{"p1", "p2", "p3"}, 0, 5, 10, game.WithUniformChips(1000))
 				h.Players[0].Folded = true
 				h.Players[1].Folded = true
 				// p3 should win
@@ -542,7 +546,7 @@ func TestEmptyValidActionsScenarios(t *testing.T) {
 		{
 			name: "all_players_allin",
 			setup: func() *game.HandState {
-				h := game.NewHandState([]string{"p1", "p2"}, 0, 5, 10, 1000)
+				h := game.NewHandState(rand.New(rand.NewSource(42)), []string{"p1", "p2"}, 0, 5, 10, game.WithUniformChips(1000))
 				h.Players[0].AllInFlag = true
 				h.Players[1].AllInFlag = true
 				return h

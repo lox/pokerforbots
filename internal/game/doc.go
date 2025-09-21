@@ -8,7 +8,7 @@
 // Create and run a simple hand with required RNG:
 //
 //	rng := rand.New(rand.NewSource(time.Now().UnixNano())) // Random
-//	h := game.NewHand(rng, []string{"Alice", "Bob", "Charlie"}, 0, 5, 10)
+//	h := game.NewHandState(rng, []string{"Alice", "Bob", "Charlie"}, 0, 5, 10)
 //	// Process actions...
 //	h.ProcessAction(game.Call, 0)
 //	// Check if hand is complete
@@ -21,23 +21,23 @@
 // For deterministic testing, provide a seeded RNG:
 //
 //	rng := rand.New(rand.NewSource(42)) // Fixed seed
-//	h := game.NewHand(rng, players, button, sb, bb)
+//	h := game.NewHandState(rng, players, button, sb, bb)
 //
 // # Configuration Options
 //
 // Use options to customize hand creation:
 //
 //	// With individual chip counts
-//	h := game.NewHand(rng, players, button, sb, bb,
+//	h := game.NewHandState(rng, players, button, sb, bb,
 //	    game.WithChips([]int{1000, 800, 1200}))
 //
 //	// With uniform chip counts
-//	h := game.NewHand(rng, players, button, sb, bb,
+//	h := game.NewHandState(rng, players, button, sb, bb,
 //	    game.WithUniformChips(500))
 //
 //	// With pre-shuffled deck
 //	deck := poker.NewDeck(rng)
-//	h := game.NewHand(rng, players, button, sb, bb,
+//	h := game.NewHandState(rng, players, button, sb, bb,
 //	    game.WithDeck(deck))
 //
 // # Architecture

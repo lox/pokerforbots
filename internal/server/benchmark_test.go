@@ -47,13 +47,14 @@ func BenchmarkGameEngine(b *testing.B) {
 				// Create hand state with deck
 				rng := rand.New(rand.NewSource(getSeed(int64(i))))
 				deck := poker.NewDeck(rng)
-				hand := game.NewHandStateWithChipsAndDeck(
+				hand := game.NewHandState(
+					rng,
 					players,
-					chipCounts,
 					0,  // button
 					5,  // small blind
 					10, // big blind
-					deck,
+					game.WithChips(chipCounts),
+					game.WithDeck(deck),
 				)
 
 				// Play through streets

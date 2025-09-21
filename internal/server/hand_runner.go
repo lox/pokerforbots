@@ -151,13 +151,14 @@ func (hr *HandRunner) Run() {
 	// Clone the RNG to avoid concurrent access issues
 	deckRNG := rand.New(rand.NewSource(hr.rng.Int63()))
 	deck := poker.NewDeck(deckRNG)
-	hr.handState = game.NewHandStateWithChipsAndDeck(
+	hr.handState = game.NewHandState(
+		deckRNG,
 		playerNames,
-		chipCounts,
 		hr.button,
 		hr.config.SmallBlind,
 		hr.config.BigBlind,
-		deck,
+		game.WithChips(chipCounts),
+		game.WithDeck(deck),
 	)
 	hr.lastStreet = hr.handState.Street
 

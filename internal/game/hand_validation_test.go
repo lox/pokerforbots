@@ -1,6 +1,7 @@
 package game
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/lox/pokerforbots/poker"
@@ -9,7 +10,7 @@ import (
 // TestBasicHandFlow tests a simple hand with minimal actions
 func TestBasicHandFlow(t *testing.T) {
 	t.Parallel()
-	h := NewHandState([]string{"Alice", "Bob"}, 0, 5, 10, 100)
+	h := NewHandState(rand.New(rand.NewSource(42)), []string{"Alice", "Bob"}, 0, 5, 10, WithUniformChips(100))
 
 	// Verify preflop state
 	t.Logf("Initial state: Street=%v, ActivePlayer=%d, CurrentBet=%d", h.Street, h.ActivePlayer, h.Betting.CurrentBet)
@@ -143,7 +144,7 @@ func TestBasicHandFlow(t *testing.T) {
 // TestBettingAndFolding tests betting and folding scenarios
 func TestBettingAndFolding(t *testing.T) {
 	t.Parallel()
-	h := NewHandState([]string{"Alice", "Bob", "Charlie"}, 0, 5, 10, 100)
+	h := NewHandState(rand.New(rand.NewSource(42)), []string{"Alice", "Bob", "Charlie"}, 0, 5, 10, WithUniformChips(100))
 
 	// Verify initial state
 	if h.ActivePlayer != 0 {
@@ -217,10 +218,10 @@ func TestBettingAndFolding(t *testing.T) {
 func TestAllInWithSidePotsValidation(t *testing.T) {
 	t.Parallel()
 	// Create players with different stacks
-	h := NewHandStateWithChips(
+	h := NewHandState(rand.New(rand.NewSource(42)),
 		[]string{"ShortStack", "MidStack", "BigStack"},
-		[]int{25, 60, 100},
 		0, 5, 10,
+		WithChips([]int{25, 60, 100}),
 	)
 
 	// Verify chip counts
