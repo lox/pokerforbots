@@ -1,4 +1,4 @@
-package sdk
+package client
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"os"
 
 	"github.com/gorilla/websocket"
-	"github.com/lox/pokerforbots/internal/protocol"
+	"github.com/lox/pokerforbots/protocol"
 	"github.com/rs/zerolog"
 )
 

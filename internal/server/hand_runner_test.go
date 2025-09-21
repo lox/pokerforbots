@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/lox/pokerforbots/internal/game"
-	"github.com/lox/pokerforbots/internal/protocol"
+	"github.com/lox/pokerforbots/protocol"
 )
 
 func TestHandRunner(t *testing.T) {
@@ -273,8 +273,8 @@ func TestValidActionsGeneration(t *testing.T) {
 				hr := NewHandRunner(testLogger(), []*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
 				hr.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
 				hr.handState.Street = game.Flop
-				hr.handState.CurrentBet = 0
-				hr.handState.MinRaise = 10
+				hr.handState.Betting.CurrentBet = 0
+				hr.handState.Betting.MinRaise = 10
 				hr.handState.Players[0].Bet = 0
 				hr.handState.Players[1].Bet = 0
 				hr.handState.ActivePlayer = 1 // In heads-up, BB acts first post-flop
@@ -291,7 +291,7 @@ func TestValidActionsGeneration(t *testing.T) {
 				hr := NewHandRunner(testLogger(), []*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
 				hr.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
 				hr.handState.Street = game.Flop
-				hr.handState.CurrentBet = 1000
+				hr.handState.Betting.CurrentBet = 1000
 				hr.handState.Players[0].Bet = 1000
 				hr.handState.Players[0].Chips = 0
 				hr.handState.Players[0].AllInFlag = true
@@ -311,8 +311,8 @@ func TestValidActionsGeneration(t *testing.T) {
 				hr := NewHandRunner(testLogger(), []*Bot{bot1, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
 				hr.handState = game.NewHandState([]string{"bot1", "bot2"}, 0, 5, 10, 1000)
 				hr.handState.Street = game.Preflop
-				hr.handState.CurrentBet = 10
-				hr.handState.MinRaise = 10
+				hr.handState.Betting.CurrentBet = 10
+				hr.handState.Betting.MinRaise = 10
 				hr.handState.Players[0].Bet = 0
 				hr.handState.Players[0].Chips = 15 // Only 15 chips left
 				hr.handState.ActivePlayer = 0

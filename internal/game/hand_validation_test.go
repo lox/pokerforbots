@@ -2,6 +2,8 @@ package game
 
 import (
 	"testing"
+
+	"github.com/lox/pokerforbots/poker"
 )
 
 // TestBasicHandFlow tests a simple hand with minimal actions
@@ -10,7 +12,7 @@ func TestBasicHandFlow(t *testing.T) {
 	h := NewHandState([]string{"Alice", "Bob"}, 0, 5, 10, 100)
 
 	// Verify preflop state
-	t.Logf("Initial state: Street=%v, ActivePlayer=%d, CurrentBet=%d", h.Street, h.ActivePlayer, h.CurrentBet)
+	t.Logf("Initial state: Street=%v, ActivePlayer=%d, CurrentBet=%d", h.Street, h.ActivePlayer, h.Betting.CurrentBet)
 
 	if h.Street != Preflop {
 		t.Fatalf("Should start at Preflop, got %v", h.Street)
@@ -67,9 +69,9 @@ func TestBasicHandFlow(t *testing.T) {
 	// Should be on turn
 	if h.Street != Turn {
 		// Debug: check if betting is complete
-		t.Logf("isBettingComplete: %v", h.isBettingComplete())
+		t.Logf("isBettingComplete: %v", h.Betting.IsBettingComplete(h.Players, h.Street, h.Button))
 		t.Logf("ActivePlayer: %d", h.ActivePlayer)
-		t.Logf("CurrentBet: %d", h.CurrentBet)
+		t.Logf("CurrentBet: %d", h.Betting.CurrentBet)
 		for i, p := range h.Players {
 			t.Logf("Player %d: Bet=%d, Folded=%v, AllIn=%v", i, p.Bet, p.Folded, p.AllInFlag)
 		}
@@ -176,8 +178,8 @@ func TestBettingAndFolding(t *testing.T) {
 	}
 
 	// Pot should be 65 (30 + 30 + 5 from Bob's SB)
-	if h.Pots[0].Amount != 65 {
-		t.Errorf("Pot should be 65, got %d", h.Pots[0].Amount)
+	if h.GetPots()[0].Amount != 65 {
+		t.Errorf("Pot should be 65, got %d", h.GetPots()[0].Amount)
 	}
 
 	// Charlie should act first on flop (first active player after button)
@@ -272,33 +274,33 @@ func TestAllInWithSidePotsValidation(t *testing.T) {
 	}
 
 	// Check side pots
-	if len(h.Pots) < 2 {
-		t.Fatalf("Should have at least 2 pots, got %d", len(h.Pots))
+	if len(h.GetPots()) < 2 {
+		t.Fatalf("Should have at least 2 pots, got %d", len(h.GetPots()))
 	}
 
 	// Main pot should have all 3 players eligible
-	if len(h.Pots[0].Eligible) != 3 {
-		t.Errorf("Main pot should have 3 eligible players, got %d", len(h.Pots[0].Eligible))
+	if len(h.GetPots()[0].Eligible) != 3 {
+		t.Errorf("Main pot should have 3 eligible players, got %d", len(h.GetPots()[0].Eligible))
 	}
 
 	// Side pot should have only 2 players eligible (not ShortStack)
-	if len(h.Pots[1].Eligible) != 2 {
-		t.Errorf("Side pot should have 2 eligible players, got %d", len(h.Pots[1].Eligible))
+	if len(h.GetPots()[1].Eligible) != 2 {
+		t.Errorf("Side pot should have 2 eligible players, got %d", len(h.GetPots()[1].Eligible))
 	}
 
 	// Verify ShortStack is not in side pot
-	for _, seat := range h.Pots[1].Eligible {
+	for _, seat := range h.GetPots()[1].Eligible {
 		if seat == 0 {
 			t.Error("ShortStack should not be eligible for side pot")
 		}
 	}
 
-	t.Logf("Main pot: %d chips, eligible: %v", h.Pots[0].Amount, h.Pots[0].Eligible)
-	t.Logf("Side pot: %d chips, eligible: %v", h.Pots[1].Amount, h.Pots[1].Eligible)
+	t.Logf("Main pot: %d chips, eligible: %v", h.GetPots()[0].Amount, h.GetPots()[0].Eligible)
+	t.Logf("Side pot: %d chips, eligible: %v", h.GetPots()[1].Amount, h.GetPots()[1].Eligible)
 }
 
 // Helper function to count board cards
-func countBoardCards(board Hand) int {
+func countBoardCards(board poker.Hand) int {
 	count := 0
 	for i := uint(0); i < 52; i++ {
 		if board&(1<<i) != 0 {

@@ -243,3 +243,18 @@ TODO follow-up:
 - [ ] Batch runs: execute 5×50k–100k hands with `--seed` and mirror mode (see Phase 14) to reduce variance.
 - [ ] Reporting: aggregate BB/100 with 95% CI across runs; persist summaries to JSON in snapshots.
 
+## Architecture & Optimization Plans
+
+### Completed Refactoring
+See [plans/package-refactor.md](plans/package-refactor.md) for the completed package architecture refactoring that:
+- Extracted public `poker` package for shared types
+- Separated betting, pot management, and player components
+- Moved protocol to public package for SDK access
+- Integrated PotManager throughout the codebase
+
+### Performance Optimization
+See [plans/optimize-evaluator.md](plans/optimize-evaluator.md) for planned hand evaluator optimizations targeting:
+- 20-30% reduction in evaluation latency
+- Elimination of map/hash overhead in kicker selection
+- Branchless straight detection with bitwise operations
+

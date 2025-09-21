@@ -1,9 +1,8 @@
-package game
+package poker
 
 import (
 	"fmt"
 	"math/bits"
-	"math/rand"
 )
 
 // Card represents a single card as a bit position in a uint64
@@ -195,59 +194,34 @@ func (h Hand) GetRankMask() uint16 {
 	return mask
 }
 
-// Deck represents a standard 52-card deck
-type Deck struct {
-	cards [52]Card // Fixed size array
-	next  int
-	rng   *rand.Rand // Random source for deterministic shuffling
-}
-
-// NewDeck creates a new shuffled deck with explicit RNG
-func NewDeck(rng *rand.Rand) *Deck {
-	d := &Deck{
-		next: 0,
-		rng:  rng,
-	}
-
-	// Create all 52 cards
-	i := 0
-	for suit := uint8(0); suit < 4; suit++ {
-		for rank := uint8(0); rank < 13; rank++ {
-			d.cards[i] = NewCard(rank, suit)
-			i++
+// GetCard returns the nth card from a hand (0-indexed)
+// Merged from helpers.go
+func (h Hand) GetCard(n int) Card {
+	count := 0
+	for i := uint8(0); i < 52; i++ {
+		card := Card(1) << i
+		if h&Hand(card) != 0 {
+			if count == n {
+				return card
+			}
+			count++
 		}
 	}
-
-	// Shuffle
-	d.Shuffle()
-	return d
+	return 0
 }
 
-// Shuffle shuffles the deck using Fisher-Yates
-func (d *Deck) Shuffle() {
-	d.next = 0
-	for i := len(d.cards) - 1; i > 0; i-- {
-		var j int
-		if d.rng != nil {
-			j = d.rng.Intn(i + 1)
-		} else {
-			j = rand.Intn(i + 1)
+// String returns a string representation of the hand
+func (h Hand) String() string {
+	if h == 0 {
+		return ""
+	}
+
+	result := ""
+	for i := 0; i < h.CountCards(); i++ {
+		if i > 0 {
+			result += " "
 		}
-		d.cards[i], d.cards[j] = d.cards[j], d.cards[i]
+		result += h.GetCard(i).String()
 	}
-}
-
-// Deal deals n cards from the deck
-func (d *Deck) Deal(n int) []Card {
-	if d.next+n > len(d.cards) {
-		return nil
-	}
-	cards := d.cards[d.next : d.next+n]
-	d.next += n
-	return cards
-}
-
-// Reset resets and reshuffles the deck
-func (d *Deck) Reset() {
-	d.Shuffle()
+	return result
 }

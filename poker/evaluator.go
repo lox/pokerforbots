@@ -1,4 +1,4 @@
-package game
+package poker
 
 import (
 	"math/bits"

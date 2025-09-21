@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lox/pokerforbots/internal/protocol"
+	"github.com/lox/pokerforbots/protocol"
 	"github.com/rs/zerolog"
 )
 

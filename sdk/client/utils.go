@@ -1,4 +1,4 @@
-package sdk
+package client
 
 // CardRank returns the numeric rank of a card (2-14, where 14 is Ace)
 func CardRank(card string) int {

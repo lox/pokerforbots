@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lox/pokerforbots/internal/game"
+	"github.com/lox/pokerforbots/poker"
 	"github.com/rs/zerolog"
 )
 
@@ -45,7 +46,7 @@ func BenchmarkGameEngine(b *testing.B) {
 
 				// Create hand state with deck
 				rng := rand.New(rand.NewSource(getSeed(int64(i))))
-				deck := game.NewDeck(rng)
+				deck := poker.NewDeck(rng)
 				hand := game.NewHandStateWithChipsAndDeck(
 					players,
 					chipCounts,

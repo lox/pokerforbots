@@ -16,8 +16,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/lox/pokerforbots/internal/protocol"
 	statistics "github.com/lox/pokerforbots/internal/server/statistics"
+	"github.com/lox/pokerforbots/protocol"
 	"github.com/rs/zerolog"
 )
 

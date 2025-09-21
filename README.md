@@ -23,6 +23,17 @@ task test
 - [Operations Guide](docs/operations.md) - Running and monitoring the server
 - [Development Workflow](docs/development-workflow.md) - Developing the server and the bots in examples
 - [Go SDK](docs/sdk.md) - Simplified Go bot development
+- [Benchmarking](docs/benchmarking.md) - Performance testing and profiling
+
+## Architecture
+
+The codebase is organized into public packages for shared types and internal packages for server implementation:
+
+- `poker/` - Core poker primitives (cards, deck, evaluator) used by both server and SDK
+- `protocol/` - WebSocket protocol messages (msgpack encoded)
+- `internal/game/` - Game logic and state management
+- `internal/server/` - WebSocket server and bot management
+- `sdk/` - Go SDK for bot development
 
 ## Human CLI Client
 

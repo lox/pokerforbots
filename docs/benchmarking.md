@@ -1,6 +1,6 @@
 # Benchmarking
 
-This document describes how to run and interpret performance benchmarks for PokerForBots, focusing on the hand evaluator in `internal/game`.
+This document describes how to run and interpret performance benchmarks for PokerForBots, focusing on the hand evaluator in the `poker` package.
 
 ## Evaluator Benchmarks (hands/sec)
 
@@ -30,13 +30,13 @@ task bench:evaluator -- -benchtime=5s -cpu=1,4,8
 - Sequential only:
 
 ```bash
-go test -run ^$ -bench BenchmarkEvaluate7Cards_LargeSample$ -benchmem ./internal/game
+go test -run ^$ -bench BenchmarkEvaluate7Cards_LargeSample$ -benchmem ./poker
 ```
 
 - Parallel only:
 
 ```bash
-go test -run ^$ -bench BenchmarkEvaluate7Cards_LargeSample_Parallel$ -benchmem ./internal/game
+go test -run ^$ -bench BenchmarkEvaluate7Cards_LargeSample_Parallel$ -benchmem ./poker
 ```
 
 ### Interpreting results
@@ -68,7 +68,7 @@ If you prefer flamegraphs, [uniprof](https://github.com/indragiek/uniprof) can r
 
 ```bash
 # Build test binary
-go test -c -o dist/evaluator.test ./internal/game
+go test -c -o dist/evaluator.test ./poker
 
 # Record and visualize sequential benchmark (10s)
 uniprof record --mode host -o dist/eval-seq.json -- ./dist/evaluator.test -test.run=^$ -test.bench=BenchmarkEvaluate7Cards_LargeSample -test.benchtime=10s -test.count=1
@@ -96,7 +96,7 @@ task profile:evaluator:top -- -test.benchtime=5s
 - Manually:
 
 ```bash
-go test -c -o dist/evaluator.test ./internal/game
+go test -c -o dist/evaluator.test ./poker
 ./dist/evaluator.test -test.run=^$ -test.bench=BenchmarkEvaluate7Cards_LargeSample -test.count=1 -test.benchtime=5s -test.cpuprofile=dist/eval-seq.pprof
 go tool pprof -top -nodecount=10 ./dist/evaluator.test dist/eval-seq.pprof
 ```
@@ -105,11 +105,11 @@ This avoids Instruments and prints the top CPU consumers directly in the termina
 
 ## Troubleshooting
 
-- If `go test ./...` fails due to unrelated packages (e.g., SDK examples), scope to the evaluator package as shown above or use `task bench:evaluator`, `task profile:evaluator`, or `task profile:evaluator:top` which target `./internal/game` only.
+- If `go test ./...` fails due to unrelated packages (e.g., SDK examples), scope to the evaluator package as shown above or use `task bench:evaluator`, `task profile:evaluator`, or `task profile:evaluator:top` which target `./poker` only.
 
 ## Implementation references
 
-- Benchmarks are defined in `internal/game/evaluator_test.go`:
+- Benchmarks are defined in `poker/evaluator_test.go`:
   - Sequential large-sample: `BenchmarkEvaluate7Cards_LargeSample`
   - Parallel large-sample: `BenchmarkEvaluate7Cards_LargeSample_Parallel`
 

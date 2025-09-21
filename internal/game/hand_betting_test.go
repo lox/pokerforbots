@@ -40,19 +40,23 @@ func buildHandState(configs []playerConfig, currentBet, minRaise, activePlayer i
 	}
 
 	state := &HandState{
-		Players:        players,
-		Button:         0,
-		CurrentBet:     currentBet,
-		MinRaise:       minRaise,
-		LastRaiser:     -1,
-		Street:         Preflop,
-		Pots:           []Pot{{Amount: potAmount, Eligible: eligible}},
-		ActivePlayer:   activePlayer,
-		ActedThisRound: make([]bool, len(players)),
+		Players:      players,
+		Button:       0,
+		Street:       Preflop,
+		PotManager:   NewPotManager(players),
+		ActivePlayer: activePlayer,
+		Betting: &BettingRound{
+			CurrentBet:     currentBet,
+			MinRaise:       minRaise,
+			LastRaiser:     -1,
+			ActedThisRound: make([]bool, len(players)),
+		},
 	}
+	// Don't put money in pot - it's in player.Bet fields
+	state.PotManager.pots = []Pot{{Amount: 0, Eligible: eligible}}
 
 	for i, cfg := range configs {
-		state.ActedThisRound[i] = cfg.acted
+		state.Betting.ActedThisRound[i] = cfg.acted
 	}
 
 	return state
@@ -284,17 +288,19 @@ func TestProcessActionAllInUpdatesState(t *testing.T) {
 	if player.Bet != 50 {
 		t.Fatalf("expected bet to be 50 after shove, got %d", player.Bet)
 	}
-	if state.CurrentBet != 50 {
-		t.Fatalf("current bet not updated: got %d want 50", state.CurrentBet)
+	if state.Betting.CurrentBet != 50 {
+		t.Fatalf("current bet not updated: got %d want 50", state.Betting.CurrentBet)
 	}
-	if state.MinRaise != 20 {
-		t.Fatalf("min raise not updated: got %d want 20", state.MinRaise)
+	if state.Betting.MinRaise != 20 {
+		t.Fatalf("min raise not updated: got %d want 20", state.Betting.MinRaise)
 	}
-	if state.LastRaiser != 0 {
-		t.Fatalf("last raiser should be player 0, got %d", state.LastRaiser)
+	if state.Betting.LastRaiser != 0 {
+		t.Fatalf("last raiser should be player 0, got %d", state.Betting.LastRaiser)
 	}
-	if state.Pots[0].Amount != 110 {
-		t.Fatalf("pot should include shove amount, got %d", state.Pots[0].Amount)
+	// Collect bets to update pots
+	state.PotManager.CollectBets(state.Players)
+	if state.GetPots()[0].Amount != 110 {
+		t.Fatalf("pot should include shove amount, got %d", state.GetPots()[0].Amount)
 	}
 }
 
@@ -314,17 +320,17 @@ func TestIsBettingCompleteHonorsBigBlindOption(t *testing.T) {
 
 	state.Button = 0
 	state.Street = Preflop
-	state.BBActed = false
-	state.LastRaiser = -1
+	state.Betting.BBActed = false
+	state.Betting.LastRaiser = -1
 
-	if state.isBettingComplete() {
+	if state.Betting.IsBettingComplete(state.Players, state.Street, state.Button) {
 		t.Fatal("expected betting to remain open for big blind option")
 	}
 
-	state.BBActed = true
-	state.ActedThisRound[2] = true
+	state.Betting.BBActed = true
+	state.Betting.ActedThisRound[2] = true
 
-	if !state.isBettingComplete() {
+	if !state.Betting.IsBettingComplete(state.Players, state.Street, state.Button) {
 		t.Fatal("expected betting to complete once big blind acts")
 	}
 }

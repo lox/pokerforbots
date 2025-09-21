@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
-	"github.com/lox/pokerforbots/internal/protocol"
 	"github.com/lox/pokerforbots/internal/server"
-	"github.com/lox/pokerforbots/sdk"
+	"github.com/lox/pokerforbots/protocol"
+	"github.com/lox/pokerforbots/sdk/client"
 	"github.com/rs/zerolog"
 )
 
@@ -133,13 +133,13 @@ func main() {
 
 	// Create bots
 	fmt.Printf("Starting %d bots...\n", cli.Bots)
-	bots := make([]*sdk.Bot, cli.Bots)
+	bots := make([]*client.Bot, cli.Bots)
 	var wg sync.WaitGroup
 
 	for i := 0; i < cli.Bots; i++ {
 		id := fmt.Sprintf("bench-%03d", i)
 		benchBot := newBenchBot(id, logger, &handCount)
-		bot := sdk.New(id, benchBot, logger)
+		bot := client.New(id, benchBot, logger)
 
 		if err := bot.Connect(serverURL); err != nil {
 			fmt.Printf("Failed to connect bot %s: %v\n", id, err)
@@ -148,7 +148,7 @@ func main() {
 		bots[i] = bot
 
 		wg.Add(1)
-		go func(b *sdk.Bot) {
+		go func(b *client.Bot) {
 			defer wg.Done()
 			b.Run(ctx)
 		}(bot)
@@ -226,12 +226,12 @@ func newBenchBot(id string, logger zerolog.Logger, counter *int64) *benchBot {
 }
 
 // SDK Handler interface implementation
-func (b *benchBot) OnHandStart(*sdk.GameState, protocol.HandStart) error       { return nil }
-func (b *benchBot) OnGameUpdate(*sdk.GameState, protocol.GameUpdate) error     { return nil }
-func (b *benchBot) OnPlayerAction(*sdk.GameState, protocol.PlayerAction) error { return nil }
-func (b *benchBot) OnStreetChange(*sdk.GameState, protocol.StreetChange) error { return nil }
+func (b *benchBot) OnHandStart(*client.GameState, protocol.HandStart) error       { return nil }
+func (b *benchBot) OnGameUpdate(*client.GameState, protocol.GameUpdate) error     { return nil }
+func (b *benchBot) OnPlayerAction(*client.GameState, protocol.PlayerAction) error { return nil }
+func (b *benchBot) OnStreetChange(*client.GameState, protocol.StreetChange) error { return nil }
 
-func (b *benchBot) OnHandResult(state *sdk.GameState, result protocol.HandResult) error {
+func (b *benchBot) OnHandResult(state *client.GameState, result protocol.HandResult) error {
 	// Only the first bot increments to avoid double-counting
 	if b.id == "bench-000" {
 		atomic.AddInt64(b.counter, 1)
@@ -239,11 +239,11 @@ func (b *benchBot) OnHandResult(state *sdk.GameState, result protocol.HandResult
 	return nil
 }
 
-func (b *benchBot) OnGameCompleted(*sdk.GameState, protocol.GameCompleted) error {
+func (b *benchBot) OnGameCompleted(*client.GameState, protocol.GameCompleted) error {
 	return nil
 }
 
-func (b *benchBot) OnActionRequest(state *sdk.GameState, req protocol.ActionRequest) (string, int, error) {
+func (b *benchBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
 	if len(req.ValidActions) == 0 {
 		return "fold", 0, nil
 	}

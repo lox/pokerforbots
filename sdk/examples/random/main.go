@@ -9,21 +9,21 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/lox/pokerforbots/internal/protocol"
-	"github.com/lox/pokerforbots/sdk"
+	"github.com/lox/pokerforbots/protocol"
+	"github.com/lox/pokerforbots/sdk/client"
 	"github.com/rs/zerolog"
 )
 
 type randomBot struct{}
 
-func (randomBot) OnHandStart(*sdk.GameState, protocol.HandStart) error         { return nil }
-func (randomBot) OnGameUpdate(*sdk.GameState, protocol.GameUpdate) error       { return nil }
-func (randomBot) OnPlayerAction(*sdk.GameState, protocol.PlayerAction) error   { return nil }
-func (randomBot) OnStreetChange(*sdk.GameState, protocol.StreetChange) error   { return nil }
-func (randomBot) OnHandResult(*sdk.GameState, protocol.HandResult) error       { return nil }
-func (randomBot) OnGameCompleted(*sdk.GameState, protocol.GameCompleted) error { return nil }
+func (randomBot) OnHandStart(*client.GameState, protocol.HandStart) error         { return nil }
+func (randomBot) OnGameUpdate(*client.GameState, protocol.GameUpdate) error       { return nil }
+func (randomBot) OnPlayerAction(*client.GameState, protocol.PlayerAction) error   { return nil }
+func (randomBot) OnStreetChange(*client.GameState, protocol.StreetChange) error   { return nil }
+func (randomBot) OnHandResult(*client.GameState, protocol.HandResult) error       { return nil }
+func (randomBot) OnGameCompleted(*client.GameState, protocol.GameCompleted) error { return nil }
 
-func (randomBot) OnActionRequest(state *sdk.GameState, req protocol.ActionRequest) (string, int, error) {
+func (randomBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
 	if len(req.ValidActions) == 0 {
 		return "fold", 0, nil
 	}
@@ -50,7 +50,7 @@ func main() {
 
 	// Create bot with random strategy
 	id := fmt.Sprintf("random-%04d", rand.Intn(10000))
-	bot := sdk.New(id, randomBot{}, logger)
+	bot := client.New(id, randomBot{}, logger)
 
 	// Connect and run
 	if err := bot.Connect(*serverURL); err != nil {

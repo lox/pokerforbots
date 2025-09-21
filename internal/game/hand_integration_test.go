@@ -29,8 +29,8 @@ func TestCompleteHandFlow(t *testing.T) {
 	}
 
 	// Verify pot has blinds
-	if h.Pots[0].Amount != 15 {
-		t.Errorf("Initial pot should be 15 (5+10), got %d", h.Pots[0].Amount)
+	if h.GetPots()[0].Amount != 15 {
+		t.Errorf("Initial pot should be 15 (5+10), got %d", h.GetPots()[0].Amount)
 	}
 
 	// Test preflop action sequence
@@ -62,8 +62,8 @@ func TestCompleteHandFlow(t *testing.T) {
 		}
 
 		// Pot should be 30 (3 players * 10)
-		if h.Pots[0].Amount != 30 {
-			t.Errorf("After preflop, pot should be 30, got %d", h.Pots[0].Amount)
+		if h.GetPots()[0].Amount != 30 {
+			t.Errorf("After preflop, pot should be 30, got %d", h.GetPots()[0].Amount)
 		}
 	})
 
@@ -106,8 +106,8 @@ func TestCompleteHandFlow(t *testing.T) {
 		}
 
 		// Pot should be 70 (30 + 20 + 20)
-		if h.Pots[0].Amount != 70 {
-			t.Errorf("After flop, pot should be 70, got %d", h.Pots[0].Amount)
+		if h.GetPots()[0].Amount != 70 {
+			t.Errorf("After flop, pot should be 70, got %d", h.GetPots()[0].Amount)
 		}
 	})
 
@@ -276,30 +276,30 @@ func TestAllInScenarios(t *testing.T) {
 		}
 
 		// Should have created side pots
-		t.Logf("Number of pots: %d", len(h.Pots))
-		for i, pot := range h.Pots {
+		t.Logf("Number of pots: %d", len(h.GetPots()))
+		for i, pot := range h.GetPots() {
 			t.Logf("Pot %d: Amount=%d, Eligible=%v", i, pot.Amount, pot.Eligible)
 		}
 
 		// With Alice all-in for 50, Bob all-in for 100, Charlie calls 100:
 		// Main pot: 50 * 3 = 150 (all eligible)
 		// Side pot: 50 * 2 = 100 (Bob and Charlie eligible)
-		if len(h.Pots) < 2 {
-			t.Errorf("Should have at least 2 pots, got %d", len(h.Pots))
+		if len(h.GetPots()) < 2 {
+			t.Errorf("Should have at least 2 pots, got %d", len(h.GetPots()))
 		}
 
-		if len(h.Pots) >= 1 {
+		if len(h.GetPots()) >= 1 {
 			// Check main pot - should be 150 (50 from each of 3 players)
 			// Blinds are already included in the players' bets
-			if h.Pots[0].Amount != 150 {
-				t.Errorf("Main pot should be 150, got %d", h.Pots[0].Amount)
+			if h.GetPots()[0].Amount != 150 {
+				t.Errorf("Main pot should be 150, got %d", h.GetPots()[0].Amount)
 			}
 		}
 
-		if len(h.Pots) >= 2 {
+		if len(h.GetPots()) >= 2 {
 			// Check side pot has only 2 eligible players
-			if len(h.Pots[1].Eligible) != 2 {
-				t.Errorf("Side pot should have 2 eligible players, got %d", len(h.Pots[1].Eligible))
+			if len(h.GetPots()[1].Eligible) != 2 {
+				t.Errorf("Side pot should have 2 eligible players, got %d", len(h.GetPots()[1].Eligible))
 			}
 		}
 	})
@@ -463,20 +463,20 @@ func TestSidePotCalculation(t *testing.T) {
 	}
 
 	// Should have main pot and side pot
-	if len(h.Pots) != 2 {
-		t.Fatalf("Should have 2 pots, got %d", len(h.Pots))
+	if len(h.GetPots()) != 2 {
+		t.Fatalf("Should have 2 pots, got %d", len(h.GetPots()))
 	}
 
 	// Main pot: 20 * 3 = 60 (after accounting for blinds)
 	// All three players eligible
-	mainPot := h.Pots[0]
+	mainPot := h.GetPots()[0]
 	if len(mainPot.Eligible) != 3 {
 		t.Errorf("Main pot should have 3 eligible players, got %d", len(mainPot.Eligible))
 	}
 
 	// Side pot: (50-20) * 2 = 60
 	// Only MidStack and BigStack eligible
-	sidePot := h.Pots[1]
+	sidePot := h.GetPots()[1]
 	if len(sidePot.Eligible) != 2 {
 		t.Errorf("Side pot should have 2 eligible players, got %d", len(sidePot.Eligible))
 	}

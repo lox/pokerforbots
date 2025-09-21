@@ -1,4 +1,4 @@
-package game
+package poker
 
 import (
 	"math/rand"
@@ -193,7 +193,7 @@ func generateRandomHands(n int, seed int64) []Hand {
 	hands := make([]Hand, n)
 	for i := 0; i < n; i++ {
 		// Ensure enough cards remain; reshuffle if needed
-		if deck.next+7 > 52 {
+		if deck.CardsRemaining() < 7 {
 			deck.Shuffle()
 		}
 		cards := deck.Deal(7)

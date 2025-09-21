@@ -2,7 +2,18 @@ package game
 
 import (
 	"testing"
+
+	"github.com/lox/pokerforbots/poker"
 )
+
+func parseCards(strs ...string) poker.Hand {
+	var hand poker.Hand
+	for _, s := range strs {
+		card, _ := poker.ParseCard(s)
+		hand |= poker.Hand(card)
+	}
+	return hand
+}
 
 func TestHandStateCreation(t *testing.T) {
 	t.Parallel()
@@ -30,8 +41,8 @@ func TestHandStateCreation(t *testing.T) {
 	}
 
 	// Check pot
-	if h.Pots[0].Amount != 15 {
-		t.Errorf("Initial pot incorrect: %d", h.Pots[0].Amount)
+	if h.GetPots()[0].Amount != 15 {
+		t.Errorf("Initial pot incorrect: %d", h.GetPots()[0].Amount)
 	}
 
 	// Check cards were dealt
@@ -175,11 +186,12 @@ func TestSidePots(t *testing.T) {
 	// Alice total bet: 100
 
 	// Check pots
-	h.calculateSidePots()
+	h.PotManager.CollectBets(h.Players)
+	h.PotManager.CalculateSidePots(h.Players)
 
 	// Total pot amount should be 300 (100 from each player)
 	totalPot := 0
-	for _, pot := range h.Pots {
+	for _, pot := range h.GetPots() {
 		totalPot += pot.Amount
 	}
 
@@ -187,7 +199,7 @@ func TestSidePots(t *testing.T) {
 
 	if totalPot != expectedTotal {
 		t.Errorf("Total pot should be %d, got %d", expectedTotal, totalPot)
-		for i, pot := range h.Pots {
+		for i, pot := range h.GetPots() {
 			t.Logf("Pot %d: Amount=%d, Eligible=%v", i, pot.Amount, pot.Eligible)
 		}
 	}
@@ -240,7 +252,7 @@ func TestGetWinners(t *testing.T) {
 		// Debug: show what hands were evaluated
 		for i, p := range h.Players {
 			fullHand := p.HoleCards | h.Board
-			rank := Evaluate7Cards(fullHand)
+			rank := poker.Evaluate7Cards(fullHand)
 			t.Logf("Player %d (%s): %s", i, p.Name, rank.String())
 		}
 	}
@@ -278,17 +290,18 @@ func TestAllInWithSidePots(t *testing.T) {
 	}
 
 	// Calculate side pots
-	h.calculateSidePots()
+	h.PotManager.CollectBets(h.Players)
+	h.PotManager.CalculateSidePots(h.Players)
 
 	// Verify pot structure
-	if len(h.Pots) < 3 {
-		t.Errorf("Expected at least 3 pots, got %d", len(h.Pots))
+	if len(h.GetPots()) < 3 {
+		t.Errorf("Expected at least 3 pots, got %d", len(h.GetPots()))
 	}
 
 	// First pot: everyone contributes 100 (plus blinds)
 	// Should have all 4 players eligible
-	if len(h.Pots[0].Eligible) != 4 {
-		t.Errorf("First pot should have 4 eligible players, got %d", len(h.Pots[0].Eligible))
+	if len(h.GetPots()[0].Eligible) != 4 {
+		t.Errorf("First pot should have 4 eligible players, got %d", len(h.GetPots()[0].Eligible))
 	}
 }
 
@@ -456,17 +469,17 @@ func TestAceLowStraight(t *testing.T) {
 	// Create hand with A-2-3-4-5
 	hand := parseCards("As", "2d", "3c", "4h", "5s", "Kd", "Qh")
 
-	rank := Evaluate7Cards(hand)
+	rank := poker.Evaluate7Cards(hand)
 
-	if rank.Type() != Straight {
+	if rank.Type() != poker.Straight {
 		t.Errorf("A-2-3-4-5 should be a straight, got %v", rank.Type())
 	}
 
 	// The wheel is the lowest straight
 	highStraight := parseCards("Ts", "Jd", "Qc", "Kh", "As", "2d", "3h")
-	highRank := Evaluate7Cards(highStraight)
+	highRank := poker.Evaluate7Cards(highStraight)
 
-	if CompareHands(rank, highRank) >= 0 {
+	if poker.CompareHands(rank, highRank) >= 0 {
 		t.Error("Wheel should lose to Broadway straight")
 	}
 }
@@ -497,7 +510,8 @@ func TestComplexSidePots(t *testing.T) {
 		t.Fatalf("Failed to process Dave's all-in: %v", err)
 	}
 
-	h.calculateSidePots()
+	h.PotManager.CollectBets(h.Players)
+	h.PotManager.CalculateSidePots(h.Players)
 
 	// Should have multiple pots:
 	// Main pot: 50*4 = 200 (all can contest)
@@ -506,7 +520,7 @@ func TestComplexSidePots(t *testing.T) {
 	// Side pot 3: (995-300)*1 = 695 (Bob only)
 
 	totalInPots := 0
-	for _, pot := range h.Pots {
+	for _, pot := range h.GetPots() {
 		totalInPots += pot.Amount
 	}
 
@@ -514,7 +528,7 @@ func TestComplexSidePots(t *testing.T) {
 	expectedTotal := 50 + 1000 + 160 + 300 // 1510 (includes blinds)
 	if totalInPots != expectedTotal {
 		t.Errorf("Total in pots should be %d, got %d", expectedTotal, totalInPots)
-		for i, pot := range h.Pots {
+		for i, pot := range h.GetPots() {
 			t.Logf("Pot %d: Amount=%d, Eligible=%v", i, pot.Amount, pot.Eligible)
 		}
 	}
@@ -543,15 +557,13 @@ func TestSidePotWithFoldedPlayerRegression(t *testing.T) {
 	h.Players[2].TotalBet = 30
 	h.Players[2].Folded = true // Charlie folded
 
-	// Set the pot to what it should be: 30 + 30 + 30 = 90
-	h.Pots = []Pot{{Amount: 90, Eligible: []int{0, 1, 2}}}
-
-	// Now trigger calculateSidePots (this happens when someone goes all-in)
-	h.calculateSidePots()
+	// Collect bets and calculate side pots (this happens when someone goes all-in)
+	h.PotManager.CollectBets(h.Players)
+	h.PotManager.CalculateSidePots(h.Players)
 
 	// Count total pot after side pot calculation
 	totalPot := 0
-	for _, p := range h.Pots {
+	for _, p := range h.GetPots() {
 		totalPot += p.Amount
 	}
 
@@ -563,7 +575,7 @@ func TestSidePotWithFoldedPlayerRegression(t *testing.T) {
 			expectedPot, totalPot, expectedPot-totalPot)
 
 		// Show the pots
-		for i, pot := range h.Pots {
+		for i, pot := range h.GetPots() {
 			t.Logf("Pot %d: Amount=%d, Eligible=%v", i, pot.Amount, pot.Eligible)
 		}
 	}
@@ -590,22 +602,22 @@ func TestPostAllInBetsToCorrectPot(t *testing.T) {
 	h.Players[2].Chips = 70
 	h.Players[2].TotalBet = 30
 	h.Players[2].Bet = 30
-	h.CurrentBet = 30
-	h.Pots = []Pot{{Amount: 90, Eligible: []int{0, 1, 2}}}
+	h.Betting.CurrentBet = 30
 
 	// Trigger side pot calculation
-	h.calculateSidePots()
+	h.PotManager.CollectBets(h.Players)
+	h.PotManager.CalculateSidePots(h.Players)
 
 	// Verify that only main pot exists (no side pot yet since no further betting)
-	if len(h.Pots) != 1 {
-		t.Errorf("Expected 1 pot after all-in with equal bets, got %d", len(h.Pots))
+	if len(h.GetPots()) != 1 {
+		t.Errorf("Expected 1 pot after all-in with equal bets, got %d", len(h.GetPots()))
 	}
 
 	// Now simulate additional betting between Alice and Charlie
 	// Move to flop for new betting round
 	h.ActivePlayer = 0
-	h.CurrentBet = 0 // Reset for new street
-	h.MinRaise = 10  // Reset minimum raise
+	h.Betting.CurrentBet = 0 // Reset for new street
+	h.Betting.MinRaise = 10  // Reset minimum raise
 	h.Street = Flop
 	h.Players[0].Bet = 0
 	h.Players[2].Bet = 0
@@ -625,7 +637,7 @@ func TestPostAllInBetsToCorrectPot(t *testing.T) {
 
 	// Now check the pots
 	totalPot := 0
-	for _, pot := range h.Pots {
+	for _, pot := range h.GetPots() {
 		totalPot += pot.Amount
 	}
 
@@ -670,8 +682,8 @@ func TestReraiseLimits(t *testing.T) {
 
 	// In no-limit, there's no cap on number of raises
 	// But we should track that MinRaise is updated correctly
-	if h.MinRaise != 80 { // Last raise was 80 (150-70)
-		t.Errorf("MinRaise should be 80, got %d", h.MinRaise)
+	if h.Betting.MinRaise != 80 { // Last raise was 80 (150-70)
+		t.Errorf("MinRaise should be 80, got %d", h.Betting.MinRaise)
 	}
 }
 
@@ -684,11 +696,11 @@ func TestKickerComparison(t *testing.T) {
 	hand1 := parseCards("As", "Ah", "Kd", "Qc", "Jh", "5s", "2d")
 	hand2 := parseCards("Ac", "Ad", "Kh", "Qs", "Td", "5c", "2h")
 
-	rank1 := Evaluate7Cards(hand1)
-	rank2 := Evaluate7Cards(hand2)
+	rank1 := poker.Evaluate7Cards(hand1)
+	rank2 := poker.Evaluate7Cards(hand2)
 
 	// First hand should win due to jack vs ten kicker
-	if CompareHands(rank1, rank2) <= 0 {
+	if poker.CompareHands(rank1, rank2) <= 0 {
 		t.Error("AA with KQJ kickers should beat AA with KQT kickers")
 	}
 }

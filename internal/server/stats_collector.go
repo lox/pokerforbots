@@ -3,8 +3,8 @@ package server
 import (
 	"sync"
 
-	"github.com/lox/pokerforbots/internal/protocol"
 	"github.com/lox/pokerforbots/internal/server/statistics"
+	"github.com/lox/pokerforbots/protocol"
 )
 
 // Detailed stats are collected when a DetailedStatsCollector is used.

@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/lox/pokerforbots/internal/protocol"
+	"github.com/lox/pokerforbots/protocol"
 )
 
 const (

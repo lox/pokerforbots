@@ -4,75 +4,29 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
+
+	"github.com/lox/pokerforbots/poker"
 )
-
-// Street represents the betting round
-type Street int
-
-const (
-	Preflop Street = iota
-	Flop
-	Turn
-	River
-	Showdown
-)
-
-func (s Street) String() string {
-	return [...]string{"preflop", "flop", "turn", "river", "showdown"}[s]
-}
-
-// Action represents a player action
-type Action int
-
-const (
-	Fold Action = iota
-	Check
-	Call
-	Raise
-	AllIn
-)
-
-func (a Action) String() string {
-	return [...]string{"fold", "check", "call", "raise", "allin"}[a]
-}
-
-// Player represents a player in a hand
-type Player struct {
-	Seat      int
-	Name      string
-	Chips     int
-	HoleCards Hand
-	Folded    bool
-	AllInFlag bool
-	Bet       int // Current bet in this round
-	TotalBet  int // Total bet in the hand
-}
-
-// Pot represents a pot (main or side)
-type Pot struct {
-	Amount       int
-	Eligible     []int // Seat numbers eligible for this pot
-	MaxPerPlayer int   // Maximum contribution per player
-}
 
 // HandState represents the state of a poker hand
 type HandState struct {
-	Players        []*Player
-	Button         int
-	CurrentBet     int
-	MinRaise       int
-	LastRaiser     int
-	Street         Street
-	Board          Hand
-	Pots           []Pot
-	ActivePlayer   int
-	Deck           *Deck
-	BBActed        bool   // Track if BB has acted in preflop
-	ActedThisRound []bool // Track who has acted in current betting round
+	Players      []*Player
+	Button       int
+	Street       Street
+	Board        poker.Hand
+	PotManager   *PotManager
+	ActivePlayer int
+	Deck         *poker.Deck
+	Betting      *BettingRound // Encapsulates all betting state
 }
 
 // NewHandState creates a new hand state
 func NewHandState(playerNames []string, button int, smallBlind, bigBlind, startingChips int) *HandState {
+	return NewHandStateWithRNG(playerNames, button, smallBlind, bigBlind, startingChips, nil)
+}
+
+// NewHandStateWithRNG creates a new hand state with a specific RNG
+func NewHandStateWithRNG(playerNames []string, button int, smallBlind, bigBlind, startingChips int, rng *rand.Rand) *HandState {
 	players := make([]*Player, len(playerNames))
 	for i, name := range playerNames {
 		players[i] = &Player{
@@ -83,12 +37,20 @@ func NewHandState(playerNames []string, button int, smallBlind, bigBlind, starti
 		}
 	}
 
-	deck := NewDeck(rand.New(rand.NewSource(time.Now().UnixNano())))
+	if rng == nil {
+		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	deck := poker.NewDeck(rng)
 	return newHandStateWithPlayersAndDeck(players, button, smallBlind, bigBlind, deck)
 }
 
 // NewHandStateWithChips creates a new hand state with individual chip counts
 func NewHandStateWithChips(playerNames []string, chipCounts []int, button int, smallBlind, bigBlind int) *HandState {
+	return NewHandStateWithChipsAndRNG(playerNames, chipCounts, button, smallBlind, bigBlind, nil)
+}
+
+// NewHandStateWithChipsAndRNG creates a new hand state with individual chip counts and RNG
+func NewHandStateWithChipsAndRNG(playerNames []string, chipCounts []int, button int, smallBlind, bigBlind int, rng *rand.Rand) *HandState {
 	if len(playerNames) != len(chipCounts) {
 		panic("player names and chip counts must have same length")
 	}
@@ -103,12 +65,15 @@ func NewHandStateWithChips(playerNames []string, chipCounts []int, button int, s
 		}
 	}
 
-	deck := NewDeck(rand.New(rand.NewSource(time.Now().UnixNano())))
+	if rng == nil {
+		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	deck := poker.NewDeck(rng)
 	return newHandStateWithPlayersAndDeck(players, button, smallBlind, bigBlind, deck)
 }
 
 // NewHandStateWithChipsAndDeck creates a new hand state with specific chip counts and deck
-func NewHandStateWithChipsAndDeck(playerNames []string, chipCounts []int, button int, smallBlind, bigBlind int, deck *Deck) *HandState {
+func NewHandStateWithChipsAndDeck(playerNames []string, chipCounts []int, button int, smallBlind, bigBlind int, deck *poker.Deck) *HandState {
 	players := make([]*Player, len(playerNames))
 	for i, name := range playerNames {
 		players[i] = &Player{
@@ -123,7 +88,7 @@ func NewHandStateWithChipsAndDeck(playerNames []string, chipCounts []int, button
 }
 
 // NewHandStateWithDeck creates a new hand state with a specific deck (for deterministic testing)
-func NewHandStateWithDeck(playerNames []string, button int, smallBlind, bigBlind, startingChips int, deck *Deck) *HandState {
+func NewHandStateWithDeck(playerNames []string, button int, smallBlind, bigBlind, startingChips int, deck *poker.Deck) *HandState {
 	players := make([]*Player, len(playerNames))
 	for i, name := range playerNames {
 		players[i] = &Player{
@@ -135,15 +100,12 @@ func NewHandStateWithDeck(playerNames []string, button int, smallBlind, bigBlind
 	}
 
 	h := &HandState{
-		Players:        players,
-		Button:         button,
-		CurrentBet:     0,
-		MinRaise:       bigBlind,
-		LastRaiser:     -1, // No raiser initially
-		Street:         Preflop,
-		Deck:           deck, // Use provided deck
-		Pots:           []Pot{{Amount: 0, Eligible: makeEligible(players)}},
-		ActedThisRound: make([]bool, len(players)),
+		Players:    players,
+		Button:     button,
+		Street:     Preflop,
+		Deck:       deck, // Use provided deck
+		PotManager: NewPotManager(players),
+		Betting:    NewBettingRound(len(players), bigBlind),
 	}
 
 	// Post blinds
@@ -164,17 +126,14 @@ func NewHandStateWithDeck(playerNames []string, button int, smallBlind, bigBlind
 	return h
 }
 
-func newHandStateWithPlayersAndDeck(players []*Player, button int, smallBlind, bigBlind int, deck *Deck) *HandState {
+func newHandStateWithPlayersAndDeck(players []*Player, button int, smallBlind, bigBlind int, deck *poker.Deck) *HandState {
 	h := &HandState{
-		Players:        players,
-		Button:         button,
-		CurrentBet:     0,
-		MinRaise:       bigBlind,
-		LastRaiser:     -1, // No raiser initially
-		Street:         Preflop,
-		Deck:           deck,
-		Pots:           []Pot{{Amount: 0, Eligible: makeEligible(players)}},
-		ActedThisRound: make([]bool, len(players)),
+		Players:    players,
+		Button:     button,
+		Street:     Preflop,
+		Deck:       deck,
+		PotManager: NewPotManager(players),
+		Betting:    NewBettingRound(len(players), bigBlind),
 	}
 
 	// Post blinds
@@ -193,14 +152,6 @@ func newHandStateWithPlayersAndDeck(players []*Player, button int, smallBlind, b
 	}
 
 	return h
-}
-
-func makeEligible(players []*Player) []int {
-	eligible := make([]int, 0, len(players))
-	for _, p := range players {
-		eligible = append(eligible, p.Seat)
-	}
-	return eligible
 }
 
 func (h *HandState) postBlinds(smallBlind, bigBlind int) {
@@ -228,14 +179,14 @@ func (h *HandState) postBlinds(smallBlind, bigBlind int) {
 	h.Players[bbPos].TotalBet = h.Players[bbPos].Bet
 	h.Players[bbPos].Chips -= h.Players[bbPos].Bet
 
-	h.CurrentBet = bigBlind
-	h.Pots[0].Amount = h.Players[sbPos].Bet + h.Players[bbPos].Bet
+	h.Betting.CurrentBet = bigBlind
+	// Don't collect bets yet - they stay in player.Bet until NextStreet
 }
 
 func (h *HandState) dealHoleCards() {
 	for _, p := range h.Players {
 		cards := h.Deck.Deal(2)
-		p.HoleCards = NewHand(cards...)
+		p.HoleCards = poker.NewHand(cards...)
 	}
 }
 
@@ -244,39 +195,7 @@ func (h *HandState) GetValidActions() []Action {
 	if h.ActivePlayer < 0 || h.ActivePlayer >= len(h.Players) {
 		return []Action{} // No active player
 	}
-	p := h.Players[h.ActivePlayer]
-	actions := []Action{Fold}
-
-	toCall := h.CurrentBet - p.Bet
-
-	if toCall == 0 {
-		// No amount to call - can check
-		actions = append(actions, Check)
-		// Can also raise if we have enough chips
-		if p.Chips > h.MinRaise {
-			actions = append(actions, Raise)
-		} else if p.Chips > 0 {
-			actions = append(actions, AllIn)
-		}
-	} else {
-		// Need to call or raise
-		if toCall >= p.Chips {
-			// Can only go all-in
-			actions = append(actions, AllIn)
-		} else {
-			// Can call
-			actions = append(actions, Call)
-			// Can raise if we have enough chips
-			if p.Chips > toCall+h.MinRaise {
-				actions = append(actions, Raise)
-			} else if p.Chips > toCall {
-				// Not enough to min-raise but have chips left after calling
-				actions = append(actions, AllIn)
-			}
-		}
-	}
-
-	return actions
+	return h.Betting.GetValidActions(h.Players[h.ActivePlayer])
 }
 
 // ProcessAction processes a player action
@@ -284,7 +203,7 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 	p := h.Players[h.ActivePlayer]
 
 	// Mark player as having acted in this round
-	h.ActedThisRound[h.ActivePlayer] = true
+	h.Betting.MarkPlayerActed(h.ActivePlayer)
 
 	// Track if BB is acting preflop
 	if h.Street == Preflop {
@@ -297,7 +216,7 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 			bbPos = (h.Button + 2) % len(h.Players)
 		}
 		if h.ActivePlayer == bbPos {
-			h.BBActed = true
+			h.Betting.BBActed = true
 		}
 	}
 
@@ -306,18 +225,15 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 		p.Folded = true
 
 	case Check:
-		if h.CurrentBet != p.Bet {
-			return fmt.Errorf("cannot check, must call %d", h.CurrentBet-p.Bet)
+		if h.Betting.CurrentBet != p.Bet {
+			return fmt.Errorf("cannot check, must call %d", h.Betting.CurrentBet-p.Bet)
 		}
 
 	case Call:
-		toCall := min(h.CurrentBet-p.Bet, p.Chips)
+		toCall := min(h.Betting.CurrentBet-p.Bet, p.Chips)
 		p.Bet += toCall
 		p.TotalBet += toCall
 		p.Chips -= toCall
-		// Add to the active pot (last pot if side pots exist)
-		activePot := len(h.Pots) - 1
-		h.Pots[activePot].Amount += toCall
 		if p.Chips == 0 {
 			p.AllInFlag = true
 		}
@@ -333,24 +249,21 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 
 		// If player has enough chips, enforce minimum raise
 		// But if they're going all-in with less than min raise, allow it
-		if amount < h.CurrentBet+h.MinRaise {
+		if amount < h.Betting.CurrentBet+h.Betting.MinRaise {
 			// Check if this is an all-in (player is putting in all their chips)
 			if amount < playerTotalChips {
 				// Player has more chips but trying to raise below minimum
-				return fmt.Errorf("raise too small, minimum %d", h.CurrentBet+h.MinRaise)
+				return fmt.Errorf("raise too small, minimum %d", h.Betting.CurrentBet+h.Betting.MinRaise)
 			}
 			// Player is going all-in with less than min raise - this is allowed
 		}
 
 		raiseAmount := amount - p.Bet
-		h.MinRaise = amount - h.CurrentBet
-		h.CurrentBet = amount
-		h.LastRaiser = h.ActivePlayer
+		h.Betting.MinRaise = amount - h.Betting.CurrentBet
+		h.Betting.CurrentBet = amount
+		h.Betting.LastRaiser = h.ActivePlayer
 
 		p.Chips -= raiseAmount
-		// Add to the active pot (last pot if side pots exist)
-		activePot := len(h.Pots) - 1
-		h.Pots[activePot].Amount += raiseAmount
 		p.Bet = amount
 		p.TotalBet += raiseAmount
 
@@ -360,31 +273,28 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 		}
 
 		// Reset acted flags when someone raises (everyone needs to act again)
-		for i := range h.ActedThisRound {
-			h.ActedThisRound[i] = false
+		for i := range h.Betting.ActedThisRound {
+			h.Betting.ActedThisRound[i] = false
 		}
-		h.ActedThisRound[h.ActivePlayer] = true
+		h.Betting.ActedThisRound[h.ActivePlayer] = true
 
 	case AllIn:
 		allInAmount := p.Chips
 		p.Chips = 0
 		p.AllInFlag = true
-		// Add to the active pot (last pot if side pots exist)
-		activePot := len(h.Pots) - 1
-		h.Pots[activePot].Amount += allInAmount
 		p.Bet += allInAmount
 		p.TotalBet += allInAmount
 
-		if p.Bet > h.CurrentBet {
-			h.MinRaise = p.Bet - h.CurrentBet
-			h.CurrentBet = p.Bet
-			h.LastRaiser = h.ActivePlayer
+		if p.Bet > h.Betting.CurrentBet {
+			h.Betting.MinRaise = p.Bet - h.Betting.CurrentBet
+			h.Betting.CurrentBet = p.Bet
+			h.Betting.LastRaiser = h.ActivePlayer
 
 			// Reset acted flags when all-in acts as a raise
-			for i := range h.ActedThisRound {
-				h.ActedThisRound[i] = false
+			for i := range h.Betting.ActedThisRound {
+				h.Betting.ActedThisRound[i] = false
 			}
-			h.ActedThisRound[h.ActivePlayer] = true
+			h.Betting.ActedThisRound[h.ActivePlayer] = true
 		}
 	}
 
@@ -393,7 +303,7 @@ func (h *HandState) ProcessAction(action Action, amount int) error {
 
 	// Check if betting round is complete
 	// Note: ActivePlayer will be -1 if no active players left
-	if h.ActivePlayer == -1 || h.isBettingComplete() {
+	if h.ActivePlayer == -1 || h.Betting.IsBettingComplete(h.Players, h.Street, h.Button) {
 		h.NextStreet()
 	}
 
@@ -413,7 +323,7 @@ func (h *HandState) ForceFold(seat int) {
 	}
 
 	player.Folded = true
-	h.ActedThisRound[seat] = true
+	h.Betting.MarkPlayerActed(seat)
 
 	// If the folding player was the big blind preflop, mark that they have acted to avoid hanging the round.
 	if h.Street == Preflop {
@@ -424,12 +334,12 @@ func (h *HandState) ForceFold(seat int) {
 			bbPos = (h.Button + 2) % len(h.Players)
 		}
 		if seat == bbPos {
-			h.BBActed = true
+			h.Betting.BBActed = true
 		}
 	}
 
-	if h.LastRaiser == seat {
-		h.LastRaiser = -1
+	if h.Betting.LastRaiser == seat {
+		h.Betting.LastRaiser = -1
 	}
 
 	// Advance the active player if the disconnected bot was due to act next.
@@ -437,7 +347,7 @@ func (h *HandState) ForceFold(seat int) {
 		h.ActivePlayer = h.nextActivePlayer(seat + 1)
 	}
 
-	if h.ActivePlayer == -1 || h.isBettingComplete() {
+	if h.ActivePlayer == -1 || h.Betting.IsBettingComplete(h.Players, h.Street, h.Button) {
 		h.NextStreet()
 	}
 }
@@ -453,93 +363,17 @@ func (h *HandState) nextActivePlayer(from int) int {
 	return -1 // No active players
 }
 
-func (h *HandState) isBettingComplete() bool {
-	// Count active players (not folded, not all-in)
-	activePlayers := 0
-	for _, p := range h.Players {
-		if !p.Folded && !p.AllInFlag {
-			activePlayers++
-		}
-	}
-
-	// If only one active player, check if they've matched the current bet
-	if activePlayers == 1 {
-		for _, p := range h.Players {
-			if !p.Folded && !p.AllInFlag {
-				// This is the only active player - have they matched the bet?
-				if p.Bet != h.CurrentBet {
-					return false // They still need to act
-				}
-				break
-			}
-		}
-		return true
-	}
-
-	if activePlayers == 0 {
-		return true // Everyone is folded or all-in
-	}
-
-	// Check if all active players have matched the current bet
-	allMatched := true
-	for _, p := range h.Players {
-		if !p.Folded && !p.AllInFlag && p.Bet != h.CurrentBet {
-			allMatched = false
-			break
-		}
-	}
-
-	// If not all matched, betting is not complete
-	if !allMatched {
-		return false
-	}
-
-	// Check if all active players have acted in this round
-	allActed := true
-	for i, p := range h.Players {
-		if !p.Folded && !p.AllInFlag && !h.ActedThisRound[i] {
-			allActed = false
-			break
-		}
-	}
-
-	// Special case for preflop: BB gets option even if all bets match
-	if h.Street == Preflop && allMatched && allActed {
-		var bbPos int
-		if len(h.Players) == 2 {
-			// Heads-up: button+1 is BB
-			bbPos = (h.Button + 1) % len(h.Players)
-		} else {
-			// Regular: button+2 is BB
-			bbPos = (h.Button + 2) % len(h.Players)
-		}
-		bb := h.Players[bbPos]
-
-		// If no raises and BB hasn't acted yet
-		if h.LastRaiser == -1 && !bb.Folded && !bb.AllInFlag && !h.BBActed {
-			return false // BB still gets option
-		}
-	}
-
-	return allMatched && allActed
-}
-
 // NextStreet advances to the next betting street
 func (h *HandState) NextStreet() {
-	// Calculate side pots if needed
-	h.calculateSidePots()
+	// Collect all bets into pots and calculate side pots if needed
+	h.PotManager.CollectBets(h.Players)
+	h.PotManager.CalculateSidePots(h.Players)
 
 	// Reset bets for new street
 	for _, p := range h.Players {
 		p.Bet = 0
 	}
-	h.CurrentBet = 0
-	h.LastRaiser = -1
-
-	// Reset acted flags for new betting round
-	for i := range h.ActedThisRound {
-		h.ActedThisRound[i] = false
-	}
+	h.Betting.ResetForNewRound(len(h.Players))
 
 	// Move to next street and deal community cards
 	switch h.Street {
@@ -547,16 +381,16 @@ func (h *HandState) NextStreet() {
 		h.Street = Flop
 		cards := h.Deck.Deal(3)
 		for _, c := range cards {
-			h.Board |= Hand(c)
+			h.Board |= poker.Hand(c)
 		}
 	case Flop:
 		h.Street = Turn
 		cards := h.Deck.Deal(1)
-		h.Board |= Hand(cards[0])
+		h.Board |= poker.Hand(cards[0])
 	case Turn:
 		h.Street = River
 		cards := h.Deck.Deal(1)
-		h.Board |= Hand(cards[0])
+		h.Board |= poker.Hand(cards[0])
 	case River:
 		h.Street = Showdown
 	case Showdown:
@@ -582,94 +416,9 @@ func (h *HandState) NextStreet() {
 	}
 }
 
-func (h *HandState) calculateSidePots() {
-	// Get all-in amounts
-	allInAmounts := make(map[int]int)
-	for _, p := range h.Players {
-		if p.AllInFlag && !p.Folded {
-			allInAmounts[p.TotalBet] = p.Seat
-		}
-	}
-
-	if len(allInAmounts) == 0 {
-		return
-	}
-
-	// Sort amounts
-	amounts := make([]int, 0, len(allInAmounts))
-	for amount := range allInAmounts {
-		amounts = append(amounts, amount)
-	}
-
-	// Simple bubble sort for small arrays
-	for i := 0; i < len(amounts); i++ {
-		for j := i + 1; j < len(amounts); j++ {
-			if amounts[i] > amounts[j] {
-				amounts[i], amounts[j] = amounts[j], amounts[i]
-			}
-		}
-	}
-
-	// Create side pots
-	newPots := []Pot{}
-	lastAmount := 0
-
-	for _, maxAmount := range amounts {
-		pot := Pot{
-			Amount:       0,
-			Eligible:     []int{},
-			MaxPerPlayer: maxAmount,
-		}
-
-		contribution := maxAmount - lastAmount
-
-		for _, p := range h.Players {
-			// Include chips from ALL players who contributed, even if folded
-			if p.TotalBet >= maxAmount {
-				pot.Amount += contribution
-				// Only non-folded players are eligible to win
-				if !p.Folded {
-					pot.Eligible = append(pot.Eligible, p.Seat)
-				}
-			} else if p.TotalBet > lastAmount {
-				pot.Amount += p.TotalBet - lastAmount
-				// Only non-folded players are eligible to win
-				if !p.Folded {
-					pot.Eligible = append(pot.Eligible, p.Seat)
-				}
-			}
-		}
-
-		if pot.Amount > 0 {
-			newPots = append(newPots, pot)
-		}
-		lastAmount = maxAmount
-	}
-
-	// Handle remaining pot
-	mainPot := Pot{
-		Amount:   0,
-		Eligible: []int{},
-	}
-
-	for _, p := range h.Players {
-		// Include chips from ALL players who contributed, even if folded
-		if p.TotalBet > lastAmount {
-			mainPot.Amount += p.TotalBet - lastAmount
-			// Only non-folded, non-all-in players are eligible to win
-			if !p.Folded && !p.AllInFlag {
-				mainPot.Eligible = append(mainPot.Eligible, p.Seat)
-			}
-		}
-	}
-
-	if mainPot.Amount > 0 {
-		newPots = append(newPots, mainPot)
-	}
-
-	if len(newPots) > 0 {
-		h.Pots = newPots
-	}
+// GetPots returns the current pots including uncollected bets
+func (h *HandState) GetPots() []Pot {
+	return h.PotManager.GetPotsWithUncollected(h.Players)
 }
 
 // IsComplete returns true if the hand is complete
@@ -689,7 +438,7 @@ func (h *HandState) IsComplete() bool {
 func (h *HandState) GetWinners() map[int][]int {
 	winners := make(map[int][]int) // pot index -> winner seats
 
-	for potIdx, pot := range h.Pots {
+	for potIdx, pot := range h.GetPots() {
 		if len(pot.Eligible) == 0 {
 			continue
 		}
@@ -701,7 +450,7 @@ func (h *HandState) GetWinners() map[int][]int {
 		}
 
 		// Evaluate hands
-		bestRank := HandRank(0)
+		bestRank := poker.HandRank(0)
 		bestPlayers := []int{}
 
 		for _, seat := range pot.Eligible {
@@ -712,9 +461,9 @@ func (h *HandState) GetWinners() map[int][]int {
 
 			// Combine hole cards and board
 			fullHand := p.HoleCards | h.Board
-			rank := Evaluate7Cards(fullHand)
+			rank := poker.Evaluate7Cards(fullHand)
 
-			cmp := CompareHands(rank, bestRank)
+			cmp := poker.CompareHands(rank, bestRank)
 			if cmp > 0 {
 				bestRank = rank
 				bestPlayers = []int{seat}

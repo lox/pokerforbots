@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lox/pokerforbots/internal/protocol"
 	"github.com/lox/pokerforbots/internal/server/statistics"
-	"github.com/lox/pokerforbots/sdk"
+	"github.com/lox/pokerforbots/protocol"
+	"github.com/lox/pokerforbots/sdk/client"
 	"github.com/rs/zerolog"
 )
 
@@ -135,7 +135,7 @@ func newComplexBot(logger zerolog.Logger) *complexBot {
 }
 
 // SDK Handler interface implementation
-func (b *complexBot) OnHandStart(state *sdk.GameState, start protocol.HandStart) error {
+func (b *complexBot) OnHandStart(state *client.GameState, start protocol.HandStart) error {
 	b.handNum++
 	// Update big blind if provided (it should be in every hand)
 	if start.BigBlind > 0 {
@@ -183,7 +183,7 @@ func (b *complexBot) OnHandStart(state *sdk.GameState, start protocol.HandStart)
 	return nil
 }
 
-func (b *complexBot) OnActionRequest(state *sdk.GameState, req protocol.ActionRequest) (string, int, error) {
+func (b *complexBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
 	// Calculate hand strength and make strategic decision
 	handStrength := b.evaluateHandStrength()
 	if b.state.Street != "preflop" {
@@ -222,7 +222,7 @@ func (b *complexBot) OnActionRequest(state *sdk.GameState, req protocol.ActionRe
 	return action, amount, nil
 }
 
-func (b *complexBot) OnGameUpdate(state *sdk.GameState, update protocol.GameUpdate) error {
+func (b *complexBot) OnGameUpdate(state *client.GameState, update protocol.GameUpdate) error {
 	b.state.Pot = update.Pot
 	b.state.Players = update.Players
 	if b.state.Seat >= 0 && b.state.Seat < len(update.Players) {
@@ -240,7 +240,7 @@ func (b *complexBot) OnGameUpdate(state *sdk.GameState, update protocol.GameUpda
 	return nil
 }
 
-func (b *complexBot) OnPlayerAction(state *sdk.GameState, action protocol.PlayerAction) error {
+func (b *complexBot) OnPlayerAction(state *client.GameState, action protocol.PlayerAction) error {
 	b.state.LastAction = action
 
 	// Track opponent behavior
@@ -277,13 +277,13 @@ func (b *complexBot) OnPlayerAction(state *sdk.GameState, action protocol.Player
 	return nil
 }
 
-func (b *complexBot) OnStreetChange(state *sdk.GameState, street protocol.StreetChange) error {
+func (b *complexBot) OnStreetChange(state *client.GameState, street protocol.StreetChange) error {
 	b.state.Street = street.Street
 	b.state.Board = street.Board
 	return nil
 }
 
-func (b *complexBot) OnHandResult(state *sdk.GameState, result protocol.HandResult) error {
+func (b *complexBot) OnHandResult(state *client.GameState, result protocol.HandResult) error {
 	// Calculate net result for this hand (use SDK state which includes final payout)
 	netChips := state.Chips - state.StartingChips
 	netBB := float64(netChips) / float64(b.bigBlind)
@@ -370,7 +370,7 @@ func (b *complexBot) OnHandResult(state *sdk.GameState, result protocol.HandResu
 	return nil
 }
 
-func (b *complexBot) OnGameCompleted(state *sdk.GameState, completed protocol.GameCompleted) error {
+func (b *complexBot) OnGameCompleted(state *client.GameState, completed protocol.GameCompleted) error {
 	// Stop the bot on game completion; server handles stats aggregation/printing.
 	return io.EOF
 }
@@ -382,8 +382,8 @@ func (b *complexBot) evaluateHandStrength() float64 {
 
 	// Parse hole cards
 	h1, h2 := b.state.HoleCards[0], b.state.HoleCards[1]
-	r1, r2 := sdk.CardRank(h1), sdk.CardRank(h2)
-	suited := sdk.IsSuited(h1, h2)
+	r1, r2 := client.CardRank(h1), client.CardRank(h2)
+	suited := client.IsSuited(h1, h2)
 
 	// Pre-flop strength calculation
 	if b.state.Street == "preflop" {
@@ -430,7 +430,7 @@ func (b *complexBot) evaluateHandStrength() float64 {
 
 	// Check for pairs with board
 	for _, boardCard := range b.state.Board {
-		br := sdk.CardRank(boardCard)
+		br := client.CardRank(boardCard)
 		if br == r1 || br == r2 {
 			strength += 0.2
 		}
@@ -636,16 +636,16 @@ func (b *complexBot) classifyPostflop() (string, float64) {
 		return "unknown", 0.3
 	}
 	h1, h2 := b.state.HoleCards[0], b.state.HoleCards[1]
-	hr1, hr2 := sdk.CardRank(h1), sdk.CardRank(h2)
-	s1, s2 := sdk.CardSuit(h1), sdk.CardSuit(h2)
+	hr1, hr2 := client.CardRank(h1), client.CardRank(h2)
+	s1, s2 := client.CardSuit(h1), client.CardSuit(h2)
 	board := b.state.Board
 
 	// Build board ranks/suits
 	boardRanks := make([]int, 0, len(board))
 	boardSuits := make([]byte, 0, len(board))
 	for _, c := range board {
-		boardRanks = append(boardRanks, sdk.CardRank(c))
-		boardSuits = append(boardSuits, sdk.CardSuit(c))
+		boardRanks = append(boardRanks, client.CardRank(c))
+		boardSuits = append(boardSuits, client.CardSuit(c))
 	}
 	// Frequency maps and texture
 	rankCount := map[int]int{}
@@ -955,8 +955,8 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 		return "fold", 0
 	}
 	h1, h2 := b.state.HoleCards[0], b.state.HoleCards[1]
-	r1, r2 := sdk.CardRank(h1), sdk.CardRank(h2)
-	suited := sdk.IsSuited(h1, h2)
+	r1, r2 := client.CardRank(h1), client.CardRank(h2)
+	suited := client.IsSuited(h1, h2)
 	low, high := r1, r2
 	if low > high {
 		low, high = high, low
@@ -1278,8 +1278,8 @@ func (b *complexBot) categorizeHoleCards() string {
 	}
 
 	h1, h2 := b.state.HoleCards[0], b.state.HoleCards[1]
-	r1, r2 := sdk.CardRank(h1), sdk.CardRank(h2)
-	suited := sdk.IsSuited(h1, h2)
+	r1, r2 := client.CardRank(h1), client.CardRank(h2)
+	suited := client.IsSuited(h1, h2)
 
 	if r1 > r2 {
 		r1, r2 = r2, r1 // Ensure r1 <= r2
@@ -1344,7 +1344,7 @@ func main() {
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).Level(level).With().Timestamp().Logger()
 
 	complexBot := newComplexBot(logger)
-	bot := sdk.New(complexBot.id, complexBot, logger)
+	bot := client.New(complexBot.id, complexBot, logger)
 
 	if err := bot.Connect(*serverURL); err != nil {
 		logger.Fatal().Err(err).Msg("connect failed")

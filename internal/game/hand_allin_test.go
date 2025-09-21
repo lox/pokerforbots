@@ -77,12 +77,12 @@ func TestAllInRaiseAboveCurrentBetButBelowMinimum(t *testing.T) {
 	}
 
 	// Verify the current bet is now 35
-	if h.CurrentBet != 35 {
-		t.Errorf("Current bet should be 35, got %d", h.CurrentBet)
+	if h.Betting.CurrentBet != 35 {
+		t.Errorf("Current bet should be 35, got %d", h.Betting.CurrentBet)
 	}
 
 	// Charlie should need to call 35 to continue
-	toCall := h.CurrentBet - h.Players[2].Bet
+	toCall := h.Betting.CurrentBet - h.Players[2].Bet
 	if toCall != 25 { // Charlie posted 10 as BB, needs 25 more to call 35
 		t.Errorf("Charlie should need to call 25, got %d", toCall)
 	}
@@ -312,8 +312,8 @@ func TestAllInShowdownCompletes(t *testing.T) {
 	}
 
 	// Should have multiple side pots due to different stack sizes
-	if len(h.Pots) < 2 {
-		t.Errorf("Should have multiple pots with different stack sizes, got %d", len(h.Pots))
+	if len(h.GetPots()) < 2 {
+		t.Errorf("Should have multiple pots with different stack sizes, got %d", len(h.GetPots()))
 	}
 
 	// Hand should be complete

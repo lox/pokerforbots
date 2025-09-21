@@ -9,7 +9,8 @@ import (
 	"time"
 
 	"github.com/lox/pokerforbots/internal/game"
-	"github.com/lox/pokerforbots/internal/protocol"
+	"github.com/lox/pokerforbots/poker"
+	"github.com/lox/pokerforbots/protocol"
 	"github.com/rs/zerolog"
 )
 
@@ -149,7 +150,7 @@ func (hr *HandRunner) Run() {
 	// Initialize hand state with individual chip counts and deterministic deck
 	// Clone the RNG to avoid concurrent access issues
 	deckRNG := rand.New(rand.NewSource(hr.rng.Int63()))
-	deck := game.NewDeck(deckRNG)
+	deck := poker.NewDeck(deckRNG)
 	hr.handState = game.NewHandStateWithChipsAndDeck(
 		playerNames,
 		chipCounts,
@@ -198,7 +199,7 @@ func (hr *HandRunner) Run() {
 			actionStrs[i] = a.String()
 		}
 		streetName := hr.handState.Street.String()
-		toCall := hr.handState.CurrentBet - hr.handState.Players[activePlayer].Bet
+		toCall := hr.handState.Betting.CurrentBet - hr.handState.Players[activePlayer].Bet
 		hr.logger.Debug().
 			Int("seat", activePlayer).
 			Str("bot", hr.playerLabels[activePlayer]).
@@ -284,8 +285,8 @@ func (hr *HandRunner) broadcastHandStart() {
 			Button:   hr.button,
 			YourSeat: i,
 			HoleCards: []string{
-				game.CardString(player.HoleCards.GetCard(0)),
-				game.CardString(player.HoleCards.GetCard(1)),
+				player.HoleCards.GetCard(0).String(),
+				player.HoleCards.GetCard(1).String(),
 			},
 			SmallBlind: hr.config.SmallBlind,
 			BigBlind:   hr.config.BigBlind,
@@ -312,19 +313,19 @@ func (hr *HandRunner) sendActionRequest(bot *Bot, seat int, validActions []game.
 
 	// Calculate pot and amounts to call
 	pot := 0
-	for _, p := range hr.handState.Pots {
+	for _, p := range hr.handState.GetPots() {
 		pot += p.Amount
 	}
 
-	toCall := hr.handState.CurrentBet - hr.handState.Players[seat].Bet
+	toCall := hr.handState.Betting.CurrentBet - hr.handState.Players[seat].Bet
 
 	msg := &protocol.ActionRequest{
 		Type:          "action_request",
 		HandID:        hr.handID,
 		Pot:           pot,
 		ToCall:        toCall,
-		MinBet:        hr.handState.CurrentBet + hr.handState.MinRaise,
-		MinRaise:      hr.handState.MinRaise,
+		MinBet:        hr.handState.Betting.CurrentBet + hr.handState.Betting.MinRaise,
+		MinRaise:      hr.handState.Betting.MinRaise,
 		ValidActions:  actions,
 		TimeRemaining: int(hr.config.Timeout.Milliseconds()),
 	}
@@ -615,7 +616,7 @@ func (hr *HandRunner) boardStrings() []string {
 	for i := 0; i < hr.handState.Board.CountCards(); i++ {
 		card := hr.handState.Board.GetCard(i)
 		if card != 0 {
-			boardCards = append(boardCards, game.CardString(card))
+			boardCards = append(boardCards, card.String())
 		}
 	}
 	return boardCards
@@ -623,7 +624,7 @@ func (hr *HandRunner) boardStrings() []string {
 
 func (hr *HandRunner) totalPot() int {
 	total := 0
-	for _, pot := range hr.handState.Pots {
+	for _, pot := range hr.handState.GetPots() {
 		total += pot.Amount
 	}
 	return total
@@ -775,8 +776,8 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 			player := hr.handState.Players[i]
 			if player.HoleCards != 0 {
 				holeCards = []string{
-					game.CardString(player.HoleCards.GetCard(0)),
-					game.CardString(player.HoleCards.GetCard(1)),
+					player.HoleCards.GetCard(0).String(),
+					player.HoleCards.GetCard(1).String(),
 				}
 			}
 
@@ -871,7 +872,11 @@ func (hr *HandRunner) resolveHand() []winnerSummary {
 			continue
 		}
 
-		pot := hr.handState.Pots[potIdx]
+		pots := hr.handState.GetPots()
+		if potIdx >= len(pots) {
+			continue
+		}
+		pot := pots[potIdx]
 		share := pot.Amount / len(winnerSeats)
 
 		for _, seat := range winnerSeats {
@@ -977,12 +982,12 @@ func (hr *HandRunner) broadcastHandResult(winners []winnerSummary) {
 		for i, winner := range winners {
 			player := hr.handState.Players[winner.seat]
 			holeCards := []string{
-				game.CardString(player.HoleCards.GetCard(0)),
-				game.CardString(player.HoleCards.GetCard(1)),
+				player.HoleCards.GetCard(0).String(),
+				player.HoleCards.GetCard(1).String(),
 			}
 
 			fullHand := player.HoleCards | hr.handState.Board
-			handRank := game.Evaluate7Cards(fullHand)
+			handRank := poker.Evaluate7Cards(fullHand)
 
 			winnerInfo[i] = protocol.Winner{
 				Name:      hr.displayName(observerSeat, winner.seat),
@@ -1001,11 +1006,11 @@ func (hr *HandRunner) broadcastHandResult(winners []winnerSummary) {
 				}
 
 				holeCards := []string{
-					game.CardString(player.HoleCards.GetCard(0)),
-					game.CardString(player.HoleCards.GetCard(1)),
+					player.HoleCards.GetCard(0).String(),
+					player.HoleCards.GetCard(1).String(),
 				}
 				fullHand := player.HoleCards | hr.handState.Board
-				handRank := game.Evaluate7Cards(fullHand)
+				handRank := poker.Evaluate7Cards(fullHand)
 
 				showdownHands = append(showdownHands, protocol.ShowdownHand{
 					Name:      hr.displayName(observerSeat, player.Seat),
