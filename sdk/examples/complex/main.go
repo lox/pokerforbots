@@ -14,7 +14,10 @@ import (
 	"time"
 
 	"github.com/lox/pokerforbots/internal/server/statistics"
+	"github.com/lox/pokerforbots/poker"
 	"github.com/lox/pokerforbots/protocol"
+	"github.com/lox/pokerforbots/sdk/analysis"
+	"github.com/lox/pokerforbots/sdk/classification"
 	"github.com/lox/pokerforbots/sdk/client"
 	"github.com/rs/zerolog"
 )
@@ -59,8 +62,8 @@ type opponentProfile struct {
 	LastStreet    string
 }
 
-// complexBot implements advanced poker strategy.
-type complexBot struct {
+// complexImprovedBot implements advanced poker strategy with SDK components.
+type complexImprovedBot struct {
 	id        string
 	logger    zerolog.Logger
 	state     tableState
@@ -71,59 +74,9 @@ type complexBot struct {
 	bigBlind  int // Track the big blind amount
 }
 
-// StatsSummary holds aggregated statistics
-type StatsSummary struct {
-	Hands           int     `json:"hands"`
-	NetBB           float64 `json:"net_bb"`
-	BB100           float64 `json:"bb_per_100"`
-	Mean            float64 `json:"mean_bb_hand"`
-	Median          float64 `json:"median_bb_hand"`
-	StdDev          float64 `json:"std_dev"`
-	CI95Low         float64 `json:"ci_95_low"`
-	CI95High        float64 `json:"ci_95_high"`
-	WinningHands    int     `json:"winning_hands"`
-	WinRate         float64 `json:"win_rate_pct"`
-	ShowdownWins    int     `json:"showdown_wins"`
-	NonShowdownWins int     `json:"non_showdown_wins"`
-	ShowdownWinRate float64 `json:"showdown_win_rate_pct"`
-	ShowdownBB      float64 `json:"showdown_bb"`
-	NonShowdownBB   float64 `json:"non_showdown_bb"`
-	MaxPotBB        float64 `json:"max_pot_bb"`
-	BigPots         int     `json:"big_pots_50bb_plus"`
-}
-
-// PositionSummary holds position-specific statistics
-type PositionSummary struct {
-	Name      string  `json:"name"`
-	Hands     int     `json:"hands"`
-	NetBB     float64 `json:"net_bb"`
-	BBPerHand float64 `json:"bb_per_hand"`
-	BB100     float64 `json:"bb_per_100"`
-	WinRate   float64 `json:"win_rate_pct"`
-}
-
-// StreetSummary holds street-specific statistics
-type StreetSummary struct {
-	HandsEnded int     `json:"hands_ended"`
-	NetBB      float64 `json:"net_bb"`
-	BBPerHand  float64 `json:"bb_per_hand"`
-	Wins       int     `json:"wins"`
-	Losses     int     `json:"losses"`
-}
-
-// CategorySummary holds hand category statistics
-type CategorySummary struct {
-	Hands        int     `json:"hands"`
-	NetBB        float64 `json:"net_bb"`
-	BBPerHand    float64 `json:"bb_per_hand"`
-	Wins         int     `json:"wins"`
-	ShowdownWins int     `json:"showdown_wins"`
-	ShowdownRate float64 `json:"showdown_rate_pct"`
-}
-
-func newComplexBot(logger zerolog.Logger) *complexBot {
-	id := fmt.Sprintf("complex-%04d", rand.Intn(10000))
-	return &complexBot{
+func newComplexImprovedBot(logger zerolog.Logger) *complexImprovedBot {
+	id := fmt.Sprintf("complex-improved-%04d", rand.Intn(10000))
+	return &complexImprovedBot{
 		id:        id,
 		logger:    logger.With().Str("bot_id", id).Logger(),
 		opponents: make(map[string]*opponentProfile),
@@ -135,7 +88,7 @@ func newComplexBot(logger zerolog.Logger) *complexBot {
 }
 
 // SDK Handler interface implementation
-func (b *complexBot) OnHandStart(state *client.GameState, start protocol.HandStart) error {
+func (b *complexImprovedBot) OnHandStart(state *client.GameState, start protocol.HandStart) error {
 	b.handNum++
 	// Update big blind if provided (it should be in every hand)
 	if start.BigBlind > 0 {
@@ -183,11 +136,11 @@ func (b *complexBot) OnHandStart(state *client.GameState, start protocol.HandSta
 	return nil
 }
 
-func (b *complexBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
-	// Calculate hand strength and make strategic decision
+func (b *complexImprovedBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
+	// Calculate hand strength using SDK components
 	handStrength := b.evaluateHandStrength()
 	if b.state.Street != "preflop" {
-		_, eq := b.classifyPostflop()
+		_, eq := b.classifyPostflopSDK()
 		if eq > 0 {
 			handStrength = eq
 		}
@@ -222,7 +175,7 @@ func (b *complexBot) OnActionRequest(state *client.GameState, req protocol.Actio
 	return action, amount, nil
 }
 
-func (b *complexBot) OnGameUpdate(state *client.GameState, update protocol.GameUpdate) error {
+func (b *complexImprovedBot) OnGameUpdate(state *client.GameState, update protocol.GameUpdate) error {
 	b.state.Pot = update.Pot
 	b.state.Players = update.Players
 	if b.state.Seat >= 0 && b.state.Seat < len(update.Players) {
@@ -240,7 +193,7 @@ func (b *complexBot) OnGameUpdate(state *client.GameState, update protocol.GameU
 	return nil
 }
 
-func (b *complexBot) OnPlayerAction(state *client.GameState, action protocol.PlayerAction) error {
+func (b *complexImprovedBot) OnPlayerAction(state *client.GameState, action protocol.PlayerAction) error {
 	b.state.LastAction = action
 
 	// Track opponent behavior
@@ -277,13 +230,13 @@ func (b *complexBot) OnPlayerAction(state *client.GameState, action protocol.Pla
 	return nil
 }
 
-func (b *complexBot) OnStreetChange(state *client.GameState, street protocol.StreetChange) error {
+func (b *complexImprovedBot) OnStreetChange(state *client.GameState, street protocol.StreetChange) error {
 	b.state.Street = street.Street
 	b.state.Board = street.Board
 	return nil
 }
 
-func (b *complexBot) OnHandResult(state *client.GameState, result protocol.HandResult) error {
+func (b *complexImprovedBot) OnHandResult(state *client.GameState, result protocol.HandResult) error {
 	// Calculate net result for this hand (use SDK state which includes final payout)
 	netChips := state.Chips - state.StartingChips
 	netBB := float64(netChips) / float64(b.bigBlind)
@@ -370,12 +323,25 @@ func (b *complexBot) OnHandResult(state *client.GameState, result protocol.HandR
 	return nil
 }
 
-func (b *complexBot) OnGameCompleted(state *client.GameState, completed protocol.GameCompleted) error {
+func (b *complexImprovedBot) OnGameCompleted(state *client.GameState, completed protocol.GameCompleted) error {
 	// Stop the bot on game completion; server handles stats aggregation/printing.
 	return io.EOF
 }
 
-func (b *complexBot) evaluateHandStrength() float64 {
+// parseHand converts string cards to poker.Hand for SDK use
+func (b *complexImprovedBot) parseHand(cardStrs []string) (poker.Hand, error) {
+	var hand poker.Hand
+	for _, cardStr := range cardStrs {
+		card, err := poker.ParseCard(cardStr)
+		if err != nil {
+			return 0, err
+		}
+		hand.AddCard(card)
+	}
+	return hand, nil
+}
+
+func (b *complexImprovedBot) evaluateHandStrength() float64 {
 	if len(b.state.HoleCards) != 2 {
 		return 0.5
 	}
@@ -424,8 +390,14 @@ func (b *complexBot) evaluateHandStrength() float64 {
 		return math.Min(strength, 0.95)
 	}
 
-	// Post-flop: simplified strength based on board texture
-	// This is a placeholder - real implementation would evaluate actual hand ranking
+	// Post-flop: Use SDK equity calculator for accurate strength evaluation
+	if len(b.state.Board) >= 3 {
+		// Use fast equity calculation for real-time decisions
+		equity := analysis.QuickEquity(b.state.HoleCards, b.state.Board, b.state.ActiveCount-1)
+		return equity
+	}
+
+	// Fallback for incomplete boards
 	strength := 0.3
 
 	// Check for pairs with board
@@ -449,7 +421,96 @@ func (b *complexBot) evaluateHandStrength() float64 {
 	return math.Min(math.Max(strength, 0.1), 0.9)
 }
 
-func (b *complexBot) getPosition() int {
+// classifyPostflopSDK uses the SDK for advanced postflop analysis
+func (b *complexImprovedBot) classifyPostflopSDK() (string, float64) {
+	if len(b.state.HoleCards) != 2 || len(b.state.Board) < 3 {
+		return "unknown", 0.3
+	}
+
+	// Parse cards using SDK
+	holeCards, err := b.parseHand(b.state.HoleCards)
+	if err != nil {
+		b.logger.Warn().Err(err).Msg("failed to parse hole cards")
+		return "unknown", 0.3
+	}
+
+	board, err := b.parseHand(b.state.Board)
+	if err != nil {
+		b.logger.Warn().Err(err).Msg("failed to parse board")
+		return "unknown", 0.3
+	}
+
+	// Analyze board texture
+	boardTexture := classification.AnalyzeBoardTexture(board)
+
+	// Detect draws
+	drawInfo := classification.DetectDraws(holeCards, board)
+
+	// Calculate equity using Monte Carlo simulation (small sample for speed)
+	equityResult := analysis.CalculateEquity(b.state.HoleCards, b.state.Board, b.state.ActiveCount-1, 1000, b.rng)
+	equity := equityResult.Equity()
+
+	// Enhanced classification based on draws and board texture
+	class := "Air"
+
+	// Check for strong draws
+	if drawInfo.HasStrongDraw() {
+		if drawInfo.IsComboDraw() {
+			class = "ComboDraw"
+			equity = math.Max(equity, 0.55) // Boost combo draws
+		} else {
+			class = "StrongDraw"
+			equity = math.Max(equity, 0.40) // Boost strong draws
+		}
+	} else if drawInfo.HasWeakDraw() {
+		class = "WeakDraw"
+		equity = math.Max(equity, 0.25)
+	}
+
+	// Adjust equity based on board texture
+	switch boardTexture {
+	case classification.VeryWet:
+		if !drawInfo.HasStrongDraw() {
+			equity *= 0.85 // Reduce equity on very wet boards without draws
+		}
+	case classification.Wet:
+		if !drawInfo.HasStrongDraw() {
+			equity *= 0.90
+		}
+	case classification.Dry:
+		if !drawInfo.HasStrongDraw() {
+			equity *= 1.05 // Slight boost on dry boards
+		}
+	}
+
+	// Use existing hand strength detection for made hands
+	switch {
+	case equity >= 0.75:
+		class = "TripsPlus"
+	case equity >= 0.65:
+		class = "TwoPair"
+	case equity >= 0.55:
+		class = "TopPair"
+	}
+
+	// Adjust for multiway pots
+	if b.state.ActiveCount > 2 {
+		equity *= (1.0 - float64(b.state.ActiveCount-2)*0.03)
+	}
+
+	b.logger.Debug().
+		Str("board_texture", boardTexture.String()).
+		Int("draw_outs", drawInfo.Outs).
+		Bool("strong_draw", drawInfo.HasStrongDraw()).
+		Str("classification", class).
+		Float64("equity", equity).
+		Msg("SDK postflop analysis")
+
+	return class, math.Max(equity, 0.05)
+}
+
+// Rest of the methods remain the same as the original complex bot
+func (b *complexImprovedBot) getPosition() int {
 	// Calculate position relative to button
 	// 0 = button, 1 = cutoff, 2 = middle, 3+ = early
 	if b.state.Button < 0 {
@@ -487,7 +548,7 @@ func (b *complexBot) getPosition() int {
 	return distance
 }
 
-func (b *complexBot) calculatePotOdds(req protocol.ActionRequest) float64 {
+func (b *complexImprovedBot) calculatePotOdds(req protocol.ActionRequest) float64 {
 	if req.ToCall == 0 {
 		return 1000.0 // Free to play
 	}
@@ -495,7 +556,7 @@ func (b *complexBot) calculatePotOdds(req protocol.ActionRequest) float64 {
 	return float64(potAfterCall) / float64(req.ToCall)
 }
 
-func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStrength float64, position int, potOdds float64) (string, int) {
+func (b *complexImprovedBot) makeStrategicDecision(req protocol.ActionRequest, handStrength float64, position int, potOdds float64) (string, int) {
 	// Preflop handled by a dedicated policy
 	if b.state.Street == "preflop" {
 		return b.preflopDecision(req, position)
@@ -510,7 +571,7 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 		}
 	}
 
-	class, equity := b.classifyPostflop()
+	class, equity := b.classifyPostflopSDK()
 	if equity <= 0 {
 		equity = handStrength // fallback
 	}
@@ -627,218 +688,9 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 	return "fold", 0
 }
 
-// --- Helpers for Patch 2: postflop classification (coarse buckets) ---
-
-// classifyPostflop returns a coarse class and equity bucket in [0,1]
-func (b *complexBot) classifyPostflop() (string, float64) {
-	// Basic info
-	if len(b.state.HoleCards) != 2 {
-		return "unknown", 0.3
-	}
-	h1, h2 := b.state.HoleCards[0], b.state.HoleCards[1]
-	hr1, hr2 := client.CardRank(h1), client.CardRank(h2)
-	s1, s2 := client.CardSuit(h1), client.CardSuit(h2)
-	board := b.state.Board
-
-	// Build board ranks/suits
-	boardRanks := make([]int, 0, len(board))
-	boardSuits := make([]byte, 0, len(board))
-	for _, c := range board {
-		boardRanks = append(boardRanks, client.CardRank(c))
-		boardSuits = append(boardSuits, client.CardSuit(c))
-	}
-	// Frequency maps and texture
-	rankCount := map[int]int{}
-	suitCount := map[byte]int{}
-	minBoard := 99
-	maxBoard := 0
-	for i, r := range boardRanks {
-		rankCount[r]++
-		if r < minBoard {
-			minBoard = r
-		}
-		if r > maxBoard {
-			maxBoard = r
-		}
-		suitCount[boardSuits[i]]++
-	}
-	numDistinctSuits := len(suitCount)
-	monotone := numDistinctSuits == 1 && len(boardSuits) >= 3
-	twoTone := numDistinctSuits == 2 && len(boardSuits) >= 3
-	pairedBoard := false
-	for _, cnt := range rankCount {
-		if cnt >= 2 {
-			pairedBoard = true
-			break
-		}
-	}
-	wet := len(boardRanks) >= 3 && (maxBoard-minBoard) <= 4
-	_ = monotone
-
-	// Combined counts for made hands
-	combinedCount := map[int]int{}
-	for _, r := range boardRanks {
-		combinedCount[r]++
-	}
-	combinedCount[hr1]++
-	combinedCount[hr2]++
-
-	// Detect trips+ and two pair
-	for r, cnt := range combinedCount {
-		if cnt >= 4 { // quads/full house
-			return "TripsPlus", 0.85
-		}
-		_ = r
-	}
-	pairs := 0
-	for _, cnt := range combinedCount {
-		if cnt >= 2 {
-			pairs++
-		}
-	}
-	if pairs >= 2 { // two pair or better
-		return "TwoPair", 0.70
-	}
-
-	// Overpair: pocket pair higher than any board rank
-	if hr1 == hr2 {
-		maxBoard := 0
-		for _, r := range boardRanks {
-			if r > maxBoard {
-				maxBoard = r
-			}
-		}
-		if hr1 > maxBoard {
-			return "Overpair", 0.80
-		}
-	}
-
-	// Top pair vs second pair
-	maxBoard = 0
-	secondBoard := 0
-	for _, r := range boardRanks {
-		if r > maxBoard {
-			maxBoard = r
-		}
-	}
-	for _, r := range boardRanks {
-		if r > secondBoard && r < maxBoard {
-			secondBoard = r
-		}
-	}
-	isTopPair := (hr1 == maxBoard || hr2 == maxBoard)
-	isSecondPair := (hr1 == secondBoard || hr2 == secondBoard)
-	if isTopPair {
-		kicker := hr1
-		if hr1 == maxBoard {
-			kicker = hr2
-		}
-		if kicker >= 13 { // K or A kicker ~ TPTK
-			eq := 0.65
-			if wet || twoTone {
-				eq -= 0.05
-			}
-			if eq < 0.55 {
-				eq = 0.55
-			}
-			return "TPTK", eq
-		}
-		eq := 0.55
-		if wet || twoTone {
-			eq -= 0.05
-		}
-		if pairedBoard {
-			eq -= 0.03
-		}
-		if eq < 0.45 {
-			eq = 0.45
-		}
-		return "TopPair", eq
-	}
-	if isSecondPair {
-		eq := 0.42
-		if wet {
-			eq -= 0.03
-		}
-		if eq < 0.35 {
-			eq = 0.35
-		}
-		return "SecondPair", eq
-	}
-
-	// Draws: flush draw
-	fd := false
-	suitCounts := map[byte]int{}
-	suitCounts[s1]++
-	suitCounts[s2]++
-	for _, s := range boardSuits {
-		suitCounts[s]++
-	}
-	for _, c := range suitCounts {
-		if c >= 4 {
-			fd = true
-			break
-		}
-	}
-
-	// Straight draws (approx): check for 4 out of 5 consecutive ranks
-	uniq := map[int]bool{}
-	for _, r := range boardRanks {
-		uniq[r] = true
-	}
-	uniq[hr1] = true
-	uniq[hr2] = true
-	// simple scan
-	oesd := false
-	gut := false
-	for start := 2; start <= 10; start++ {
-		need := 0
-		have := 0
-		for d := 0; d < 5; d++ {
-			r := start + d
-			if uniq[r] {
-				have++
-			} else {
-				need++
-			}
-		}
-		if have >= 4 && need == 1 {
-			gut = true
-		}
-		if have >= 4 && (uniq[start] && uniq[start+4]) { // ends present, closer to OESD
-			oesd = true
-		}
-	}
-
-	// Combo draws weighting
-	if fd && oesd {
-		return "ComboDraw", 0.55
-	}
-	if fd || oesd {
-		return "StrongDraw", 0.40
-	}
-	if gut {
-		return "WeakDraw", 0.25
-	}
-
-	// Air fallback
-	class := "Air"
-	eq := 0.10
-	// Multiway adjust
-	if b.state.ActiveCount > 2 {
-		eq -= 0.05 * float64(b.state.ActiveCount-2)
-		if eq < 0.05 {
-			eq = 0.05
-		}
-	}
-	return class, eq
-}
-
-// --- Helpers for Patch 1: sizing, thresholds, preflop policy ---
-
-func (b *complexBot) betSize(req protocol.ActionRequest, pct float64) int {
+// Helper functions (keeping the same implementations as original)
+func (b *complexImprovedBot) betSize(req protocol.ActionRequest, pct float64) int {
 	size := int(float64(req.Pot) * pct)
-	// Clamp to server's required total bet amount for a legal raise
 	if size < req.MinBet {
 		size = req.MinBet
 	}
@@ -851,12 +703,8 @@ func (b *complexBot) betSize(req protocol.ActionRequest, pct float64) int {
 	return size
 }
 
-// raiseOrJam chooses "allin" when target size is capped below MinRaise by our stack.
-// If all-in is not a valid action and we can't meet MinRaise, fallback to call/check.
-func (b *complexBot) raiseOrJam(req protocol.ActionRequest, amt int) (string, int) {
-	// If the amount doesn't meet the server-required total (MinBet), handle special cases
+func (b *complexImprovedBot) raiseOrJam(req protocol.ActionRequest, amt int) (string, int) {
 	if amt < req.MinBet {
-		// Try to jam if allowed and we're effectively jamming
 		if amt >= b.state.Chips {
 			for _, a := range req.ValidActions {
 				if a == "allin" {
@@ -864,7 +712,6 @@ func (b *complexBot) raiseOrJam(req protocol.ActionRequest, amt int) (string, in
 				}
 			}
 		}
-		// Otherwise we cannot legally raise; prefer call/check
 		for _, a := range req.ValidActions {
 			if a == "call" {
 				return "call", 0
@@ -877,18 +724,17 @@ func (b *complexBot) raiseOrJam(req protocol.ActionRequest, amt int) (string, in
 		}
 		return "fold", 0
 	}
-	// Otherwise, standard raise
 	return "raise", amt
 }
 
-func (b *complexBot) calcSPR(req protocol.ActionRequest) float64 {
+func (b *complexImprovedBot) calcSPR(req protocol.ActionRequest) float64 {
 	if req.Pot <= 0 {
 		return 99.0
 	}
 	return float64(b.state.Chips) / float64(req.Pot)
 }
 
-func (b *complexBot) shouldFold(req protocol.ActionRequest, equity float64) bool {
+func (b *complexImprovedBot) shouldFold(req protocol.ActionRequest, equity float64) bool {
 	pot := req.Pot
 	if pot <= 0 {
 		pot = 1
@@ -928,8 +774,7 @@ func (b *complexBot) shouldFold(req protocol.ActionRequest, equity float64) bool
 	}
 }
 
-// --- Preflop decision policy (tighten & size) ---
-
+// Preflop decision logic (keeping the same implementation)
 func hasAction(valid []string, target string) bool {
 	for _, a := range valid {
 		if a == target {
@@ -946,7 +791,7 @@ func maxInt(a, b int) int {
 	return b
 }
 
-func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (string, int) {
+func (b *complexImprovedBot) preflopDecision(req protocol.ActionRequest, position int) (string, int) {
 	// Extract ranks/suited
 	if len(b.state.HoleCards) != 2 {
 		if hasAction(req.ValidActions, "check") {
@@ -1212,7 +1057,7 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 	return "fold", 0
 }
 
-func (b *complexBot) ownWinnerName() string {
+func (b *complexImprovedBot) ownWinnerName() string {
 	candidates := []string{b.id}
 	if len(b.id) >= 8 {
 		candidates = append(candidates, b.id[:8])
@@ -1228,7 +1073,7 @@ func (b *complexBot) ownWinnerName() string {
 	return candidates[0]
 }
 
-func (b *complexBot) getOrCreateProfile(name string) *opponentProfile {
+func (b *complexImprovedBot) getOrCreateProfile(name string) *opponentProfile {
 	if prof, ok := b.opponents[name]; ok {
 		return prof
 	}
@@ -1238,7 +1083,7 @@ func (b *complexBot) getOrCreateProfile(name string) *opponentProfile {
 }
 
 // trackAction records the action taken for statistics
-func (b *complexBot) trackAction(action string) {
+func (b *complexImprovedBot) trackAction(action string) {
 	switch b.state.Street {
 	case "preflop":
 		b.state.PreflopAction = action
@@ -1252,7 +1097,7 @@ func (b *complexBot) trackAction(action string) {
 }
 
 // calculateButtonDistance returns distance from button (0=button, 1=CO, etc)
-func (b *complexBot) calculateButtonDistance() int {
+func (b *complexImprovedBot) calculateButtonDistance() int {
 	numPlayers := 0
 	for _, p := range b.state.Players {
 		if p.Chips > 0 {
@@ -1272,7 +1117,7 @@ func (b *complexBot) calculateButtonDistance() int {
 }
 
 // categorizeHoleCards categorizes preflop hand strength
-func (b *complexBot) categorizeHoleCards() string {
+func (b *complexImprovedBot) categorizeHoleCards() string {
 	if len(b.state.HoleCards) != 2 {
 		return "unknown"
 	}
@@ -1318,7 +1163,7 @@ func (b *complexBot) categorizeHoleCards() string {
 }
 
 // determineFinalStreet returns the furthest street reached
-func (b *complexBot) determineFinalStreet() string {
+func (b *complexImprovedBot) determineFinalStreet() string {
 	if b.state.RiverAction != "" || len(b.state.Board) >= 5 {
 		return "River"
 	}
@@ -1343,13 +1188,13 @@ func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).Level(level).With().Timestamp().Logger()
 
-	complexBot := newComplexBot(logger)
+	complexBot := newComplexImprovedBot(logger)
 	bot := client.New(complexBot.id, complexBot, logger)
 
 	if err := bot.Connect(*serverURL); err != nil {
 		logger.Fatal().Err(err).Msg("connect failed")
 	}
-	logger.Info().Msg("complex bot connected")
+	logger.Info().Msg("complex improved bot connected")
 
 	// Handle shutdown gracefully
 	ctx, cancel := context.WithCancel(context.Background())
