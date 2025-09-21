@@ -111,16 +111,20 @@ func (b *Bot) Run(ctx context.Context) error {
 	}
 	defer b.conn.Close()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+	// Start a goroutine to close connection on context cancellation
+	go func() {
+		<-ctx.Done()
+		b.conn.Close()
+	}()
 
-		// Block on reads; a separate closer on ctx.Done will unblock if needed
+	for {
+		// Block on reads; connection will be closed by goroutine on ctx.Done
 		msgType, data, err := b.conn.ReadMessage()
 		if err != nil {
+			// Check if context was cancelled
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				return nil
 			}

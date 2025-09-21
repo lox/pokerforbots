@@ -233,13 +233,19 @@ func (b *benchBot) OnStreetChange(*client.GameState, protocol.StreetChange) erro
 
 func (b *benchBot) OnHandResult(state *client.GameState, result protocol.HandResult) error {
 	// Only the first bot increments to avoid double-counting
+	// The server counts hands, not hand-participations
 	if b.id == "bench-000" {
 		atomic.AddInt64(b.counter, 1)
 	}
 	return nil
 }
 
-func (b *benchBot) OnGameCompleted(*client.GameState, protocol.GameCompleted) error {
+func (b *benchBot) OnGameCompleted(state *client.GameState, completed protocol.GameCompleted) error {
+	// When the server hits its hand limit, it sends GameCompleted
+	// Signal the benchmark to exit by setting counter to match target
+	if b.id == "bench-000" {
+		atomic.StoreInt64(b.counter, int64(completed.HandsCompleted))
+	}
 	return nil
 }
 
