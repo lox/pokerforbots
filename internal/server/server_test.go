@@ -68,7 +68,7 @@ func TestStatsEndpoint(t *testing.T) {
 
 	t.Run("stats with hand limit", func(t *testing.T) {
 		// Create server with hand limit
-		server := NewServerWithHandLimit(logger, rng, 10)
+		server := NewServer(logger, rng, WithHandLimit(10))
 
 		// Simulate some hands completed
 		server.pool.handCounter = 3
@@ -102,7 +102,7 @@ func TestStatsEndpoint(t *testing.T) {
 
 	t.Run("stats when limit reached", func(t *testing.T) {
 		// Create server with hand limit
-		server := NewServerWithHandLimit(logger, rng, 5)
+		server := NewServer(logger, rng, WithHandLimit(5))
 
 		// Simulate hand limit reached
 		server.pool.handCounter = 5

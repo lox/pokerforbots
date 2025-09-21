@@ -39,11 +39,6 @@ tasks:
     cmds:
       - go run ./cmd/client {{.CLI_ARGS}}
 
-  simulate:
-    desc: Run single hand simulation (no networking)
-    cmds:
-      - go run ./cmd/simulate {{.CLI_ARGS}}
-
   test:
     desc: Run all tests with race detector
     cmds:

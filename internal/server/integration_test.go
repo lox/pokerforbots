@@ -31,7 +31,9 @@ func newTestServerWithDeterministicRNG(t *testing.T, seed int64) *Server {
 		return fmt.Sprintf("test-bot-%d", id)
 	}
 
-	return NewServerWithBotIDGen(testLogger(), pool, botIDGen)
+	// Need an RNG for the server constructor - use one from pool or create new
+	serverRNG := rand.New(rand.NewSource(time.Now().UnixNano()))
+	return NewServer(testLogger(), serverRNG, WithBotPool(pool), WithBotIDGen(botIDGen))
 }
 
 // startTestPool is now defined in test_helpers.go

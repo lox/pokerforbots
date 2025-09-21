@@ -76,7 +76,7 @@ func main() {
 			EnableStats:      false, // Disable for maximum performance
 		}
 
-		srv = server.NewServerWithConfig(logger, rng, config)
+		srv = server.NewServer(logger, rng, server.WithConfig(config))
 
 		// Create listener to get actual assigned port (supports port 0 for random)
 		listener, err := net.Listen("tcp", ":"+cli.Port)

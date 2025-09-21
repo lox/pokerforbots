@@ -96,7 +96,7 @@ func main() {
 
 	rng := rand.New(rand.NewSource(seed))
 	config.Seed = seed
-	srv := server.NewServerWithConfig(logger, rng, config)
+	srv := server.NewServer(logger, rng, server.WithConfig(config))
 
 	if specs := computeDefaultNPCSpecs(cli.NPCBots, cli.NPCCalling, cli.NPCRandom, cli.NPCAggro); len(specs) > 0 {
 		srv.AddBootstrapNPCs("default", specs)

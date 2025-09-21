@@ -53,6 +53,53 @@ type Config struct {
 	MaxStatsHands    int  // Maximum hands to track for stats (default 10000)
 }
 
+// serverConfig holds the configuration for building a server
+type serverConfig struct {
+	config   Config
+	pool     *BotPool      // Custom pool for testing
+	botIDGen func() string // Custom ID generator for testing
+}
+
+// ServerOption configures how we create a server
+type ServerOption func(*serverConfig)
+
+// WithConfig sets the full server configuration.
+// This replaces the entire config, so it should be used before
+// other options that modify specific config fields (like WithHandLimit).
+func WithConfig(config Config) ServerOption {
+	return func(c *serverConfig) {
+		c.config = config
+	}
+}
+
+// WithBotPool sets a custom bot pool (for testing)
+func WithBotPool(pool *BotPool) ServerOption {
+	return func(c *serverConfig) {
+		c.pool = pool
+	}
+}
+
+// WithBotIDGen sets a custom bot ID generator (for testing)
+func WithBotIDGen(gen func() string) ServerOption {
+	return func(c *serverConfig) {
+		c.botIDGen = gen
+	}
+}
+
+// WithHandLimit sets the hand limit.
+// Note: If using WithBotPool, the pool's hand limit won't be updated.
+// Use WithConfig for full control when providing a custom pool.
+func WithHandLimit(limit uint64) ServerOption {
+	return func(c *serverConfig) {
+		c.config.HandLimit = limit
+		// If a custom pool was provided, update its limit too
+		if c.pool != nil {
+			c.pool.handLimit = limit
+			c.pool.config.HandLimit = limit
+		}
+	}
+}
+
 // Server represents the poker server
 type Server struct {
 	pool          *BotPool
@@ -98,69 +145,74 @@ func createDeterministicBotIDGen(rng *rand.Rand, withRNG func(func(*rand.Rand)))
 	}
 }
 
-// NewServer creates a new poker server with provided random source and default config
-func NewServer(logger zerolog.Logger, rng *rand.Rand) *Server {
-	config := Config{
-		SmallBlind:    5,
-		BigBlind:      10,
-		StartChips:    1000,
-		Timeout:       100 * time.Millisecond,
-		MinPlayers:    2,
-		MaxPlayers:    9,
-		RequirePlayer: true,
-		HandLimit:     0,
-		Seed:          0,
+// NewServer creates a new poker server with provided random source.
+//
+// Example usage:
+//
+//	// Basic server with defaults
+//	server := NewServer(logger, rng)
+//
+//	// Server with custom config
+//	server := NewServer(logger, rng, WithConfig(myConfig))
+//
+//	// Server with hand limit
+//	server := NewServer(logger, rng, WithHandLimit(1000))
+//
+//	// Testing - with custom pool and ID generator
+//	server := NewServer(logger, rng, WithBotPool(pool), WithBotIDGen(gen))
+func NewServer(logger zerolog.Logger, rng *rand.Rand, opts ...ServerOption) *Server {
+	// Default configuration
+	cfg := serverConfig{
+		config: Config{
+			SmallBlind:    5,
+			BigBlind:      10,
+			StartChips:    1000,
+			Timeout:       100 * time.Millisecond,
+			MinPlayers:    2,
+			MaxPlayers:    9,
+			RequirePlayer: true,
+			HandLimit:     0,
+			Seed:          0,
+		},
 	}
-	return NewServerWithConfig(logger, rng, config)
-}
 
-// NewServerWithConfig creates a new poker server with provided random source and config
-func NewServerWithConfig(logger zerolog.Logger, rng *rand.Rand, config Config) *Server {
-	pool := NewBotPool(logger, rng, config)
-	return NewServerWithBotIDGenAndConfig(logger, pool, createDeterministicBotIDGen(rng, pool.WithRNG), config)
-}
-
-// NewServerWithHandLimit creates a new poker server with a hand limit
-func NewServerWithHandLimit(logger zerolog.Logger, rng *rand.Rand, handLimit uint64) *Server {
-	config := DefaultConfig(2, 9)
-	config.HandLimit = handLimit
-	pool := NewBotPool(logger, rng, config)
-	return NewServerWithBotIDGen(logger, pool, createDeterministicBotIDGen(rng, pool.WithRNG))
-}
-
-// NewServerWithPool creates a new poker server with a custom bot pool (for testing)
-func NewServerWithPool(logger zerolog.Logger, pool *BotPool) *Server {
-	return NewServerWithBotIDGen(logger, pool, func() string { return uuid.New().String() })
-}
-
-// NewServerWithBotIDGen creates a new poker server with custom bot pool and ID generator (for testing)
-func NewServerWithBotIDGen(logger zerolog.Logger, pool *BotPool, botIDGen func() string) *Server {
-	config := Config{
-		SmallBlind:    5,
-		BigBlind:      10,
-		StartChips:    1000,
-		Timeout:       100 * time.Millisecond,
-		MinPlayers:    2,
-		MaxPlayers:    9,
-		RequirePlayer: true,
-		HandLimit:     0,
-		Seed:          0,
+	// Apply options
+	for _, opt := range opts {
+		opt(&cfg)
 	}
-	return NewServerWithBotIDGenAndConfig(logger, pool, botIDGen, config)
-}
 
-// NewServerWithBotIDGenAndConfig creates a new poker server with custom bot pool, ID generator and config
-func NewServerWithBotIDGenAndConfig(logger zerolog.Logger, pool *BotPool, botIDGen func() string, config Config) *Server {
+	// Create or use provided pool
+	var pool *BotPool
+	if cfg.pool != nil {
+		pool = cfg.pool
+	} else {
+		pool = NewBotPool(logger, rng, cfg.config)
+	}
+
+	// Create or use provided bot ID generator
+	var botIDGen func() string
+	switch {
+	case cfg.botIDGen != nil:
+		botIDGen = cfg.botIDGen
+	case cfg.pool != nil:
+		// If custom pool provided but no ID gen, use UUID
+		botIDGen = func() string { return uuid.New().String() }
+	default:
+		// Default deterministic ID gen with the pool's RNG
+		botIDGen = createDeterministicBotIDGen(rng, pool.WithRNG)
+	}
+
+	// Create game manager and register default game
 	manager := NewGameManager(logger)
 	defaultGameID := "default"
-	manager.RegisterGame(defaultGameID, pool, config)
+	manager.RegisterGame(defaultGameID, pool, cfg.config)
 
 	return &Server{
 		pool:          pool,
 		manager:       manager,
 		defaultGameID: defaultGameID,
 		botIDGen:      botIDGen,
-		config:        config,
+		config:        cfg.config,
 		bootstrapNPCs: make(map[string][]NPCSpec),
 		upgrader: websocket.Upgrader{
 			// Increased buffer sizes from 1024 to 4096 for better throughput
