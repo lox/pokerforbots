@@ -5,9 +5,10 @@
 //
 // # Basic Usage
 //
-// Create and run a simple hand:
+// Create and run a simple hand with required RNG:
 //
-//	h := game.NewHandState([]string{"Alice", "Bob", "Charlie"}, 0, 5, 10, 1000)
+//	rng := rand.New(rand.NewSource(time.Now().UnixNano())) // Random
+//	h := game.NewHand(rng, []string{"Alice", "Bob", "Charlie"}, 0, 5, 10)
 //	// Process actions...
 //	h.ProcessAction(game.Call, 0)
 //	// Check if hand is complete
@@ -17,21 +18,27 @@
 //
 // # Deterministic Testing
 //
-// For deterministic testing, use the RNG injection variants which accept
-// a *rand.Rand parameter:
+// For deterministic testing, provide a seeded RNG:
 //
 //	rng := rand.New(rand.NewSource(42)) // Fixed seed
-//	h := game.NewHandStateWithRNG(players, button, sb, bb, chips, rng)
+//	h := game.NewHand(rng, players, button, sb, bb)
 //
-// Or with individual chip counts:
+// # Configuration Options
 //
-//	chipCounts := []int{1000, 800, 1200}
-//	h := game.NewHandStateWithChipsAndRNG(players, chipCounts, button, sb, bb, rng)
+// Use options to customize hand creation:
 //
-// You can also provide a pre-shuffled deck for complete control:
+//	// With individual chip counts
+//	h := game.NewHand(rng, players, button, sb, bb,
+//	    game.WithChips([]int{1000, 800, 1200}))
 //
+//	// With uniform chip counts
+//	h := game.NewHand(rng, players, button, sb, bb,
+//	    game.WithUniformChips(500))
+//
+//	// With pre-shuffled deck
 //	deck := poker.NewDeck(rng)
-//	h := game.NewHandStateWithDeck(players, button, sb, bb, chips, deck)
+//	h := game.NewHand(rng, players, button, sb, bb,
+//	    game.WithDeck(deck))
 //
 // # Architecture
 //

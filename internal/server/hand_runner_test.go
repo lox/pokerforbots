@@ -89,10 +89,11 @@ func TestHandRunnerActionRequest(t *testing.T) {
 		send: make(chan []byte, 10),
 	}
 
-	// Create hand runner
-	runner := NewHandRunner(testLogger(), []*Bot{bot}, "test-hand-3", 0, rand.New(rand.NewSource(42)))
+	// Create hand runner - need at least 2 players for a valid game
+	bot2 := &Bot{ID: "test-bot-2", send: make(chan []byte, 10)}
+	runner := NewHandRunner(testLogger(), []*Bot{bot, bot2}, "test-hand-3", 0, rand.New(rand.NewSource(42)))
 	runner.handState = game.NewHandState(
-		[]string{"player1"},
+		[]string{"player1", "player2"},
 		0,
 		5,
 		10,
@@ -368,10 +369,11 @@ func TestValidActionsGeneration(t *testing.T) {
 // TestActionRequestMessagePopulation verifies all ActionRequest fields are populated
 func TestActionRequestMessagePopulation(t *testing.T) {
 	t.Parallel()
-	// Setup
+	// Setup - need at least 2 players
 	bot := &Bot{ID: "test-bot", send: make(chan []byte, 10)}
-	hr := NewHandRunner(testLogger(), []*Bot{bot}, "test-hand", 0, rand.New(rand.NewSource(42)))
-	hr.handState = game.NewHandState([]string{"player1"}, 0, 5, 10, 1000)
+	bot2 := &Bot{ID: "test-bot-2", send: make(chan []byte, 10)}
+	hr := NewHandRunner(testLogger(), []*Bot{bot, bot2}, "test-hand", 0, rand.New(rand.NewSource(42)))
+	hr.handState = game.NewHandState([]string{"player1", "player2"}, 0, 5, 10, 1000)
 
 	// Get valid actions
 	validActions := hr.handState.GetValidActions()

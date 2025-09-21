@@ -21,137 +21,55 @@ type HandState struct {
 }
 
 // NewHandState creates a new hand state
+// Deprecated: Use NewHand with an explicit RNG instead.
+// This constructor will be removed in a future version.
 func NewHandState(playerNames []string, button int, smallBlind, bigBlind, startingChips int) *HandState {
 	return NewHandStateWithRNG(playerNames, button, smallBlind, bigBlind, startingChips, nil)
 }
 
 // NewHandStateWithRNG creates a new hand state with a specific RNG
+// Deprecated: Use NewHand with an explicit RNG instead.
+// This constructor will be removed in a future version.
 func NewHandStateWithRNG(playerNames []string, button int, smallBlind, bigBlind, startingChips int, rng *rand.Rand) *HandState {
-	players := make([]*Player, len(playerNames))
-	for i, name := range playerNames {
-		players[i] = &Player{
-			Seat:   i,
-			Name:   name,
-			Chips:  startingChips,
-			Folded: false,
-		}
-	}
-
 	if rng == nil {
 		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 	}
-	deck := poker.NewDeck(rng)
-	return newHandStateWithPlayersAndDeck(players, button, smallBlind, bigBlind, deck)
+	return NewHand(rng, playerNames, button, smallBlind, bigBlind, WithUniformChips(startingChips))
 }
 
 // NewHandStateWithChips creates a new hand state with individual chip counts
+// Deprecated: Use NewHand with WithChips option instead.
+// This constructor will be removed in a future version.
 func NewHandStateWithChips(playerNames []string, chipCounts []int, button int, smallBlind, bigBlind int) *HandState {
 	return NewHandStateWithChipsAndRNG(playerNames, chipCounts, button, smallBlind, bigBlind, nil)
 }
 
 // NewHandStateWithChipsAndRNG creates a new hand state with individual chip counts and RNG
+// Deprecated: Use NewHand with WithChips option instead.
+// This constructor will be removed in a future version.
 func NewHandStateWithChipsAndRNG(playerNames []string, chipCounts []int, button int, smallBlind, bigBlind int, rng *rand.Rand) *HandState {
-	if len(playerNames) != len(chipCounts) {
-		panic("player names and chip counts must have same length")
-	}
-
-	players := make([]*Player, len(playerNames))
-	for i, name := range playerNames {
-		players[i] = &Player{
-			Seat:   i,
-			Name:   name,
-			Chips:  chipCounts[i],
-			Folded: false,
-		}
-	}
-
 	if rng == nil {
 		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 	}
-	deck := poker.NewDeck(rng)
-	return newHandStateWithPlayersAndDeck(players, button, smallBlind, bigBlind, deck)
+	return NewHand(rng, playerNames, button, smallBlind, bigBlind, WithChips(chipCounts))
 }
 
 // NewHandStateWithChipsAndDeck creates a new hand state with specific chip counts and deck
+// Deprecated: Use NewHand with WithChips and WithDeck options instead.
+// This constructor will be removed in a future version.
 func NewHandStateWithChipsAndDeck(playerNames []string, chipCounts []int, button int, smallBlind, bigBlind int, deck *poker.Deck) *HandState {
-	players := make([]*Player, len(playerNames))
-	for i, name := range playerNames {
-		players[i] = &Player{
-			Seat:   i,
-			Name:   name,
-			Chips:  chipCounts[i],
-			Folded: false,
-		}
-	}
-
-	return newHandStateWithPlayersAndDeck(players, button, smallBlind, bigBlind, deck)
+	// Need an RNG even though we have a deck - create a dummy one
+	rng := rand.New(rand.NewSource(0)) // Won't be used since we provide a deck
+	return NewHand(rng, playerNames, button, smallBlind, bigBlind, WithChips(chipCounts), WithDeck(deck))
 }
 
 // NewHandStateWithDeck creates a new hand state with a specific deck (for deterministic testing)
+// Deprecated: Use NewHand with WithDeck option instead.
+// This constructor will be removed in a future version.
 func NewHandStateWithDeck(playerNames []string, button int, smallBlind, bigBlind, startingChips int, deck *poker.Deck) *HandState {
-	players := make([]*Player, len(playerNames))
-	for i, name := range playerNames {
-		players[i] = &Player{
-			Seat:   i,
-			Name:   name,
-			Chips:  startingChips,
-			Folded: false,
-		}
-	}
-
-	h := &HandState{
-		Players:    players,
-		Button:     button,
-		Street:     Preflop,
-		Deck:       deck, // Use provided deck
-		PotManager: NewPotManager(players),
-		Betting:    NewBettingRound(len(players), bigBlind),
-	}
-
-	// Post blinds
-	h.postBlinds(smallBlind, bigBlind)
-
-	// Deal hole cards
-	h.dealHoleCards()
-
-	// Set first active player
-	if len(players) == 2 {
-		// Heads-up: button acts first preflop
-		h.ActivePlayer = button
-	} else {
-		// Regular: UTG (button+3) acts first
-		h.ActivePlayer = h.nextActivePlayer((button + 3) % len(players))
-	}
-
-	return h
-}
-
-func newHandStateWithPlayersAndDeck(players []*Player, button int, smallBlind, bigBlind int, deck *poker.Deck) *HandState {
-	h := &HandState{
-		Players:    players,
-		Button:     button,
-		Street:     Preflop,
-		Deck:       deck,
-		PotManager: NewPotManager(players),
-		Betting:    NewBettingRound(len(players), bigBlind),
-	}
-
-	// Post blinds
-	h.postBlinds(smallBlind, bigBlind)
-
-	// Deal hole cards
-	h.dealHoleCards()
-
-	// Set first active player
-	if len(players) == 2 {
-		// Heads-up: button acts first preflop
-		h.ActivePlayer = button
-	} else {
-		// Regular: UTG (button+3) acts first
-		h.ActivePlayer = h.nextActivePlayer((button + 3) % len(players))
-	}
-
-	return h
+	// Need an RNG even though we have a deck - create a dummy one
+	rng := rand.New(rand.NewSource(0)) // Won't be used since we provide a deck
+	return NewHand(rng, playerNames, button, smallBlind, bigBlind, WithUniformChips(startingChips), WithDeck(deck))
 }
 
 func (h *HandState) postBlinds(smallBlind, bigBlind int) {
