@@ -304,6 +304,54 @@ func BenchmarkCardString(b *testing.B) {
 	}
 }
 
+func TestParseHand(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid hands", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			cardStrs []string
+			expected int
+		}{
+			{"two cards", []string{"As", "Kh"}, 2},
+			{"board cards", []string{"2c", "7h", "Kd"}, 3},
+			{"full board", []string{"2c", "7h", "Kd", "Ts", "9h"}, 5},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				hand, err := ParseHand(tt.cardStrs...)
+				if err != nil {
+					t.Errorf("ParseHand(%v) error: %v", tt.cardStrs, err)
+					return
+				}
+				if hand.CountCards() != tt.expected {
+					t.Errorf("ParseHand(%v) count = %v, want %v", tt.cardStrs, hand.CountCards(), tt.expected)
+				}
+			})
+		}
+	})
+
+	t.Run("duplicate cards", func(t *testing.T) {
+		_, err := ParseHand("As", "As")
+		if err == nil {
+			t.Errorf("ParseHand with duplicate cards should return error")
+		}
+
+		_, err = ParseHand("As", "Kh", "As")
+		if err == nil {
+			t.Errorf("ParseHand with duplicate cards should return error")
+		}
+	})
+
+	t.Run("invalid cards", func(t *testing.T) {
+		_, err := ParseHand("Xx")
+		if err == nil {
+			t.Errorf("ParseHand with invalid card should return error")
+		}
+	})
+}
+
 func BenchmarkParseCard(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_, _ = ParseCard("As")

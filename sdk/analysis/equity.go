@@ -76,117 +76,122 @@ func (e EquityResult) ConfidenceInterval() (lower, upper float64) {
 	return lower, upper
 }
 
-// parseCards converts card strings to a poker.Hand using efficient parsing
-func parseCards(cardStrs []string) (poker.Hand, error) {
-	var hand poker.Hand
-	for _, cardStr := range cardStrs {
-		card, err := poker.ParseCard(cardStr)
-		if err != nil {
-			return 0, err
-		}
-		hand.AddCard(card)
-	}
-	return hand, nil
-}
-
-// CalculateEquity performs Monte Carlo simulation to calculate equity using efficient poker.Hand types
-// heroHoles: Hero's hole cards (exactly 2 cards)
+// CalculateEquity performs Monte Carlo simulation to calculate equity
+// heroHand: Hero's complete hand (2 hole cards)
 // board: Community cards (0-5 cards)
 // opponents: Number of opponents (each gets 2 random hole cards)
 // simulations: Number of simulations to run
-func CalculateEquity(heroHoles []string, board []string, opponents int, simulations int, rng *rand.Rand) EquityResult {
-	if len(heroHoles) != 2 {
+func CalculateEquity(heroHand poker.Hand, board poker.Hand, opponents int, simulations int, rng *rand.Rand) EquityResult {
+	// Validate hero hand has exactly 2 cards
+	if heroHand.CountCards() != 2 {
 		return EquityResult{} // Invalid input
+	}
+
+	// Validate board has at most 5 cards
+	if board.CountCards() > 5 {
+		return EquityResult{} // Invalid input
+	}
+
+	// Validate simulations is positive
+	if simulations <= 0 {
+		return EquityResult{} // Invalid input
+	}
+
+	// Validate we have enough cards in deck
+	cardsNeeded := 2 + board.CountCards() + (5 - board.CountCards()) + (opponents * 2)
+	if cardsNeeded > 52 {
+		return EquityResult{} // Not enough cards in deck
+	}
+
+	// Validate hero hand and board don't overlap
+	if (heroHand & board) != 0 {
+		return EquityResult{} // Overlapping cards
 	}
 
 	if opponents < 1 {
 		opponents = 1 // At least one opponent
 	}
 
-	// Parse hole cards and board using efficient poker.Hand types
-	heroCards, err := parseCards(heroHoles)
-	if err != nil {
-		return EquityResult{} // Invalid card format
-	}
-
-	boardCards, err := parseCards(board)
-	if err != nil {
-		return EquityResult{} // Invalid card format
-	}
-
-	usedCards := heroCards | boardCards
-
 	var wins, ties uint32
 
+	// Pre-allocate deck for reuse
+	deck := poker.NewDeck(rng)
+
 	for sim := 0; sim < simulations; sim++ {
-		// Create a deck and remove used cards
-		deck := poker.NewDeck(rng)
+		deck.Shuffle()
 
-		// Remove used cards from deck by dealing until we skip them
-		// This is inefficient but simple - could be optimized
-		availableCards := make([]poker.Card, 0, 52-usedCards.CountCards())
-		for deck.CardsRemaining() > 0 {
-			card := deck.DealOne()
-			if !usedCards.HasCard(card) {
-				availableCards = append(availableCards, card)
+		// Declare variables at top to avoid goto issues
+		var heroWins = true
+		var heroTies = false
+		var heroFullHand poker.Hand
+		var heroRank poker.HandRank
+
+		// Create used cards mask to avoid dealing duplicates
+		usedCards := heroHand | board
+
+		// Deal remaining board cards if needed
+		finalBoard := board
+		cardsNeeded := 5 - board.CountCards()
+		for i := 0; i < cardsNeeded; i++ {
+			for {
+				card := deck.DealOne()
+				if card == 0 {
+					// Deck exhausted - abort this simulation
+					goto nextSimulation
+				}
+				if !usedCards.HasCard(card) {
+					finalBoard.AddCard(card)
+					usedCards.AddCard(card)
+					break
+				}
 			}
 		}
 
-		// Shuffle available cards
-		for i := len(availableCards) - 1; i > 0; i-- {
-			j := rng.Intn(i + 1)
-			availableCards[i], availableCards[j] = availableCards[j], availableCards[i]
-		}
+		// Deal opponent hole cards and evaluate
+		heroFullHand = heroHand | finalBoard
+		heroRank = poker.Evaluate7Cards(heroFullHand)
 
-		cardIndex := 0
+		// Compare against all opponents
 
-		// Complete the board if needed
-		cardsNeeded := 5 - len(board)
-		finalBoard := boardCards
-
-		for i := 0; i < cardsNeeded && cardIndex < len(availableCards); i++ {
-			finalBoard.AddCard(availableCards[cardIndex])
-			cardIndex++
-		}
-
-		// Sample opponent hole cards
-		opponentHands := make([]poker.Hand, opponents)
-		for i := 0; i < opponents && cardIndex+1 < len(availableCards); i++ {
-			opponentHands[i] = poker.NewHand(availableCards[cardIndex], availableCards[cardIndex+1])
-			cardIndex += 2
-		}
-
-		// Evaluate hands using proper poker evaluator
-		heroFinalHand := heroCards | finalBoard
-		heroStrength := poker.Evaluate7Cards(heroFinalHand)
-
-		// Compare against opponents
-		heroWins := true
-		tied := false
-
-		for i, oppHand := range opponentHands {
-			if i >= opponents {
-				break
+		for opp := 0; opp < opponents; opp++ {
+			// Deal 2 hole cards for this opponent
+			var oppHand poker.Hand
+			for i := 0; i < 2; i++ {
+				for {
+					card := deck.DealOne()
+					if card == 0 {
+						// Deck exhausted - abort this simulation
+						goto nextSimulation
+					}
+					if !usedCards.HasCard(card) {
+						oppHand.AddCard(card)
+						usedCards.AddCard(card)
+						break
+					}
+				}
 			}
-			oppFinalHand := oppHand | finalBoard
-			oppStrength := poker.Evaluate7Cards(oppFinalHand)
 
-			cmp := poker.CompareHands(heroStrength, oppStrength)
-			if cmp < 0 {
+			// Evaluate opponent's hand
+			oppFullHand := oppHand | finalBoard
+			oppRank := poker.Evaluate7Cards(oppFullHand)
+			comparison := poker.CompareHands(heroRank, oppRank)
+
+			if comparison < 0 {
 				heroWins = false
 				break
-			} else if cmp == 0 {
-				tied = true
+			} else if comparison == 0 {
+				heroTies = true
 			}
 		}
 
 		if heroWins {
-			if tied {
+			if heroTies {
 				ties++
 			} else {
 				wins++
 			}
 		}
+	nextSimulation:
 	}
 
 	return EquityResult{
@@ -194,11 +199,4 @@ func CalculateEquity(heroHoles []string, board []string, opponents int, simulati
 		Ties:             ties,
 		TotalSimulations: uint32(simulations),
 	}
-}
-
-// QuickEquity provides a fast equity estimate with default parameters
-func QuickEquity(heroHoles []string, board []string, opponents int) float64 {
-	rng := rand.New(rand.NewSource(42)) // Fixed seed for deterministic testing
-	result := CalculateEquity(heroHoles, board, opponents, 10000, rng)
-	return result.Equity()
 }

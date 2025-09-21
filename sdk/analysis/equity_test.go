@@ -3,7 +3,11 @@ package analysis
 import (
 	"math"
 	"math/rand"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/lox/pokerforbots/poker"
 )
 
 func TestEquityResult(t *testing.T) {
@@ -76,63 +80,15 @@ func TestConfidenceInterval(t *testing.T) {
 	}
 }
 
-func TestParseCards(t *testing.T) {
-	tests := []struct {
-		name     string
-		cardStrs []string
-		expected int // expected count
-	}{
-		{"two cards", []string{"As", "Kh"}, 2},
-		{"board cards", []string{"2c", "7h", "Kd"}, 3},
-		{"full board", []string{"2c", "7h", "Kd", "Ts", "9h"}, 5},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			hand, err := parseCards(tt.cardStrs)
-			if err != nil {
-				t.Errorf("parseCards(%v) error: %v", tt.cardStrs, err)
-				return
-			}
-			if hand.CountCards() != tt.expected {
-				t.Errorf("parseCards(%v) count = %v, want %v", tt.cardStrs, hand.CountCards(), tt.expected)
-			}
-		})
-	}
-}
-
-func TestParseCardsWithInvalidInput(t *testing.T) {
-	tests := []struct {
-		name     string
-		cardStrs []string
-		wantErr  bool
-	}{
-		{"valid cards", []string{"As", "Kh"}, false},
-		{"invalid rank", []string{"Xs", "Kh"}, true},
-		{"invalid suit", []string{"Ax", "Kh"}, true},
-		{"too short", []string{"A", "Kh"}, true},
-		{"too long", []string{"Ass", "Kh"}, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := parseCards(tt.cardStrs)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseCards() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func TestCalculateEquity(t *testing.T) {
 	t.Run("pocket aces vs random", func(t *testing.T) {
 		rng := rand.New(rand.NewSource(42))
 
 		// AA vs random opponent on dry board
-		heroHoles := []string{"As", "Ad"}
-		board := []string{"2c", "7h", "Kd"}
+		heroHand, _ := poker.ParseHand("As", "Ad")
+		board, _ := poker.ParseHand("2c", "7h", "Kd")
 
-		result := CalculateEquity(heroHoles, board, 1, 1000, rng)
+		result := CalculateEquity(heroHand, board, 1, 1000, rng)
 
 		// AA should have high equity (>80%)
 		equity := result.Equity()
@@ -149,10 +105,10 @@ func TestCalculateEquity(t *testing.T) {
 		rng := rand.New(rand.NewSource(42))
 
 		// 23 offsuit vs random opponent
-		heroHoles := []string{"2c", "3h"}
-		board := []string{"Ac", "Kh", "Qd"}
+		heroHand, _ := poker.ParseHand("2c", "3h")
+		board, _ := poker.ParseHand("Ac", "Kh", "Qd")
 
-		result := CalculateEquity(heroHoles, board, 1, 1000, rng)
+		result := CalculateEquity(heroHand, board, 1, 1000, rng)
 
 		// 23o should have low equity (<30%)
 		equity := result.Equity()
@@ -161,34 +117,73 @@ func TestCalculateEquity(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid input", func(t *testing.T) {
+	t.Run("insufficient cards", func(t *testing.T) {
 		rng := rand.New(rand.NewSource(42))
 
-		// Invalid hole cards (only 1 card)
-		heroHoles := []string{"As"}
-		board := []string{"2c", "7h", "Kd"}
+		// Hero hand with only 1 card
+		heroHand, _ := poker.ParseHand("As")
+		board, _ := poker.ParseHand("2c", "7h", "Kd")
 
-		result := CalculateEquity(heroHoles, board, 1, 1000, rng)
+		result := CalculateEquity(heroHand, board, 1, 1000, rng)
 
-		// Should return empty result
+		// Should return empty result for invalid input
 		if result.TotalSimulations != 0 {
 			t.Errorf("Invalid input should return empty result")
 		}
 	})
-}
 
-func TestQuickEquity(t *testing.T) {
-	// Test the convenience function
-	equity := QuickEquity([]string{"As", "Ad"}, []string{"2c", "7h", "Kd"}, 1)
+	t.Run("negative simulations", func(t *testing.T) {
+		rng := rand.New(rand.NewSource(42))
+		heroHand, _ := poker.ParseHand("As", "Ad")
+		board, _ := poker.ParseHand("2c", "7h", "Kd")
 
-	// AA should have high equity
-	if equity < 0.7 {
-		t.Errorf("QuickEquity(AA) = %v, expected > 0.7", equity)
-	}
+		result := CalculateEquity(heroHand, board, 1, -100, rng)
 
-	if equity > 1.0 || equity < 0.0 {
-		t.Errorf("QuickEquity should return value between 0 and 1, got %v", equity)
-	}
+		// Should return empty result for negative simulations
+		if result.TotalSimulations != 0 {
+			t.Errorf("Negative simulations should return empty result")
+		}
+	})
+
+	t.Run("zero simulations", func(t *testing.T) {
+		rng := rand.New(rand.NewSource(42))
+		heroHand, _ := poker.ParseHand("As", "Ad")
+		board, _ := poker.ParseHand("2c", "7h", "Kd")
+
+		result := CalculateEquity(heroHand, board, 1, 0, rng)
+
+		// Should return empty result for zero simulations
+		if result.TotalSimulations != 0 {
+			t.Errorf("Zero simulations should return empty result")
+		}
+	})
+
+	t.Run("overlapping hero and board cards", func(t *testing.T) {
+		rng := rand.New(rand.NewSource(42))
+		heroHand, _ := poker.ParseHand("As", "Ad")
+		board, _ := poker.ParseHand("As", "7h", "Kd") // As overlaps with hero
+
+		result := CalculateEquity(heroHand, board, 1, 1000, rng)
+
+		// Should return empty result for overlapping cards
+		if result.TotalSimulations != 0 {
+			t.Errorf("Overlapping cards should return empty result")
+		}
+	})
+
+	t.Run("too many opponents", func(t *testing.T) {
+		rng := rand.New(rand.NewSource(42))
+		heroHand, _ := poker.ParseHand("As", "Ad")
+		board, _ := poker.ParseHand("2c", "7h", "Kd", "Ts", "9h") // Full board
+
+		// 24 opponents * 2 cards = 48 cards, plus 2 hero + 5 board = 55 cards total (> 52)
+		result := CalculateEquity(heroHand, board, 24, 1000, rng)
+
+		// Should return empty result for too many cards needed
+		if result.TotalSimulations != 0 {
+			t.Errorf("Too many opponents should return empty result")
+		}
+	})
 }
 
 func TestEquityCalculatorWithProperEvaluator(t *testing.T) {
@@ -196,11 +191,11 @@ func TestEquityCalculatorWithProperEvaluator(t *testing.T) {
 		// This test verifies that we're using the proper hand evaluator
 		// The actual evaluation correctness is tested in the poker package
 		rng := rand.New(rand.NewSource(42))
-		heroHoles := []string{"As", "Ad"}
-		board := []string{"2c", "7h", "Kd"}
+		heroHand, _ := poker.ParseHand("As", "Ad")
+		board, _ := poker.ParseHand("2c", "7h", "Kd")
 
 		// Small number of simulations for quick test
-		result := CalculateEquity(heroHoles, board, 1, 100, rng)
+		result := CalculateEquity(heroHand, board, 1, 100, rng)
 
 		// AA should have reasonable equity
 		equity := result.Equity()
@@ -212,37 +207,252 @@ func TestEquityCalculatorWithProperEvaluator(t *testing.T) {
 			t.Errorf("TotalSimulations = %v, want 100", result.TotalSimulations)
 		}
 	})
-
-	t.Run("handles invalid input gracefully", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
-
-		// Invalid hole cards format
-		result := CalculateEquity([]string{"Xx"}, []string{"2c", "7h"}, 1, 100, rng)
-		if result.TotalSimulations != 0 {
-			t.Errorf("Invalid input should return empty result")
-		}
-	})
 }
 
-func BenchmarkCalculateEquity(t *testing.B) {
+func BenchmarkCalculateEquity(b *testing.B) {
+	heroHand, _ := poker.ParseHand("As", "Ad")
+	board, _ := poker.ParseHand("2c", "7h", "Kd")
 	rng := rand.New(rand.NewSource(42))
-	heroHoles := []string{"As", "Ad"}
-	board := []string{"2c", "7h", "Kd"}
 
-	t.ResetTimer()
+	b.ResetTimer()
 
-	for i := 0; i < t.N; i++ {
-		CalculateEquity(heroHoles, board, 1, 100, rng) // Reduced for benchmark
+	for i := 0; i < b.N; i++ {
+		CalculateEquity(heroHand, board, 1, 10000, rng)
 	}
 }
 
-func BenchmarkQuickEquity(t *testing.B) {
-	heroHoles := []string{"As", "Ad"}
-	board := []string{"2c", "7h", "Kd"}
+// Rigorous large-sample benchmarks similar to poker evaluator
+var benchSinkEquity float64
 
-	t.ResetTimer()
+func generateRandomEquityScenarios(n int, seed int64) []struct {
+	heroHand  poker.Hand
+	board     poker.Hand
+	opponents int
+} {
+	rng := rand.New(rand.NewSource(seed))
+	deck := poker.NewDeck(rng)
+	scenarios := make([]struct {
+		heroHand  poker.Hand
+		board     poker.Hand
+		opponents int
+	}, n)
 
-	for i := 0; i < t.N; i++ {
-		QuickEquity(heroHoles, board, 1)
+	for i := 0; i < n; i++ {
+		// Ensure enough cards remain; reshuffle if needed
+		if deck.CardsRemaining() < 7 {
+			deck.Shuffle()
+		}
+
+		// Deal hero holes (2 cards)
+		heroCards := deck.Deal(2)
+		heroHand := poker.NewHand(heroCards...)
+
+		// Deal board (3-5 cards)
+		boardSize := 3 + rng.Intn(3) // 3, 4, or 5 cards
+		boardCards := deck.Deal(boardSize)
+		board := poker.NewHand(boardCards...)
+
+		// Random opponent count (1-3)
+		opponents := 1 + rng.Intn(3)
+
+		scenarios[i] = struct {
+			heroHand  poker.Hand
+			board     poker.Hand
+			opponents int
+		}{heroHand, board, opponents}
+	}
+	return scenarios
+}
+
+// BenchmarkCalculateEquity_LargeSample reports equity calculations per second over diverse scenarios
+func BenchmarkCalculateEquity_LargeSample(b *testing.B) {
+	const sampleSize = 1000
+	const simulations = 1000
+	scenarios := generateRandomEquityScenarios(sampleSize, 42)
+	rng := rand.New(rand.NewSource(1337))
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	start := time.Now()
+
+	for i := 0; i < b.N; i++ {
+		scenario := scenarios[i%len(scenarios)]
+		result := CalculateEquity(scenario.heroHand, scenario.board, scenario.opponents, simulations, rng)
+		benchSinkEquity = result.Equity()
+	}
+
+	elapsed := time.Since(start)
+	if elapsed > 0 {
+		eqps := float64(b.N) / elapsed.Seconds()
+		b.ReportMetric(eqps, "equity/sec")
+		b.ReportMetric(float64(b.N*simulations)/elapsed.Seconds(), "sims/sec")
+	}
+}
+
+// BenchmarkCalculateEquity_HighSims tests performance with high simulation counts
+func BenchmarkCalculateEquity_HighSims(b *testing.B) {
+	heroHand, _ := poker.ParseHand("As", "Ad")
+	board, _ := poker.ParseHand("2c", "7h", "Kd")
+
+	const simulations = 50000
+	rng := rand.New(rand.NewSource(42))
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	start := time.Now()
+
+	for i := 0; i < b.N; i++ {
+		result := CalculateEquity(heroHand, board, 1, simulations, rng)
+		benchSinkEquity = result.Equity()
+	}
+
+	elapsed := time.Since(start)
+	if elapsed > 0 {
+		eqps := float64(b.N) / elapsed.Seconds()
+		b.ReportMetric(eqps, "equity/sec")
+		b.ReportMetric(float64(b.N*simulations)/elapsed.Seconds(), "sims/sec")
+	}
+}
+
+// BenchmarkCalculateEquity_MultiWay tests multi-opponent scenarios
+func BenchmarkCalculateEquity_MultiWay(b *testing.B) {
+	heroHand, _ := poker.ParseHand("As", "Ad")
+	board, _ := poker.ParseHand("2c", "7h", "Kd")
+
+	const simulations = 10000
+	rng := rand.New(rand.NewSource(42))
+
+	testCases := []struct {
+		name      string
+		opponents int
+	}{
+		{"heads-up", 1},
+		{"3-way", 2},
+		{"4-way", 3},
+		{"6-way", 5},
+	}
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			start := time.Now()
+
+			for i := 0; i < b.N; i++ {
+				result := CalculateEquity(heroHand, board, tc.opponents, simulations, rng)
+				benchSinkEquity = result.Equity()
+			}
+
+			elapsed := time.Since(start)
+			if elapsed > 0 {
+				eqps := float64(b.N) / elapsed.Seconds()
+				b.ReportMetric(eqps, "equity/sec")
+				b.ReportMetric(float64(b.N*simulations)/elapsed.Seconds(), "sims/sec")
+			}
+		})
+	}
+}
+
+// BenchmarkCalculateEquity_BoardTextures tests different board types
+func BenchmarkCalculateEquity_BoardTextures(b *testing.B) {
+	heroHand, _ := poker.ParseHand("As", "Ad")
+
+	const simulations = 10000
+	rng := rand.New(rand.NewSource(42))
+
+	testCases := []struct {
+		name  string
+		board poker.Hand
+	}{
+		{"dry-flop", mustParseHand("2c", "7h", "Kd")},
+		{"wet-flop", mustParseHand("8s", "9s", "Ts")},
+		{"paired-flop", mustParseHand("Ac", "Ad", "7h")},
+		{"dry-turn", mustParseHand("2c", "7h", "Kd", "3s")},
+		{"wet-turn", mustParseHand("8s", "9s", "Ts", "Js")},
+		{"dry-river", mustParseHand("2c", "7h", "Kd", "3s", "9h")},
+		{"wet-river", mustParseHand("8s", "9s", "Ts", "Js", "Qs")},
+	}
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			start := time.Now()
+
+			for i := 0; i < b.N; i++ {
+				result := CalculateEquity(heroHand, tc.board, 1, simulations, rng)
+				benchSinkEquity = result.Equity()
+			}
+
+			elapsed := time.Since(start)
+			if elapsed > 0 {
+				eqps := float64(b.N) / elapsed.Seconds()
+				b.ReportMetric(eqps, "equity/sec")
+				b.ReportMetric(float64(b.N*simulations)/elapsed.Seconds(), "sims/sec")
+			}
+		})
+	}
+}
+
+// mustParseHand is a helper for benchmarks
+func mustParseHand(cardStrs ...string) poker.Hand {
+	hand, err := poker.ParseHand(cardStrs...)
+	if err != nil {
+		panic(err)
+	}
+	return hand
+}
+
+// BenchmarkCalculateEquity_Realistic tests the bot's actual usage pattern
+func BenchmarkCalculateEquity_Realistic(b *testing.B) {
+	const sampleSize = 1000
+	const simulations = 10000
+	scenarios := generateRandomEquityScenarios(sampleSize, 1337)
+	rng := rand.New(rand.NewSource(42))
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	start := time.Now()
+
+	for i := 0; i < b.N; i++ {
+		scenario := scenarios[i%len(scenarios)]
+		result := CalculateEquity(scenario.heroHand, scenario.board, scenario.opponents, simulations, rng)
+		benchSinkEquity = result.Equity()
+	}
+
+	elapsed := time.Since(start)
+	if elapsed > 0 {
+		eqps := float64(b.N) / elapsed.Seconds()
+		b.ReportMetric(eqps, "equity/sec")
+		b.ReportMetric(float64(b.N*simulations)/elapsed.Seconds(), "sims/sec")
+	}
+}
+
+// BenchmarkCalculateEquity_Parallel tests concurrent equity calculations
+func BenchmarkCalculateEquity_Parallel(b *testing.B) {
+	const sampleSize = 1000
+	const simulations = 5000
+	scenarios := generateRandomEquityScenarios(sampleSize, 1111)
+
+	var idx uint64
+	b.ReportAllocs()
+	b.ResetTimer()
+	start := time.Now()
+
+	b.RunParallel(func(pb *testing.PB) {
+		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+		for pb.Next() {
+			i := atomic.AddUint64(&idx, 1) - 1
+			scenario := scenarios[i%uint64(len(scenarios))]
+			result := CalculateEquity(scenario.heroHand, scenario.board, scenario.opponents, simulations, rng)
+			benchSinkEquity = result.Equity()
+		}
+	})
+
+	elapsed := time.Since(start)
+	if elapsed > 0 {
+		eqps := float64(b.N) / elapsed.Seconds()
+		b.ReportMetric(eqps, "equity/sec")
+		b.ReportMetric(float64(b.N*simulations)/elapsed.Seconds(), "sims/sec")
 	}
 }

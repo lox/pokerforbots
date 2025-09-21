@@ -30,8 +30,10 @@ type tableState struct {
 	Chips        int
 	Players      []protocol.Player
 	LastAction   protocol.PlayerAction
-	HoleCards    []string
-	Board        []string
+	HoleCards    poker.Hand // Changed from []string
+	HoleCardsStr []string   // Keep for stats/logging
+	Board        poker.Hand // Changed from []string
+	BoardStr     []string   // Keep for stats/logging
 	Street       string
 	Button       int
 	ActiveCount  int
@@ -103,8 +105,18 @@ func (b *complexImprovedBot) OnHandStart(state *client.GameState, start protocol
 	b.state.Players = start.Players
 	b.state.Chips = start.Players[start.YourSeat].Chips
 	b.state.StartingChips = start.Players[start.YourSeat].Chips
-	b.state.HoleCards = start.HoleCards
-	b.state.Board = nil
+
+	// Parse hole cards once and store both formats
+	b.state.HoleCardsStr = start.HoleCards
+	if holeHand, err := poker.ParseHand(start.HoleCards...); err == nil {
+		b.state.HoleCards = holeHand
+	} else {
+		b.state.HoleCards = 0 // Empty hand on parse error
+		b.logger.Warn().Err(err).Strs("cards", start.HoleCards).Msg("failed to parse hole cards")
+	}
+
+	b.state.Board = 0 // Empty board at start
+	b.state.BoardStr = nil
 	b.state.Street = "preflop"
 	b.state.Button = start.Button
 	b.state.BetsThisHand = 0
@@ -130,7 +142,7 @@ func (b *complexImprovedBot) OnHandStart(state *client.GameState, start protocol
 	b.state.ActiveCount = active
 
 	b.logger.Debug().
-		Strs("holes", state.HoleCards).
+		Strs("holes", b.state.HoleCardsStr).
 		Int("position", b.getPosition()).
 		Msg("hand start")
 	return nil
@@ -232,7 +244,15 @@ func (b *complexImprovedBot) OnPlayerAction(state *client.GameState, action prot
 
 func (b *complexImprovedBot) OnStreetChange(state *client.GameState, street protocol.StreetChange) error {
 	b.state.Street = street.Street
-	b.state.Board = street.Board
+
+	// Parse board once and store both formats
+	b.state.BoardStr = street.Board
+	if boardHand, err := poker.ParseHand(street.Board...); err == nil {
+		b.state.Board = boardHand
+	} else {
+		b.state.Board = 0 // Empty board on parse error
+		b.logger.Warn().Err(err).Strs("cards", street.Board).Msg("failed to parse board")
+	}
 	return nil
 }
 
@@ -299,7 +319,7 @@ func (b *complexImprovedBot) OnHandResult(state *client.GameState, result protoc
 		WonAtShowdown:  wonAtShowdown,
 		FinalPotBB:     float64(b.state.Pot) / float64(b.bigBlind),
 		StreetReached:  finalStreet,
-		HoleCards:      strings.Join(b.state.HoleCards, ""),
+		HoleCards:      strings.Join(b.state.HoleCardsStr, ""),
 		HandCategory:   handCategory,
 		PreflopAction:  b.state.PreflopAction,
 		FlopAction:     b.state.FlopAction,
@@ -328,26 +348,16 @@ func (b *complexImprovedBot) OnGameCompleted(state *client.GameState, completed 
 	return io.EOF
 }
 
-// parseHand converts string cards to poker.Hand for SDK use
-func (b *complexImprovedBot) parseHand(cardStrs []string) (poker.Hand, error) {
-	var hand poker.Hand
-	for _, cardStr := range cardStrs {
-		card, err := poker.ParseCard(cardStr)
-		if err != nil {
-			return 0, err
-		}
-		hand.AddCard(card)
-	}
-	return hand, nil
-}
-
 func (b *complexImprovedBot) evaluateHandStrength() float64 {
-	if len(b.state.HoleCards) != 2 {
+	if b.state.HoleCards.CountCards() != 2 {
 		return 0.5
 	}
 
-	// Parse hole cards
-	h1, h2 := b.state.HoleCards[0], b.state.HoleCards[1]
+	// Use string format for preflop calculations (until we refactor those helpers)
+	if len(b.state.HoleCardsStr) != 2 {
+		return 0.5
+	}
+	h1, h2 := b.state.HoleCardsStr[0], b.state.HoleCardsStr[1]
 	r1, r2 := client.CardRank(h1), client.CardRank(h2)
 	suited := client.IsSuited(h1, h2)
 
@@ -391,54 +401,33 @@ func (b *complexImprovedBot) evaluateHandStrength() float64 {
 	}
 
 	// Post-flop: Use SDK equity calculator for accurate strength evaluation
-	if len(b.state.Board) >= 3 {
-		// Use fast equity calculation for real-time decisions
-		equity := analysis.QuickEquity(b.state.HoleCards, b.state.Board, b.state.ActiveCount-1)
-		return equity
-	}
-
-	// Fallback for incomplete boards
-	strength := 0.3
-
-	// Check for pairs with board
-	for _, boardCard := range b.state.Board {
-		br := client.CardRank(boardCard)
-		if br == r1 || br == r2 {
-			strength += 0.2
+	if b.state.Board.CountCards() >= 3 {
+		// Use pre-parsed cards for equity calculation
+		if b.state.HoleCards == 0 || b.state.Board == 0 {
+			return 0.3 // Default strength if parsing failed
 		}
+
+		equityResult := analysis.CalculateEquity(b.state.HoleCards, b.state.Board, b.state.ActiveCount-1, 1000, b.rng)
+		return equityResult.Equity()
 	}
 
-	// High card bonus
-	if r1 == 14 || r2 == 14 {
-		strength += 0.1
-	}
-
-	// Adjust based on number of opponents
-	if b.state.ActiveCount > 2 {
-		strength *= (1.0 - float64(b.state.ActiveCount-2)*0.05)
-	}
-
-	return math.Min(math.Max(strength, 0.1), 0.9)
+	// Should not reach here but return default
+	return 0.3
 }
 
 // classifyPostflopSDK uses the SDK for advanced postflop analysis
 func (b *complexImprovedBot) classifyPostflopSDK() (string, float64) {
-	if len(b.state.HoleCards) != 2 || len(b.state.Board) < 3 {
+	if b.state.HoleCards.CountCards() != 2 || b.state.Board.CountCards() < 3 {
 		return "unknown", 0.3
 	}
 
-	// Parse cards using SDK
-	holeCards, err := b.parseHand(b.state.HoleCards)
-	if err != nil {
-		b.logger.Warn().Err(err).Msg("failed to parse hole cards")
+	// Use pre-parsed cards
+	if b.state.HoleCards == 0 || b.state.Board == 0 {
 		return "unknown", 0.3
 	}
 
-	board, err := b.parseHand(b.state.Board)
-	if err != nil {
-		b.logger.Warn().Err(err).Msg("failed to parse board")
-		return "unknown", 0.3
-	}
+	holeCards := b.state.HoleCards
+	board := b.state.Board
 
 	// Analyze board texture
 	boardTexture := classification.AnalyzeBoardTexture(board)
@@ -447,7 +436,7 @@ func (b *complexImprovedBot) classifyPostflopSDK() (string, float64) {
 	drawInfo := classification.DetectDraws(holeCards, board)
 
 	// Calculate equity using Monte Carlo simulation (small sample for speed)
-	equityResult := analysis.CalculateEquity(b.state.HoleCards, b.state.Board, b.state.ActiveCount-1, 1000, b.rng)
+	equityResult := analysis.CalculateEquity(holeCards, board, b.state.ActiveCount-1, 1000, b.rng)
 	equity := equityResult.Equity()
 
 	// Enhanced classification based on draws and board texture
@@ -793,13 +782,13 @@ func maxInt(a, b int) int {
 
 func (b *complexImprovedBot) preflopDecision(req protocol.ActionRequest, position int) (string, int) {
 	// Extract ranks/suited
-	if len(b.state.HoleCards) != 2 {
+	if len(b.state.HoleCardsStr) != 2 {
 		if hasAction(req.ValidActions, "check") {
 			return "check", 0
 		}
 		return "fold", 0
 	}
-	h1, h2 := b.state.HoleCards[0], b.state.HoleCards[1]
+	h1, h2 := b.state.HoleCardsStr[0], b.state.HoleCardsStr[1]
 	r1, r2 := client.CardRank(h1), client.CardRank(h2)
 	suited := client.IsSuited(h1, h2)
 	low, high := r1, r2
@@ -1118,11 +1107,11 @@ func (b *complexImprovedBot) calculateButtonDistance() int {
 
 // categorizeHoleCards categorizes preflop hand strength
 func (b *complexImprovedBot) categorizeHoleCards() string {
-	if len(b.state.HoleCards) != 2 {
+	if len(b.state.HoleCardsStr) != 2 {
 		return "unknown"
 	}
 
-	h1, h2 := b.state.HoleCards[0], b.state.HoleCards[1]
+	h1, h2 := b.state.HoleCardsStr[0], b.state.HoleCardsStr[1]
 	r1, r2 := client.CardRank(h1), client.CardRank(h2)
 	suited := client.IsSuited(h1, h2)
 
@@ -1164,13 +1153,13 @@ func (b *complexImprovedBot) categorizeHoleCards() string {
 
 // determineFinalStreet returns the furthest street reached
 func (b *complexImprovedBot) determineFinalStreet() string {
-	if b.state.RiverAction != "" || len(b.state.Board) >= 5 {
+	if b.state.RiverAction != "" || b.state.Board.CountCards() >= 5 {
 		return "River"
 	}
-	if b.state.TurnAction != "" || len(b.state.Board) >= 4 {
+	if b.state.TurnAction != "" || b.state.Board.CountCards() >= 4 {
 		return "Turn"
 	}
-	if b.state.FlopAction != "" || len(b.state.Board) >= 3 {
+	if b.state.FlopAction != "" || b.state.Board.CountCards() >= 3 {
 		return "Flop"
 	}
 	return "Preflop"

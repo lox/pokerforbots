@@ -151,6 +151,25 @@ func ParseCard(s string) (Card, error) {
 	return NewCard(rank, suit), nil
 }
 
+// ParseHand parses multiple cards from string representations and returns a Hand
+// Example: ParseHand("As", "Kh", "Qd") creates a hand with those three cards
+// Returns an error if any card strings are invalid or if duplicate cards are provided
+func ParseHand(cardStrs ...string) (Hand, error) {
+	var hand Hand
+	for _, cardStr := range cardStrs {
+		card, err := ParseCard(cardStr)
+		if err != nil {
+			return 0, err
+		}
+		// Check for duplicate cards
+		if hand.HasCard(card) {
+			return 0, fmt.Errorf("duplicate card: %s", cardStr)
+		}
+		hand.AddCard(card)
+	}
+	return hand, nil
+}
+
 // NewHand creates a hand from multiple cards
 func NewHand(cards ...Card) Hand {
 	var h Hand
