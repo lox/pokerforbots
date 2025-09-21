@@ -139,7 +139,7 @@ func TestStatisticsButtonDistance(t *testing.T) {
 
 	// Check button distance results
 	bdResults := stats.ButtonDistanceResults()
-	for pos := 0; pos < 6; pos++ {
+	for pos := range 6 {
 		bd := bdResults[pos]
 		if bd.Hands != 1 {
 			t.Errorf("Position %d: expected 1 hand, got %d", pos, bd.Hands)
@@ -225,7 +225,7 @@ func TestStatisticsThreadSafety(t *testing.T) {
 
 	// Concurrent writes
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			result := HandResult{
 				HandNum: i + 1,
 				NetBB:   1.0,
@@ -237,7 +237,7 @@ func TestStatisticsThreadSafety(t *testing.T) {
 
 	// Concurrent reads
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			_ = stats.BB100()
 			_ = stats.Mean()
 			_ = stats.StdDev()
@@ -356,8 +356,7 @@ func BenchmarkStatisticsAdd(b *testing.B) {
 		HandCategory:   "Premium",
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		result.HandNum = i + 1
 		_ = stats.Add(result)
 	}
@@ -366,12 +365,11 @@ func BenchmarkStatisticsAdd(b *testing.B) {
 func BenchmarkStatisticsBB100(b *testing.B) {
 	stats := NewStatistics(10)
 	// Add some data
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		_ = stats.Add(HandResult{HandNum: i + 1, NetBB: 1.0})
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = stats.BB100()
 	}
 }
@@ -379,12 +377,11 @@ func BenchmarkStatisticsBB100(b *testing.B) {
 func BenchmarkStatisticsGetStats(b *testing.B) {
 	stats := NewStatistics(10)
 	// Add some data
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		_ = stats.Add(HandResult{HandNum: i + 1, NetBB: 1.0})
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		stats.GetStats()
 	}
 }

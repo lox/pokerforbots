@@ -130,8 +130,8 @@ func TestAll52Cards(t *testing.T) {
 	// Test all 52 cards encode/decode correctly
 	cards := make(map[string]bool)
 
-	for suit := uint8(0); suit < 4; suit++ {
-		for rank := uint8(0); rank < 13; rank++ {
+	for suit := range uint8(4) {
+		for rank := range uint8(13) {
 			card := NewCard(rank, suit)
 			str := card.String()
 
@@ -227,7 +227,7 @@ func TestGetSuitMask(t *testing.T) {
 	cards := []Card{}
 
 	// Add all spades
-	for rank := uint8(0); rank < 13; rank++ {
+	for rank := range uint8(13) {
 		cards = append(cards, NewCard(rank, Spades))
 	}
 
@@ -291,15 +291,15 @@ func TestDeck(t *testing.T) {
 }
 
 func BenchmarkCardCreation(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = NewCard(Ace, Spades)
 	}
 }
 
 func BenchmarkCardString(b *testing.B) {
 	card := NewCard(Ace, Spades)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		_ = card.String()
 	}
 }
@@ -353,7 +353,7 @@ func TestParseHand(t *testing.T) {
 }
 
 func BenchmarkParseCard(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = ParseCard("As")
 	}
 }
@@ -363,8 +363,7 @@ func BenchmarkHandOperations(b *testing.B) {
 	c2 := NewCard(King, Hearts)
 	c3 := NewCard(Queen, Diamonds)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		hand := NewHand(c1, c2)
 		hand.AddCard(c3)
 		_ = hand.CountCards()

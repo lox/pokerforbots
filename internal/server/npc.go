@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"math/rand"
+	"slices"
 	"strings"
 	"time"
 
@@ -151,15 +152,11 @@ type randomStrategy struct{}
 func (callingStationStrategy) Name() string { return "calling" }
 
 func (callingStationStrategy) Decide(req *protocol.ActionRequest, st npcState, rng *rand.Rand) (string, int) {
-	for _, action := range req.ValidActions {
-		if action == "check" {
-			return "check", 0
-		}
+	if slices.Contains(req.ValidActions, "check") {
+		return "check", 0
 	}
-	for _, action := range req.ValidActions {
-		if action == "call" {
-			return "call", 0
-		}
+	if slices.Contains(req.ValidActions, "call") {
+		return "call", 0
 	}
 	return "fold", 0
 }
@@ -170,10 +167,7 @@ func (aggressiveStrategy) Decide(req *protocol.ActionRequest, st npcState, rng *
 	if rng.Float32() < 0.7 {
 		for _, action := range req.ValidActions {
 			if action == "raise" {
-				minRequired := req.MinBet
-				if req.MinRaise > minRequired {
-					minRequired = req.MinRaise
-				}
+				minRequired := max(req.MinRaise, req.MinBet)
 				amount := minRequired
 				if req.Pot > 0 {
 					amount = req.Pot * (2 + rng.Intn(2))
@@ -192,41 +186,29 @@ func (aggressiveStrategy) Decide(req *protocol.ActionRequest, st npcState, rng *
 				}
 				// If stack is below min required, prefer all-in (if allowed) or fallback to call/check
 				if st.Chips < minRequired {
-					for _, a := range req.ValidActions {
-						if a == "allin" {
-							return "allin", 0
-						}
+					if slices.Contains(req.ValidActions, "allin") {
+						return "allin", 0
 					}
-					for _, a := range req.ValidActions {
-						if a == "call" {
-							return "call", 0
-						}
+					if slices.Contains(req.ValidActions, "call") {
+						return "call", 0
 					}
-					for _, a := range req.ValidActions {
-						if a == "check" {
-							return "check", 0
-						}
+					if slices.Contains(req.ValidActions, "check") {
+						return "check", 0
 					}
 					return "fold", 0
 				}
 				return "raise", amount
 			}
 		}
-		for _, action := range req.ValidActions {
-			if action == "allin" {
-				return "allin", 0
-			}
+		if slices.Contains(req.ValidActions, "allin") {
+			return "allin", 0
 		}
 	}
-	for _, action := range req.ValidActions {
-		if action == "call" {
-			return "call", 0
-		}
+	if slices.Contains(req.ValidActions, "call") {
+		return "call", 0
 	}
-	for _, action := range req.ValidActions {
-		if action == "check" {
-			return "check", 0
-		}
+	if slices.Contains(req.ValidActions, "check") {
+		return "check", 0
 	}
 	return "fold", 0
 }
@@ -239,10 +221,7 @@ func (randomStrategy) Decide(req *protocol.ActionRequest, st npcState, rng *rand
 	}
 	action := req.ValidActions[rng.Intn(len(req.ValidActions))]
 	if action == "raise" {
-		min := req.MinBet
-		if req.MinRaise > min {
-			min = req.MinRaise
-		}
+		min := max(req.MinRaise, req.MinBet)
 		max := st.Chips
 		if max < min {
 			return "allin", 0

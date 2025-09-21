@@ -238,15 +238,12 @@ func (p *BotPool) tryMatch() {
 	}
 
 	// Determine number of players for this hand
-	numPlayers := availableCount
-	if numPlayers > p.maxPlayers {
-		numPlayers = p.maxPlayers
-	}
+	numPlayers := min(availableCount, p.maxPlayers)
 
 	// Collect all available bots first for random selection
 	allBots := make([]*Bot, 0, availableCount)
 collectLoop:
-	for i := 0; i < availableCount; i++ {
+	for range availableCount {
 		select {
 		case <-p.stopCh:
 			return

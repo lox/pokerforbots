@@ -203,7 +203,7 @@ func (h Hand) GetSuitMask(suit uint8) uint16 {
 // GetRankMask returns a bitmask of which ranks are present (for straight detection)
 func (h Hand) GetRankMask() uint16 {
 	mask := uint16(0)
-	for suit := uint8(0); suit < 4; suit++ {
+	for suit := range uint8(4) {
 		mask |= h.GetSuitMask(suit)
 	}
 	// Handle ace-low straight (A-2-3-4-5)
@@ -217,7 +217,7 @@ func (h Hand) GetRankMask() uint16 {
 // Merged from helpers.go
 func (h Hand) GetCard(n int) Card {
 	count := 0
-	for i := uint8(0); i < 52; i++ {
+	for i := range uint8(52) {
 		card := Card(1) << i
 		if h&Hand(card) != 0 {
 			if count == n {

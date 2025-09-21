@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -260,34 +261,26 @@ func (b *benchBot) OnActionRequest(state *client.GameState, req protocol.ActionR
 	// 70% call/check, 20% fold, 10% raise
 	switch {
 	case r < 0.7:
-		for _, action := range req.ValidActions {
-			if action == "check" {
-				return "check", 0, nil
-			}
+		if slices.Contains(req.ValidActions, "check") {
+			return "check", 0, nil
 		}
-		for _, action := range req.ValidActions {
-			if action == "call" {
-				return "call", 0, nil
-			}
+		if slices.Contains(req.ValidActions, "call") {
+			return "call", 0, nil
 		}
 	case r < 0.9:
-		for _, action := range req.ValidActions {
-			if action == "fold" {
-				return "fold", 0, nil
-			}
+		if slices.Contains(req.ValidActions, "fold") {
+			return "fold", 0, nil
 		}
 	default:
-		for _, action := range req.ValidActions {
-			if action == "raise" {
-				amount := req.MinBet
-				if req.Pot > 0 && b.rng.Float32() < 0.3 {
-					amount = req.Pot / 2 // Half pot bet
-				}
-				if amount < req.MinBet {
-					amount = req.MinBet
-				}
-				return "raise", amount, nil
+		if slices.Contains(req.ValidActions, "raise") {
+			amount := req.MinBet
+			if req.Pot > 0 && b.rng.Float32() < 0.3 {
+				amount = req.Pot / 2 // Half pot bet
 			}
+			if amount < req.MinBet {
+				amount = req.MinBet
+			}
+			return "raise", amount, nil
 		}
 	}
 

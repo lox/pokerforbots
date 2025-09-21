@@ -144,7 +144,7 @@ func TestDetailedStatsCollectorMemoryLimit(t *testing.T) {
 	bot := &Bot{ID: "bot1", displayName: "TestBot", role: "player"}
 
 	// Record 3 hands
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		detail := HandOutcomeDetail{
 			HandID:         "hand" + string(rune(i)),
 			ButtonPosition: 0,
@@ -285,8 +285,7 @@ func BenchmarkStatsCollection(b *testing.B) {
 		},
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = collector.RecordHandOutcome(detail)
 	}
 }
@@ -298,8 +297,7 @@ func BenchmarkNullStatsCollection(b *testing.B) {
 		HandID: "hand1",
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = collector.RecordHandOutcome(detail)
 	}
 }

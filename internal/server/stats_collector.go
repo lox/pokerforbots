@@ -218,7 +218,7 @@ func (d *DetailedStatsCollector) GetDetailedStats(botID string) *protocol.Player
 	// Add position stats
 	detailed.PositionStats = make(map[string]protocol.PositionStatSummary)
 	buttonDist := stats.ButtonDistanceResults()
-	for dist := 0; dist < 6; dist++ {
+	for dist := range 6 {
 		bd := buttonDist[dist]
 		if bd.Hands > 0 {
 			posName := statistics.GetPositionName(dist)

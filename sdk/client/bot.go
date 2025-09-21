@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"slices"
 
 	"github.com/gorilla/websocket"
 	"github.com/lox/pokerforbots/protocol"
@@ -273,11 +274,8 @@ func (b *Bot) tryHandResult(data []byte) bool {
 				continue
 			}
 		}
-		for _, lab := range labels {
-			if w.Name == lab {
-				payout += w.Amount
-				break
-			}
+		if slices.Contains(labels, w.Name) {
+			payout += w.Amount
 		}
 	}
 	if payout > 0 {

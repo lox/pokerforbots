@@ -117,7 +117,7 @@ func CalculateEquity(heroHand poker.Hand, board poker.Hand, opponents int, simul
 	// Pre-allocate deck for reuse
 	deck := poker.NewDeck(rng)
 
-	for sim := 0; sim < simulations; sim++ {
+	for range simulations {
 		deck.Shuffle()
 
 		// Declare variables at top to avoid goto issues
@@ -132,7 +132,7 @@ func CalculateEquity(heroHand poker.Hand, board poker.Hand, opponents int, simul
 		// Deal remaining board cards if needed
 		finalBoard := board
 		cardsNeeded := 5 - board.CountCards()
-		for i := 0; i < cardsNeeded; i++ {
+		for range cardsNeeded {
 			for {
 				card := deck.DealOne()
 				if card == 0 {
@@ -156,7 +156,7 @@ func CalculateEquity(heroHand poker.Hand, board poker.Hand, opponents int, simul
 		for opp := 0; opp < opponents; opp++ {
 			// Deal 2 hole cards for this opponent
 			var oppHand poker.Hand
-			for i := 0; i < 2; i++ {
+			for range 2 {
 				for {
 					card := deck.DealOne()
 					if card == 0 {

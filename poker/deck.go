@@ -20,8 +20,8 @@ func NewDeck(rng *rand.Rand) *Deck {
 
 	// Create all 52 cards
 	i := 0
-	for suit := uint8(0); suit < 4; suit++ {
-		for rank := uint8(0); rank < 13; rank++ {
+	for suit := range uint8(4) {
+		for rank := range uint8(13) {
 			d.cards[i] = NewCard(rank, suit)
 			i++
 		}

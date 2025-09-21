@@ -214,9 +214,7 @@ func BenchmarkCalculateEquity(b *testing.B) {
 	board, _ := poker.ParseHand("2c", "7h", "Kd")
 	rng := rand.New(rand.NewSource(42))
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		CalculateEquity(heroHand, board, 1, 10000, rng)
 	}
 }
@@ -237,7 +235,7 @@ func generateRandomEquityScenarios(n int, seed int64) []struct {
 		opponents int
 	}, n)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		// Ensure enough cards remain; reshuffle if needed
 		if deck.CardsRemaining() < 7 {
 			deck.Shuffle()
@@ -272,10 +270,10 @@ func BenchmarkCalculateEquity_LargeSample(b *testing.B) {
 	rng := rand.New(rand.NewSource(1337))
 
 	b.ReportAllocs()
-	b.ResetTimer()
+
 	start := time.Now()
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		scenario := scenarios[i%len(scenarios)]
 		result := CalculateEquity(scenario.heroHand, scenario.board, scenario.opponents, simulations, rng)
 		benchSinkEquity = result.Equity()
@@ -298,10 +296,10 @@ func BenchmarkCalculateEquity_HighSims(b *testing.B) {
 	rng := rand.New(rand.NewSource(42))
 
 	b.ReportAllocs()
-	b.ResetTimer()
+
 	start := time.Now()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		result := CalculateEquity(heroHand, board, 1, simulations, rng)
 		benchSinkEquity = result.Equity()
 	}
@@ -338,7 +336,7 @@ func BenchmarkCalculateEquity_MultiWay(b *testing.B) {
 			b.ResetTimer()
 			start := time.Now()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				result := CalculateEquity(heroHand, board, tc.opponents, simulations, rng)
 				benchSinkEquity = result.Equity()
 			}
@@ -379,7 +377,7 @@ func BenchmarkCalculateEquity_BoardTextures(b *testing.B) {
 			b.ResetTimer()
 			start := time.Now()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				result := CalculateEquity(heroHand, tc.board, 1, simulations, rng)
 				benchSinkEquity = result.Equity()
 			}
@@ -411,10 +409,10 @@ func BenchmarkCalculateEquity_Realistic(b *testing.B) {
 	rng := rand.New(rand.NewSource(42))
 
 	b.ReportAllocs()
-	b.ResetTimer()
+
 	start := time.Now()
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		scenario := scenarios[i%len(scenarios)]
 		result := CalculateEquity(scenario.heroHand, scenario.board, scenario.opponents, simulations, rng)
 		benchSinkEquity = result.Equity()

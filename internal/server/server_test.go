@@ -139,11 +139,9 @@ func TestWebSocketConnection(t *testing.T) {
 	srv.pool.minPlayers = 10
 	srv.pool.config.RequirePlayer = false
 	var poolWg sync.WaitGroup
-	poolWg.Add(1)
-	go func() {
-		defer poolWg.Done()
+	poolWg.Go(func() {
 		srv.pool.Run()
-	}()
+	})
 	t.Cleanup(func() {
 		srv.pool.Stop()
 		poolWg.Wait()
@@ -190,11 +188,9 @@ func TestMultipleBotConnections(t *testing.T) {
 	srv.pool.minPlayers = 10
 	srv.pool.config.RequirePlayer = false
 	var poolWg sync.WaitGroup
-	poolWg.Add(1)
-	go func() {
-		defer poolWg.Done()
+	poolWg.Go(func() {
 		srv.pool.Run()
-	}()
+	})
 	t.Cleanup(func() {
 		srv.pool.Stop()
 		poolWg.Wait()
@@ -208,7 +204,7 @@ func TestMultipleBotConnections(t *testing.T) {
 
 	// Connect multiple bots
 	var bots []*websocket.Conn
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		if err != nil {
 			t.Fatalf("Failed to connect bot %d: %v", i, err)
@@ -399,11 +395,9 @@ func TestHandLimitLogic(t *testing.T) {
 
 	// Start pool
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		pool.Run()
-	}()
+	})
 	defer func() {
 		pool.Stop()
 		wg.Wait()
@@ -414,7 +408,7 @@ func TestHandLimitLogic(t *testing.T) {
 
 	// Create bots and register them - they should not trigger new hands
 	bots := make([]*Bot, 0, 4)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		bot := &Bot{
 			ID:       fmt.Sprintf("test-bot-%d", i+1),
 			send:     make(chan []byte, 256),

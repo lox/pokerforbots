@@ -131,7 +131,7 @@ func createDeterministicBotIDGen(rng *rand.Rand, withRNG func(func(*rand.Rand)))
 	return func() string {
 		var uuid [16]byte
 		withRNG(func(r *rand.Rand) {
-			for i := 0; i < 16; i++ {
+			for i := range 16 {
 				uuid[i] = byte(r.Intn(256))
 			}
 		})
@@ -728,7 +728,7 @@ func (s *Server) serveAdminGameStatsMarkdown(w http.ResponseWriter, id string) {
 
 					_, _ = fmt.Fprintf(w, "### Position analysis\n\n")
 					bd := stat.ButtonDistanceResults()
-					for dist := 0; dist < 6; dist++ {
+					for dist := range 6 {
 						pbd := bd[dist]
 						if pbd.Hands > 0 {
 							posMean := stat.ButtonDistanceMean(dist)

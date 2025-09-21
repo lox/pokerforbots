@@ -53,11 +53,18 @@ tasks:
     desc: Run linters
     cmds:
       - bin/golangci-lint run ./...
+      - bin/go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test ./...
 
   format:
     desc: Format code
     cmds:
       - bin/golangci-lint fmt ./...
+
+  lint:fix:
+    desc: Run linters with fix
+    cmds:
+      - bin/golangci-lint run --fix ./...
+      - bin/go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test -fix ./...
 
   bench:
     desc: Run WebSocket performance benchmark
@@ -68,7 +75,7 @@ tasks:
   bench:go:
     desc: Run Go test benchmarks
     cmds:
-      - go test -bench=. -benchmem ./...
+      - go test -bench=. -benchmem {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}-benchtime=100ms{{end}} ./...
 
   bench:evaluator:
     desc: Run evaluator large-sample benchmarks (sequential and parallel)

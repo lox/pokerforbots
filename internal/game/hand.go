@@ -346,7 +346,7 @@ func (h *HandState) ForceFold(seat int) {
 
 func (h *HandState) nextActivePlayer(from int) int {
 	numPlayers := len(h.Players)
-	for i := 0; i < numPlayers; i++ {
+	for i := range numPlayers {
 		pos := (from + i) % numPlayers
 		if !h.Players[pos].Folded && !h.Players[pos].AllInFlag {
 			return pos

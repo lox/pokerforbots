@@ -19,11 +19,9 @@ func testLogger() zerolog.Logger {
 func startTestPool(t *testing.T, pool *BotPool) func() {
 	t.Helper()
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		pool.Run()
-	}()
+	})
 	return func() {
 		pool.Stop()
 		wg.Wait()

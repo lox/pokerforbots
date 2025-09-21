@@ -116,7 +116,7 @@ func AnalyzeFlushPotential(board poker.Hand) FlushInfo {
 
 	// Count cards of each suit using efficient bitmasks and keep the
 	// per-suit masks for tie-breaking logic later.
-	for suit := uint8(0); suit < 4; suit++ {
+	for suit := range uint8(4) {
 		suitMask := board.GetSuitMask(suit)
 		suitCounts[suit] = bits.OnesCount16(suitMask)
 		suitMasks[suit] = suitMask
@@ -185,7 +185,7 @@ func AnalyzeStraightPotential(board poker.Hand) StraightInfo {
 	// Build a rank mask without the duplicated ace-low bit so we can work with
 	// strictly increasing rank indices.
 	var rankMask uint16
-	for suit := uint8(0); suit < 4; suit++ {
+	for suit := range uint8(4) {
 		rankMask |= board.GetSuitMask(suit)
 	}
 
@@ -199,7 +199,7 @@ func AnalyzeStraightPotential(board poker.Hand) StraightInfo {
 	}
 
 	ranks := make([]int, 0, cardCount)
-	for rank := 0; rank < 13; rank++ {
+	for rank := range 13 {
 		if rankMask&(1<<rank) != 0 {
 			ranks = append(ranks, rank)
 		}
@@ -279,9 +279,9 @@ func countBoardPairs(board poker.Hand) int {
 	var rankCounts [13]int
 
 	// Count each rank across all suits
-	for suit := uint8(0); suit < 4; suit++ {
+	for suit := range uint8(4) {
 		suitMask := board.GetSuitMask(suit)
-		for rank := uint8(0); rank < 13; rank++ {
+		for rank := range uint8(13) {
 			if suitMask&(1<<rank) != 0 {
 				rankCounts[rank]++
 			}
@@ -303,7 +303,7 @@ func countHighCards(board poker.Hand) int {
 	highCardCount := 0
 
 	// Check each suit for high cards (ranks 8-12 = T-A)
-	for suit := uint8(0); suit < 4; suit++ {
+	for suit := range uint8(4) {
 		suitMask := board.GetSuitMask(suit)
 		highMask := suitMask & 0x1F00 // Bits 8-12 (T-A)
 		highCardCount += bits.OnesCount16(highMask)

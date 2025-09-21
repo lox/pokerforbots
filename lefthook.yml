@@ -20,3 +20,9 @@ pre-commit:
     go-lint:
       run: bin/golangci-lint run ./...
       fail_text: "Linting failed! Fix all linter issues before committing."
+
+    # Modernize analysis (auto-fix and restage changes)
+    go-modernize:
+      run: go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test -fix ./...
+      fail_text: "Modernization issues detected! Auto-fixed where possible; review and commit."
+      stage_fixed: true

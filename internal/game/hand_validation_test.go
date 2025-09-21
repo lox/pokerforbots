@@ -303,7 +303,7 @@ func TestAllInWithSidePotsValidation(t *testing.T) {
 // Helper function to count board cards
 func countBoardCards(board poker.Hand) int {
 	count := 0
-	for i := uint(0); i < 52; i++ {
+	for i := range uint(52) {
 		if board&(1<<i) != 0 {
 			count++
 		}

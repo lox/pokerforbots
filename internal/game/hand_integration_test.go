@@ -2,6 +2,7 @@ package game
 
 import (
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -77,7 +78,7 @@ func TestCompleteHandFlow(t *testing.T) {
 
 		// Verify board has 3 cards
 		boardCards := 0
-		for i := uint(0); i < 52; i++ {
+		for i := range uint(52) {
 			if h.Board&(1<<i) != 0 {
 				boardCards++
 			}
@@ -116,7 +117,7 @@ func TestCompleteHandFlow(t *testing.T) {
 	t.Run("Turn", func(t *testing.T) {
 		// Verify board has 4 cards
 		boardCards := 0
-		for i := uint(0); i < 52; i++ {
+		for i := range uint(52) {
 			if h.Board&(1<<i) != 0 {
 				boardCards++
 			}
@@ -153,7 +154,7 @@ func TestCompleteHandFlow(t *testing.T) {
 	t.Run("River", func(t *testing.T) {
 		// Verify board has 5 cards
 		boardCards := 0
-		for i := uint(0); i < 52; i++ {
+		for i := range uint(52) {
 			if h.Board&(1<<i) != 0 {
 				boardCards++
 			}
@@ -483,13 +484,7 @@ func TestSidePotCalculation(t *testing.T) {
 	}
 
 	// Verify ShortStack is not eligible for side pot
-	shortStackEligible := false
-	for _, seat := range sidePot.Eligible {
-		if seat == 0 {
-			shortStackEligible = true
-			break
-		}
-	}
+	shortStackEligible := slices.Contains(sidePot.Eligible, 0)
 	if shortStackEligible {
 		t.Error("ShortStack should not be eligible for side pot")
 	}

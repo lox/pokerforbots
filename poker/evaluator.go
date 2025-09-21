@@ -68,7 +68,7 @@ func Evaluate7Cards(hand Hand) HandRank {
 
 	// Check for flush first (most restrictive) - check ALL suits for best flush
 	bestFlushRank := HandRank(0)
-	for suit := uint8(0); suit < 4; suit++ {
+	for suit := range uint8(4) {
 		suitMask := hand.GetSuitMask(suit)
 		if bits.OnesCount16(suitMask) >= 5 {
 			flushCards := getFlushCards(hand, suit)
@@ -149,9 +149,9 @@ func Evaluate7Cards(hand Hand) HandRank {
 func countRanks(hand Hand) [13]uint8 {
 	var counts [13]uint8
 	// Check each possible card
-	for suit := uint8(0); suit < 4; suit++ {
+	for suit := range uint8(4) {
 		suitMask := hand.GetSuitMask(suit)
-		for rank := uint8(0); rank < 13; rank++ {
+		for rank := range uint8(13) {
 			if suitMask&(1<<rank) != 0 {
 				counts[rank]++
 			}

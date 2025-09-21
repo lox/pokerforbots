@@ -2,6 +2,7 @@ package server
 
 import (
 	"math/rand"
+	"slices"
 	"testing"
 	"time"
 
@@ -349,13 +350,7 @@ func TestValidActionsGeneration(t *testing.T) {
 
 			// Check each expected action is present
 			for _, expected := range tt.expectedValid {
-				found := false
-				for _, actual := range actionStrings {
-					if actual == expected {
-						found = true
-						break
-					}
-				}
+				found := slices.Contains(actionStrings, expected)
 				if !found {
 					t.Errorf("%s: expected action '%s' not found in %v",
 						tt.description, expected, actionStrings)

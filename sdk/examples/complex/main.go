@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -552,13 +553,7 @@ func (b *complexImprovedBot) makeStrategicDecision(req protocol.ActionRequest, h
 	}
 
 	// Postflop: apply fold thresholds, SPR awareness, and standardized sizing
-	canCheck := false
-	for _, a := range req.ValidActions {
-		if a == "check" {
-			canCheck = true
-			break
-		}
-	}
+	canCheck := slices.Contains(req.ValidActions, "check")
 
 	class, equity := b.classifyPostflopSDK()
 	if equity <= 0 {
@@ -575,10 +570,8 @@ func (b *complexImprovedBot) makeStrategicDecision(req protocol.ActionRequest, h
 	spr := b.calcSPR(req)
 	// If very low SPR with strong equity, prefer jamming when available
 	if spr < 2.0 && equity > 0.60 {
-		for _, a := range req.ValidActions {
-			if a == "allin" {
-				return "allin", 0
-			}
+		if slices.Contains(req.ValidActions, "allin") {
+			return "allin", 0
 		}
 	}
 
@@ -636,10 +629,8 @@ func (b *complexImprovedBot) makeStrategicDecision(req protocol.ActionRequest, h
 			// If aggro villain uses small bets, apply pressure more often
 			if isAggro && betPct <= 0.33 && !avoidRaise {
 				if class == "ComboDraw" || class == "StrongDraw" || equity >= 0.50 {
-					for _, a := range req.ValidActions {
-						if a == "raise" {
-							return b.raiseOrJam(req, b.betSize(req, 0.33))
-						}
+					if slices.Contains(req.ValidActions, "raise") {
+						return b.raiseOrJam(req, b.betSize(req, 0.33))
 					}
 				}
 			}
@@ -648,29 +639,23 @@ func (b *complexImprovedBot) makeStrategicDecision(req protocol.ActionRequest, h
 
 	// Raise for value with very strong hands
 	if equity >= 0.75 && !avoidRaise {
-		for _, a := range req.ValidActions {
-			if a == "raise" {
-				return b.raiseOrJam(req, b.betSize(req, 0.50))
-			}
+		if slices.Contains(req.ValidActions, "raise") {
+			return b.raiseOrJam(req, b.betSize(req, 0.50))
 		}
 	}
 
 	// Semi-bluff occasionally with strong draws vs small bets
 	if (class == "ComboDraw" || class == "StrongDraw") && betPct <= 0.5 && !avoidRaise && position <= 1 {
 		if b.rng.Float64() < 0.25 { // 25% frequency
-			for _, a := range req.ValidActions {
-				if a == "raise" {
-					return b.raiseOrJam(req, b.betSize(req, 0.33))
-				}
+			if slices.Contains(req.ValidActions, "raise") {
+				return b.raiseOrJam(req, b.betSize(req, 0.33))
 			}
 		}
 	}
 
 	// Otherwise continue by calling if possible
-	for _, a := range req.ValidActions {
-		if a == "call" {
-			return "call", 0
-		}
+	if slices.Contains(req.ValidActions, "call") {
+		return "call", 0
 	}
 
 	// Fallback
@@ -679,37 +664,22 @@ func (b *complexImprovedBot) makeStrategicDecision(req protocol.ActionRequest, h
 
 // Helper functions (keeping the same implementations as original)
 func (b *complexImprovedBot) betSize(req protocol.ActionRequest, pct float64) int {
-	size := int(float64(req.Pot) * pct)
-	if size < req.MinBet {
-		size = req.MinBet
-	}
-	if size > b.state.Chips {
-		size = b.state.Chips
-	}
-	if size < 0 {
-		size = 0
-	}
+	size := max(min(max(int(float64(req.Pot)*pct), req.MinBet), b.state.Chips), 0)
 	return size
 }
 
 func (b *complexImprovedBot) raiseOrJam(req protocol.ActionRequest, amt int) (string, int) {
 	if amt < req.MinBet {
 		if amt >= b.state.Chips {
-			for _, a := range req.ValidActions {
-				if a == "allin" {
-					return "allin", 0
-				}
+			if slices.Contains(req.ValidActions, "allin") {
+				return "allin", 0
 			}
 		}
-		for _, a := range req.ValidActions {
-			if a == "call" {
-				return "call", 0
-			}
+		if slices.Contains(req.ValidActions, "call") {
+			return "call", 0
 		}
-		for _, a := range req.ValidActions {
-			if a == "check" {
-				return "check", 0
-			}
+		if slices.Contains(req.ValidActions, "check") {
+			return "check", 0
 		}
 		return "fold", 0
 	}
@@ -765,12 +735,7 @@ func (b *complexImprovedBot) shouldFold(req protocol.ActionRequest, equity float
 
 // Preflop decision logic (keeping the same implementation)
 func hasAction(valid []string, target string) bool {
-	for _, a := range valid {
-		if a == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(valid, target)
 }
 
 func maxInt(a, b int) int {
@@ -801,10 +766,7 @@ func (b *complexImprovedBot) preflopDecision(req protocol.ActionRequest, positio
 	facing := req.ToCall
 
 	// Open sizes (respect min raise requirements)
-	minR := req.MinRaise
-	if minR < req.MinBet {
-		minR = req.MinBet
-	}
+	minR := max(req.MinRaise, req.MinBet)
 	openSize := maxInt(minR, int(2.5*float64(bb)))
 	threeBetIP := maxInt(minR, int(8.5*float64(bb)))
 	threeBetOOP := maxInt(minR, int(10.0*float64(bb)))
@@ -1012,10 +974,7 @@ func (b *complexImprovedBot) preflopDecision(req protocol.ActionRequest, positio
 			if openerLoose && !inDefendCall() && hasAction(req.ValidActions, "raise") && inBluff3Bet() && inPosition {
 				// occasionally apply pressure
 				if b.rng.Float64() < 0.25 {
-					amt := threeBetIP
-					if amt > b.state.Chips {
-						amt = b.state.Chips
-					}
+					amt := min(threeBetIP, b.state.Chips)
 					return b.raiseOrJam(req, amt)
 				}
 			}
@@ -1031,10 +990,7 @@ func (b *complexImprovedBot) preflopDecision(req protocol.ActionRequest, positio
 			return "allin", 0
 		}
 		if hasAction(req.ValidActions, "raise") && qqPlusAK {
-			amt := fourBetSize
-			if amt > b.state.Chips {
-				amt = b.state.Chips
-			}
+			amt := min(fourBetSize, b.state.Chips)
 			return b.raiseOrJam(req, amt)
 		}
 		if hasAction(req.ValidActions, "call") && pairAtLeast(10) && inPosition { // flats TT/JJ IP sometimes

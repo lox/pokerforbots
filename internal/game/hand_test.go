@@ -2,6 +2,7 @@ package game
 
 import (
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/lox/pokerforbots/poker"
@@ -62,26 +63,17 @@ func TestGetValidActions(t *testing.T) {
 	// First player to act (Alice, UTG)
 	actions := h.GetValidActions()
 
-	hasAction := func(actions []Action, target Action) bool {
-		for _, a := range actions {
-			if a == target {
-				return true
-			}
-		}
-		return false
-	}
-
 	// Should be able to fold, call, or raise
-	if !hasAction(actions, Fold) {
+	if !slices.Contains(actions, Fold) {
 		t.Error("Should be able to fold")
 	}
-	if !hasAction(actions, Call) {
+	if !slices.Contains(actions, Call) {
 		t.Error("Should be able to call")
 	}
-	if !hasAction(actions, Raise) {
+	if !slices.Contains(actions, Raise) {
 		t.Error("Should be able to raise")
 	}
-	if hasAction(actions, Check) {
+	if slices.Contains(actions, Check) {
 		t.Error("Should not be able to check (facing a bet)")
 	}
 }

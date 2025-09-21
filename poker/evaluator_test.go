@@ -160,8 +160,7 @@ func TestCompareHands(t *testing.T) {
 func BenchmarkEvaluate7Cards(b *testing.B) {
 	hand := parseCards("As", "Kh", "Qd", "Jc", "Ts", "9h", "7d")
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = Evaluate7Cards(hand)
 	}
 }
@@ -169,8 +168,7 @@ func BenchmarkEvaluate7Cards(b *testing.B) {
 func BenchmarkEvaluateFlush(b *testing.B) {
 	hand := parseCards("As", "Ks", "Qs", "Js", "9s", "7h", "5d")
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = Evaluate7Cards(hand)
 	}
 }
@@ -178,8 +176,7 @@ func BenchmarkEvaluateFlush(b *testing.B) {
 func BenchmarkEvaluateFullHouse(b *testing.B) {
 	hand := parseCards("As", "Ah", "Ad", "Kc", "Kh", "9h", "7d")
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = Evaluate7Cards(hand)
 	}
 }
@@ -191,7 +188,7 @@ func generateRandomHands(n int, seed int64) []Hand {
 	rng := rand.New(rand.NewSource(seed))
 	deck := NewDeck(rng)
 	hands := make([]Hand, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		// Ensure enough cards remain; reshuffle if needed
 		if deck.CardsRemaining() < 7 {
 			deck.Shuffle()
@@ -208,9 +205,9 @@ func BenchmarkEvaluate7Cards_LargeSample(b *testing.B) {
 	hands := generateRandomHands(sampleSize, 42)
 
 	b.ReportAllocs()
-	b.ResetTimer()
+
 	start := time.Now()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		h := hands[i%len(hands)]
 		benchSink = Evaluate7Cards(h)
 	}

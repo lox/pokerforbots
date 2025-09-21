@@ -25,7 +25,7 @@ func newTestBot(id string, pool *BotPool) *Bot {
 
 func newTestBots(count int, pool *BotPool) []*Bot {
 	bots := make([]*Bot, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		bots[i] = newTestBot(fmt.Sprintf("bot%d", i), pool)
 	}
 	return bots
@@ -245,13 +245,13 @@ func TestBotPoolConcurrentOperations(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Concurrently register and unregister bots
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
 
 			bots := make([]*Bot, botsPerGoroutine)
-			for j := 0; j < botsPerGoroutine; j++ {
+			for j := range botsPerGoroutine {
 				bots[j] = newTestBot(fmt.Sprintf("concurrent-bot-%d-%d", id, j), pool)
 				pool.Register(bots[j])
 			}
@@ -260,7 +260,7 @@ func TestBotPoolConcurrentOperations(t *testing.T) {
 			time.Sleep(50 * time.Millisecond)
 
 			// Unregister some bots
-			for j := 0; j < botsPerGoroutine/2; j++ {
+			for j := range botsPerGoroutine / 2 {
 				pool.Unregister(bots[j])
 			}
 		}(i)

@@ -2,6 +2,7 @@ package statistics
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"sort"
 	"sync"
@@ -473,9 +474,7 @@ func (s *Statistics) StreetStats() map[string]*StreetStat {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	copy := make(map[string]*StreetStat)
-	for k, v := range s.streetStats {
-		copy[k] = v
-	}
+	maps.Copy(copy, s.streetStats)
 	return copy
 }
 
@@ -484,9 +483,7 @@ func (s *Statistics) CategoryStats() map[string]*CategoryStat {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	copy := make(map[string]*CategoryStat)
-	for k, v := range s.categoryStats {
-		copy[k] = v
-	}
+	maps.Copy(copy, s.categoryStats)
 	return copy
 }
 
@@ -560,7 +557,7 @@ func (s *Statistics) Summary() string {
 
 	// Position analysis
 	summary += "=== POSITION ANALYSIS ===\n"
-	for dist := 0; dist < 6; dist++ {
+	for dist := range 6 {
 		bd := s.buttonDistanceResults[dist]
 		if bd.Hands > 0 {
 			posMean := bd.SumBB / float64(bd.Hands)

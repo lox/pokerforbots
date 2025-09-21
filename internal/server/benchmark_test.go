@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"math/rand"
+	"slices"
 	"testing"
 	"time"
 
@@ -35,7 +36,7 @@ func BenchmarkGameEngine(b *testing.B) {
 		b.Run(cfg.name, func(b *testing.B) {
 			b.ReportAllocs()
 
-			for i := 0; i < b.N; i++ {
+			for i := 0; b.Loop(); i++ {
 				// Create players
 				players := make([]string, cfg.numPlayers)
 				chipCounts := make([]int, cfg.numPlayers)
@@ -67,11 +68,8 @@ func BenchmarkGameEngine(b *testing.B) {
 						if len(validActions) > 0 {
 							// Simple strategy: mostly call/check
 							action := game.Call
-							for _, a := range validActions {
-								if a == game.Check {
-									action = game.Check
-									break
-								}
+							if slices.Contains(validActions, game.Check) {
+								action = game.Check
 							}
 							hand.ProcessAction(action, 0)
 						}
@@ -121,7 +119,7 @@ func BenchmarkNPCStrategies(b *testing.B) {
 
 			// Create 6 NPCs with the same strategy
 			npcs := make([]*npcBot, 6)
-			for i := 0; i < 6; i++ {
+			for i := range 6 {
 				npc := newNPCBot(logger, pool, "bench", s.strategy)
 				npcs[i] = npc
 				npc.start()

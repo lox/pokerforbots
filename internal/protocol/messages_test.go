@@ -188,8 +188,7 @@ func BenchmarkMarshalAction(b *testing.B) {
 		Amount: 100,
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		data, _ := action.MarshalMsg(nil)
 		_ = data
 	}
@@ -203,8 +202,7 @@ func BenchmarkUnmarshalActionCustom(b *testing.B) {
 	}
 	data, _ := action.MarshalMsg(nil)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		var decoded Action
 		_, _ = decoded.UnmarshalMsg(data)
 	}
@@ -222,8 +220,7 @@ func BenchmarkMarshalActionRequest(b *testing.B) {
 		Pot:           35,
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		data, _ := req.MarshalMsg(nil)
 		_ = data
 	}
@@ -242,8 +239,7 @@ func BenchmarkUnmarshalActionRequestCustom(b *testing.B) {
 	}
 	data, _ := req.MarshalMsg(nil)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		var decoded ActionRequest
 		_, _ = decoded.UnmarshalMsg(data)
 	}
@@ -355,12 +351,12 @@ func TestMarshalRaceCondition(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
 
-			for j := 0; j < numMessages; j++ {
+			for j := range numMessages {
 				// Create and marshal different message types concurrently
 				msg := &ActionRequest{
 					Type:          "action_request",

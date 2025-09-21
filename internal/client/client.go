@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -454,9 +456,7 @@ func (c *client) handleHandResult(msg *protocol.HandResult) error {
 			rolesCopy[seat] = append([]string(nil), list...)
 		}
 		foldCopy = make(map[int]string, len(state.foldStreet))
-		for seat, street := range state.foldStreet {
-			foldCopy[seat] = street
-		}
+		maps.Copy(foldCopy, state.foldStreet)
 		yourSeat = state.yourSeat
 	}
 	c.state = nil
@@ -1122,12 +1122,7 @@ func actionAllowed(action string, valid []string) bool {
 	if action == "allin" {
 		return true
 	}
-	for _, v := range valid {
-		if v == action {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(valid, action)
 }
 
 func (c *client) clearActionPrompt() {
@@ -1186,10 +1181,8 @@ func titleCase(value string) string {
 }
 
 func appendRole(list []string, role string) []string {
-	for _, existing := range list {
-		if existing == role {
-			return list
-		}
+	if slices.Contains(list, role) {
+		return list
 	}
 	return append(list, role)
 }

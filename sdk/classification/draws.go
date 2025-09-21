@@ -6,6 +6,7 @@ package classification
 
 import (
 	"math/bits"
+	"slices"
 
 	"github.com/lox/pokerforbots/poker"
 )
@@ -204,7 +205,7 @@ type overcardsInfo struct {
 
 func detectFlushDraw(holeCards, board poker.Hand) flushDrawInfo {
 	// Check each suit for flush draw potential
-	for suit := uint8(0); suit < 4; suit++ {
+	for suit := range uint8(4) {
 		holeSuitMask := holeCards.GetSuitMask(suit)
 		boardSuitMask := board.GetSuitMask(suit)
 
@@ -249,7 +250,7 @@ func detectStraightDraws(holeCards, board poker.Hand) straightDrawInfo {
 	// Scan for 4 consecutive ranks with gaps on both ends
 	for start := 0; start <= 9; start++ { // A-2-3-4 through J-Q-K-A
 		consecutive := 0
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			if rankMask&(1<<(start+i)) != 0 {
 				consecutive++
 			}
@@ -267,7 +268,7 @@ func detectStraightDraws(holeCards, board poker.Hand) straightDrawInfo {
 				if lowAvailable && highAvailable {
 					info.HasOESD = true
 					// Create outs mask for both ends (4 cards each)
-					for suit := uint8(0); suit < 4; suit++ {
+					for suit := range uint8(4) {
 						info.OESDOutsMask.AddCard(poker.NewCard(uint8(lowRank), suit))
 						info.OESDOutsMask.AddCard(poker.NewCard(uint8(highRank), suit))
 					}
@@ -280,7 +281,7 @@ func detectStraightDraws(holeCards, board poker.Hand) straightDrawInfo {
 	// Look for 4 out of 5 consecutive ranks with exactly one gap
 	for start := 0; start <= 8; start++ { // Windows of five consecutive ranks
 		var presentRanks []int
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			if rankMask&(1<<(start+i)) != 0 {
 				presentRanks = append(presentRanks, start+i)
 			}
@@ -311,19 +312,13 @@ func detectStraightDraws(holeCards, board poker.Hand) straightDrawInfo {
 
 			// Find the missing rank
 			allNeeded := make(map[int]bool)
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				allNeeded[start+i] = true
 			}
 
 			var missingRank int
 			for rank := range allNeeded {
-				found := false
-				for _, present := range presentRanks {
-					if present == rank {
-						found = true
-						break
-					}
-				}
+				found := slices.Contains(presentRanks, rank)
 				if !found {
 					missingRank = rank
 					break
@@ -332,7 +327,7 @@ func detectStraightDraws(holeCards, board poker.Hand) straightDrawInfo {
 
 			info.HasGutshot = true
 			// Create outs mask for the missing rank (4 cards)
-			for suit := uint8(0); suit < 4; suit++ {
+			for suit := range uint8(4) {
 				info.GutshotOutsMask.AddCard(poker.NewCard(uint8(missingRank), suit))
 			}
 			break // Only count one gutshot
@@ -349,7 +344,7 @@ func detectBackdoorFlush(holeCards, board poker.Hand) backdoorFlushInfo {
 
 	// Need exactly two cards of the same suit total (classic backdoor case):
 	// e.g. two suited hole cards or one suited card combined with the board.
-	for suit := uint8(0); suit < 4; suit++ {
+	for suit := range uint8(4) {
 		holeCount := bits.OnesCount16(holeCards.GetSuitMask(suit))
 		boardCount := bits.OnesCount16(board.GetSuitMask(suit))
 
@@ -390,7 +385,7 @@ func detectOvercards(holeCards, board, usedCards poker.Hand) overcardsInfo {
 	for rank := highestBoardRank + 1; rank <= 12; rank++ { // Check ranks higher than board
 		if holeRankMask&(1<<rank) != 0 {
 			// We have this rank, count remaining cards as outs
-			for suit := uint8(0); suit < 4; suit++ {
+			for suit := range uint8(4) {
 				card := poker.NewCard(rank, suit)
 				if !usedCards.HasCard(card) {
 					outsMask |= poker.Hand(card)
