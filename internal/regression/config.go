@@ -68,11 +68,6 @@ type Config struct {
 	Verbose      bool
 	ValidateOnly bool
 
-	// Power Analysis
-	PowerAnalysis bool
-	EffectSize    float64
-	Power         float64
-
 	// Logging
 	Logger zerolog.Logger
 }

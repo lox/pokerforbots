@@ -26,3 +26,9 @@ pre-commit:
       run: go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test -fix ./...
       fail_text: "Modernization issues detected! Auto-fixed where possible; review and commit."
       stage_fixed: true
+
+    # Unused parameters analysis (auto-fix and restage changes)
+    #go-unused-params:
+    #  run: go run golang.org/x/tools/gopls/internal/analysis/unusedparams@latest -test -fix ./...
+    #  fail_text: "Unused parameters detected! Auto-fixed where possible; review and commit."
+    #  stage_fixed: true

@@ -65,7 +65,8 @@ type BotResults struct {
 
 // PerformanceMetrics contains performance data
 type PerformanceMetrics struct {
-	HandsPerSecond float64 `json:"hands_per_second"`
+	HandsPerSecond   float64 `json:"hands_per_second"`
+	SampleAssessment string  `json:"sample_assessment,omitempty"`
 }
 
 // ErrorSummary contains error statistics

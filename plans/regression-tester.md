@@ -69,21 +69,30 @@ regression-tester --mode population \
 **Key Metrics**: BB/100, VPIP, PFR, aggression frequency
 
 ### 3. NPC Benchmark Mode
-Test against fixed-strategy NPCs for stable reference points.
+Compare two bots against fixed-strategy NPCs for stable regression detection.
 ```bash
 regression-tester --mode npc-benchmark \
-  --bot snapshots/complex-20250922-abc123 \
-  --bot-seats 2 \
-  --npcs "aggressive:2,callbot:1,random:1" \
+  --challenger snapshots/complex-20250922-abc123 \
+  --baseline snapshots/complex-20250921-f7f2f70 \
+  --challenger-seats 1 \
+  --baseline-seats 1 \
+  --npcs "aggressive:2,calling:1,random:1" \
   --hands 100000
 ```
 
-**Purpose**: Measure exploitation of known strategies
-**Table Setup**: Mix of test bots and NPCs
-**Expected Performance**:
-- vs Callbot: +25 to +35 BB/100 (should crush passive play)
+**Purpose**: Detect performance regression against known exploitable strategies
+**Table Setup**: Both challenger and baseline bots tested separately against same NPC field
+**Implementation Approach**:
+- Challenger and baseline are tested in separate batches with different seeds
+- This avoids correlation between their results while maintaining fairness
+- Each bot plays the same total number of hands against identical NPC configuration
+- Statistical comparison focuses on relative performance difference, not absolute BB/100
+
+**Expected Performance Baselines**:
+- vs Calling: +25 to +35 BB/100 (should crush passive play)
 - vs Random: +15 to +25 BB/100 (should exploit chaos)
 - vs Aggressive: +5 to +15 BB/100 (should handle pressure)
+**Regression Detection**: Compare challenger vs baseline performance against same NPCs
 
 ### 4. Self-Play Mode
 Baseline variance measurement with identical bots.
@@ -132,15 +141,11 @@ regression-tester --mode all \
   --significance-level 0.05
 ```
 
-### Power Analysis
-Calculate required sample size before testing:
-```bash
-regression-tester --power-analysis \
-  --effect-size 0.2 \
-  --power 0.8 \
-  --significance 0.05
-# Output: Required sample size: 78,488 hands
-```
+### Sample Size Warnings
+The regression tester automatically shows warnings when sample sizes are too small:
+- **< 5,000 hands**: Shows `⚠️ Small sample size - results may be unreliable`
+- **5,000-10,000 hands with small effects**: Shows note about needing more hands
+- **10,000+ hands**: No warning (sufficient for most testing)
 
 ### Early Stopping
 For CI efficiency, stop when significance is reached:
@@ -325,23 +330,26 @@ type TestConfig struct {
 - [x] Implement server launcher using `--bot-cmd` flags with `--server-cmd` configuration
 - [x] Binary validation for bot executables
 - [x] Basic heads-up mode with result collection
-- [x] Power analysis calculator
+- [x] Automatic sample size warnings when needed
 - [x] Leverage server's bot management and output
 
-### Phase 2: Test Modes (Partially Complete)
-- [x] Heads-up mode with batching support
-- [ ] Population mode with configurable seat distribution
-- [ ] NPC benchmark mode using server's built-in NPCs
-- [ ] Self-play variance baseline mode
-- [x] Batching support with seed iteration
-- [ ] Multiple comparison correction implementation
+### Phase 2: Test Modes ✅ COMPLETE
+- [x] Heads-up mode with batching support and weighted averaging
+- [x] Population mode with configurable seat distribution
+- [x] NPC benchmark mode using server's built-in NPCs with full statistical fixes
+- [x] Self-play variance baseline mode
+- [x] Batching support with automatic seed generation
+- [x] Multiple comparison correction implementation with Bonferroni adjustment
+- [x] "All" mode that runs applicable tests with automatic correction
 
 ### Phase 3: Statistics & Reporting ✅ LARGELY COMPLETE
 - [x] **Real statistical aggregation** - VPIP/PFR tracking implemented in server
 - [x] **Parse server's `--write-stats-on-exit` JSON output** - Working with real statistics
 - [x] **JSON report generation structure** - Fully functional with real data
 - [x] **Human-readable summary output** - Working with real metrics
-- [x] Power analysis calculator
+- [x] **Weighted averaging** - Properly uses actual completed hands for statistics
+- [x] **Multi-seat aggregation** - Correctly combines stats from multiple bot instances
+- [x] Automatic sample size warnings when needed
 - [ ] Proper confidence interval calculations (using placeholder 95% CI)
 - [ ] Effect size calculations (using placeholder Cohen's d)
 - [ ] Early stopping for CI efficiency
@@ -357,27 +365,35 @@ type TestConfig struct {
 
 ### Next Steps
 
-1. **Complete Test Modes**: Implement population, NPC benchmark, and self-play modes
-2. **Statistical Rigor**: Add proper confidence intervals and effect size calculations
+1. **Statistical Rigor**: Replace placeholder confidence intervals and effect size calculations with proper statistics
+2. **Multiple Comparison Correction**: Implement Bonferroni correction when running multiple test modes
 3. **Early Stopping**: Implement significance-based early termination for CI efficiency
 4. **Result Archiving**: Save results to `snapshots/regression-*.json` for trend analysis
 
 ## Current Implementation
 
 ### Working Features
-- **Heads-up mode**: Fully functional with server-managed bots
+- **All test modes implemented**: Heads-up, population, NPC benchmark, and self-play modes all functional
+- **Heads-up mode**: Fully functional with proper batching and weighted averaging
+- **Population mode**: Tests multiple challenger bots vs multiple baseline bots at same table
+- **NPC benchmark mode**: Complete with challenger vs baseline comparison against NPCs
+- **Self-play mode**: Measures variance baseline with identical bots (expects ~0 BB/100)
 - **Real statistics**: VPIP/PFR tracking and parsing from server JSON output
 - **Server command configuration**: `--server-cmd` flag with smart defaults (`go run ./cmd/server`)
 - **Binary validation**: Checks bot executables before running
-- **Power analysis**: Calculates required sample sizes
+- **Sample size warnings**: Automatic warnings when sample too small for reliable results
 - **Bot output**: Shows real-time bot decisions with clear prefixes
 - **Clean shutdown**: Server manages hand completion and exit
 - **JSON and summary reports**: Both working with real statistical data
+- **Automatic seed generation**: Creates additional seeds when more batches needed
+- **Weighted averaging**: Uses actual completed hands for accurate statistics
+- **Multi-seat aggregation**: Properly combines stats from multiple bot instances
 
 ### Known Limitations
 - **Statistical calculations**: Using placeholder confidence intervals and effect sizes
-- **Test modes**: Only heads-up mode is implemented (population, NPC benchmark, self-play pending)
 - **Result archiving**: Not yet saving results to snapshots/ directory
+- **Multiple comparison correction**: Not implemented for running multiple test modes
+- **Early stopping**: Not implemented for CI efficiency
 
 ### Example Output
 ```
@@ -480,7 +496,7 @@ regression-tester --aggregate results/*.json --output final-report.json
 1. **Statistical Validity**: 95% confidence intervals on all metrics
 2. **Performance**: Can run 100k hands in under 5 minutes
 3. **Reproducibility**: Same seed produces identical results
-4. **Actionable Output**: Clear pass/fail with specific metrics
+4. **Actionable Output**: Clear pass/fail with specific metrics and sample size warnings
 5. **Low False Positives**: <5% false regression alerts
 
 ## Open Questions

@@ -12,38 +12,53 @@ func RunHeadsUpTest(ctx context.Context, config *Config, orchestrator *Orchestra
 	startTime := time.Now()
 	testID := fmt.Sprintf("heads-up-%d", startTime.Unix())
 
-	// Calculate batches
-	numBatches := len(config.Seeds)
-	if numBatches == 0 {
-		numBatches = 1
-		config.Seeds = []int64{42}
+	// Use BatchSize for consistent batch sizing across all modes
+	handsPerBatch := config.BatchSize
+	remainingHands := config.HandsTotal
+
+	// Generate seeds if needed (same as NPC mode)
+	seeds := config.Seeds
+	if len(seeds) == 0 {
+		seeds = []int64{42} // Default seed
 	}
 
-	handsPerBatch := max(config.HandsTotal/numBatches, 100)
-
 	config.Logger.Info().
-		Int("batches", numBatches).
-		Int("hands_per_batch", handsPerBatch).
+		Int("hands_total", config.HandsTotal).
+		Int("batch_size", handsPerBatch).
 		Msg("Running heads-up test batches")
 
 	// Run batches
 	var batches []BatchResult
-	for i, seed := range config.Seeds {
+	batchNum := 0
+	for remainingHands > 0 {
+		batchHands := min(handsPerBatch, remainingHands)
+
+		// Get or generate seed for this batch
+		var seed int64
+		if batchNum < len(seeds) {
+			seed = seeds[batchNum]
+		} else {
+			// Generate additional seed based on last available seed
+			seed = seeds[len(seeds)-1] + int64(batchNum-len(seeds)+1)*1000
+		}
+
 		config.Logger.Info().
-			Int("batch", i+1).
-			Int("total", numBatches).
+			Int("batch", batchNum+1).
 			Int64("seed", seed).
+			Int("hands", batchHands).
 			Msg("Running batch")
 
-		batch, err := orchestrator.RunHeadsUpBatch(ctx, config.BotA, config.BotB, seed, handsPerBatch)
+		batch, err := orchestrator.RunHeadsUpBatch(ctx, config.BotA, config.BotB, seed, batchHands)
 		if err != nil {
-			return nil, fmt.Errorf("batch %d failed: %w", i+1, err)
+			return nil, fmt.Errorf("batch %d failed: %w", batchNum+1, err)
 		}
 
 		batches = append(batches, *batch)
+		remainingHands -= batchHands
+		batchNum++
 
 		// Check for early stopping
-		if config.EarlyStopping && i >= config.MinHands/handsPerBatch {
+		if config.EarlyStopping && batchNum*handsPerBatch >= config.MinHands {
 			// TODO: Check if significance reached
 			break
 		}
@@ -72,7 +87,7 @@ func RunHeadsUpTest(ctx context.Context, config *Config, orchestrator *Orchestra
 			BotA:                   config.BotA,
 			BotB:                   config.BotB,
 			HandsTotal:             config.HandsTotal,
-			Batches:                numBatches,
+			Batches:                len(batches),
 			BatchSize:              handsPerBatch,
 			SignificanceLevel:      config.SignificanceLevel,
 			MultipleTestCorrection: config.MultipleTestCorrection,
@@ -95,18 +110,29 @@ func RunHeadsUpTest(ctx context.Context, config *Config, orchestrator *Orchestra
 
 // aggregateHeadsUpResults aggregates batch results for heads-up mode
 func aggregateHeadsUpResults(batches []BatchResult) AggregateResults {
-	// Calculate means and confidence intervals
+	// Calculate means and confidence intervals using weighted averages
 	var botASum, botBSum float64
 	var botACount, botBCount int
 
 	for _, batch := range batches {
+		// Use actual hands completed from stats if available, otherwise use requested
+		actualHandsA := batch.Hands
+		if handsFromStats, exists := batch.Results["bot_a_hands"]; exists {
+			actualHandsA = int(handsFromStats)
+		}
+
+		actualHandsB := batch.Hands
+		if handsFromStats, exists := batch.Results["bot_b_hands"]; exists {
+			actualHandsB = int(handsFromStats)
+		}
+
 		if val, ok := batch.Results["bot_a_bb_per_100"]; ok {
-			botASum += val * float64(batch.Hands)
-			botACount += batch.Hands
+			botASum += val * float64(actualHandsA)
+			botACount += actualHandsA
 		}
 		if val, ok := batch.Results["bot_b_bb_per_100"]; ok {
-			botBSum += val * float64(batch.Hands)
-			botBCount += batch.Hands
+			botBSum += val * float64(actualHandsB)
+			botBCount += actualHandsB
 		}
 	}
 
@@ -143,11 +169,8 @@ func calculateVerdict(aggregate AggregateResults, config *Config) TestVerdict {
 	pValue := 0.02    // Placeholder
 	effectSize := 0.3 // Placeholder
 
-	// Apply multiple test correction if needed
+	// Don't apply correction here - it's done in the runner for "all" mode
 	adjustedPValue := pValue
-	if config.MultipleTestCorrection {
-		adjustedPValue = pValue * 4 // Bonferroni for 4 tests
-	}
 
 	significant := adjustedPValue < config.SignificanceLevel
 	direction := "neutral"

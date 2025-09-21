@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -43,6 +44,7 @@ type CLI struct {
 	MaxStatsHands    int      `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
 	BotCmd           []string `kong:"help='Command to run a local bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME'"`
 	NPCBotCmd        []string `kong:"name='npc-bot-cmd',help='Command to run an external NPC bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME, POKERFORBOTS_ROLE=npc'"`
+	NPCs             string   `kong:"name='npcs',help='Built-in NPC configuration (e.g., aggressive:2,calling:1,random:1)'"`
 	PrintStatsOnExit bool     `kong:"help='Print /admin/games/default/stats JSON on exit'"`
 	WriteStatsOnExit string   `kong:"help='Write /admin/games/default/stats JSON to file on exit'"`
 }
@@ -99,9 +101,21 @@ func main() {
 	config.Seed = seed
 	srv := server.NewServer(logger, rng, server.WithConfig(config))
 
-	if specs := computeDefaultNPCSpecs(cli.NPCBots, cli.NPCCalling, cli.NPCRandom, cli.NPCAggro); len(specs) > 0 {
-		srv.AddBootstrapNPCs("default", specs)
-		for _, spec := range specs {
+	// Parse NPCs from string format if provided, otherwise use individual flags
+	var npcSpecs []server.NPCSpec
+	if cli.NPCs != "" {
+		var err error
+		npcSpecs, err = parseNPCConfig(cli.NPCs)
+		if err != nil {
+			logger.Fatal().Err(err).Str("npcs", cli.NPCs).Msg("Failed to parse --npcs configuration")
+		}
+	} else {
+		npcSpecs = computeDefaultNPCSpecs(cli.NPCBots, cli.NPCCalling, cli.NPCRandom, cli.NPCAggro)
+	}
+
+	if len(npcSpecs) > 0 {
+		srv.AddBootstrapNPCs("default", npcSpecs)
+		for _, spec := range npcSpecs {
 			logger.Info().Str("game_id", "default").Str("strategy", spec.Strategy).Int("count", spec.Count).Msg("Spawning default NPC bots")
 		}
 	}
@@ -431,6 +445,51 @@ func writeStatsToFile(httpBase string, filename string) {
 		fmt.Fprintf(os.Stderr, "Failed to write stats to %s: %v\n", filename, err)
 		return
 	}
+}
+
+// parseNPCConfig parses a string like "aggressive:2,calling:1,random:1" into NPCSpec slice
+func parseNPCConfig(config string) ([]server.NPCSpec, error) {
+	if config == "" {
+		return nil, nil
+	}
+
+	var specs []server.NPCSpec
+	parts := strings.SplitSeq(config, ",")
+
+	for part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		strategyCount := strings.Split(part, ":")
+		if len(strategyCount) != 2 {
+			return nil, fmt.Errorf("invalid NPC configuration format: %q (expected strategy:count)", part)
+		}
+
+		strategy := strings.TrimSpace(strategyCount[0])
+		countStr := strings.TrimSpace(strategyCount[1])
+
+		// Validate strategy name (match server's NPC strategies)
+		if strategy != "calling" && strategy != "aggressive" && strategy != "random" {
+			return nil, fmt.Errorf("unknown NPC strategy: %q (valid: calling, aggressive, random)", strategy)
+		}
+
+		count, err := strconv.Atoi(countStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid count for strategy %q: %q", strategy, countStr)
+		}
+		if count <= 0 {
+			return nil, fmt.Errorf("count must be positive for strategy %q: %d", strategy, count)
+		}
+
+		specs = append(specs, server.NPCSpec{
+			Strategy: strategy,
+			Count:    count,
+		})
+	}
+
+	return specs, nil
 }
 
 func computeDefaultNPCSpecs(total, calling, random, aggro int) []server.NPCSpec {

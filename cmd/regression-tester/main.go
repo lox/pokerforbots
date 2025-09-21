@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -20,9 +21,9 @@ type CLI struct {
 	// Bot binaries
 	BotA       string `kong:"help='Bot A binary path (heads-up mode)'"`
 	BotB       string `kong:"help='Bot B binary path (heads-up mode)'"`
-	Challenger string `kong:"help='Challenger bot binary path (population mode)'"`
-	Baseline   string `kong:"help='Baseline bot binary path (population mode)'"`
-	Bot        string `kong:"help='Bot binary path (self-play/npc modes)'"`
+	Challenger string `kong:"help='Challenger bot binary path (population/npc modes)'"`
+	Baseline   string `kong:"help='Baseline bot binary path (population/npc modes)'"`
+	Bot        string `kong:"help='Bot binary path (self-play mode)'"`
 
 	// Test configuration
 	Hands         int    `kong:"default='10000',help='Total hands to play'"`
@@ -31,9 +32,9 @@ type CLI struct {
 	StartingChips int    `kong:"default='1000',help='Starting chips in big blinds'"`
 
 	// Table configuration
-	ChallengerSeats int    `kong:"default='2',help='Number of challenger seats (population mode)'"`
-	BaselineSeats   int    `kong:"default='4',help='Number of baseline seats (population mode)'"`
-	BotSeats        int    `kong:"default='2',help='Number of bot seats (npc mode)'"`
+	ChallengerSeats int    `kong:"default='2',help='Number of challenger seats (population/npc modes)'"`
+	BaselineSeats   int    `kong:"default='4',help='Number of baseline seats (population mode) or baseline seats for NPC mode'"`
+	BotSeats        int    `kong:"default='2',help='Number of bot seats (self-play mode)'"`
 	NPCs            string `kong:"name='npcs',help='NPC configuration (e.g., aggressive:2,callbot:1,random:1)'"`
 
 	// Statistical options
@@ -63,10 +64,7 @@ type CLI struct {
 	Debug      bool   `kong:"help='Enable debug logging'"`
 
 	// Special commands
-	ValidateBinaries bool    `kong:"help='Validate bot binaries and exit'"`
-	PowerAnalysis    bool    `kong:"help='Run power analysis and exit'"`
-	EffectSize       float64 `kong:"default='0.2',help='Effect size for power analysis'"`
-	Power            float64 `kong:"default='0.8',help='Desired statistical power'"`
+	ValidateBinaries bool `kong:"help='Validate bot binaries and exit'"`
 }
 
 func main() {
@@ -93,11 +91,14 @@ func main() {
 
 	// Parse seeds
 	var seeds []int64
-	for s := range strings.SplitSeq(cli.Seeds, ",") {
+	seedParts := strings.SplitSeq(cli.Seeds, ",")
+	for s := range seedParts {
 		s = strings.TrimSpace(s)
 		if s != "" {
-			var seed int64
-			fmt.Sscanf(s, "%d", &seed)
+			seed, err := strconv.ParseInt(s, 10, 64)
+			if err != nil {
+				ctx.Fatalf("Invalid seed value '%s': %v", s, err)
+			}
 			seeds = append(seeds, seed)
 		}
 	}
@@ -105,13 +106,26 @@ func main() {
 	// Parse NPCs configuration
 	npcs := make(map[string]int)
 	if cli.NPCs != "" {
-		for npc := range strings.SplitSeq(cli.NPCs, ",") {
+		npcParts := strings.SplitSeq(cli.NPCs, ",")
+		for npc := range npcParts {
 			parts := strings.Split(npc, ":")
-			if len(parts) == 2 {
-				var count int
-				fmt.Sscanf(parts[1], "%d", &count)
-				npcs[strings.TrimSpace(parts[0])] = count
+			if len(parts) != 2 {
+				ctx.Fatalf("Invalid NPC format '%s': expected 'type:count'", npc)
 			}
+
+			count, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+			if err != nil {
+				ctx.Fatalf("Invalid NPC count in '%s': %v", npc, err)
+			}
+			if count <= 0 {
+				ctx.Fatalf("NPC count must be positive in '%s'", npc)
+			}
+
+			npcType := strings.TrimSpace(parts[0])
+			if npcType == "" {
+				ctx.Fatalf("Empty NPC type in '%s'", npc)
+			}
+			npcs[npcType] = count
 		}
 	}
 
@@ -163,11 +177,6 @@ func main() {
 		OutputFile:   cli.OutputFile,
 		Verbose:      cli.Verbose,
 
-		// Power analysis
-		PowerAnalysis: cli.PowerAnalysis,
-		EffectSize:    cli.EffectSize,
-		Power:         cli.Power,
-
 		// Special commands
 		ValidateOnly: cli.ValidateBinaries,
 
@@ -187,13 +196,6 @@ func main() {
 			ctx.Fatalf("Binary validation failed: %v", err)
 		}
 		fmt.Println("All binaries validated successfully")
-		return
-	}
-
-	if config.PowerAnalysis {
-		runner.RunPowerAnalysis(func(format string, args ...any) {
-			fmt.Printf(format, args...)
-		})
 		return
 	}
 

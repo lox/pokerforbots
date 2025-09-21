@@ -380,7 +380,7 @@ func (b *complexImprovedBot) calculatePotOdds(req protocol.ActionRequest) float6
 	return float64(potAfterCall) / float64(req.ToCall)
 }
 
-func (b *complexImprovedBot) makeStrategicDecision(req protocol.ActionRequest, handStrength float64, position int, potOdds float64) (string, int) {
+func (b *complexImprovedBot) makeStrategicDecision(req protocol.ActionRequest, handStrength float64, position int, _ float64) (string, int) {
 	// Preflop handled by a dedicated policy
 	if b.state.Street == "preflop" {
 		return b.preflopDecision(req, position)

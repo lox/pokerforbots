@@ -359,7 +359,7 @@ func detectBackdoorFlush(holeCards, board poker.Hand) backdoorFlushInfo {
 	return backdoorFlushInfo{HasBackdoorFlush: false}
 }
 
-func detectBackdoorStraight(holeCards, board poker.Hand) backdoorStraightInfo {
+func detectBackdoorStraight(_, _ poker.Hand) backdoorStraightInfo {
 	// Simplified implementation - would need complex analysis of
 	// potential turn/river combinations for backdoor straights
 	// For now, return false (conservative)

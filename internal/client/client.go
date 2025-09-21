@@ -905,7 +905,7 @@ func shortPositionLabel(offset int) string {
 	return fmt.Sprintf("UTG+%d", offset-3)
 }
 
-func describePlayerAction(action string, amountPaid, playerBet, playerChips int) string {
+func describePlayerAction(action string, amountPaid, playerBet, _ int) string {
 	switch action {
 	case "fold":
 		return colorize("folds", colorDim)

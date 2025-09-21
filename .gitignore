@@ -47,3 +47,7 @@ snapshots/
  
 # Built binaries
 /complex
+/regression-tester
+/benchmark
+/client
+/gen-preflop

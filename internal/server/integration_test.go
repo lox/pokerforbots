@@ -327,7 +327,7 @@ func TestTimeoutActuallyFolds(t *testing.T) {
 }
 
 // Helper function to read bot messages
-func readBotMessages(t *testing.T, conn *websocket.Conn, actionChan chan string) {
+func readBotMessages(_ *testing.T, conn *websocket.Conn, actionChan chan string) {
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {

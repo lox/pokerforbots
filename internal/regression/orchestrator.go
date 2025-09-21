@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,55 @@ func NewOrchestrator(config *Config, healthMonitor *HealthMonitor) *Orchestrator
 // StartServerWithBots starts the server with bot commands
 func (o *Orchestrator) StartServerWithBots(ctx context.Context, seed int64, hands int, botCmds []string, npcCmds []string) error {
 	return o.StartServerWithBotsAndStats(ctx, seed, hands, botCmds, npcCmds, "")
+}
+
+// StartServerWithBotsAndNPCs starts the server with bot commands and built-in NPCs
+func (o *Orchestrator) StartServerWithBotsAndNPCs(ctx context.Context, seed int64, hands int, botCmds []string, npcConfig string, statsFile string) error {
+	// Build server command
+	args := []string{
+		"--addr", o.getServerAddr(),
+		"--start-chips", fmt.Sprintf("%d", o.config.StartingChips),
+		"--timeout-ms", fmt.Sprintf("%d", o.config.TimeoutMs),
+		"--seed", fmt.Sprintf("%d", seed),
+		"--hands", fmt.Sprintf("%d", hands),
+		"--collect-detailed-stats",
+	}
+
+	// Add stats output file if specified
+	if statsFile != "" {
+		args = append(args, "--write-stats-on-exit", statsFile)
+	}
+
+	if o.config.InfiniteBankroll {
+		args = append(args, "--infinite-bankroll")
+	}
+
+	// Add bot commands
+	for _, cmd := range botCmds {
+		args = append(args, "--bot-cmd", cmd)
+	}
+
+	// Add NPCs configuration string
+	if npcConfig != "" {
+		args = append(args, "--npcs", npcConfig)
+	}
+
+	// Count NPCs from config string
+	npcCount := 0
+	if npcConfig != "" {
+		parts := strings.SplitSeq(npcConfig, ",")
+		for part := range parts {
+			if colonPos := strings.Index(part, ":"); colonPos > 0 {
+				if countStr := strings.TrimSpace(part[colonPos+1:]); countStr != "" {
+					if count, err := strconv.Atoi(countStr); err == nil {
+						npcCount += count
+					}
+				}
+			}
+		}
+	}
+
+	return o.startServerWithArgs(ctx, args, seed, hands, len(botCmds), npcCount)
 }
 
 // StartServerWithBotsAndStats starts the server with bot commands and stats output
@@ -66,6 +116,11 @@ func (o *Orchestrator) StartServerWithBotsAndStats(ctx context.Context, seed int
 		args = append(args, "--npc-bot-cmd", cmd)
 	}
 
+	return o.startServerWithArgs(ctx, args, seed, hands, len(botCmds), len(npcCmds))
+}
+
+// startServerWithArgs starts the server with the given arguments
+func (o *Orchestrator) startServerWithArgs(ctx context.Context, args []string, seed int64, hands int, numBots, numNPCs int) error {
 	// Parse server command (supports both simple binary and complex commands like "go run ./cmd/server")
 	serverCmdParts := strings.Fields(o.config.ServerCmd)
 	if len(serverCmdParts) == 0 {
@@ -86,8 +141,8 @@ func (o *Orchestrator) StartServerWithBotsAndStats(ctx context.Context, seed int
 		Str("binary", serverCmdParts[0]).
 		Int64("seed", seed).
 		Int("hands", hands).
-		Int("bots", len(botCmds)).
-		Int("npcs", len(npcCmds)).
+		Int("bots", numBots).
+		Int("npcs", numNPCs).
 		Msg("Starting server with bots")
 
 	if err := o.serverCmd.Start(); err != nil {
@@ -211,8 +266,12 @@ func (o *Orchestrator) RunPopulationBatch(ctx context.Context, challenger, basel
 		botCmds = append(botCmds, baseline)
 	}
 
-	// Start server with bots
-	if err := o.StartServerWithBots(ctx, seed, hands, botCmds, nil); err != nil {
+	// Create temporary file for stats
+	statsFile := fmt.Sprintf("stats-population-%d-%d.json", seed, time.Now().Unix())
+	defer os.Remove(statsFile) // Clean up after
+
+	// Start server with bots and stats
+	if err := o.StartServerWithBotsAndStats(ctx, seed, hands, botCmds, nil, statsFile); err != nil {
 		return nil, fmt.Errorf("failed to start server with bots: %w", err)
 	}
 	defer o.StopServer()
@@ -222,10 +281,11 @@ func (o *Orchestrator) RunPopulationBatch(ctx context.Context, challenger, basel
 		return nil, fmt.Errorf("server failed to complete: %w", err)
 	}
 
-	// TODO: Parse actual stats
-	results := make(map[string]float64)
-	results["challenger_bb_per_100"] = 8.5
-	results["baseline_bb_per_100"] = -2.1
+	// Parse stats for population mode
+	results, err := o.parseStatsFilePopulation(statsFile, challenger, baseline, challengerSeats, baselineSeats)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse stats file: %w", err)
+	}
 
 	return &BatchResult{
 		Seed:    seed,
@@ -238,23 +298,28 @@ func (o *Orchestrator) RunPopulationBatch(ctx context.Context, challenger, basel
 func (o *Orchestrator) RunNPCBenchmarkBatch(ctx context.Context, bot string, botSeats int,
 	npcs map[string]int, seed int64, hands int) (*BatchResult, error) {
 
+	// Create temporary file for stats
+	statsFile := fmt.Sprintf("stats-npc-%d-%d.json", seed, time.Now().Unix())
+	defer os.Remove(statsFile) // Clean up after
+
 	// Prepare bot commands
 	var botCmds []string
 	for range botSeats {
 		botCmds = append(botCmds, bot)
 	}
 
-	// For NPCs, we can use the server's built-in NPCs or external commands
-	// Using built-in NPCs via flags would be:
-	// --npc-calling X --npc-random Y --npc-aggro Z
-	// But since we're using bot-cmd, we'll need actual NPC binaries
+	// Build NPC configuration string from the map
+	var npcParts []string
+	for strategy, count := range npcs {
+		if count > 0 {
+			npcParts = append(npcParts, fmt.Sprintf("%s:%d", strategy, count))
+		}
+	}
+	npcConfig := strings.Join(npcParts, ",")
 
-	// For now, just use the player bots
-	// TODO: Implement actual NPC spawning
-
-	// Start server with bots
-	if err := o.StartServerWithBots(ctx, seed, hands, botCmds, nil); err != nil {
-		return nil, fmt.Errorf("failed to start server with bots: %w", err)
+	// Start server with bots and NPCs using the new --npcs flag
+	if err := o.StartServerWithBotsAndNPCs(ctx, seed, hands, botCmds, npcConfig, statsFile); err != nil {
+		return nil, fmt.Errorf("failed to start server with bots and NPCs: %w", err)
 	}
 	defer o.StopServer()
 
@@ -263,9 +328,11 @@ func (o *Orchestrator) RunNPCBenchmarkBatch(ctx context.Context, bot string, bot
 		return nil, fmt.Errorf("server failed to complete: %w", err)
 	}
 
-	// TODO: Parse actual stats
-	results := make(map[string]float64)
-	results["bot_bb_per_100"] = 25.3 // Should crush NPCs
+	// Parse stats from JSON file
+	results, err := o.parseStatsFileNPC(statsFile, bot, npcs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse stats file: %w", err)
+	}
 
 	return &BatchResult{
 		Seed:    seed,
@@ -275,7 +342,7 @@ func (o *Orchestrator) RunNPCBenchmarkBatch(ctx context.Context, bot string, bot
 }
 
 // parseStatsFile reads and parses the JSON stats file written by the server
-func (o *Orchestrator) parseStatsFile(filename string, botA, botB string) (map[string]float64, error) {
+func (o *Orchestrator) parseStatsFile(filename string, _, _ string) (map[string]float64, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read stats file: %w", err)
@@ -352,6 +419,215 @@ func (o *Orchestrator) parseStatsFile(filename string, botA, botB string) (map[s
 			Float64("pfr", playerB.DetailedStats.PFR).
 			Msg("Bot B stats parsed")
 	}
+
+	return results, nil
+}
+
+// parseStatsFilePopulation reads and parses the JSON stats file for population mode
+func (o *Orchestrator) parseStatsFilePopulation(filename string, _, _ string,
+	challengerSeats, baselineSeats int) (map[string]float64, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read stats file: %w", err)
+	}
+
+	var stats server.GameStats
+	if err := json.Unmarshal(data, &stats); err != nil {
+		return nil, fmt.Errorf("failed to parse stats JSON: %w", err)
+	}
+
+	o.logger.Debug().
+		Int("total_players", len(stats.Players)).
+		Str("stats_file", filename).
+		Msg("Parsing population stats")
+
+	results := make(map[string]float64)
+
+	// In population mode, we have multiple instances of each bot type
+	// We need to aggregate stats for each type separately
+	var challengerNetChips int64
+	var challengerHands int
+	var challengerVPIP, challengerPFR float64
+	var challengerTimeouts, challengerBusts int
+	challengerCount := 0
+
+	var baselineNetChips int64
+	var baselineHands int
+	var baselineVPIP, baselinePFR float64
+	var baselineTimeouts, baselineBusts int
+	baselineCount := 0
+
+	// The server spawns bots in the order they were specified
+	// First challengerSeats players are challengers, next baselineSeats are baseline
+	for i, player := range stats.Players {
+		if i < challengerSeats {
+			// This is a challenger bot
+			challengerNetChips += player.NetChips
+			challengerHands += player.Hands
+			challengerCount++
+			if player.DetailedStats != nil {
+				challengerVPIP += player.DetailedStats.VPIP
+				challengerPFR += player.DetailedStats.PFR
+				challengerTimeouts += player.DetailedStats.Timeouts
+				challengerBusts += player.DetailedStats.Busts
+			}
+		} else if i < challengerSeats+baselineSeats {
+			// This is a baseline bot
+			baselineNetChips += player.NetChips
+			baselineHands += player.Hands
+			baselineCount++
+			if player.DetailedStats != nil {
+				baselineVPIP += player.DetailedStats.VPIP
+				baselinePFR += player.DetailedStats.PFR
+				baselineTimeouts += player.DetailedStats.Timeouts
+				baselineBusts += player.DetailedStats.Busts
+			}
+		}
+	}
+
+	// Calculate aggregate BB/100 for challenger
+	bigBlind := float64(stats.BigBlind)
+	if challengerHands > 0 && bigBlind > 0 {
+		results["challenger_bb_per_100"] = (float64(challengerNetChips) / bigBlind) / float64(challengerHands) * 100
+	} else {
+		results["challenger_bb_per_100"] = 0
+	}
+
+	// Calculate aggregate BB/100 for baseline
+	if baselineHands > 0 && bigBlind > 0 {
+		results["baseline_bb_per_100"] = (float64(baselineNetChips) / bigBlind) / float64(baselineHands) * 100
+	} else {
+		results["baseline_bb_per_100"] = 0
+	}
+
+	// Average the strategy metrics across instances
+	if challengerCount > 0 {
+		results["challenger_vpip"] = challengerVPIP / float64(challengerCount)
+		results["challenger_pfr"] = challengerPFR / float64(challengerCount)
+		results["challenger_timeouts"] = float64(challengerTimeouts) / float64(challengerCount)
+		results["challenger_busts"] = float64(challengerBusts) / float64(challengerCount)
+	}
+
+	if baselineCount > 0 {
+		results["baseline_vpip"] = baselineVPIP / float64(baselineCount)
+		results["baseline_pfr"] = baselinePFR / float64(baselineCount)
+		results["baseline_timeouts"] = float64(baselineTimeouts) / float64(baselineCount)
+		results["baseline_busts"] = float64(baselineBusts) / float64(baselineCount)
+	}
+
+	// Store hands for weighting
+	results["challenger_hands"] = float64(challengerHands)
+	results["baseline_hands"] = float64(baselineHands)
+
+	o.logger.Debug().
+		Float64("challenger_bb_per_100", results["challenger_bb_per_100"]).
+		Float64("baseline_bb_per_100", results["baseline_bb_per_100"]).
+		Int("challenger_seats", challengerSeats).
+		Int("baseline_seats", baselineSeats).
+		Msg("Population stats calculated")
+
+	return results, nil
+}
+
+// parseStatsFileNPC reads and parses the JSON stats file for NPC benchmark mode
+func (o *Orchestrator) parseStatsFileNPC(filename string, _ string, _ map[string]int) (map[string]float64, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read stats file: %w", err)
+	}
+
+	var stats server.GameStats
+	if err := json.Unmarshal(data, &stats); err != nil {
+		return nil, fmt.Errorf("failed to parse stats JSON: %w", err)
+	}
+
+	o.logger.Debug().
+		Int("total_players", len(stats.Players)).
+		Str("stats_file", filename).
+		Msg("Parsing NPC benchmark stats")
+
+	results := make(map[string]float64)
+
+	// Aggregate all non-NPC bot stats (for multi-seat configurations)
+	var totalNetChips int64
+	var totalHands int
+	var totalVPIP, totalPFR float64
+	var totalTimeouts, totalBusts int
+	botCount := 0
+
+	for i, player := range stats.Players {
+		if strings.HasPrefix(player.DisplayName, "npc-") {
+			continue // Skip NPCs
+		}
+		// This is one of our test bot instances
+		totalNetChips += player.NetChips
+		totalHands += player.Hands
+		botCount++
+
+		o.logger.Debug().
+			Int("player_index", i).
+			Str("player_name", player.DisplayName).
+			Int("hands", player.Hands).
+			Int64("net_chips", player.NetChips).
+			Msg("Found test bot stats")
+
+		// Aggregate detailed stats if available
+		if player.DetailedStats != nil {
+			totalVPIP += player.DetailedStats.VPIP
+			totalPFR += player.DetailedStats.PFR
+			totalTimeouts += player.DetailedStats.Timeouts
+			totalBusts += player.DetailedStats.Busts
+		}
+	}
+
+	if botCount == 0 {
+		return nil, fmt.Errorf("could not find test bot stats in file")
+	}
+
+	// Calculate aggregate BB/100 from total net chips and hands
+	bigBlind := float64(stats.BigBlind)
+	if totalHands > 0 && bigBlind > 0 {
+		results["bot_bb_per_100"] = (float64(totalNetChips) / bigBlind) / float64(totalHands) * 100
+	} else {
+		results["bot_bb_per_100"] = 0
+	}
+
+	// Average the strategy metrics across bot instances
+	if botCount > 0 {
+		results["bot_vpip"] = totalVPIP / float64(botCount)
+		results["bot_pfr"] = totalPFR / float64(botCount)
+		results["bot_timeouts"] = float64(totalTimeouts) / float64(botCount)
+		results["bot_busts"] = float64(totalBusts) / float64(botCount)
+	}
+
+	// Basic metrics
+	results["bot_hands"] = float64(totalHands)
+	results["bot_net_chips"] = float64(totalNetChips)
+	results["bot_seats"] = float64(botCount)
+
+	// Calculate aggregate NPC performance for comparison
+	var npcNetChipsSum int64
+	var npcHandsSum int
+	var npcCount int
+	for _, player := range stats.Players {
+		if strings.HasPrefix(player.DisplayName, "npc-") {
+			npcNetChipsSum += player.NetChips
+			npcHandsSum += player.Hands
+			npcCount++
+		}
+	}
+
+	if npcHandsSum > 0 && bigBlind > 0 {
+		results["npc_avg_bb_per_100"] = (float64(npcNetChipsSum) / bigBlind) / float64(npcHandsSum) * 100
+	} else {
+		results["npc_avg_bb_per_100"] = 0
+	}
+
+	o.logger.Debug().
+		Int("npc_count", npcCount).
+		Float64("bot_bb_per_100", results["bot_bb_per_100"]).
+		Float64("npc_avg_bb_per_100", results["npc_avg_bb_per_100"]).
+		Msg("NPC benchmark stats calculated")
 
 	return results, nil
 }
