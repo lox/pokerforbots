@@ -238,13 +238,13 @@ func TestHandCategorization(t *testing.T) {
 		{[]string{"As", "Ad"}, "Premium"}, // Pocket aces
 		{[]string{"Kh", "Kc"}, "Premium"}, // Pocket kings
 		{[]string{"Ac", "Kd"}, "Premium"}, // AK offsuit
-		{[]string{"Ah", "Qh"}, "Premium"}, // AQ suited (implementation treats AQ as Premium)
+		{[]string{"Ah", "Qh"}, "Strong"},  // AQ suited
 		{[]string{"Tc", "Td"}, "Strong"},  // Pocket tens
 		{[]string{"9s", "9d"}, "Medium"},  // Pocket nines
 		{[]string{"7h", "7c"}, "Medium"},  // Pocket sevens
 		{[]string{"5c", "5d"}, "Weak"},    // Small pocket pair
-		{[]string{"7h", "2c"}, "Weak"},    // 72 offsuit (implementation has simpler categorization)
-		{[]string{}, "unknown"},           // No cards
+		{[]string{"7h", "2c"}, "Trash"},   // 72 offsuit
+		{[]string{}, "Unknown"},           // No cards (capitalized now)
 	}
 
 	for _, tt := range tests {

@@ -409,8 +409,6 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// NPC support has been removed - use the spawner tool for bot orchestration
-
 type adminGameRequest struct {
 	ID               string  `json:"id"`
 	SmallBlind       int     `json:"small_blind"`
