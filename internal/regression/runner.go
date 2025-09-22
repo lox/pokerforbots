@@ -2,6 +2,7 @@ package regression
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -67,27 +68,8 @@ func (r *Runner) ValidateBinaries() error {
 		}
 
 		// Try to run with --help to validate it starts
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		cmd := exec.CommandContext(ctx, binary, "--help")
-		if err := cmd.Run(); err != nil {
-			// Some bots might not have --help, so just check if it starts
-			if ctx.Err() == context.DeadlineExceeded {
-				// If it timed out waiting for help, it's probably OK
-				r.config.Logger.Debug().
-					Str("binary", binary).
-					Msg("Binary validation passed (timeout on --help)")
-				continue
-			}
-			// Check if it's just exit code 1 (common for no --help flag)
-			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-				r.config.Logger.Debug().
-					Str("binary", binary).
-					Msg("Binary validation passed (exit 1 on --help)")
-				continue
-			}
-			return fmt.Errorf("binary %s failed to run: %v", binary, err)
+		if err := r.validateBinaryExecution(binary); err != nil {
+			return err
 		}
 
 		r.config.Logger.Debug().
@@ -95,6 +77,34 @@ func (r *Runner) ValidateBinaries() error {
 			Msg("Binary validation passed")
 	}
 
+	return nil
+}
+
+// validateBinaryExecution tries to run a binary with --help to validate it starts
+func (r *Runner) validateBinaryExecution(binary string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, binary, "--help")
+	if err := cmd.Run(); err != nil {
+		// Some bots might not have --help, so just check if it starts
+		if ctx.Err() == context.DeadlineExceeded {
+			// If it timed out waiting for help, it's probably OK
+			r.config.Logger.Debug().
+				Str("binary", binary).
+				Msg("Binary validation passed (timeout on --help)")
+			return nil
+		}
+		// Check if it's just exit code 1 (common for no --help flag)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			r.config.Logger.Debug().
+				Str("binary", binary).
+				Msg("Binary validation passed (exit 1 on --help)")
+			return nil
+		}
+		return fmt.Errorf("binary %s failed to run: %v", binary, err)
+	}
 	return nil
 }
 
@@ -498,20 +508,30 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 	startTime := time.Now()
 
 	// Create strategies for challenger and baseline
+	// Default seat counts if not specified
+	challengerSeats := r.config.ChallengerSeats
+	if challengerSeats == 0 {
+		challengerSeats = 1 // Default to 1 seat for NPC benchmark
+	}
+	baselineSeats := r.config.BaselineSeats
+	if baselineSeats == 0 {
+		baselineSeats = 1 // Default to 1 seat for NPC benchmark
+	}
+
 	challengerStrategy := &NPCBenchmarkStrategy{
 		Challenger:      r.config.Challenger,
-		Baseline:        r.config.Challenger, // Challenger vs NPCs
-		ChallengerSeats: r.config.ChallengerSeats,
+		Baseline:        "", // Not used in challenger run
+		ChallengerSeats: challengerSeats,
 		BaselineSeats:   0, // No baseline bots in challenger run
 		NPCs:            npcConfig,
 		Config:          r.config,
 	}
 
 	baselineStrategy := &NPCBenchmarkStrategy{
-		Challenger:      r.config.Baseline,
-		Baseline:        r.config.Baseline, // Baseline vs NPCs
-		ChallengerSeats: r.config.BaselineSeats,
-		BaselineSeats:   0, // No baseline bots in baseline run
+		Challenger:      "", // Not used in baseline run
+		Baseline:        r.config.Baseline,
+		ChallengerSeats: 0, // No challenger bots in baseline run
+		BaselineSeats:   baselineSeats,
 		NPCs:            npcConfig,
 		Config:          r.config,
 	}

@@ -153,13 +153,19 @@ func (s *NPCBenchmarkStrategy) Name() string {
 
 func (s *NPCBenchmarkStrategy) ConfigureBatch(batchNum int, seed int64) BatchConfiguration {
 	var botCmds []string
-	// Add challenger bots
-	for i := 0; i < s.ChallengerSeats; i++ {
-		botCmds = append(botCmds, s.Challenger)
-	}
-	// Add baseline bots
-	for i := 0; i < s.BaselineSeats; i++ {
-		botCmds = append(botCmds, s.Baseline)
+
+	// For NPC benchmark, only add challenger bots OR baseline bots, never both
+	// The runner creates separate strategies for challenger vs NPCs and baseline vs NPCs
+	if s.ChallengerSeats > 0 {
+		// This is a challenger vs NPCs run
+		for i := 0; i < s.ChallengerSeats; i++ {
+			botCmds = append(botCmds, s.Challenger)
+		}
+	} else if s.BaselineSeats > 0 {
+		// This is a baseline vs NPCs run
+		for i := 0; i < s.BaselineSeats; i++ {
+			botCmds = append(botCmds, s.Baseline)
+		}
 	}
 
 	// Build NPC configuration string
