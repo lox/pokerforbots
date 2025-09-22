@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -306,19 +307,175 @@ func handleStatsOutput(addr, statsFile string, printStats bool, logger zerolog.L
 
 	// Pretty print stats if requested
 	if printStats {
-		var stats any
-		if err := json.Unmarshal(data, &stats); err != nil {
-			logger.Error().Err(err).Msg("Failed to parse stats JSON")
-			return
-		}
+		printFormattedStats(data, logger)
+	}
+}
 
-		// Pretty print with indentation
-		prettyJSON, err := json.MarshalIndent(stats, "", "  ")
-		if err != nil {
-			logger.Error().Err(err).Msg("Failed to format stats JSON")
-			return
-		}
+// GameStats represents the JSON structure from the server
+type GameStats struct {
+	ID              string   `json:"id"`
+	SmallBlind      int      `json:"small_blind"`
+	BigBlind        int      `json:"big_blind"`
+	StartChips      int      `json:"start_chips"`
+	HandsCompleted  uint64   `json:"hands_completed"`
+	HandLimit       uint64   `json:"hand_limit"`
+	HandsPerSecond  float64  `json:"hands_per_second"`
+	DurationSeconds float64  `json:"duration_seconds"`
+	Players         []Player `json:"players"`
+}
 
-		fmt.Println(string(prettyJSON))
+// Player represents a player's statistics
+type Player struct {
+	BotID         string         `json:"bot_id"`
+	DisplayName   string         `json:"display_name"`
+	Hands         int            `json:"hands"`
+	NetChips      int            `json:"net_chips"`
+	AvgPerHand    float64        `json:"avg_per_hand"`
+	DetailedStats *DetailedStats `json:"detailed_stats,omitempty"`
+}
+
+// DetailedStats contains detailed player statistics
+type DetailedStats struct {
+	Hands             int                     `json:"hands"`
+	NetBB             float64                 `json:"net_bb"`
+	BBPer100          float64                 `json:"bb_per_100"`
+	Mean              float64                 `json:"mean"`
+	Median            float64                 `json:"median"`
+	StdDev            float64                 `json:"std_dev"`
+	CI95Low           float64                 `json:"ci_95_low"`
+	CI95High          float64                 `json:"ci_95_high"`
+	WinningHands      int                     `json:"winning_hands"`
+	WinRate           float64                 `json:"win_rate"`
+	ShowdownWins      int                     `json:"showdown_wins"`
+	NonShowdownWins   int                     `json:"non_showdown_wins"`
+	ShowdownWinRate   float64                 `json:"showdown_win_rate"`
+	ShowdownBB        float64                 `json:"showdown_bb"`
+	NonShowdownBB     float64                 `json:"non_showdown_bb"`
+	VPIP              float64                 `json:"vpip"`
+	PFR               float64                 `json:"pfr"`
+	PositionStats     map[string]PositionStat `json:"position_stats"`
+	StreetStats       map[string]StreetStat   `json:"street_stats"`
+	HandCategoryStats map[string]CategoryStat `json:"hand_category_stats"`
+}
+
+type PositionStat struct {
+	Hands     int     `json:"hands"`
+	NetBB     float64 `json:"net_bb"`
+	BBPerHand float64 `json:"bb_per_hand"`
+}
+
+type StreetStat struct {
+	HandsEnded int     `json:"hands_ended"`
+	NetBB      float64 `json:"net_bb"`
+	BBPerHand  float64 `json:"bb_per_hand"`
+}
+
+type CategoryStat struct {
+	Hands     int     `json:"hands"`
+	NetBB     float64 `json:"net_bb"`
+	BBPerHand float64 `json:"bb_per_hand"`
+}
+
+func printFormattedStats(data []byte, logger zerolog.Logger) {
+	var stats GameStats
+	if err := json.Unmarshal(data, &stats); err != nil {
+		logger.Error().Err(err).Msg("Failed to parse stats JSON")
+		return
+	}
+
+	fmt.Println("\n=== GAME SUMMARY ===")
+	fmt.Printf("Game ID: %s\n", stats.ID)
+	fmt.Printf("Hands completed: %d", stats.HandsCompleted)
+	if stats.HandLimit > 0 {
+		fmt.Printf(" / %d (%.1f%%)", stats.HandLimit, float64(stats.HandsCompleted)/float64(stats.HandLimit)*100)
+	}
+	fmt.Println()
+
+	if stats.DurationSeconds > 0 {
+		fmt.Printf("Duration: %.1f seconds\n", stats.DurationSeconds)
+		fmt.Printf("Hands per second: %.1f\n", stats.HandsPerSecond)
+	}
+	fmt.Printf("Stakes: %d/%d (BB = %d)\n", stats.SmallBlind, stats.BigBlind, stats.BigBlind)
+	fmt.Println()
+
+	// Sort players by net chips
+	players := stats.Players
+	sort.Slice(players, func(i, j int) bool {
+		return players[i].NetChips > players[j].NetChips
+	})
+
+	fmt.Println("=== LEADERBOARD ===")
+	for i, p := range players {
+		prefix := "  "
+		if i == 0 {
+			prefix = "👑"
+		}
+		netBB := float64(p.NetChips) / float64(stats.BigBlind)
+		fmt.Printf("%s %s: %+d chips (%+.1f BB, %.2f BB/hand)\n",
+			prefix, p.DisplayName, p.NetChips, netBB, p.AvgPerHand)
+	}
+	fmt.Println()
+
+	// Print detailed stats for each player if available
+	for _, p := range players {
+		if p.DetailedStats != nil {
+			printPlayerDetails(p.DisplayName, p.DetailedStats)
+		}
+	}
+}
+
+func printPlayerDetails(name string, stats *DetailedStats) {
+	fmt.Printf("=== %s DETAILS ===\n", strings.ToUpper(name))
+	fmt.Printf("Hands played: %d\n", stats.Hands)
+	fmt.Printf("Net result: %.2f BB (%.2f BB/100)\n", stats.NetBB, stats.BBPer100)
+	fmt.Printf("Mean: %.4f BB/hand | Median: %.4f BB/hand\n", stats.Mean, stats.Median)
+	fmt.Printf("Std Dev: %.4f BB | 95%% CI: [%.4f, %.4f]\n", stats.StdDev, stats.CI95Low, stats.CI95High)
+	fmt.Println()
+
+	// Win/loss breakdown
+	fmt.Println("Win/Loss Breakdown:")
+	fmt.Printf("  Winning hands: %d (%.1f%%)\n", stats.WinningHands, stats.WinRate)
+	fmt.Printf("    Showdown wins: %d | Non-showdown wins: %d\n", stats.ShowdownWins, stats.NonShowdownWins)
+	losingHands := stats.Hands - stats.WinningHands
+	fmt.Printf("  Losing hands: %d (%.1f%%)\n", losingHands, 100-stats.WinRate)
+	fmt.Printf("  VPIP: %.1f%% | PFR: %.1f%%\n", stats.VPIP*100, stats.PFR*100)
+	fmt.Println()
+
+	// Showdown analysis
+	totalShowdowns := stats.ShowdownWins + (stats.Hands - stats.WinningHands - stats.NonShowdownWins)
+	if totalShowdowns > 0 {
+		fmt.Println("Showdown Analysis:")
+		fmt.Printf("  Went to showdown: %d hands\n", totalShowdowns)
+		fmt.Printf("  Showdown win rate: %.1f%%\n", stats.ShowdownWinRate)
+		fmt.Printf("  Showdown BB: %.2f | Non-showdown BB: %.2f\n", stats.ShowdownBB, stats.NonShowdownBB)
+		fmt.Println()
+	}
+
+	// Position analysis if available
+	if len(stats.PositionStats) > 0 {
+		fmt.Println("Position Analysis:")
+		positions := []string{"Button", "Cutoff", "Middle", "Early", "SB", "BB"}
+		for _, pos := range positions {
+			if stat, ok := stats.PositionStats[pos]; ok && stat.Hands > 0 {
+				fmt.Printf("  %s: %d hands, %.3f BB/hand (%.1f BB/100)\n",
+					pos, stat.Hands, stat.BBPerHand, stat.BBPerHand*100)
+			}
+		}
+		fmt.Println()
+	}
+
+	// Street analysis if available
+	if len(stats.StreetStats) > 0 {
+		fmt.Println("Street Analysis:")
+		streets := []string{"preflop", "flop", "turn", "river"}
+		for _, street := range streets {
+			if stat, ok := stats.StreetStats[street]; ok && stat.HandsEnded > 0 {
+				// Capitalize first letter of street name
+				streetName := strings.ToUpper(street[:1]) + street[1:]
+				fmt.Printf("  %s: %d hands ended, %.3f BB/hand\n",
+					streetName, stat.HandsEnded, stat.BBPerHand)
+			}
+		}
+		fmt.Println()
 	}
 }

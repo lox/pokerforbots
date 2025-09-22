@@ -241,8 +241,6 @@ func (s *Server) Serve(listener net.Listener) error {
 	// Start bot pools for all registered games
 	s.manager.StartAll()
 
-	// NPC bootstrapping removed - use spawner for bot orchestration
-
 	s.ensureRoutes()
 
 	s.httpServer = &http.Server{
@@ -414,17 +412,16 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 // NPC support has been removed - use the spawner tool for bot orchestration
 
 type adminGameRequest struct {
-	ID               string `json:"id"`
-	SmallBlind       int    `json:"small_blind"`
-	BigBlind         int    `json:"big_blind"`
-	StartChips       int    `json:"start_chips"`
-	TimeoutMs        int    `json:"timeout_ms"`
-	MinPlayers       int    `json:"min_players"`
-	MaxPlayers       int    `json:"max_players"`
-	InfiniteBankroll *bool  `json:"infinite_bankroll"`
-	// NPCs field removed - use spawner for bot orchestration
-	Hands *uint64 `json:"hands,omitempty"`
-	Seed  *int64  `json:"seed,omitempty"`
+	ID               string  `json:"id"`
+	SmallBlind       int     `json:"small_blind"`
+	BigBlind         int     `json:"big_blind"`
+	StartChips       int     `json:"start_chips"`
+	TimeoutMs        int     `json:"timeout_ms"`
+	MinPlayers       int     `json:"min_players"`
+	MaxPlayers       int     `json:"max_players"`
+	InfiniteBankroll *bool   `json:"infinite_bankroll"`
+	Hands            *uint64 `json:"hands,omitempty"`
+	Seed             *int64  `json:"seed,omitempty"`
 }
 
 func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
@@ -446,7 +443,6 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("invalid game parameters"))
 		return
 	}
-	// NPC validation removed - use spawner for bot orchestration
 
 	if _, exists := s.manager.GetGame(req.ID); exists {
 		w.WriteHeader(http.StatusConflict)
