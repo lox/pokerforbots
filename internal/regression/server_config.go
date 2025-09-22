@@ -120,3 +120,20 @@ func (sc *ServerConfig) CountNPCs() int {
 
 	return count
 }
+
+// BuildReproCommand generates the exact `task server` command to reproduce this batch
+func (sc *ServerConfig) BuildReproCommand(defaults *Config) string {
+	args := sc.BuildServerArgs(defaults)
+
+	// Quote arguments that contain spaces
+	quotedArgs := make([]string, len(args))
+	for i, arg := range args {
+		if strings.Contains(arg, " ") {
+			quotedArgs[i] = fmt.Sprintf("'%s'", arg)
+		} else {
+			quotedArgs[i] = arg
+		}
+	}
+
+	return "task server -- " + strings.Join(quotedArgs, " ")
+}

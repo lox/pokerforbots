@@ -152,6 +152,12 @@ func (o *Orchestrator) runSingleBatch(ctx context.Context, strategy BatchStrateg
 		NPCConfig:   config.NPCConfig,
 	}
 
+	// Log the exact reproduction command for debugging
+	reproCmd := serverConfig.BuildReproCommand(o.config)
+	o.logger.Info().
+		Str("repro_cmd", reproCmd).
+		Msg("To reproduce this batch, run")
+
 	// Start server with consolidated configuration
 	if err := o.StartServer(ctx, serverConfig); err != nil {
 		return nil, fmt.Errorf("failed to start server: %w", err)
