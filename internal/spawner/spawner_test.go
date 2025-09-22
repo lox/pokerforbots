@@ -1,7 +1,11 @@
 package spawner
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -148,5 +152,104 @@ sleep 10
 	// Should be stopped
 	if count := spawner.ActiveCount(); count != 0 {
 		t.Errorf("Expected 0 active processes after stop, got %d", count)
+	}
+}
+
+func TestSpawnBot(t *testing.T) {
+	logger := zerolog.New(zerolog.NewTestWriter(t))
+	spawner := New("ws://localhost:8080/ws", logger)
+
+	// Test SpawnBot with single bot
+	spec := BotSpec{
+		Command: "echo",
+		Args:    []string{"test-bot"},
+		Count:   1,
+		GameID:  "test-game",
+	}
+
+	proc, err := spawner.SpawnBot(spec)
+	if err != nil {
+		t.Fatalf("Failed to spawn bot: %v", err)
+	}
+
+	// Process should be registered
+	if retrieved, ok := spawner.GetProcess("bot-0"); !ok {
+		t.Error("Bot not registered")
+	} else if retrieved != proc {
+		t.Error("Retrieved different process")
+	}
+
+	// Count validation
+	spec.Count = 2
+	_, err = spawner.SpawnBot(spec)
+	if err == nil {
+		t.Error("Expected error for Count != 1")
+	}
+
+	spawner.StopAll()
+}
+
+func TestWaitForServer(t *testing.T) {
+	// Create a test server
+	mux := http.NewServeMux()
+	healthHit := false
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		healthHit = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	// Convert to WebSocket URL format
+	wsURL := strings.Replace(server.URL, "http://", "ws://", 1) + "/ws"
+
+	// Test successful wait
+	err := WaitForServer(wsURL, 1*time.Second)
+	if err != nil {
+		t.Errorf("Failed to wait for server: %v", err)
+	}
+
+	if !healthHit {
+		t.Error("Health endpoint not called")
+	}
+
+	// Test timeout
+	err = WaitForServer("ws://localhost:9999/ws", 100*time.Millisecond)
+	if err == nil {
+		t.Error("Expected timeout error")
+	}
+}
+
+func TestCollectStats(t *testing.T) {
+	// Create a test server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/admin/games/test-game/stats", func(w http.ResponseWriter, r *http.Request) {
+		stats := GameStats{
+			ID:             "test-game",
+			HandsCompleted: 42,
+			HandLimit:      100,
+			HandsRemaining: 58,
+		}
+		json.NewEncoder(w).Encode(stats)
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	// Convert to WebSocket URL format
+	wsURL := strings.Replace(server.URL, "http://", "ws://", 1) + "/ws"
+
+	// Test successful collection
+	stats, err := CollectStats(wsURL, "test-game")
+	if err != nil {
+		t.Fatalf("Failed to collect stats: %v", err)
+	}
+
+	if stats.ID != "test-game" {
+		t.Errorf("Expected game ID 'test-game', got %s", stats.ID)
+	}
+	if stats.HandsCompleted != 42 {
+		t.Errorf("Expected 42 hands completed, got %d", stats.HandsCompleted)
 	}
 }

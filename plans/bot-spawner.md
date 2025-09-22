@@ -17,11 +17,34 @@ The server has accumulated significant orchestration complexity beyond its core 
 
 These responsibilities belong in external orchestration, not the core server.
 
+## Architectural Direction (Refined)
+
+After analysis with Codex, we've refined the approach to be **evolutionary rather than revolutionary**:
+
+### Core Principles
+1. **Server tracks facts, not analysis** - Essential counters and state only
+2. **Hand limits stay in server** - Critical for deterministic testing
+3. **Stats are lightweight** - Just aggregates for monitoring, not full analysis
+4. **Spawner for convenience, not enforcement** - Optional orchestration layer
+5. **Libraries over frameworks** - Export reusable functions, don't force tool usage
+
+### What We Keep
+- Server retains lightweight stats (hands played, win/loss, timeouts)
+- Hand limits remain server-side for deterministic testing
+- Simple JSON API endpoints for game state
+- Direct server usage remains viable for simple scenarios
+
+### What We Remove
+- Complex statistical analysis (street/position breakdowns)
+- Bot spawning from server
+- Rendering/formatting in server (JSON only)
+- Auto-exit behaviors
+
 ## Proposed Solution
 
-1. **Extract bot spawning** into a reusable `internal/spawner` package
-2. **Simplify server** to only handle core poker game logic
-3. **Move orchestration logic** to external tools that use the server's HTTP/WebSocket APIs
+1. **Extract bot spawning** into a reusable `internal/spawner` package ✅
+2. **Simplify server** to focus on core poker game logic
+3. **Move complex orchestration** to external tools
 
 ### Core Design
 
@@ -59,38 +82,38 @@ All strategies are now standalone bots in `sdk/examples/`:
 
 No built-in strategies needed - they're all just external processes!
 
-## Implementation Phases
+## Implementation Status
 
-### Phase 1: Create Package Structure
-- [ ] Create `internal/spawner/spawner.go` with core types
-- [ ] Create `internal/spawner/process.go` for process management
-- [ ] Add comprehensive tests
+### Phase 1: Create Package Structure ✅
+- [x] Create `internal/spawner/spawner.go` with core types
+- [x] Create `internal/spawner/process.go` for process management
+- [x] Add comprehensive tests
 
-### Phase 2: Port External Process Management
-- [ ] Move subprocess spawning from `cmd/server/subprocess.go`
-- [ ] Move environment variable injection logic
-- [ ] Move output prefixing and logging
-- [ ] Add proper process cleanup and signal handling
+### Phase 2: Port External Process Management ✅
+- [x] Move subprocess spawning from `cmd/server/subprocess.go`
+- [x] Move environment variable injection logic
+- [x] Move output prefixing and logging
+- [x] Add proper process cleanup and signal handling
 
-### Phase 3: Simplify Server Core
-- [ ] Remove ALL NPC code from `internal/server/npc.go` (delete file)
-- [ ] Remove hand limit auto-exit logic (use external monitoring instead)
-- [ ] Remove StopOnInsufficientBots (external orchestrator handles this)
-- [ ] Remove PrintStatsOnExit/WriteStatsOnExit (use HTTP API `/games/{id}/stats`)
-- [ ] Remove bot management from `internal/server/server.go`
-- [ ] Simplify CLI to just `--addr`, `--small-blind`, `--big-blind`, `--timeout-ms`
+### Phase 3: Simplify Server Core ✅
+- [x] Remove ALL NPC code from `internal/server/npc.go` (delete file)
+- [x] Remove hand limit auto-exit logic (kept in server for deterministic testing)
+- [x] Remove StopOnInsufficientBots (external orchestrator handles this)
+- [x] Remove PrintStatsOnExit/WriteStatsOnExit (use HTTP API `/games/{id}/stats`)
+- [x] Remove bot management from `internal/server/server.go`
+- [x] Simplify CLI to core flags only
 
-### Phase 4: Integrate with Server Main
-- [ ] Update `cmd/server/main.go` to optionally use BotSpawner
-- [ ] Move all orchestration logic to external runner
-- [ ] Server just starts and waits for shutdown signal
-- [ ] Update tests to use spawner
+### Phase 4: Create Spawner Tool ✅
+- [x] Create `cmd/spawner/main.go` with embedded server
+- [x] Implement `--spec` format (e.g., "calling-station:2,aggressive:1")
+- [x] Move all orchestration logic to spawner
+- [x] Add stats collection and pretty printing
 
-### Phase 5: Update and Consolidate Tools
-- [ ] Update regression tester to use spawner
-- [ ] Migrate benchmark functionality into spawner/regression-tester
-- [ ] Deprecate and remove `cmd/benchmark` (redundant with spawner)
-- [ ] Update demo scripts to use spawner
+### Phase 5: Next Steps
+- [ ] Simplify server stats to essential aggregates only
+- [ ] Export spawner functions for regression tester to use
+- [ ] Add subprocess server mode to spawner for isolation
+- [ ] Update regression tester to use spawner package
 - [ ] Update documentation with new workflows
 
 ## Benefits
@@ -237,21 +260,67 @@ func runBatch(config BatchConfig) error {
 }
 ```
 
+## Architecture Details
+
+### Server Responsibilities (Minimal)
+```go
+// Server provides:
+- WebSocket endpoint for bot connections
+- Game state management via GameManager
+- HTTP API for game discovery and stats
+- Deterministic seeds and hand limits
+- Basic aggregate statistics (hands, wins, timeouts)
+```
+
+### Spawner as a Library
+```go
+// Export these for other tools:
+func (s *BotSpawner) SpawnBot(spec BotSpec) (*Process, error)
+func (s *BotSpawner) SpawnServer(config ServerConfig) (*Process, error)
+func (s *BotSpawner) WaitForServer(url string) error
+func (s *BotSpawner) CollectStats(url string) (*GameStats, error)
+```
+
+### Regression Tester Integration
+```go
+// cmd/regression-tester can import spawner:
+import "github.com/lox/pokerforbots/internal/spawner"
+
+func runTest() {
+    // Option 1: Embedded server (fast)
+    srv := server.NewServer(...)
+    go srv.Serve(listener)
+
+    // Option 2: Subprocess server (isolated)
+    sp := spawner.New(serverURL, logger)
+    serverProc, _ := sp.SpawnServer(config)
+
+    // Use spawner for all bots
+    sp.SpawnMany(challengerSpecs)
+    sp.SpawnMany(baselineSpecs)
+}
+```
+
 ## Success Metrics
 
-- Server main.go reduced from ~500 to ~100 lines
-- Server core reduced from ~766 to ~400 lines
-- Bot management consolidated in `internal/spawner` (~500 lines)
-- All orchestration logic moves to external runners
-- Server becomes a pure poker game engine
-- Tests pass without modification
+- Server main.go reduced from ~500 to ~100 lines ✅
+- Server core reduced from ~766 to ~400 lines ✅
+- Bot management consolidated in `internal/spawner` (~500 lines) ✅
+- Orchestration logic in external tools ✅
+- Server is now a focused poker game engine ✅
+- All tests passing ✅
 
-## Key Principle
+## Key Principle (Refined)
 
-**The server should be a stateless poker game engine that:**
+**The server is a lean poker game engine that:**
 - Accepts WebSocket connections from bots
 - Runs poker games according to rules
 - Provides HTTP API for game status
-- That's it.
+- Tracks essential facts (hands, wins, timeouts)
+- Supports deterministic testing via seeds and limits
 
-**Everything else (bot spawning, hand limits, stats writing, etc.) belongs in external orchestration tools.**
+**External tools handle:**
+- Bot process spawning and management
+- Complex statistical analysis
+- Test orchestration and reporting
+- Output formatting and rendering
