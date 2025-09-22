@@ -109,11 +109,16 @@ No built-in strategies needed - they're all just external processes!
 - [x] Move all orchestration logic to spawner
 - [x] Add stats collection and pretty printing
 
-### Phase 5: Next Steps
-- [ ] Simplify server stats to essential aggregates only
-- [ ] Export spawner functions for regression tester to use
-- [ ] Add subprocess server mode to spawner for isolation
+### Phase 5: Library Functions ✅
+- [x] Export spawner functions for regression tester to use
+- [x] Add SpawnBot() for individual bot tracking
+- [x] Add SpawnServer() for subprocess server mode
+- [x] Add WaitForServer() and CollectStats() helpers
+- [x] Comprehensive tests for all new functionality
+
+### Phase 6: Next Steps
 - [ ] Update regression tester to use spawner package
+- [ ] Simplify server stats to essential aggregates only
 - [ ] Update documentation with new workflows
 
 ## Benefits
@@ -301,14 +306,21 @@ func runTest() {
 }
 ```
 
-## Success Metrics
+## Current State (January 2025)
 
-- Server main.go reduced from ~500 to ~100 lines ✅
-- Server core reduced from ~766 to ~400 lines ✅
-- Bot management consolidated in `internal/spawner` (~500 lines) ✅
-- Orchestration logic in external tools ✅
-- Server is now a focused poker game engine ✅
-- All tests passing ✅
+### Completed Work
+- **Server Simplification**: Removed all bot spawning, NPC logic, and rendering
+- **Spawner Package**: Fully functional process management in `internal/spawner`
+- **Spawner Tool**: `cmd/spawner` with embedded server and `--spec` support
+- **Library Functions**: Exported functions for subprocess servers, stats collection
+- **All Tests Passing**: 395 tests including new spawner functionality
+
+### Metrics Achieved
+- Server main.go: ~120 lines (was ~500) ✅
+- Server core: ~400 lines (was ~766) ✅
+- Spawner package: ~400 lines of focused process management ✅
+- Spawner tool: ~325 lines of orchestration logic ✅
+- Clean separation of concerns achieved ✅
 
 ## Key Principle (Refined)
 
