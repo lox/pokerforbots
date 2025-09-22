@@ -150,10 +150,10 @@ func main() {
 		var playerChans []<-chan error
 		var npcChans []<-chan error
 		for _, cmd := range cli.BotCmd {
-			playerChans = append(playerChans, spawnBot(logger, botProcsCtx, cmd, serverWS, "default"))
+			playerChans = append(playerChans, spawnBot(logger, botProcsCtx, cmd, serverWS, "default", seed))
 		}
 		for _, cmd := range cli.NPCBotCmd {
-			npcChans = append(npcChans, spawnBotWithRole(logger, botProcsCtx, cmd, serverWS, "default", "npc"))
+			npcChans = append(npcChans, spawnBotWithRole(logger, botProcsCtx, cmd, serverWS, "default", "npc", seed))
 		}
 		// Only treat player bot exits as a shutdown trigger
 		anyBotDone = firstDone(playerChans)
@@ -281,23 +281,32 @@ func toHTTPBase(addr string) string {
 	return "http://" + base
 }
 
-func spawnBot(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, gameID string) <-chan error {
-	return spawnBotWithRole(logger, ctx, cmdStr, serverWS, gameID, "")
+func spawnBot(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, gameID string, seed int64) <-chan error {
+	return spawnBotWithRole(logger, ctx, cmdStr, serverWS, gameID, "", seed)
 }
 
 var externalBotSeq int64
 
-func spawnBotWithRole(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, gameID, role string) <-chan error {
+func spawnBotWithRole(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, gameID, role string, seed int64) <-chan error {
+	// Generate unique sequence number for this bot
+	seq := atomic.AddInt64(&externalBotSeq, 1)
+
+	// Derive unique seed for this bot by adding sequence to base seed
+	// This ensures each bot gets a different but deterministic seed
+	botSeed := seed + seq
+
+	// Pass the derived seed and a unique bot ID
 	env := []string{
 		"POKERFORBOTS_SERVER=" + serverWS,
 		"POKERFORBOTS_GAME=" + gameID,
+		"POKERFORBOTS_SEED=" + strconv.FormatInt(botSeed, 10),
+		"POKERFORBOTS_BOT_ID=" + fmt.Sprintf("bot-%d", seq),
 	}
 	if role != "" {
 		env = append(env, "POKERFORBOTS_ROLE="+role)
 	}
 
 	// Generate prefix for output
-	seq := atomic.AddInt64(&externalBotSeq, 1)
 	base := strings.Fields(cmdStr)
 	label := role
 	if label == "" {

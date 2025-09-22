@@ -35,10 +35,10 @@ tasks:
     desc: Build all binaries
     cmds:
       - mkdir -p dist
-      - go build -o dist/server cmd/server/main.go
-      - go build -o dist/client cmd/client/main.go
-      - go build -o dist/benchmark cmd/benchmark/main.go
-      - go build -o dist/complex-bot sdk/examples/complex/main.go
+      - go build -o dist/server ./cmd/server
+      - go build -o dist/client ./cmd/client
+      - go build -o dist/benchmark ./cmd/benchmark
+      - go build -o dist/complex-bot ./sdk/examples/complex
     sources:
       - '**/*.go'
     generates:

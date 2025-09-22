@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -54,11 +55,35 @@ type complexImprovedBot struct {
 }
 
 func newComplexImprovedBot(logger zerolog.Logger) *complexImprovedBot {
-	id := fmt.Sprintf("complex-improved-%04d", rand.Intn(10000))
+	// Read seed from environment, fallback to timestamp if not provided
+	seed := time.Now().UnixNano()
+	if envSeed := os.Getenv("POKERFORBOTS_SEED"); envSeed != "" {
+		if parsedSeed, err := strconv.ParseInt(envSeed, 10, 64); err == nil {
+			seed = parsedSeed
+		} else {
+			logger.Warn().Str("seed", envSeed).Err(err).Msg("Failed to parse POKERFORBOTS_SEED, using timestamp")
+		}
+	}
+
+	// Create deterministic RNG for decision-making using the provided seed
+	rng := rand.New(rand.NewSource(seed))
+
+	// Check if bot ID is provided by server, otherwise generate one
+	var id string
+	if envID := os.Getenv("POKERFORBOTS_BOT_ID"); envID != "" {
+		// Use the server-provided ID with a complex bot prefix
+		id = fmt.Sprintf("complex-%s", envID)
+	} else {
+		// Generate our own ID if not provided (e.g., when run standalone)
+		id = fmt.Sprintf("complex-improved-%04d", rng.Intn(10000))
+	}
+
+	logger.Debug().Int64("seed", seed).Str("bot_id", id).Msg("Bot initialized with seed")
+
 	return &complexImprovedBot{
 		id:       id,
 		logger:   logger.With().Str("bot_id", id).Logger(),
-		rng:      rand.New(rand.NewSource(time.Now().UnixNano())),
+		rng:      rng,
 		handNum:  0,
 		bigBlind: 10, // Default big blind
 	}
