@@ -584,9 +584,12 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 	// Calculate performance difference (challenger - baseline)
 	performanceDiff := avgChallengerBB100 - avgBaselineBB100
 
-	// TODO: Calculate proper confidence intervals - using placeholder for now
-	challengerCIRange := math.Abs(avgChallengerBB100) * 0.1
-	baselineCIRange := math.Abs(avgBaselineBB100) * 0.1
+	// Calculate proper confidence intervals using pooled standard deviation
+	challengerStdDev := CalculatePooledStdDev(allChallengerBatches, "challenger_bb_per_100", "challenger_std_dev", "challenger_hands")
+	baselineStdDev := CalculatePooledStdDev(allBaselineBatches, "baseline_bb_per_100", "baseline_std_dev", "baseline_hands")
+
+	challengerCI95Low, challengerCI95High := CalculateConfidenceInterval(avgChallengerBB100, challengerStdDev, totalChallengerHands)
+	baselineCI95Low, baselineCI95High := CalculateConfidenceInterval(avgBaselineBB100, baselineStdDev, totalBaselineHands)
 
 	return &TestResult{
 		TestID: fmt.Sprintf("npc-benchmark-%d", time.Now().Unix()),
@@ -625,8 +628,8 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 		Aggregate: AggregateResults{
 			Challenger: &BotResults{
 				BBPer100:         avgChallengerBB100,
-				CI95Low:          avgChallengerBB100 - challengerCIRange,
-				CI95High:         avgChallengerBB100 + challengerCIRange,
+				CI95Low:          challengerCI95Low,
+				CI95High:         challengerCI95High,
 				VPIP:             challengerStats.VPIP,
 				PFR:              challengerStats.PFR,
 				AggressionFactor: 0, // TODO: Calculate
@@ -634,8 +637,8 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 			},
 			Baseline: &BotResults{
 				BBPer100:         avgBaselineBB100,
-				CI95Low:          avgBaselineBB100 - baselineCIRange,
-				CI95High:         avgBaselineBB100 + baselineCIRange,
+				CI95Low:          baselineCI95Low,
+				CI95High:         baselineCI95High,
 				VPIP:             baselineStats.VPIP,
 				PFR:              baselineStats.PFR,
 				AggressionFactor: 0, // TODO: Calculate

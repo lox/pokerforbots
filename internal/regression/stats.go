@@ -2,10 +2,17 @@ package regression
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/lox/pokerforbots/internal/server"
 )
+
+// AggregationResult holds both results and standard deviations from aggregation
+type AggregationResult struct {
+	Results map[string]float64
+	StdDevs map[string]float64
+}
 
 // AggregateHeadsUpStats aggregates stats for heads-up mode
 func AggregateHeadsUpStats(stats *server.GameStats) (map[string]float64, error) {
@@ -24,6 +31,7 @@ func AggregateHeadsUpStats(stats *server.GameStats) (map[string]float64, error) 
 		results["bot_a_pfr"] = playerA.DetailedStats.PFR
 		results["bot_a_timeouts"] = float64(playerA.DetailedStats.Timeouts)
 		results["bot_a_busts"] = float64(playerA.DetailedStats.Busts)
+		results["bot_a_std_dev"] = playerA.DetailedStats.StdDev
 	} else if playerA.Hands > 0 && stats.BigBlind > 0 {
 		// Calculate BB/100 from basic stats if detailed stats not available
 		results["bot_a_bb_per_100"] = (float64(playerA.NetChips) / float64(stats.BigBlind)) / float64(playerA.Hands) * 100
@@ -38,6 +46,7 @@ func AggregateHeadsUpStats(stats *server.GameStats) (map[string]float64, error) 
 		results["bot_b_pfr"] = playerB.DetailedStats.PFR
 		results["bot_b_timeouts"] = float64(playerB.DetailedStats.Timeouts)
 		results["bot_b_busts"] = float64(playerB.DetailedStats.Busts)
+		results["bot_b_std_dev"] = playerB.DetailedStats.StdDev
 	} else if playerB.Hands > 0 && stats.BigBlind > 0 {
 		// Calculate BB/100 from basic stats if detailed stats not available
 		results["bot_b_bb_per_100"] = (float64(playerB.NetChips) / float64(stats.BigBlind)) / float64(playerB.Hands) * 100
@@ -333,4 +342,67 @@ func CalculateTotalHands(batches []BatchResult, handsKey string) int {
 		totalHands += ExtractActualHands(batch, handsKey)
 	}
 	return totalHands
+}
+
+// CalculateConfidenceInterval computes 95% confidence interval from standard error
+func CalculateConfidenceInterval(mean, stdDev float64, n int) (float64, float64) {
+	if n <= 1 {
+		// Return wide interval for small samples
+		return mean - 50, mean + 50
+	}
+
+	se := stdDev / math.Sqrt(float64(n))
+	margin := 1.96 * se // 95% CI
+	return mean - margin, mean + margin
+}
+
+// CalculatePooledStdDev calculates pooled standard deviation from batch results
+func CalculatePooledStdDev(batches []BatchResult, metricKey, stdDevKey, handsKey string) float64 {
+	var sumSquaredDeviations float64
+	var totalHands int
+	var overallMean float64
+
+	// First pass: calculate overall mean
+	var totalWeightedValue float64
+	for _, batch := range batches {
+		actualHands := ExtractActualHands(batch, handsKey)
+		if value, exists := batch.Results[metricKey]; exists {
+			totalWeightedValue += value * float64(actualHands)
+			totalHands += actualHands
+		}
+	}
+
+	if totalHands > 0 {
+		overallMean = totalWeightedValue / float64(totalHands)
+	}
+
+	// Second pass: calculate pooled variance
+	var totalDf int // degrees of freedom
+	for _, batch := range batches {
+		actualHands := ExtractActualHands(batch, handsKey)
+		if actualHands <= 1 {
+			continue // Skip batches with insufficient data
+		}
+
+		// Use batch standard deviation if available
+		if batchStdDev, exists := batch.StdDevs[stdDevKey]; exists && batchStdDev > 0 {
+			// Add this batch's contribution to pooled variance
+			batchVariance := batchStdDev * batchStdDev
+			sumSquaredDeviations += batchVariance * float64(actualHands-1)
+			totalDf += actualHands - 1
+		} else if batchMean, exists := batch.Results[metricKey]; exists {
+			// Fallback: estimate variance from deviation from overall mean
+			deviation := batchMean - overallMean
+			sumSquaredDeviations += deviation * deviation * float64(actualHands)
+			totalDf += actualHands - 1
+		}
+	}
+
+	if totalDf > 0 {
+		pooledVariance := sumSquaredDeviations / float64(totalDf)
+		return math.Sqrt(pooledVariance)
+	}
+
+	// Fallback: use typical poker variance (approximately 100 BB/100)
+	return 100.0
 }

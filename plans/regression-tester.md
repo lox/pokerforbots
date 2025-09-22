@@ -168,17 +168,8 @@ The regression tester automatically shows warnings when sample sizes are too sma
 - **5,000-10,000 hands with small effects**: Shows note about needing more hands
 - **10,000+ hands**: No warning (sufficient for most testing)
 
-### Early Stopping
-For CI efficiency, stop when significance is reached:
-```bash
-# Using task command
-task regression -- --early-stopping \
-  --challenger "go run ./sdk/examples/complex" \
-  --baseline "go run ./sdk/examples/complex" \
-  --min-hands 1000 \
-  --max-hands 10000 \
-  --check-interval 500
-```
+### ~~Early Stopping~~ (Removed)
+Early stopping has been removed from the framework. Tests run for the specified number of hands to ensure consistent and comparable results across all test runs.
 
 ## Output Format
 
@@ -335,7 +326,6 @@ type TestConfig struct {
     SignificanceLevel   float64
     EffectSizeThreshold float64
     MultipleTestCorrection bool
-    EarlyStopping       bool
 
     // Performance
     TimeoutMs           int
@@ -377,8 +367,7 @@ type TestConfig struct {
 - [x] **Extract reporter** - Moved reporting logic to dedicated file with dependency injection
 - [x] **Consolidate server methods** - Created single StartServer with ServerConfig struct
 - [x] **Unify all modes** - All test modes now use challenger/baseline naming consistently
-- [ ] **Split runner.go** - Separate validation, execution, and coordination concerns
-- [ ] **Go idioms cleanup** - Consistent error wrapping, extract magic numbers
+- [x] **Go idioms cleanup** - Consistent error wrapping, extract magic numbers
 
 ### Phase 4: Statistics & Reporting
 - [x] **Real statistical aggregation** - VPIP/PFR tracking implemented in server
@@ -390,11 +379,9 @@ type TestConfig struct {
 - [x] Automatic sample size warnings when needed
 - [ ] Proper confidence interval calculations (using placeholder 95% CI)
 - [ ] Effect size calculations (using placeholder Cohen's d)
-- [ ] Early stopping for CI efficiency
 - [ ] Result archiving in `snapshots/regression-*.json`
 
 ### Phase 5: Advanced Features (Future)
-- [x] **Add `--write-stats-on-exit` to server for JSON statistics** - COMPLETE
 - [ ] Mirror mode support (when server implements it)
 - [ ] Parallel table execution for faster results
 - [ ] Comparison with historical baselines
@@ -405,17 +392,12 @@ type TestConfig struct {
 
 **Immediate (Phase 4 - Statistics):**
 1. **Statistical Rigor**: Replace placeholder confidence intervals and effect size calculations with proper statistics
-2. **Early Stopping**: Implement significance-based early termination for CI efficiency
-3. **Result Archiving**: Save results to `snapshots/regression-*.json` for trend analysis
+2. **Result Archiving**: Save results to `snapshots/regression-*.json` for trend analysis
 
 **Future (Phase 5):**
 1. **Split runner.go**: Separate concerns into focused files for maintainability
 2. **Go idioms cleanup**: Consistent error wrapping, extract magic numbers
 
-**Then (Phase 4 - Statistics):**
-1. **Statistical Rigor**: Replace placeholder confidence intervals and effect size calculations with proper statistics
-2. **Early Stopping**: Implement significance-based early termination for CI efficiency
-3. **Result Archiving**: Save results to `snapshots/regression-*.json` for trend analysis
 
 ## Current Implementation
 
@@ -439,8 +421,6 @@ type TestConfig struct {
 ### Known Limitations
 - **Statistical calculations**: Using placeholder confidence intervals and effect sizes
 - **Result archiving**: Not yet saving results to snapshots/ directory
-- **Multiple comparison correction**: Not implemented for running multiple test modes
-- **Early stopping**: Not implemented for CI efficiency
 
 ### Example Output
 ```

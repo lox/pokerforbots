@@ -39,6 +39,7 @@ type BatchResult struct {
 	Seed    int64              `json:"seed"`
 	Hands   int                `json:"hands"`
 	Results map[string]float64 `json:"results"`
+	StdDevs map[string]float64 `json:"std_devs,omitempty"` // Standard deviations for each metric
 }
 
 // AggregateResults contains aggregated bot results

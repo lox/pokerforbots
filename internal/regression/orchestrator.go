@@ -175,10 +175,30 @@ func (o *Orchestrator) runSingleBatch(ctx context.Context, strategy BatchStrateg
 		return nil, fmt.Errorf("failed to aggregate stats: %w", err)
 	}
 
+	// Extract standard deviations from detailed stats
+	stdDevs := make(map[string]float64)
+	for i, player := range stats.Players {
+		if player.DetailedStats != nil {
+			// Map standard deviations to match result keys
+			if i < 2 {
+				// Heads-up mode: bot_a and bot_b
+				if i == 0 {
+					stdDevs["bot_a_std_dev"] = player.DetailedStats.StdDev
+				} else {
+					stdDevs["bot_b_std_dev"] = player.DetailedStats.StdDev
+				}
+			}
+			// For other modes, we'll need more complex mapping
+			// For now, just store by player index
+			stdDevs[fmt.Sprintf("player_%d_std_dev", i)] = player.DetailedStats.StdDev
+		}
+	}
+
 	return &BatchResult{
 		Seed:    config.Seed,
 		Hands:   config.Hands,
 		Results: results,
+		StdDevs: stdDevs,
 	}, nil
 }
 

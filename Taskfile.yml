@@ -47,6 +47,25 @@ tasks:
       - dist/benchmark
       - dist/complex-bot
 
+  snapshot:
+    desc: Create a new snapshot of the complex bot
+    cmds:
+      - mkdir -p snapshots
+      - |
+        COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "uncommitted")
+        DATE=$(date +%Y%m%d)
+        OUTPUT="snapshots/complex-${DATE}-${COMMIT}"
+        echo "Building snapshot: ${OUTPUT}"
+        go build -o "${OUTPUT}" ./sdk/examples/complex
+        chmod +x "${OUTPUT}"
+
+        # Update symlinks
+        cd snapshots
+        ln -sf $(basename "${OUTPUT}") complex-latest
+
+        echo "Snapshot created:"
+        ls -la complex-*
+
   server:
     desc: Run the poker server
     cmds:
@@ -107,20 +126,50 @@ tasks:
     cmds:
       - |
         go run ./cmd/regression-tester --mode heads-up \
-          --challenger "go run ./sdk/examples/complex" \
-          --baseline "go run ./sdk/examples/complex" \
-          --hands {{.HANDS | default "1000"}} \
-          --output summary
+          --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
+          --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
+          --hands {{.HANDS | default "50000"}} \
+          --output {{.OUTPUT | default "summary"}}
+
+  regression:population:
+    desc: Run population regression test
+    cmds:
+      - |
+        go run ./cmd/regression-tester --mode population \
+          --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
+          --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
+          --hands {{.HANDS | default "50000"}} \
+          --output {{.OUTPUT | default "summary"}}
+
+  regression:npc:
+    desc: Run NPC benchmark regression test
+    cmds:
+      - |
+        go run ./cmd/regression-tester --mode npc-benchmark \
+          --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
+          --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
+          --hands {{.HANDS | default "50000"}} \
+          --output {{.OUTPUT | default "summary"}}
+
+  regression:self-play:
+    desc: Run self-play regression test
+    cmds:
+      - |
+        go run ./cmd/regression-tester --mode self-play \
+          --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
+          --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
+          --hands {{.HANDS | default "50000"}} \
+          --output {{.OUTPUT | default "summary"}}
 
   regression:all:
     desc: Run all regression test modes
     cmds:
       - |
         go run ./cmd/regression-tester --mode all \
-          --challenger "go run ./sdk/examples/complex" \
-          --baseline "go run ./sdk/examples/complex" \
-          --hands {{.HANDS | default "1000"}} \
-          --output both
+          --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
+          --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
+          --hands {{.HANDS | default "50000"}} \
+          --output {{.OUTPUT | default "summary"}}
 
   bench:evaluator:
     desc: Run evaluator large-sample benchmarks (sequential and parallel)
@@ -140,7 +189,5 @@ tasks:
     desc: Clean build artifacts
     cmds:
       - rm -rf dist/
-      - rm -f internal/protocol/*_gen.go
-      - rm -f internal/protocol/*_gen_test.go
       - rm -f protocol/*_gen.go
       - rm -f protocol/*_gen_test.go
