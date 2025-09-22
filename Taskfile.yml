@@ -97,6 +97,31 @@ tasks:
     cmds:
       - go test -bench=. -benchmem {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}-benchtime=100ms{{end}} ./...
 
+  regression:
+    desc: Run regression tests between bot versions
+    cmds:
+      - go run ./cmd/regression-tester {{.CLI_ARGS}}
+
+  regression:heads-up:
+    desc: Run heads-up regression test
+    cmds:
+      - |
+        go run ./cmd/regression-tester --mode heads-up \
+          --challenger "go run ./sdk/examples/complex" \
+          --baseline "go run ./sdk/examples/complex" \
+          --hands {{.HANDS | default "1000"}} \
+          --output summary
+
+  regression:all:
+    desc: Run all regression test modes
+    cmds:
+      - |
+        go run ./cmd/regression-tester --mode all \
+          --challenger "go run ./sdk/examples/complex" \
+          --baseline "go run ./sdk/examples/complex" \
+          --hands {{.HANDS | default "1000"}} \
+          --output both
+
   bench:evaluator:
     desc: Run evaluator large-sample benchmarks (sequential and parallel)
     cmds:

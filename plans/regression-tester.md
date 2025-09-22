@@ -42,26 +42,34 @@ Future enhancements to bot management (crash detection, restart policies, health
 ### 1. Heads-Up Mode
 Direct 1v1 comparison between two bot versions.
 ```bash
-regression-tester --mode heads-up \
-  --bot-a snapshots/complex-20250921-f7f2f70 \
-  --bot-b snapshots/complex-20250922-abc123 \
+# Using task command (default 1000 hands)
+task regression:heads-up
+
+# With custom hands count
+task regression:heads-up HANDS=50000
+
+# Full manual command
+task regression -- --mode heads-up \
+  --challenger "go run ./sdk/examples/complex" \
+  --baseline "go run ./sdk/examples/complex" \
   --hands 50000 \
   --seed 42
 ```
 
 **Purpose**: Isolate performance difference between two versions
-**Table Setup**: 2 seats, 1 of each bot
+**Table Setup**: 2 seats, challenger vs baseline
 **Key Metrics**: BB/100 win rate, confidence interval
 
 ### 2. Population Mode
 Test challenger bot(s) against a field of baseline bots.
 ```bash
-regression-tester --mode population \
-  --challenger snapshots/complex-20250922-abc123 \
-  --baseline snapshots/complex-20250921-f7f2f70 \
+# Using task command
+task regression -- --mode population \
+  --challenger "go run ./sdk/examples/complex" \
+  --baseline "go run ./sdk/examples/complex" \
   --challenger-seats 2 \
   --baseline-seats 4 \
-  --hands 100000
+  --hands 10000
 ```
 
 **Purpose**: Test performance in multi-way pots
@@ -71,13 +79,12 @@ regression-tester --mode population \
 ### 3. NPC Benchmark Mode
 Compare two bots against fixed-strategy NPCs for stable regression detection.
 ```bash
-regression-tester --mode npc-benchmark \
-  --challenger snapshots/complex-20250922-abc123 \
-  --baseline snapshots/complex-20250921-f7f2f70 \
-  --challenger-seats 1 \
-  --baseline-seats 1 \
+# Using task command
+task regression -- --mode npc-benchmark \
+  --challenger "go run ./sdk/examples/complex" \
+  --baseline "go run ./sdk/examples/complex" \
   --npcs "aggressive:2,calling:1,random:1" \
-  --hands 100000
+  --hands 10000
 ```
 
 **Purpose**: Detect performance regression against known exploitable strategies
@@ -97,23 +104,27 @@ regression-tester --mode npc-benchmark \
 ### 4. Self-Play Mode
 Baseline variance measurement with identical bots.
 ```bash
-regression-tester --mode self-play \
-  --bot snapshots/complex-20250922-abc123 \
-  --seats 6 \
-  --hands 50000
+# Using task command
+task regression -- --mode self-play \
+  --challenger "go run ./sdk/examples/complex" \
+  --hands 5000
 ```
 
 **Purpose**: Establish variance baseline
 **Expected Result**: Near 0 BB/100 (zero-sum)
+**Note**: Only uses challenger (plays against itself)
 
 ## Batching Strategy
 
 To handle bankroll limitations and sample variance:
 
 ```bash
-regression-tester --mode population \
-  --batch-size 10000 \
-  --batches 10 \
+# Using task command with batching
+task regression -- --mode population \
+  --challenger "go run ./sdk/examples/complex" \
+  --baseline "go run ./sdk/examples/complex" \
+  --batch-size 1000 \
+  --hands 10000 \
   --starting-chips 1000 \
   --seeds "42,123,456,789,1337,2024,3141,4242,5555,9999"
 ```
@@ -136,9 +147,19 @@ regression-tester --infinite-bankroll \
 ### Multiple Comparison Correction
 When running multiple test modes, apply Bonferroni correction to maintain α = 0.05:
 ```bash
-regression-tester --mode all \
+# Quick test with all modes
+task regression:all
+
+# Custom configuration
+task regression:all HANDS=5000
+
+# Full command with correction
+task regression -- --mode all \
+  --challenger "go run ./sdk/examples/complex" \
+  --baseline "go run ./sdk/examples/complex" \
   --multiple-test-correction \
-  --significance-level 0.05
+  --significance-level 0.05 \
+  --hands 10000
 ```
 
 ### Sample Size Warnings
@@ -150,10 +171,13 @@ The regression tester automatically shows warnings when sample sizes are too sma
 ### Early Stopping
 For CI efficiency, stop when significance is reached:
 ```bash
-regression-tester --early-stopping \
-  --min-hands 10000 \
-  --max-hands 100000 \
-  --check-interval 5000
+# Using task command
+task regression -- --early-stopping \
+  --challenger "go run ./sdk/examples/complex" \
+  --baseline "go run ./sdk/examples/complex" \
+  --min-hands 1000 \
+  --max-hands 10000 \
+  --check-interval 500
 ```
 
 ## Output Format
@@ -267,9 +291,10 @@ Verdict: IMPROVEMENT (95% confidence)
 ### Binary Validation
 The regression tester validates bot binaries before starting:
 ```bash
-regression-tester --validate-binaries \
-  --bot-a snapshots/complex-20250921 \
-  --bot-b snapshots/complex-20250922
+# Using task command
+task regression -- --validate-binaries \
+  --challenger "go run ./sdk/examples/complex" \
+  --baseline "go run ./sdk/examples/complex"
 ```
 
 ### Server-Managed Bot Lifecycle
@@ -342,15 +367,16 @@ type TestConfig struct {
 - [x] Multiple comparison correction implementation with Bonferroni adjustment
 - [x] "All" mode that runs applicable tests with automatic correction
 
-### Phase 3: Refactoring & Code Quality 🚧 IN PROGRESS
+### Phase 3: Refactoring & Code Quality ✅ COMPLETE
 - [x] **Strategy pattern implementation** - Eliminated 300+ lines of duplicate batch execution
 - [x] **Extract pure statistics functions** - Created standalone `stats.go` for aggregation
 - [x] **Fix critical bugs** - Min/max BB/100 initialization, hands count for weighting
 - [x] **Wire health policies** - Strategy-specific health monitoring now active
 - [x] **Remove dead code** - Removed 139 lines of unused batch methods from orchestrator
 - [x] **Enhance stats.go** - Added higher-level helpers (WeightedBB100, WeightedAverage, CombineBatches, etc.)
-- [ ] **Extract reporter** - Move reporting logic to dedicated file with shared implementation
-- [ ] **Consolidate server methods** - Single StartServer with minimal options struct
+- [x] **Extract reporter** - Moved reporting logic to dedicated file with dependency injection
+- [x] **Consolidate server methods** - Created single StartServer with ServerConfig struct
+- [x] **Unify all modes** - All test modes now use challenger/baseline naming consistently
 - [ ] **Split runner.go** - Separate validation, execution, and coordination concerns
 - [ ] **Go idioms cleanup** - Consistent error wrapping, extract magic numbers
 
@@ -377,12 +403,14 @@ type TestConfig struct {
 
 ### Next Steps
 
-**Immediate (Phase 3 - Refactoring):**
-1. **Remove dead code**: Eliminate ~140 lines of unused batch methods with verification
-2. **Enhance stats.go**: Add WeightedAverage and CombineBatches helpers
-3. **Extract reporter**: Create dedicated reporter with dependency injection
-4. **Consolidate server**: Simplify to single StartServer method
-5. **Split runner.go**: After extractions, separate concerns into focused files
+**Immediate (Phase 4 - Statistics):**
+1. **Statistical Rigor**: Replace placeholder confidence intervals and effect size calculations with proper statistics
+2. **Early Stopping**: Implement significance-based early termination for CI efficiency
+3. **Result Archiving**: Save results to `snapshots/regression-*.json` for trend analysis
+
+**Future (Phase 5):**
+1. **Split runner.go**: Separate concerns into focused files for maintainability
+2. **Go idioms cleanup**: Consistent error wrapping, extract magic numbers
 
 **Then (Phase 4 - Statistics):**
 1. **Statistical Rigor**: Replace placeholder confidence intervals and effect size calculations with proper statistics
@@ -473,10 +501,16 @@ The regression tester extracts real statistics from server:
 
 ### Quick Regression Check
 ```bash
-# Fast check with small sample
-regression-tester --mode heads-up \
-  --bot-a ./snapshots/complex-latest \
-  --bot-b ./snapshots/complex-previous \
+# Fastest - using preset task (1000 hands)
+task regression:heads-up
+
+# Medium - with more hands
+task regression:heads-up HANDS=5000
+
+# Full control
+task regression -- --mode heads-up \
+  --challenger "go run ./sdk/examples/complex" \
+  --baseline "go run ./sdk/examples/complex" \
   --hands 10000 \
   --output summary
 ```
@@ -488,11 +522,20 @@ regression-tester --mode heads-up \
 CHALLENGER="snapshots/complex-20250922-abc123"
 BASELINE="snapshots/complex-20250921-f7f2f70"
 
-# Run all test modes
-regression-tester --mode heads-up --bot-a $CHALLENGER --bot-b $BASELINE --hands 50000
-regression-tester --mode population --challenger $CHALLENGER --baseline $BASELINE --hands 100000
-regression-tester --mode npc-benchmark --bot $CHALLENGER --hands 100000
-regression-tester --mode self-play --bot $CHALLENGER --hands 25000
+# Quick test all modes
+task regression:all HANDS=5000
+
+# Or run individual modes
+CHALLENGER="go run ./sdk/examples/complex"
+BASELINE="go run ./sdk/examples/complex"
+
+task regression -- --mode heads-up --challenger $CHALLENGER --baseline $BASELINE --hands 5000
+task regression -- --mode population --challenger $CHALLENGER --baseline $BASELINE --hands 10000
+task regression -- --mode npc-benchmark --challenger $CHALLENGER --baseline $BASELINE --hands 10000
+task regression -- --mode self-play --challenger $CHALLENGER --hands 2500
+
+# Or simply run all modes at once:
+task regression -- --mode all --challenger $CHALLENGER --baseline $BASELINE --hands 5000
 
 # Aggregate results
 regression-tester --aggregate results/*.json --output final-report.json
