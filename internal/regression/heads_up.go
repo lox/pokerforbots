@@ -78,20 +78,20 @@ func aggregateHeadsUpResults(batches []BatchResult) AggregateResults {
 	for _, batch := range batches {
 		// Use actual hands completed from stats if available, otherwise use requested
 		actualHandsA := batch.Hands
-		if handsFromStats, exists := batch.Results["bot_a_hands"]; exists {
+		if handsFromStats, exists := batch.Results["challenger_hands"]; exists {
 			actualHandsA = int(handsFromStats)
 		}
 
 		actualHandsB := batch.Hands
-		if handsFromStats, exists := batch.Results["bot_b_hands"]; exists {
+		if handsFromStats, exists := batch.Results["baseline_hands"]; exists {
 			actualHandsB = int(handsFromStats)
 		}
 
-		if val, ok := batch.Results["bot_a_bb_per_100"]; ok {
+		if val, ok := batch.Results["challenger_bb_per_100"]; ok {
 			botASum += val * float64(actualHandsA)
 			botACount += actualHandsA
 		}
-		if val, ok := batch.Results["bot_b_bb_per_100"]; ok {
+		if val, ok := batch.Results["baseline_bb_per_100"]; ok {
 			botBSum += val * float64(actualHandsB)
 			botBCount += actualHandsB
 		}
@@ -106,14 +106,14 @@ func aggregateHeadsUpResults(batches []BatchResult) AggregateResults {
 
 	return AggregateResults{
 		Challenger: &BotResults{
-			BBPer100: botAMean, // Bot A is challenger in heads-up
+			BBPer100: botAMean, // Challenger is first bot in heads-up
 			CI95Low:  botAMean - margin,
 			CI95High: botAMean + margin,
 			VPIP:     0.45, // TODO: Aggregate from batches
 			PFR:      0.35,
 		},
 		Baseline: &BotResults{
-			BBPer100: botBMean, // Bot B is baseline in heads-up
+			BBPer100: botBMean, // Baseline is second bot in heads-up
 			CI95Low:  botBMean - margin,
 			CI95High: botBMean + margin,
 			VPIP:     0.42,

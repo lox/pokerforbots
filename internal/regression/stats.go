@@ -22,34 +22,34 @@ func AggregateHeadsUpStats(stats *server.GameStats) (map[string]float64, error) 
 
 	results := make(map[string]float64)
 
-	// Bot A is the first player (first --bot-cmd by ConnectOrder)
-	playerA := stats.Players[0]
-	results["bot_a_hands"] = float64(playerA.Hands)
-	if playerA.DetailedStats != nil {
-		results["bot_a_bb_per_100"] = playerA.DetailedStats.BB100
-		results["bot_a_vpip"] = playerA.DetailedStats.VPIP
-		results["bot_a_pfr"] = playerA.DetailedStats.PFR
-		results["bot_a_timeouts"] = float64(playerA.DetailedStats.Timeouts)
-		results["bot_a_busts"] = float64(playerA.DetailedStats.Busts)
-		results["bot_a_std_dev"] = playerA.DetailedStats.StdDev
-	} else if playerA.Hands > 0 && stats.BigBlind > 0 {
+	// Challenger is the first player (first --bot-cmd by ConnectOrder)
+	challenger := stats.Players[0]
+	results["challenger_hands"] = float64(challenger.Hands)
+	if challenger.DetailedStats != nil {
+		results["challenger_bb_per_100"] = challenger.DetailedStats.BB100
+		results["challenger_vpip"] = challenger.DetailedStats.VPIP
+		results["challenger_pfr"] = challenger.DetailedStats.PFR
+		results["challenger_timeouts"] = float64(challenger.DetailedStats.Timeouts)
+		results["challenger_busts"] = float64(challenger.DetailedStats.Busts)
+		results["challenger_std_dev"] = challenger.DetailedStats.StdDev
+	} else if challenger.Hands > 0 && stats.BigBlind > 0 {
 		// Calculate BB/100 from basic stats if detailed stats not available
-		results["bot_a_bb_per_100"] = (float64(playerA.NetChips) / float64(stats.BigBlind)) / float64(playerA.Hands) * 100
+		results["challenger_bb_per_100"] = (float64(challenger.NetChips) / float64(stats.BigBlind)) / float64(challenger.Hands) * 100
 	}
 
-	// Bot B is the second player (second --bot-cmd)
-	playerB := stats.Players[1]
-	results["bot_b_hands"] = float64(playerB.Hands)
-	if playerB.DetailedStats != nil {
-		results["bot_b_bb_per_100"] = playerB.DetailedStats.BB100
-		results["bot_b_vpip"] = playerB.DetailedStats.VPIP
-		results["bot_b_pfr"] = playerB.DetailedStats.PFR
-		results["bot_b_timeouts"] = float64(playerB.DetailedStats.Timeouts)
-		results["bot_b_busts"] = float64(playerB.DetailedStats.Busts)
-		results["bot_b_std_dev"] = playerB.DetailedStats.StdDev
-	} else if playerB.Hands > 0 && stats.BigBlind > 0 {
+	// Baseline is the second player (second --bot-cmd)
+	baseline := stats.Players[1]
+	results["baseline_hands"] = float64(baseline.Hands)
+	if baseline.DetailedStats != nil {
+		results["baseline_bb_per_100"] = baseline.DetailedStats.BB100
+		results["baseline_vpip"] = baseline.DetailedStats.VPIP
+		results["baseline_pfr"] = baseline.DetailedStats.PFR
+		results["baseline_timeouts"] = float64(baseline.DetailedStats.Timeouts)
+		results["baseline_busts"] = float64(baseline.DetailedStats.Busts)
+		results["baseline_std_dev"] = baseline.DetailedStats.StdDev
+	} else if baseline.Hands > 0 && stats.BigBlind > 0 {
 		// Calculate BB/100 from basic stats if detailed stats not available
-		results["bot_b_bb_per_100"] = (float64(playerB.NetChips) / float64(stats.BigBlind)) / float64(playerB.Hands) * 100
+		results["baseline_bb_per_100"] = (float64(baseline.NetChips) / float64(stats.BigBlind)) / float64(baseline.Hands) * 100
 	}
 
 	return results, nil
@@ -130,8 +130,14 @@ func AggregatePopulationStats(stats *server.GameStats, challengerSeats, baseline
 }
 
 // AggregateNPCStats aggregates stats for NPC benchmark mode
-func AggregateNPCStats(stats *server.GameStats) map[string]float64 {
+func AggregateNPCStats(stats *server.GameStats, isChallenger bool) map[string]float64 {
 	results := make(map[string]float64)
+
+	// Determine the prefix to use based on whether this is a challenger or baseline run
+	prefix := "challenger"
+	if !isChallenger {
+		prefix = "baseline"
+	}
 
 	// Aggregate all non-NPC bot stats
 	var totalNetChips int64
@@ -161,19 +167,19 @@ func AggregateNPCStats(stats *server.GameStats) map[string]float64 {
 	// Calculate aggregate BB/100
 	bigBlind := float64(stats.BigBlind)
 	if totalHands > 0 && bigBlind > 0 {
-		results["bot_bb_per_100"] = (float64(totalNetChips) / bigBlind) / float64(totalHands) * 100
+		results[prefix+"_bb_per_100"] = (float64(totalNetChips) / bigBlind) / float64(totalHands) * 100
 	}
 
 	// Average the strategy metrics
 	if botCount > 0 {
-		results["bot_vpip"] = totalVPIP / float64(botCount)
-		results["bot_pfr"] = totalPFR / float64(botCount)
-		results["bot_timeouts"] = float64(totalTimeouts) / float64(botCount)
-		results["bot_busts"] = float64(totalBusts) / float64(botCount)
+		results[prefix+"_vpip"] = totalVPIP / float64(botCount)
+		results[prefix+"_pfr"] = totalPFR / float64(botCount)
+		results[prefix+"_timeouts"] = float64(totalTimeouts) / float64(botCount)
+		results[prefix+"_busts"] = float64(totalBusts) / float64(botCount)
 	}
 
 	// Store hands for weighting
-	results["bot_hands"] = float64(totalHands)
+	results[prefix+"_hands"] = float64(totalHands)
 
 	return results
 }

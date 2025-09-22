@@ -167,9 +167,10 @@ func (r *Reporter) aggregateStatistics(mode TestMode, batches []BatchResult) Rep
 	stats := ReportStatistics{}
 
 	switch mode {
-	case ModeHeadsUp:
-		// Aggregate challenger stats (bot_a in heads-up data)
-		challengerCombined := CombineBatches(batches, "bot_a")
+	case ModeHeadsUp, ModePopulation, ModeNPCBenchmark:
+		// All three modes use standardized challenger/baseline prefixes
+		// Aggregate challenger stats
+		challengerCombined := CombineBatches(batches, "challenger")
 		stats.ChallengerStats = &BotStatistics{
 			BB100:    challengerCombined.BB100,
 			CI95Low:  challengerCombined.BB100 - 1.96*10, // Placeholder CI
@@ -181,8 +182,8 @@ func (r *Reporter) aggregateStatistics(mode TestMode, batches []BatchResult) Rep
 			Busts:    challengerCombined.Busts,
 		}
 
-		// Aggregate baseline stats (bot_b in heads-up data)
-		baselineCombined := CombineBatches(batches, "bot_b")
+		// Aggregate baseline stats
+		baselineCombined := CombineBatches(batches, "baseline")
 		stats.BaselineStats = &BotStatistics{
 			BB100:    baselineCombined.BB100,
 			CI95Low:  baselineCombined.BB100 - 1.96*10, // Placeholder CI
@@ -197,54 +198,51 @@ func (r *Reporter) aggregateStatistics(mode TestMode, batches []BatchResult) Rep
 		// Calculate effect size (placeholder Cohen's d)
 		stats.EffectSize = (challengerCombined.BB100 - baselineCombined.BB100) / 20.0
 
-	case ModePopulation, ModeNPCBenchmark:
-		// Aggregate challenger stats
-		challengerCombined := CombineBatches(batches, "challenger")
-		stats.ChallengerStats = &BotStatistics{
-			BB100:    challengerCombined.BB100,
-			CI95Low:  challengerCombined.BB100 - 1.96*10,
-			CI95High: challengerCombined.BB100 + 1.96*10,
-			VPIP:     challengerCombined.VPIP,
-			PFR:      challengerCombined.PFR,
-			Hands:    challengerCombined.TotalHands,
-			Timeouts: challengerCombined.Timeouts,
-			Busts:    challengerCombined.Busts,
-		}
-
-		// Aggregate baseline stats
-		baselineCombined := CombineBatches(batches, "baseline")
-		stats.BaselineStats = &BotStatistics{
-			BB100:    baselineCombined.BB100,
-			CI95Low:  baselineCombined.BB100 - 1.96*10,
-			CI95High: baselineCombined.BB100 + 1.96*10,
-			VPIP:     baselineCombined.VPIP,
-			PFR:      baselineCombined.PFR,
-			Hands:    baselineCombined.TotalHands,
-			Timeouts: baselineCombined.Timeouts,
-			Busts:    baselineCombined.Busts,
-		}
-
-		// Calculate effect size
-		stats.EffectSize = (challengerCombined.BB100 - baselineCombined.BB100) / 20.0
-
 	case ModeSelfPlay:
-		// For self-play, we expect near-zero BB/100
-		combined := CombineBatches(batches, "bot")
+		// Self-play uses "avg_" prefix for its metrics
+		// Calculate weighted averages manually since CombineBatches expects standard prefixes
+		var totalBB100, totalVPIP, totalPFR float64
+		var totalHands int
+
+		for _, batch := range batches {
+			if bb100, exists := batch.Results["avg_bb_per_100"]; exists {
+				actualHands := int(batch.Results["total_hands"])
+				totalBB100 += bb100 * float64(actualHands)
+				totalHands += actualHands
+			}
+			if vpip, exists := batch.Results["avg_vpip"]; exists {
+				totalVPIP += vpip * float64(batch.Results["total_hands"])
+			}
+			if pfr, exists := batch.Results["avg_pfr"]; exists {
+				totalPFR += pfr * float64(batch.Results["total_hands"])
+			}
+		}
+
+		// Calculate final averages
+		avgBB100 := 0.0
+		avgVPIP := 0.0
+		avgPFR := 0.0
+		if totalHands > 0 {
+			avgBB100 = totalBB100 / float64(totalHands)
+			avgVPIP = totalVPIP / float64(totalHands)
+			avgPFR = totalPFR / float64(totalHands)
+		}
+
 		stats.ChallengerStats = &BotStatistics{
-			BB100:    combined.BB100,
-			CI95Low:  combined.BB100 - 1.96*10,
-			CI95High: combined.BB100 + 1.96*10,
-			VPIP:     combined.VPIP,
-			PFR:      combined.PFR,
-			Hands:    combined.TotalHands,
-			Timeouts: combined.Timeouts,
-			Busts:    combined.Busts,
+			BB100:    avgBB100,
+			CI95Low:  avgBB100 - 1.96*10,
+			CI95High: avgBB100 + 1.96*10,
+			VPIP:     avgVPIP,
+			PFR:      avgPFR,
+			Hands:    totalHands,
+			Timeouts: 0, // Not tracked in self-play
+			Busts:    0, // Not tracked in self-play
 		}
 		// In self-play, baseline is the same as challenger
 		stats.BaselineStats = stats.ChallengerStats
 
 		// Effect size is BB/100 divided by expected variance
-		stats.EffectSize = combined.BB100 / 20.0
+		stats.EffectSize = avgBB100 / 20.0
 	}
 
 	// Placeholder p-value calculation

@@ -334,6 +334,12 @@ type DetailedStats struct {
 	MaxPotBB float64 `json:"max_pot_bb"`
 	BigPots  int     `json:"big_pots"`
 
+	// Strategy metrics
+	VPIP     float64 `json:"vpip"`     // Voluntarily Put In Pot percentage
+	PFR      float64 `json:"pfr"`      // Pre-Flop Raise percentage
+	Timeouts int     `json:"timeouts"` // Number of timeouts
+	Busts    int     `json:"busts"`    // Number of times busted
+
 	// Breakdown (optional by depth)
 	PositionStats     map[string]PositionSummary `json:"position_stats,omitempty"`
 	StreetStats       map[string]StreetSummary   `json:"street_stats,omitempty"`

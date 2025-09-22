@@ -185,17 +185,16 @@ func (o *Orchestrator) runSingleBatch(ctx context.Context, strategy BatchStrateg
 	stdDevs := make(map[string]float64)
 	for i, player := range stats.Players {
 		if player.DetailedStats != nil {
-			// Map standard deviations to match result keys
-			if i < 2 {
-				// Heads-up mode: bot_a and bot_b
-				if i == 0 {
-					stdDevs["bot_a_std_dev"] = player.DetailedStats.StdDev
-				} else {
-					stdDevs["bot_b_std_dev"] = player.DetailedStats.StdDev
-				}
+			// Map standard deviations to match result keys using standardized prefixes
+			switch i {
+			case 0:
+				// First player is always challenger
+				stdDevs["challenger_std_dev"] = player.DetailedStats.StdDev
+			case 1:
+				// Second player is baseline in heads-up mode
+				stdDevs["baseline_std_dev"] = player.DetailedStats.StdDev
 			}
-			// For other modes, we'll need more complex mapping
-			// For now, just store by player index
+			// Also store by player index for multi-player modes
 			stdDevs[fmt.Sprintf("player_%d_std_dev", i)] = player.DetailedStats.StdDev
 		}
 	}

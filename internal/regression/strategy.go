@@ -186,7 +186,9 @@ func (s *NPCBenchmarkStrategy) ConfigureBatch(batchNum int, seed int64) BatchCon
 }
 
 func (s *NPCBenchmarkStrategy) AggregateStats(stats *server.GameStats) (map[string]float64, error) {
-	return AggregateNPCStats(stats), nil
+	// Determine if this is a challenger run (has ChallengerSeats) or baseline run
+	isChallenger := s.ChallengerSeats > 0
+	return AggregateNPCStats(stats, isChallenger), nil
 }
 
 func (s *NPCBenchmarkStrategy) ShouldStopEarly(results map[string]float64, totalHands int) bool {

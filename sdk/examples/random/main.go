@@ -7,14 +7,18 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/lox/pokerforbots/protocol"
 	"github.com/lox/pokerforbots/sdk/client"
 	"github.com/rs/zerolog"
 )
 
-type randomBot struct{}
+type randomBot struct {
+	rng *rand.Rand
+}
 
 func (randomBot) OnHandStart(*client.GameState, protocol.HandStart) error         { return nil }
 func (randomBot) OnGameUpdate(*client.GameState, protocol.GameUpdate) error       { return nil }
@@ -23,12 +27,12 @@ func (randomBot) OnStreetChange(*client.GameState, protocol.StreetChange) error 
 func (randomBot) OnHandResult(*client.GameState, protocol.HandResult) error       { return nil }
 func (randomBot) OnGameCompleted(*client.GameState, protocol.GameCompleted) error { return nil }
 
-func (randomBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
+func (r randomBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
 	if len(req.ValidActions) == 0 {
 		return "fold", 0, nil
 	}
 
-	choice := req.ValidActions[rand.Intn(len(req.ValidActions))]
+	choice := req.ValidActions[r.rng.Intn(len(req.ValidActions))]
 	if choice == "raise" {
 		amount := req.MinBet
 		if req.ToCall > 0 {
@@ -48,9 +52,21 @@ func main() {
 
 	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
 
+	// Initialize RNG with seed from environment or time
+	seed := time.Now().UnixNano()
+	if envSeed := os.Getenv("POKERFORBOTS_SEED"); envSeed != "" {
+		if parsedSeed, err := strconv.ParseInt(envSeed, 10, 64); err == nil {
+			seed = parsedSeed
+		}
+	}
+	rng := rand.New(rand.NewSource(seed)) // Create local RNG (Go 1.20+ compatible)
+
 	// Create bot with random strategy
-	id := fmt.Sprintf("random-%04d", rand.Intn(10000))
-	bot := client.New(id, randomBot{}, logger)
+	id := fmt.Sprintf("random-%04d", rng.Intn(10000))
+	if envID := os.Getenv("POKERFORBOTS_BOT_ID"); envID != "" {
+		id = fmt.Sprintf("random-%s", envID)
+	}
+	bot := client.New(id, randomBot{rng: rng}, logger)
 
 	// Connect and run
 	if err := bot.Connect(*serverURL); err != nil {

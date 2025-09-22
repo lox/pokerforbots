@@ -126,26 +126,26 @@ func TestAggregateHeadsUpStats(t *testing.T) {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
-	// Check Bot A (first player)
-	if results["bot_a_bb_per_100"] != -10.0 {
-		t.Errorf("Expected bot_a_bb_per_100 = -10.0, got %f", results["bot_a_bb_per_100"])
+	// Check Challenger (first player)
+	if results["challenger_bb_per_100"] != -10.0 {
+		t.Errorf("Expected challenger_bb_per_100 = -10.0, got %f", results["challenger_bb_per_100"])
 	}
-	if results["bot_a_vpip"] != 0.25 {
-		t.Errorf("Expected bot_a_vpip = 0.25, got %f", results["bot_a_vpip"])
+	if results["challenger_vpip"] != 0.25 {
+		t.Errorf("Expected challenger_vpip = 0.25, got %f", results["challenger_vpip"])
 	}
-	if results["bot_a_pfr"] != 0.15 {
-		t.Errorf("Expected bot_a_pfr = 0.15, got %f", results["bot_a_pfr"])
+	if results["challenger_pfr"] != 0.15 {
+		t.Errorf("Expected challenger_pfr = 0.15, got %f", results["challenger_pfr"])
 	}
 
-	// Check Bot B (second player)
-	if results["bot_b_bb_per_100"] != 10.0 {
-		t.Errorf("Expected bot_b_bb_per_100 = 10.0, got %f", results["bot_b_bb_per_100"])
+	// Check Baseline (second player)
+	if results["baseline_bb_per_100"] != 10.0 {
+		t.Errorf("Expected baseline_bb_per_100 = 10.0, got %f", results["baseline_bb_per_100"])
 	}
-	if results["bot_b_vpip"] != 0.30 {
-		t.Errorf("Expected bot_b_vpip = 0.30, got %f", results["bot_b_vpip"])
+	if results["baseline_vpip"] != 0.30 {
+		t.Errorf("Expected baseline_vpip = 0.30, got %f", results["baseline_vpip"])
 	}
-	if results["bot_b_pfr"] != 0.18 {
-		t.Errorf("Expected bot_b_pfr = 0.18, got %f", results["bot_b_pfr"])
+	if results["baseline_pfr"] != 0.18 {
+		t.Errorf("Expected baseline_pfr = 0.18, got %f", results["baseline_pfr"])
 	}
 }
 
@@ -232,16 +232,16 @@ func TestBatchWeightedAveraging(t *testing.T) {
 			Seed:  42,
 			Hands: 100,
 			Results: map[string]float64{
-				"bot_a_bb_per_100": 10.0,
-				"bot_a_hands":      100.0,
+				"challenger_bb_per_100": 10.0,
+				"challenger_hands":      100.0,
 			},
 		},
 		{
 			Seed:  43,
 			Hands: 200,
 			Results: map[string]float64{
-				"bot_a_bb_per_100": 20.0,
-				"bot_a_hands":      200.0,
+				"challenger_bb_per_100": 20.0,
+				"challenger_hands":      200.0,
 			},
 		},
 	}
@@ -250,9 +250,9 @@ func TestBatchWeightedAveraging(t *testing.T) {
 	totalHands := 0.0
 	totalChips := 0.0
 	for _, batch := range batches {
-		hands := batch.Results["bot_a_hands"]
+		hands := batch.Results["challenger_hands"]
 		totalHands += hands
-		totalChips += batch.Results["bot_a_bb_per_100"] * hands / 100
+		totalChips += batch.Results["challenger_bb_per_100"] * hands / 100
 	}
 	weightedBB100 := totalChips / totalHands * 100
 

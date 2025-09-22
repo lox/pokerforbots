@@ -44,8 +44,8 @@ type tableState struct {
 	HandNum       int
 }
 
-// complexImprovedBot implements advanced poker strategy with SDK components.
-type complexImprovedBot struct {
+// complexBot implements advanced poker strategy with SDK components.
+type complexBot struct {
 	id       string
 	logger   zerolog.Logger
 	state    tableState
@@ -54,7 +54,7 @@ type complexImprovedBot struct {
 	bigBlind int // Track the big blind amount
 }
 
-func newComplexImprovedBot(logger zerolog.Logger) *complexImprovedBot {
+func newcomplexBot(logger zerolog.Logger) *complexBot {
 	// Read seed from environment, fallback to timestamp if not provided
 	seed := time.Now().UnixNano()
 	if envSeed := os.Getenv("POKERFORBOTS_SEED"); envSeed != "" {
@@ -80,7 +80,7 @@ func newComplexImprovedBot(logger zerolog.Logger) *complexImprovedBot {
 
 	logger.Debug().Int64("seed", seed).Str("bot_id", id).Msg("Bot initialized with seed")
 
-	return &complexImprovedBot{
+	return &complexBot{
 		id:       id,
 		logger:   logger.With().Str("bot_id", id).Logger(),
 		rng:      rng,
@@ -90,7 +90,7 @@ func newComplexImprovedBot(logger zerolog.Logger) *complexImprovedBot {
 }
 
 // SDK Handler interface implementation
-func (b *complexImprovedBot) OnHandStart(state *client.GameState, start protocol.HandStart) error {
+func (b *complexBot) OnHandStart(state *client.GameState, start protocol.HandStart) error {
 	b.handNum++
 	// Update big blind if provided (it should be in every hand)
 	if start.BigBlind > 0 {
@@ -134,7 +134,7 @@ func (b *complexImprovedBot) OnHandStart(state *client.GameState, start protocol
 	return nil
 }
 
-func (b *complexImprovedBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
+func (b *complexBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
 	// Calculate hand strength using SDK components
 	handStrength := b.evaluateHandStrength()
 	if b.state.Street != "preflop" {
@@ -159,7 +159,7 @@ func (b *complexImprovedBot) OnActionRequest(state *client.GameState, req protoc
 	return action, amount, nil
 }
 
-func (b *complexImprovedBot) OnGameUpdate(state *client.GameState, update protocol.GameUpdate) error {
+func (b *complexBot) OnGameUpdate(state *client.GameState, update protocol.GameUpdate) error {
 	b.state.Pot = update.Pot
 	b.state.Players = update.Players
 	if b.state.Seat >= 0 && b.state.Seat < len(update.Players) {
@@ -177,7 +177,7 @@ func (b *complexImprovedBot) OnGameUpdate(state *client.GameState, update protoc
 	return nil
 }
 
-func (b *complexImprovedBot) OnPlayerAction(state *client.GameState, action protocol.PlayerAction) error {
+func (b *complexBot) OnPlayerAction(state *client.GameState, action protocol.PlayerAction) error {
 	b.state.LastAction = action
 
 	// Just track if we bet/raised for simple logic
@@ -187,7 +187,7 @@ func (b *complexImprovedBot) OnPlayerAction(state *client.GameState, action prot
 	return nil
 }
 
-func (b *complexImprovedBot) OnStreetChange(state *client.GameState, street protocol.StreetChange) error {
+func (b *complexBot) OnStreetChange(state *client.GameState, street protocol.StreetChange) error {
 	b.state.Street = street.Street
 
 	// Parse board once and store both formats
@@ -201,7 +201,7 @@ func (b *complexImprovedBot) OnStreetChange(state *client.GameState, street prot
 	return nil
 }
 
-func (b *complexImprovedBot) OnHandResult(state *client.GameState, result protocol.HandResult) error {
+func (b *complexBot) OnHandResult(state *client.GameState, result protocol.HandResult) error {
 	// Simple logging of result
 	netChips := state.Chips - state.StartingChips
 	netBB := float64(netChips) / float64(b.bigBlind)
@@ -225,12 +225,12 @@ func (b *complexImprovedBot) OnHandResult(state *client.GameState, result protoc
 	return nil
 }
 
-func (b *complexImprovedBot) OnGameCompleted(state *client.GameState, completed protocol.GameCompleted) error {
+func (b *complexBot) OnGameCompleted(state *client.GameState, completed protocol.GameCompleted) error {
 	// Stop the bot on game completion; server handles stats aggregation/printing.
 	return io.EOF
 }
 
-func (b *complexImprovedBot) evaluateHandStrength() float64 {
+func (b *complexBot) evaluateHandStrength() float64 {
 	if b.state.HoleCards.CountCards() != 2 {
 		return 0.5
 	}
@@ -276,7 +276,7 @@ func (b *complexImprovedBot) evaluateHandStrength() float64 {
 }
 
 // classifyPostflopSDK uses the SDK for advanced postflop analysis
-func (b *complexImprovedBot) classifyPostflopSDK() (string, float64) {
+func (b *complexBot) classifyPostflopSDK() (string, float64) {
 	if b.state.HoleCards.CountCards() != 2 || b.state.Board.CountCards() < 3 {
 		return "unknown", 0.3
 	}
@@ -359,7 +359,7 @@ func (b *complexImprovedBot) classifyPostflopSDK() (string, float64) {
 }
 
 // Rest of the methods remain the same as the original complex bot
-func (b *complexImprovedBot) getPosition() int {
+func (b *complexBot) getPosition() int {
 	// Calculate position relative to button
 	// 0 = button, 1 = cutoff, 2 = middle, 3+ = early
 	if b.state.Button < 0 {
@@ -397,7 +397,7 @@ func (b *complexImprovedBot) getPosition() int {
 	return distance
 }
 
-func (b *complexImprovedBot) calculatePotOdds(req protocol.ActionRequest) float64 {
+func (b *complexBot) calculatePotOdds(req protocol.ActionRequest) float64 {
 	if req.ToCall == 0 {
 		return 1000.0 // Free to play
 	}
@@ -405,7 +405,7 @@ func (b *complexImprovedBot) calculatePotOdds(req protocol.ActionRequest) float6
 	return float64(potAfterCall) / float64(req.ToCall)
 }
 
-func (b *complexImprovedBot) makeStrategicDecision(req protocol.ActionRequest, handStrength float64, position int, _ float64) (string, int) {
+func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStrength float64, position int, _ float64) (string, int) {
 	// Preflop handled by a dedicated policy
 	if b.state.Street == "preflop" {
 		return b.preflopDecision(req, position)
@@ -509,12 +509,12 @@ func (b *complexImprovedBot) makeStrategicDecision(req protocol.ActionRequest, h
 }
 
 // Helper functions (keeping the same implementations as original)
-func (b *complexImprovedBot) betSize(req protocol.ActionRequest, pct float64) int {
+func (b *complexBot) betSize(req protocol.ActionRequest, pct float64) int {
 	size := max(min(max(int(float64(req.Pot)*pct), req.MinBet), b.state.Chips), 0)
 	return size
 }
 
-func (b *complexImprovedBot) raiseOrJam(req protocol.ActionRequest, amt int) (string, int) {
+func (b *complexBot) raiseOrJam(req protocol.ActionRequest, amt int) (string, int) {
 	if amt < req.MinBet {
 		if amt >= b.state.Chips {
 			if slices.Contains(req.ValidActions, "allin") {
@@ -532,14 +532,14 @@ func (b *complexImprovedBot) raiseOrJam(req protocol.ActionRequest, amt int) (st
 	return "raise", amt
 }
 
-func (b *complexImprovedBot) calcSPR(req protocol.ActionRequest) float64 {
+func (b *complexBot) calcSPR(req protocol.ActionRequest) float64 {
 	if req.Pot <= 0 {
 		return 99.0
 	}
 	return float64(b.state.Chips) / float64(req.Pot)
 }
 
-func (b *complexImprovedBot) shouldFold(req protocol.ActionRequest, equity float64) bool {
+func (b *complexBot) shouldFold(req protocol.ActionRequest, equity float64) bool {
 	pot := req.Pot
 	if pot <= 0 {
 		pot = 1
@@ -591,7 +591,7 @@ func maxInt(a, b int) int {
 	return b
 }
 
-func (b *complexImprovedBot) preflopDecision(req protocol.ActionRequest, position int) (string, int) {
+func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (string, int) {
 	// Extract ranks/suited
 	if len(b.state.HoleCardsStr) != 2 {
 		if hasAction(req.ValidActions, "check") {
@@ -827,7 +827,7 @@ func (b *complexImprovedBot) preflopDecision(req protocol.ActionRequest, positio
 	return "fold", 0
 }
 
-func (b *complexImprovedBot) ownWinnerName() string {
+func (b *complexBot) ownWinnerName() string {
 	candidates := []string{b.id}
 	if len(b.id) >= 8 {
 		candidates = append(candidates, b.id[:8])
@@ -855,13 +855,13 @@ func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).Level(level).With().Timestamp().Logger()
 
-	complexBot := newComplexImprovedBot(logger)
+	complexBot := newcomplexBot(logger)
 	bot := client.New(complexBot.id, complexBot, logger)
 
 	if err := bot.Connect(*serverURL); err != nil {
 		logger.Fatal().Err(err).Msg("connect failed")
 	}
-	logger.Info().Msg("complex improved bot connected")
+	logger.Info().Msg("complex bot connected")
 
 	// Handle shutdown gracefully
 	ctx, cancel := context.WithCancel(context.Background())
