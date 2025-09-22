@@ -2,12 +2,10 @@ package regression
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -17,6 +15,7 @@ type Runner struct {
 	config        *Config
 	healthMonitor *HealthMonitor
 	orchestrator  *Orchestrator // Uses server bot commands
+	reporter      *Reporter
 }
 
 // NewRunner creates a new test runner
@@ -29,11 +28,13 @@ func NewRunner(config *Config) *Runner {
 	)
 
 	orchestrator := NewOrchestrator(config, healthMonitor)
+	reporter := NewReporter(nil, config.Logger, config)
 
 	return &Runner{
 		config:        config,
 		healthMonitor: healthMonitor,
 		orchestrator:  orchestrator,
+		reporter:      reporter,
 	}
 }
 
@@ -786,280 +787,43 @@ func (r *Runner) outputResults(results []*TestResult) error {
 		return fmt.Errorf("no results to output")
 	}
 
-	var output string
+	// Convert TestResults to ReportResults for the reporter
+	for _, result := range results {
+		startTime := time.Now().Add(-time.Duration(result.Metadata.DurationSeconds) * time.Second)
+		endTime := time.Now()
 
-	// Generate JSON output
-	if r.config.OutputFormat == "json" || r.config.OutputFormat == "both" {
-		// For multiple results, output as array
-		var jsonBytes []byte
-		var err error
-		if len(results) == 1 {
-			jsonBytes, err = json.MarshalIndent(results[0], "", "  ")
-		} else {
-			jsonBytes, err = json.MarshalIndent(results, "", "  ")
+		// Convert batches to the format expected by reporter
+		var batches []BatchResult
+		for _, b := range result.Batches {
+			batches = append(batches, BatchResult{
+				Seed:    b.Seed,
+				Hands:   b.Hands,
+				Results: b.Results,
+			})
 		}
+
+		// Generate report using the reporter
+		report, err := r.reporter.GenerateReport(result.Mode, batches, startTime, endTime)
 		if err != nil {
-			return fmt.Errorf("failed to marshal JSON: %w", err)
-		}
-		output = string(jsonBytes)
-	}
-
-	// Generate summary output
-	if r.config.OutputFormat == "summary" || r.config.OutputFormat == "both" {
-		if r.config.OutputFormat == "both" {
-			output += "\n\n"
+			return fmt.Errorf("failed to generate report: %w", err)
 		}
 
-		// Generate summary for each result
-		if len(results) == 1 {
-			output += generateSummary(results[0])
-		} else {
-			// Multiple results - create combined summary
-			output += "Combined Regression Test Report\n"
-			output += "================================\n\n"
-
-			for i, result := range results {
-				if i > 0 {
-					output += "\n" + strings.Repeat("-", 60) + "\n\n"
-				}
-				output += fmt.Sprintf("Test %d: %s Mode\n", i+1, result.Mode)
-				output += strings.Repeat("-", 30) + "\n"
-				output += generateSummary(result)
+		// Output based on format
+		if r.config.OutputFormat == "json" || r.config.OutputFormat == "both" {
+			if err := r.reporter.WriteJSON(report); err != nil {
+				return fmt.Errorf("failed to write JSON report: %w", err)
 			}
+		}
 
-			// Add overall summary
-			output += "\n" + strings.Repeat("=", 60) + "\n"
-			output += "Overall Results\n"
-			output += strings.Repeat("=", 60) + "\n"
-
-			passed := 0
-			failed := 0
-			marginal := 0
-			for _, result := range results {
-				switch result.Verdict.Recommendation {
-				case "accept", "pass":
-					passed++
-				case "reject", "warning":
-					failed++
-				case "marginal", "inconclusive":
-					marginal++
-				}
+		if r.config.OutputFormat == "summary" || r.config.OutputFormat == "both" {
+			if r.config.OutputFormat == "both" {
+				fmt.Println() //nolint:forbidigo
 			}
-
-			output += fmt.Sprintf("Passed: %d, Failed: %d, Marginal: %d\n", passed, failed, marginal)
-
-			if r.config.MultipleTestCorrection {
-				output += fmt.Sprintf("\n✓ Bonferroni correction applied (α = %.3f per test)\n",
-					r.config.SignificanceLevel/float64(len(results)))
+			if err := r.reporter.WriteSummary(report); err != nil {
+				return fmt.Errorf("failed to write summary: %w", err)
 			}
 		}
 	}
 
-	// Write to file or stdout
-	if r.config.OutputFile != "" {
-		return os.WriteFile(r.config.OutputFile, []byte(output), 0644)
-	}
-
-	fmt.Println(output) //nolint:forbidigo
 	return nil
-}
-
-// generateSummary creates a human-readable summary
-func generateSummary(result *TestResult) string {
-	var sb strings.Builder
-
-	sb.WriteString("Regression Test Report\n")
-	sb.WriteString("======================\n")
-
-	// Add mode-specific summary with aligned formatting
-	switch result.Mode {
-	case ModeHeadsUp:
-		if result.Config.BotA != "" {
-			sb.WriteString(fmt.Sprintf("Bot A:      %s\n", result.Config.BotA))
-		}
-		if result.Config.BotB != "" {
-			sb.WriteString(fmt.Sprintf("Bot B:      %s\n", result.Config.BotB))
-		}
-	case ModePopulation:
-		if result.Config.Challenger != "" {
-			sb.WriteString(fmt.Sprintf("Challenger: %s\n", result.Config.Challenger))
-		}
-		if result.Config.Baseline != "" {
-			sb.WriteString(fmt.Sprintf("Baseline:   %s\n", result.Config.Baseline))
-		}
-	case ModeNPCBenchmark:
-		if result.Config.BotA != "" {
-			sb.WriteString(fmt.Sprintf("Bot:        %s\n", result.Config.BotA))
-		}
-		sb.WriteString("Opponents:  NPCs (calling, aggressive, random)\n")
-	case ModeSelfPlay:
-		if result.Config.BotA != "" {
-			sb.WriteString(fmt.Sprintf("Bot:        %s\n", result.Config.BotA))
-		}
-		sb.WriteString("Mode:       Self-play (all seats same bot)\n")
-	}
-
-	sb.WriteString(fmt.Sprintf("Mode:       %s\n", result.Mode))
-	sb.WriteString(fmt.Sprintf("Hands:      %s\n", formatNumber(result.Config.HandsTotal)))
-
-	// Format duration nicely
-	duration := result.Metadata.DurationSeconds
-	if duration >= 60 {
-		minutes := int(duration / 60)
-		seconds := int(duration) % 60
-		sb.WriteString(fmt.Sprintf("Duration:   %dm %ds\n", minutes, seconds))
-	} else {
-		sb.WriteString(fmt.Sprintf("Duration:   %.1fs\n", duration))
-	}
-
-	sb.WriteString("\nResults\n")
-	sb.WriteString("-------\n")
-
-	// Add results based on mode
-	if result.Aggregate.BotA != nil {
-		sb.WriteString(fmt.Sprintf("Bot A:      %+.1f BB/100 [95%% CI: %+.1f to %+.1f]\n",
-			result.Aggregate.BotA.BBPer100,
-			result.Aggregate.BotA.CI95Low,
-			result.Aggregate.BotA.CI95High))
-	}
-	if result.Aggregate.BotB != nil {
-		sb.WriteString(fmt.Sprintf("Bot B:      %+.1f BB/100 [95%% CI: %+.1f to %+.1f]\n",
-			result.Aggregate.BotB.BBPer100,
-			result.Aggregate.BotB.CI95Low,
-			result.Aggregate.BotB.CI95High))
-	}
-	if result.Aggregate.Challenger != nil {
-		sb.WriteString(fmt.Sprintf("Challenger: %+.1f BB/100 [95%% CI: %+.1f to %+.1f]\n",
-			result.Aggregate.Challenger.BBPer100,
-			result.Aggregate.Challenger.CI95Low,
-			result.Aggregate.Challenger.CI95High))
-	}
-	if result.Aggregate.Baseline != nil {
-		sb.WriteString(fmt.Sprintf("Baseline:   %+.1f BB/100 [95%% CI: %+.1f to %+.1f]\n",
-			result.Aggregate.Baseline.BBPer100,
-			result.Aggregate.Baseline.CI95Low,
-			result.Aggregate.Baseline.CI95High))
-	}
-	if result.Verdict.EffectSize > 0 {
-		sb.WriteString(fmt.Sprintf("Effect Size: %.2f", result.Verdict.EffectSize))
-		switch {
-		case result.Verdict.EffectSize < 0.2:
-			sb.WriteString(" (small)")
-		case result.Verdict.EffectSize < 0.5:
-			sb.WriteString(" (medium)")
-		case result.Verdict.EffectSize < 0.8:
-			sb.WriteString(" (large)")
-		default:
-			sb.WriteString(" (very large)")
-		}
-		sb.WriteString("\n")
-	}
-	if result.Verdict.PValue > 0 {
-		sb.WriteString(fmt.Sprintf("P-Value: %.3f", result.Verdict.PValue))
-		if result.Verdict.AdjustedPValue > 0 {
-			sb.WriteString(fmt.Sprintf(" (adjusted: %.3f)", result.Verdict.AdjustedPValue))
-		}
-		sb.WriteString("\n")
-	}
-
-	// Strategic Changes section (for heads-up mode, show VPIP/PFR)
-	if result.Mode == ModeHeadsUp && (result.Aggregate.BotA != nil || result.Aggregate.BotB != nil) {
-		sb.WriteString("\nStrategic Profile\n")
-		sb.WriteString("-----------------\n")
-		if result.Aggregate.BotA != nil {
-			sb.WriteString(fmt.Sprintf("Bot A VPIP: %.1f%%, PFR: %.1f%%",
-				result.Aggregate.BotA.VPIP*100,
-				result.Aggregate.BotA.PFR*100))
-			if result.Aggregate.BotA.BustRate > 0 {
-				sb.WriteString(fmt.Sprintf(", Busts: %.1f%%", result.Aggregate.BotA.BustRate*100))
-			}
-			sb.WriteString("\n")
-		}
-		if result.Aggregate.BotB != nil {
-			sb.WriteString(fmt.Sprintf("Bot B VPIP: %.1f%%, PFR: %.1f%%",
-				result.Aggregate.BotB.VPIP*100,
-				result.Aggregate.BotB.PFR*100))
-			if result.Aggregate.BotB.BustRate > 0 {
-				sb.WriteString(fmt.Sprintf(", Busts: %.1f%%", result.Aggregate.BotB.BustRate*100))
-			}
-			sb.WriteString("\n")
-		}
-	}
-
-	// Performance and Reliability section
-	// Strategic Changes section for NPC benchmark mode
-	if result.Mode == ModeNPCBenchmark && result.Aggregate.BotA != nil {
-		sb.WriteString("\nStrategic Profile\n")
-		sb.WriteString("-----------------\n")
-		if result.Aggregate.BotA.VPIP > 0 {
-			sb.WriteString(fmt.Sprintf("VPIP:  %.1f%%\n", result.Aggregate.BotA.VPIP*100))
-		}
-		if result.Aggregate.BotA.PFR > 0 {
-			sb.WriteString(fmt.Sprintf("PFR:   %.1f%%\n", result.Aggregate.BotA.PFR*100))
-		}
-		if result.Aggregate.BotA.AggressionFactor > 0 {
-			sb.WriteString(fmt.Sprintf("Aggression Factor: %.2f\n", result.Aggregate.BotA.AggressionFactor))
-		}
-		// Add placeholder note if no detailed stats available
-		if result.Aggregate.BotA.VPIP == 0 && result.Aggregate.BotA.PFR == 0 {
-			sb.WriteString("(Detailed stats not available - requires server detailed stats mode)\n")
-		}
-	}
-
-	sb.WriteString("\nPerformance\n")
-	sb.WriteString("-----------\n")
-	if result.Performance.HandsPerSecond > 0 {
-		sb.WriteString(fmt.Sprintf("Hands/sec: %s\n", formatNumber(int(result.Performance.HandsPerSecond))))
-	}
-
-	// Only show sample size warning if there is one
-	if result.Performance.SampleAssessment != "" {
-		sb.WriteString(fmt.Sprintf("\n%s\n", result.Performance.SampleAssessment))
-	}
-
-	sb.WriteString("\nReliability\n")
-	sb.WriteString("-----------\n")
-	hasReliabilityData := false
-	if result.Errors.BotCrashes > 0 {
-		sb.WriteString(fmt.Sprintf("Bot Crashes: %d", result.Errors.BotCrashes))
-		if result.Errors.RecoveredCrashes > 0 {
-			sb.WriteString(" (recovered)")
-		}
-		sb.WriteString("\n")
-		hasReliabilityData = true
-	}
-	if result.Errors.Timeouts > 0 {
-		sb.WriteString(fmt.Sprintf("Timeouts: %d\n", result.Errors.Timeouts))
-		hasReliabilityData = true
-	}
-	if !hasReliabilityData {
-		sb.WriteString("No errors or timeouts detected\n")
-	}
-
-	// Verdict
-	sb.WriteString("\nVerdict: ")
-	sb.WriteString(strings.ToUpper(result.Verdict.Recommendation))
-	if result.Verdict.SignificantDifference && result.Verdict.Confidence > 0 {
-		sb.WriteString(fmt.Sprintf(" (%.0f%% confidence)", result.Verdict.Confidence*100))
-	}
-	sb.WriteString("\n")
-
-	return sb.String()
-}
-
-// formatNumber formats large numbers with commas for readability
-func formatNumber(n int) string {
-	str := strconv.Itoa(n)
-	if len(str) <= 3 {
-		return str
-	}
-
-	var result strings.Builder
-	for i, digit := range str {
-		if i > 0 && (len(str)-i)%3 == 0 {
-			result.WriteString(",")
-		}
-		result.WriteRune(digit)
-	}
-	return result.String()
 }
