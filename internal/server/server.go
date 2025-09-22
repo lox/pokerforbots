@@ -8,7 +8,6 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	statistics "github.com/lox/pokerforbots/internal/server/statistics"
 	"github.com/lox/pokerforbots/protocol"
 	"github.com/rs/zerolog"
 )
@@ -39,19 +37,20 @@ var (
 
 // Config holds server configuration
 type Config struct {
-	SmallBlind             int
-	BigBlind               int
-	StartChips             int
-	Timeout                time.Duration
-	MinPlayers             int
-	MaxPlayers             int
-	RequirePlayer          bool
-	HandLimit              uint64
-	Seed                   int64
-	InfiniteBankroll       bool // When true, bots never run out of chips
-	EnableStats            bool // Collect detailed statistics
-	MaxStatsHands          int  // Maximum hands to track for stats (default 10000)
-	StopOnInsufficientBots bool // Stop game when not enough bots remain (for simulations)
+	SmallBlind    int
+	BigBlind      int
+	StartChips    int
+	Timeout       time.Duration
+	MinPlayers    int
+	MaxPlayers    int
+	Seed          int64
+	EnableStats   bool // Collect detailed statistics
+	MaxStatsHands int  // Maximum hands to track for stats (default 10000)
+
+	// Legacy fields (deprecated - will be removed)
+	HandLimit              uint64 // Deprecated: Use spawner for hand limits
+	InfiniteBankroll       bool   // Deprecated: Use spawner for bankroll management
+	StopOnInsufficientBots bool   // Deprecated: Use spawner for bot management
 }
 
 // serverConfig holds the configuration for building a server
@@ -113,8 +112,8 @@ type Server struct {
 	httpServer    *http.Server
 	botIDGen      func() string // Function to generate bot IDs
 	config        Config
-	bootstrapNPCs map[string][]NPCSpec
-	routesOnce    sync.Once
+	// NPC support removed - use spawner for bot orchestration
+	routesOnce sync.Once
 }
 
 // createDeterministicBotIDGen creates a deterministic bot ID generator using the provided RNG accessor.
@@ -165,15 +164,14 @@ func NewServer(logger zerolog.Logger, rng *rand.Rand, opts ...ServerOption) *Ser
 	// Default configuration
 	cfg := serverConfig{
 		config: Config{
-			SmallBlind:    5,
-			BigBlind:      10,
-			StartChips:    1000,
-			Timeout:       100 * time.Millisecond,
-			MinPlayers:    2,
-			MaxPlayers:    9,
-			RequirePlayer: true,
-			HandLimit:     0,
-			Seed:          0,
+			SmallBlind: 5,
+			BigBlind:   10,
+			StartChips: 1000,
+			Timeout:    100 * time.Millisecond,
+			MinPlayers: 2,
+			MaxPlayers: 9,
+			HandLimit:  0,
+			Seed:       0,
 		},
 	}
 
@@ -214,7 +212,6 @@ func NewServer(logger zerolog.Logger, rng *rand.Rand, opts ...ServerOption) *Ser
 		defaultGameID: defaultGameID,
 		botIDGen:      botIDGen,
 		config:        cfg.config,
-		bootstrapNPCs: make(map[string][]NPCSpec),
 		upgrader: websocket.Upgrader{
 			// Increased buffer sizes from 1024 to 4096 for better throughput
 			// Profiling showed 28.5% of time spent in read/write syscalls
@@ -244,18 +241,7 @@ func (s *Server) Serve(listener net.Listener) error {
 	// Start bot pools for all registered games
 	s.manager.StartAll()
 
-	// Bootstrap NPCs after pools are running
-	for gameID, specs := range s.bootstrapNPCs {
-		if len(specs) == 0 {
-			continue
-		}
-		if instance, ok := s.manager.GetGame(gameID); ok {
-			instance.AddNPCs(s.logger, specs)
-		} else {
-			s.logger.Warn().Str("game_id", gameID).Msg("Bootstrap NPC target game not found")
-		}
-	}
-	s.bootstrapNPCs = nil
+	// NPC bootstrapping removed - use spawner for bot orchestration
 
 	s.ensureRoutes()
 
@@ -425,27 +411,20 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// AddBootstrapNPCs schedules NPC bots to be attached to the given game when Start is invoked.
-func (s *Server) AddBootstrapNPCs(gameID string, specs []NPCSpec) {
-	if len(specs) == 0 {
-		return
-	}
-	s.bootstrapNPCs[gameID] = append(s.bootstrapNPCs[gameID], specs...)
-}
+// NPC support has been removed - use the spawner tool for bot orchestration
 
 type adminGameRequest struct {
-	ID               string    `json:"id"`
-	SmallBlind       int       `json:"small_blind"`
-	BigBlind         int       `json:"big_blind"`
-	StartChips       int       `json:"start_chips"`
-	TimeoutMs        int       `json:"timeout_ms"`
-	MinPlayers       int       `json:"min_players"`
-	MaxPlayers       int       `json:"max_players"`
-	RequirePlayer    *bool     `json:"require_player"`
-	InfiniteBankroll *bool     `json:"infinite_bankroll"`
-	NPCs             []NPCSpec `json:"npcs"`
-	Hands            *uint64   `json:"hands,omitempty"`
-	Seed             *int64    `json:"seed,omitempty"`
+	ID               string `json:"id"`
+	SmallBlind       int    `json:"small_blind"`
+	BigBlind         int    `json:"big_blind"`
+	StartChips       int    `json:"start_chips"`
+	TimeoutMs        int    `json:"timeout_ms"`
+	MinPlayers       int    `json:"min_players"`
+	MaxPlayers       int    `json:"max_players"`
+	InfiniteBankroll *bool  `json:"infinite_bankroll"`
+	// NPCs field removed - use spawner for bot orchestration
+	Hands *uint64 `json:"hands,omitempty"`
+	Seed  *int64  `json:"seed,omitempty"`
 }
 
 func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
@@ -467,13 +446,7 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("invalid game parameters"))
 		return
 	}
-	for _, spec := range req.NPCs {
-		if spec.Count < 0 {
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte("npc count must be non-negative"))
-			return
-		}
-	}
+	// NPC validation removed - use spawner for bot orchestration
 
 	if _, exists := s.manager.GetGame(req.ID); exists {
 		w.WriteHeader(http.StatusConflict)
@@ -488,13 +461,10 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 		Timeout:          time.Duration(req.TimeoutMs) * time.Millisecond,
 		MinPlayers:       req.MinPlayers,
 		MaxPlayers:       req.MaxPlayers,
-		RequirePlayer:    true,
 		InfiniteBankroll: false,
 		HandLimit:        0,
 	}
-	if req.RequirePlayer != nil {
-		config.RequirePlayer = *req.RequirePlayer
-	}
+
 	if req.InfiniteBankroll != nil {
 		config.InfiniteBankroll = *req.InfiniteBankroll
 	}
@@ -514,13 +484,11 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 	instance := s.manager.RegisterGame(req.ID, pool, config)
 	go pool.Run()
 
-	if len(req.NPCs) > 0 {
-		instance.AddNPCs(s.logger, req.NPCs)
-	}
+	// NPC spawning removed - use spawner for bot orchestration
+	_ = instance // Avoid unused variable warning
 
 	s.logger.Info().
 		Str("game_id", req.ID).
-		Int("npc_groups", len(req.NPCs)).
 		Msg("Admin created game")
 
 	w.Header().Set("Content-Type", "application/json")
@@ -570,21 +538,13 @@ func (s *Server) serveAdminGameDelete(w http.ResponseWriter, id string, partsLen
 		return
 	}
 
-	instance.StopNPCs()
+	// NPC stopping removed - use spawner for bot orchestration
 	instance.Pool.Stop()
 	s.logger.Info().Str("game_id", id).Msg("Admin deleted game")
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) serveAdminGameGet(w http.ResponseWriter, id, sub string) {
-	if sub == "stats.md" {
-		s.serveAdminGameStatsMarkdown(w, id)
-		return
-	}
-	if sub == "stats.txt" {
-		s.serveAdminGameStatsText(w, id)
-		return
-	}
 	if sub == "stats" {
 		s.serveAdminGameStatsJSON(w, id)
 		return
@@ -604,162 +564,5 @@ func (s *Server) serveAdminGameStatsJSON(w http.ResponseWriter, id string) {
 	if err := json.NewEncoder(w).Encode(stats); err != nil {
 		s.logger.Error().Err(err).Msg("failed to encode game stats response")
 		w.WriteHeader(http.StatusInternalServerError)
-	}
-}
-
-func (s *Server) serveAdminGameStatsText(w http.ResponseWriter, id string) {
-	instance, ok := s.manager.GetGame(id)
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte("game not found"))
-		return
-	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	players := instance.Pool.PlayerStats()
-	for _, ps := range players {
-		_, _ = w.Write([]byte("=== PLAYER: " + ps.DisplayName + " (" + ps.Role + ") ===\n"))
-		if instance.Pool.statsCollector != nil && instance.Pool.statsCollector.IsEnabled() {
-			if d, ok := instance.Pool.statsCollector.(*DetailedStatsCollector); ok {
-				d.mu.RLock()
-				stat := d.stats[ps.BotID]
-				d.mu.RUnlock()
-				if stat != nil {
-					_, _ = w.Write([]byte(stat.Summary()))
-					_, _ = w.Write([]byte("\n"))
-					continue
-				}
-			}
-		}
-		_, _ = w.Write([]byte("Hands: "))
-		_, _ = fmt.Fprintf(w, "%d\n", ps.Hands)
-		_, _ = w.Write([]byte("Net chips: "))
-		_, _ = fmt.Fprintf(w, "%d\n\n", ps.NetChips)
-	}
-}
-
-func (s *Server) serveAdminGameStatsMarkdown(w http.ResponseWriter, id string) {
-	instance, ok := s.manager.GetGame(id)
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte("game not found"))
-		return
-	}
-	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-	_, _ = fmt.Fprintf(w, "# Game %s Statistics\n\n", instance.ID)
-	// Game overview
-	gs, _ := s.manager.GameStats(id)
-	_, _ = fmt.Fprintf(w, "## Game overview\n\n")
-	_, _ = fmt.Fprintf(w, "- Blinds: %d/%d\n", gs.SmallBlind, gs.BigBlind)
-	_, _ = fmt.Fprintf(w, "- Start chips: %d\n", gs.StartChips)
-	_, _ = fmt.Fprintf(w, "- Timeout: %d ms\n", gs.TimeoutMs)
-	_, _ = fmt.Fprintf(w, "- Players: %d-%d\n", gs.MinPlayers, gs.MaxPlayers)
-	if gs.HandLimit > 0 {
-		_, _ = fmt.Fprintf(w, "- Hand limit: %d (remaining: %d)\n", gs.HandLimit, gs.HandsRemaining)
-	} else {
-		_, _ = fmt.Fprintf(w, "- Hand limit: unlimited\n")
-	}
-	_, _ = fmt.Fprintf(w, "- Hands completed: %d\n", gs.HandsCompleted)
-	_, _ = fmt.Fprintf(w, "- Hands per second: %.2f\n", gs.HandsPerSecond)
-	// Start/end/duration
-	if !gs.StartTime.IsZero() {
-		_, _ = fmt.Fprintf(w, "- Start time: %s\n", gs.StartTime.Format(time.RFC3339))
-	}
-	if !gs.EndTime.IsZero() {
-		_, _ = fmt.Fprintf(w, "- End time: %s\n", gs.EndTime.Format(time.RFC3339))
-	}
-	if gs.DurationSeconds > 0 {
-		_, _ = fmt.Fprintf(w, "- Duration: %.2f s\n", gs.DurationSeconds)
-	}
-	_, _ = fmt.Fprintf(w, "- Timeouts: %d\n", gs.Timeouts)
-	_, _ = fmt.Fprintf(w, "- Seed: %d\n", gs.Seed)
-	_, _ = fmt.Fprintf(w, "- Active bots: %d\n\n", instance.Pool.BotCount())
-	// Leaderboard
-	_, _ = fmt.Fprintf(w, "## Leaderboard\n\n")
-	players := instance.Pool.PlayerStats()
-	sort.Slice(players, func(i, j int) bool { return players[i].NetChips > players[j].NetChips })
-	_, _ = fmt.Fprintf(w, "| Player | Role | Hands | Net Chips | BB/100 |\n|---|---:|---:|---:|---:|\n")
-	for _, p := range players {
-		bb100 := 0.0
-		if gs.BigBlind > 0 {
-			bb100 = (p.AvgPerHand / float64(gs.BigBlind)) * 100
-		}
-		_, _ = fmt.Fprintf(w, "| %s | %s | %d | %d | %.2f |\n", p.DisplayName, p.Role, p.Hands, p.NetChips, bb100)
-	}
-	_, _ = fmt.Fprintf(w, "\n")
-	// Aggregate analyses (when stats enabled) omitted intentionally
-	for _, ps := range players {
-		_, _ = fmt.Fprintf(w, "## Player: %s (%s)\n\n", ps.DisplayName, ps.Role)
-		if instance.Pool.statsCollector != nil && instance.Pool.statsCollector.IsEnabled() {
-			if d, ok := instance.Pool.statsCollector.(*DetailedStatsCollector); ok {
-				d.mu.RLock()
-				stat := d.stats[ps.BotID]
-				d.mu.RUnlock()
-				if stat != nil {
-					hands, sumBB, winningHands, losingHands, showdownWins, nonShowdownWins, showdownLosses, showdownBB, nonShowdownBB, _, _, _, _, _ := stat.GetStats()
-					mean := stat.Mean()
-					bb100 := stat.BB100()
-					median := stat.Median()
-					stdDev := stat.StdDev()
-					low, high := stat.ConfidenceInterval95()
-					_, _ = fmt.Fprintf(w, "### Results summary\n\n")
-					_, _ = fmt.Fprintf(w, "- Hands played: %d\n", hands)
-					_, _ = fmt.Fprintf(w, "- Net result: %.2f BB (%.2f BB/100)\n", sumBB, bb100)
-					_, _ = fmt.Fprintf(w, "- Mean: %.4f BB/hand | Median: %.4f BB/hand\n", mean, median)
-					_, _ = fmt.Fprintf(w, "- Std Dev: %.4f BB | 95%% CI: [%.4f, %.4f]\n\n", stdDev, low, high)
-
-					winRate := 0.0
-					if hands > 0 {
-						winRate = float64(winningHands) / float64(hands) * 100
-					}
-					_, _ = fmt.Fprintf(w, "### Win/Loss breakdown\n\n")
-					_, _ = fmt.Fprintf(w, "- Winning hands: %d (%.1f%%)\n", winningHands, winRate)
-					_, _ = fmt.Fprintf(w, "  - Showdown wins: %d | Non-showdown wins: %d\n", showdownWins, nonShowdownWins)
-					_, _ = fmt.Fprintf(w, "- Losing hands: %d (%.1f%%)\n", losingHands, 100-winRate)
-					_, _ = fmt.Fprintf(w, "  - Showdown losses: %d\n\n", showdownLosses)
-
-					totalShowdowns := showdownWins + showdownLosses
-					showdownRate := 0.0
-					if totalShowdowns > 0 {
-						showdownRate = float64(showdownWins) / float64(totalShowdowns) * 100
-					}
-					_, _ = fmt.Fprintf(w, "### Showdown analysis\n\n")
-					_, _ = fmt.Fprintf(w, "- Went to showdown: %d hands\n", totalShowdowns)
-					_, _ = fmt.Fprintf(w, "- Showdown win rate: %.1f%%%%\n", showdownRate)
-					_, _ = fmt.Fprintf(w, "- Showdown BB: %.2f | Non-showdown BB: %.2f\n\n", showdownBB, nonShowdownBB)
-
-					_, _ = fmt.Fprintf(w, "### Position analysis\n\n")
-					bd := stat.ButtonDistanceResults()
-					for dist := range 6 {
-						pbd := bd[dist]
-						if pbd.Hands > 0 {
-							posMean := stat.ButtonDistanceMean(dist)
-							posName := statistics.GetPositionName(dist)
-							_, _ = fmt.Fprintf(w, "- %s: %d hands, %.3f BB/hand (%.1f BB/100)\n", posName, pbd.Hands, posMean, posMean*100)
-						}
-					}
-					_, _ = fmt.Fprintf(w, "\n")
-
-					_, _ = fmt.Fprintf(w, "### Street analysis\n\n")
-					order := []struct{ key, label string }{
-						{"preflop", "Preflop"}, {"flop", "Flop"}, {"turn", "Turn"}, {"river", "River"},
-					}
-					ssMap := stat.StreetStats()
-					for _, o := range order {
-						if ss, ok := ssMap[o.key]; ok && ss.HandsReached > 0 {
-							avg := ss.NetBB / float64(ss.HandsReached)
-							_, _ = fmt.Fprintf(w, "- %s: %d hands ended, %.3f BB/hand\n", o.label, ss.HandsReached, avg)
-						}
-					}
-					_, _ = fmt.Fprintf(w, "\n")
-					continue
-				}
-			}
-		}
-		_, _ = fmt.Fprintf(w, "### Results summary\n\n")
-		_, _ = fmt.Fprintf(w, "- Hands: %d\n", ps.Hands)
-		_, _ = fmt.Fprintf(w, "- Net chips: %d\n\n", ps.NetChips)
-		// No per-player street analysis available without detailed stats
-		_, _ = fmt.Fprintf(w, "### Street analysis\n\n")
-		_, _ = fmt.Fprintf(w, "- No street-level data. Enable --enable-stats with --stats-depth=detailed or full.\n\n")
 	}
 }

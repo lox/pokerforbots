@@ -13,20 +13,34 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// Orchestrator uses server's bot-cmd flags instead of managing bots directly
+// Orchestrator uses spawner for bot management instead of managing processes directly
 type Orchestrator struct {
 	config        *Config
 	healthMonitor *HealthMonitor
 	logger        zerolog.Logger
 	serverCmd     *exec.Cmd
+	useSpawner    bool // Flag to use new spawner-based approach
 }
 
 // NewOrchestrator creates a new orchestrator that uses server bot commands
 func NewOrchestrator(config *Config, healthMonitor *HealthMonitor) *Orchestrator {
+	// Check if spawner command exists in PATH or as ./cmd/spawner
+	useSpawner := false
+	if _, err := exec.LookPath("spawner"); err == nil {
+		useSpawner = true
+		config.Logger.Info().Msg("Using spawner for bot orchestration")
+	} else if _, err := os.Stat("./cmd/spawner/main.go"); err == nil {
+		useSpawner = true
+		config.Logger.Info().Msg("Using spawner (via go run) for bot orchestration")
+	} else {
+		config.Logger.Info().Msg("Using legacy server-based bot orchestration (spawner not found)")
+	}
+
 	return &Orchestrator{
 		config:        config,
 		healthMonitor: healthMonitor,
 		logger:        config.Logger,
+		useSpawner:    useSpawner,
 	}
 }
 
@@ -222,12 +236,79 @@ func (o *Orchestrator) aggregateBatchResults(batches []BatchResult, _ BatchStrat
 
 // StartServer starts the server with the given configuration
 func (o *Orchestrator) StartServer(ctx context.Context, serverConfig *ServerConfig) error {
+	if o.useSpawner {
+		return o.startServerWithSpawner(ctx, serverConfig)
+	}
+
 	// Build arguments using the server configuration
 	args := serverConfig.BuildServerArgs(o.config)
 
 	// Start the server
 	return o.startServerWithArgs(ctx, args, serverConfig.Seed, serverConfig.Hands,
 		len(serverConfig.BotCommands), serverConfig.CountNPCs())
+}
+
+// startServerWithSpawner starts the server using the spawner tool
+func (o *Orchestrator) startServerWithSpawner(ctx context.Context, serverConfig *ServerConfig) error {
+	var args []string
+
+	// Core server configuration
+	args = append(args,
+		"--addr", o.config.ServerAddr,
+		"--seed", fmt.Sprintf("%d", serverConfig.Seed),
+		"--hand-limit", fmt.Sprintf("%d", serverConfig.Hands),
+		"--write-stats-on-exit", serverConfig.StatsFile,
+	)
+
+	// Add debug flag if logger is in debug mode
+	if o.logger.GetLevel() == zerolog.DebugLevel {
+		args = append(args, "--debug")
+	}
+
+	// Add bot commands
+	for _, botCmd := range serverConfig.BotCommands {
+		args = append(args, "--bot", botCmd)
+	}
+
+	// Add NPC configuration if present
+	if serverConfig.NPCConfig != "" {
+		// Parse NPC config and convert to spawner demo mode
+		switch {
+		case serverConfig.NPCConfig == "aggressive:3,calling:3":
+			args = append(args, "--demo", "mixed", "--num-bots", "6")
+		case strings.Contains(serverConfig.NPCConfig, "aggressive"):
+			args = append(args, "--demo", "aggressive", "--num-bots", fmt.Sprintf("%d", serverConfig.CountNPCs()))
+		case strings.Contains(serverConfig.NPCConfig, "calling"):
+			args = append(args, "--demo", "simple", "--num-bots", fmt.Sprintf("%d", serverConfig.CountNPCs()))
+		case strings.Contains(serverConfig.NPCConfig, "random"):
+			args = append(args, "--demo", "mixed", "--num-bots", fmt.Sprintf("%d", serverConfig.CountNPCs()))
+		}
+	}
+
+	// Determine spawner command
+	spawnerCmd := "spawner"
+	if _, err := exec.LookPath(spawnerCmd); err != nil {
+		// Try using go run
+		spawnerCmd = "go"
+		args = append([]string{"run", "./cmd/spawner"}, args...)
+	}
+
+	o.serverCmd = exec.CommandContext(ctx, spawnerCmd, args...)
+	o.serverCmd.Stdout = os.Stdout
+	o.serverCmd.Stderr = os.Stderr
+
+	o.logger.Debug().
+		Str("command", spawnerCmd).
+		Strs("args", args).
+		Msg("Starting spawner")
+
+	if err := o.serverCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start spawner: %w", err)
+	}
+
+	// Wait for server to be ready
+	time.Sleep(2 * time.Second)
+	return nil
 }
 
 // startServerWithArgs starts the server with the given arguments

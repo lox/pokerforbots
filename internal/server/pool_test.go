@@ -31,27 +31,13 @@ func newTestBots(count int, pool *BotPool) []*Bot {
 	return bots
 }
 
-func newTestNPCBots(count int, pool *BotPool) []*Bot {
-	bots := newTestBots(count, pool)
-	for _, bot := range bots {
-		bot.SetRole(BotRoleNPC)
-	}
-	return bots
-}
-
-func newTestPlayerBots(count int, pool *BotPool) []*Bot {
-	bots := newTestBots(count, pool)
-	for _, bot := range bots {
-		bot.SetRole(BotRolePlayer)
-	}
-	return bots
-}
+// Removed unused test helper functions
+// NPCs are now handled externally by the spawner package
 
 // Test configuration factory
 func testPoolConfig(minPlayers, maxPlayers int) Config {
 	config := DefaultConfig(minPlayers, maxPlayers)
 	config.Timeout = 50 * time.Millisecond // Faster tests
-	config.RequirePlayer = false           // Allow any bots to start hands in tests
 	return config
 }
 
@@ -162,58 +148,9 @@ func TestBotPoolMatching(t *testing.T) {
 	}
 }
 
-func TestBotPoolRequiresPlayer(t *testing.T) {
-	t.Parallel()
-
-	t.Run("NPC bots alone don't start hands", func(t *testing.T) {
-		config := testPoolConfig(2, 4)
-		config.RequirePlayer = true
-
-		pool := NewBotPool(testLogger(), rand.New(rand.NewSource(123)), config)
-		stopPool := startTestPool(t, pool)
-		defer stopPool()
-
-		// Register only NPC bots
-		npcBots := newTestNPCBots(3, pool)
-		for _, bot := range npcBots {
-			pool.Register(bot)
-		}
-
-		waitForCondition(t, func() bool {
-			return pool.BotCount() == 3
-		}, 200*time.Millisecond, "Expected 3 NPC bots to be registered")
-
-		// Wait and verify no hands started
-		time.Sleep(300 * time.Millisecond)
-		if handCount := pool.HandCount(); handCount != 0 {
-			t.Errorf("Expected no hands with only NPCs, got %d", handCount)
-		}
-	})
-
-	t.Run("Player bots can be registered", func(t *testing.T) {
-		config := testPoolConfig(2, 4)
-		config.RequirePlayer = true
-
-		pool := NewBotPool(testLogger(), rand.New(rand.NewSource(456)), config)
-		stopPool := startTestPool(t, pool)
-		defer stopPool()
-
-		// Register a player bot
-		playerBot := newTestPlayerBots(1, pool)[0]
-		pool.Register(playerBot)
-
-		waitForCondition(t, func() bool {
-			return pool.BotCount() == 1
-		}, 200*time.Millisecond, "Expected 1 player bot to be registered")
-
-		// Verify the bot role is set correctly
-		if retrieved, ok := pool.GetBot(playerBot.ID); ok {
-			if retrieved.Role() != BotRolePlayer {
-				t.Errorf("Expected player role, got %s", retrieved.Role())
-			}
-		}
-	})
-}
+// TestBotPoolRequiresPlayer has been removed
+// The RequirePlayer functionality was removed along with NPC support
+// NPCs are now handled externally by the spawner package
 
 func TestBotPoolHandLimit(t *testing.T) {
 	t.Parallel()

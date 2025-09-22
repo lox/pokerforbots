@@ -3,16 +3,10 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -21,31 +15,19 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// SimpleCLI contains only core server configuration
 type CLI struct {
-	Addr                   string   `kong:"default=':8080',help='Server address'"`
-	Debug                  bool     `kong:"help='Enable debug logging'"`
-	SmallBlind             int      `kong:"default='5',help='Small blind amount'"`
-	BigBlind               int      `kong:"default='10',help='Big blind amount'"`
-	StartChips             int      `kong:"default='1000',help='Starting chip count'"`
-	TimeoutMs              int      `kong:"default='100',help='Decision timeout in milliseconds'"`
-	MinPlayers             int      `kong:"default='2',help='Minimum players per hand'"`
-	MaxPlayers             int      `kong:"default='9',help='Maximum players per hand'"`
-	RequirePlayer          bool     `kong:"default='true',help='Require at least one player-role bot per hand'"`
-	InfiniteBankroll       bool     `kong:"default='false',help='Bots never run out of chips (for simulations)'"`
-	StopOnInsufficientBots bool     `kong:"default='false',help='Stop game when not enough bots remain (for simulations)'"`
-	NPCBots                int      `kong:"default='0',help='Total NPC bots to spawn in default game (auto distribution)'"`
-	NPCCalling             int      `kong:"default='0',help='NPC calling-station bots (overrides auto distribution)'"`
-	NPCRandom              int      `kong:"default='0',help='NPC random bots (overrides auto distribution)'"`
-	NPCAggro               int      `kong:"default='0',help='NPC aggressive bots (overrides auto distribution)'"`
-	Seed                   *int64   `kong:"help='Deterministic RNG seed for the server (optional)'"`
-	Hands                  uint64   `kong:"default='0',help='Maximum hands to run in the default game (0 = unlimited)'"`
-	CollectDetailed        bool     `kong:"name='collect-detailed-stats',default='false',help='Collect detailed statistics (impacts performance)'"`
-	MaxStatsHands          int      `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
-	BotCmd                 []string `kong:"help='Command to run a local bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME'"`
-	NPCBotCmd              []string `kong:"name='npc-bot-cmd',help='Command to run an external NPC bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME, POKERFORBOTS_ROLE=npc'"`
-	NPCs                   string   `kong:"name='npcs',help='Built-in NPC configuration (e.g., aggressive:2,calling:1,random:1)'"`
-	PrintStatsOnExit       bool     `kong:"help='Print /admin/games/default/stats JSON on exit'"`
-	WriteStatsOnExit       string   `kong:"help='Write /admin/games/default/stats JSON to file on exit'"`
+	Addr          string `kong:"default=':8080',help='Server address'"`
+	Debug         bool   `kong:"help='Enable debug logging'"`
+	SmallBlind    int    `kong:"default='5',help='Small blind amount'"`
+	BigBlind      int    `kong:"default='10',help='Big blind amount'"`
+	StartChips    int    `kong:"default='1000',help='Starting chip count'"`
+	TimeoutMs     int    `kong:"default='100',help='Decision timeout in milliseconds'"`
+	MinPlayers    int    `kong:"default='2',help='Minimum players per hand'"`
+	MaxPlayers    int    `kong:"default='9',help='Maximum players per hand'"`
+	Seed          *int64 `kong:"help='Deterministic RNG seed for the server (optional)'"`
+	EnableStats   bool   `kong:"help='Enable statistics collection'"`
+	MaxStatsHands int    `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
 }
 
 func main() {
@@ -76,19 +58,14 @@ func main() {
 
 	// Create server configuration
 	config := server.Config{
-		SmallBlind:             cli.SmallBlind,
-		BigBlind:               cli.BigBlind,
-		StartChips:             cli.StartChips,
-		Timeout:                time.Duration(cli.TimeoutMs) * time.Millisecond,
-		MinPlayers:             cli.MinPlayers,
-		MaxPlayers:             cli.MaxPlayers,
-		RequirePlayer:          cli.RequirePlayer,
-		InfiniteBankroll:       cli.InfiniteBankroll,
-		StopOnInsufficientBots: cli.StopOnInsufficientBots,
-		HandLimit:              cli.Hands,
-		Seed:                   0,
-		EnableStats:            cli.CollectDetailed,
-		MaxStatsHands:          cli.MaxStatsHands,
+		SmallBlind:    cli.SmallBlind,
+		BigBlind:      cli.BigBlind,
+		StartChips:    cli.StartChips,
+		Timeout:       time.Duration(cli.TimeoutMs) * time.Millisecond,
+		MinPlayers:    cli.MinPlayers,
+		MaxPlayers:    cli.MaxPlayers,
+		EnableStats:   cli.EnableStats,
+		MaxStatsHands: cli.MaxStatsHands,
 	}
 
 	// Create RNG instance for server
@@ -101,25 +78,6 @@ func main() {
 	config.Seed = seed
 	srv := server.NewServer(logger, rng, server.WithConfig(config))
 
-	// Parse NPCs from string format if provided, otherwise use individual flags
-	var npcSpecs []server.NPCSpec
-	if cli.NPCs != "" {
-		var err error
-		npcSpecs, err = parseNPCConfig(cli.NPCs)
-		if err != nil {
-			logger.Fatal().Err(err).Str("npcs", cli.NPCs).Msg("Failed to parse --npcs configuration")
-		}
-	} else {
-		npcSpecs = computeDefaultNPCSpecs(cli.NPCBots, cli.NPCCalling, cli.NPCRandom, cli.NPCAggro)
-	}
-
-	if len(npcSpecs) > 0 {
-		srv.AddBootstrapNPCs("default", npcSpecs)
-		for _, spec := range npcSpecs {
-			logger.Info().Str("game_id", "default").Str("strategy", spec.Strategy).Int("count", spec.Count).Msg("Spawning default NPC bots")
-		}
-	}
-
 	// Start server in a goroutine
 	serverErr := make(chan error, 1)
 	go func() {
@@ -131,50 +89,13 @@ func main() {
 			Int("timeout_ms", cli.TimeoutMs).
 			Int("min_players", cli.MinPlayers).
 			Int("max_players", cli.MaxPlayers).
-			Bool("infinite_bankroll", cli.InfiniteBankroll).
-			Uint64("hand_limit", cli.Hands).
 			Int64("seed", seed).
-			Bool("collect_detailed_stats", cli.CollectDetailed).
-			Int("max_stats_hands", cli.MaxStatsHands).
+			Bool("enable_stats", cli.EnableStats).
 			Msg("Server starting")
 		serverErr <- srv.Start(cli.Addr)
 	}()
 
-	// Bootstrap external bots if requested (run each command)
-	botProcsCtx, botProcsCancel := context.WithCancel(context.Background())
-	defer botProcsCancel()
-	var anyBotDone <-chan error
-	var allBotsDone <-chan error
-	{
-		serverWS := toWSURL(cli.Addr)
-		var playerChans []<-chan error
-		var npcChans []<-chan error
-		for _, cmd := range cli.BotCmd {
-			playerChans = append(playerChans, spawnBot(logger, botProcsCtx, cmd, serverWS, "default", seed))
-		}
-		for _, cmd := range cli.NPCBotCmd {
-			npcChans = append(npcChans, spawnBotWithRole(logger, botProcsCtx, cmd, serverWS, "default", "npc", seed))
-		}
-		// Only treat player bot exits as a shutdown trigger
-		anyBotDone = firstDone(playerChans)
-		// Wait for all bots (players and NPCs) on shutdown paths
-		allBots := append([]<-chan error{}, playerChans...)
-		allBots = append(allBots, npcChans...)
-		allBotsDone = waitAll(allBots)
-	}
-
-	// Monitor for game completion if hand limit is set on default game
-	var gameCompleteNotifier <-chan struct{}
-	if cli.Hands > 0 {
-		// Server will automatically shut down when default game reaches hand limit
-		// This is useful for profiling and benchmarking scenarios
-		gameCompleteNotifier = srv.DefaultGameDone()
-		if gameCompleteNotifier != nil {
-			logger.Info().Uint64("hand_limit", cli.Hands).Msg("Will exit when default game completes")
-		}
-	}
-
-	// Wait for server error, interrupt signal, or game completion
+	// Wait for server error or interrupt signal
 	select {
 	case err := <-serverErr:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -183,62 +104,6 @@ func main() {
 	case sig := <-sigChan:
 		logger.Info().Str("signal", sig.String()).Msg("Received signal, shutting down gracefully...")
 
-		// If bots were started, wait for them to exit
-		if allBotsDone != nil {
-			logger.Info().Msg("Waiting for bot processes to exit...")
-			<-allBotsDone
-		}
-
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.Error().Err(err).Msg("Graceful shutdown failed")
-		}
-
-		if err := <-serverErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error().Err(err).Msg("Server exited with error")
-		} else {
-			logger.Info().Msg("Server shutdown complete")
-		}
-	case <-gameCompleteNotifier:
-		logger.Info().Msg("Default game completed, waiting for bot and shutting down...")
-
-		if cli.PrintStatsOnExit {
-			printStats(toHTTPBase(cli.Addr))
-		}
-		if cli.WriteStatsOnExit != "" {
-			writeStatsToFile(toHTTPBase(cli.Addr), cli.WriteStatsOnExit)
-		}
-
-		// Wait for bot processes to exit before shutting down the server
-		if allBotsDone != nil {
-			logger.Info().Msg("Waiting for bot processes to exit...")
-			<-allBotsDone
-		}
-
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.Error().Err(err).Msg("Graceful shutdown failed")
-		}
-
-		if err := <-serverErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error().Err(err).Msg("Server exited with error")
-		} else {
-			logger.Info().Msg("Server shutdown complete")
-		}
-	case err := <-anyBotDone:
-		logger.Info().Err(err).Msg("One or more bot processes exited, shutting down server...")
-
-		if cli.PrintStatsOnExit {
-			printStats(toHTTPBase(cli.Addr))
-		}
-		if cli.WriteStatsOnExit != "" {
-			writeStatsToFile(toHTTPBase(cli.Addr), cli.WriteStatsOnExit)
-		}
-
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -252,238 +117,4 @@ func main() {
 			logger.Info().Msg("Server shutdown complete")
 		}
 	}
-}
-
-// toWSURL converts server listen addr (e.g. ":8080" or "0.0.0.0:8080") to a ws URL.
-func toWSURL(addr string) string {
-	base := addr
-	if strings.HasPrefix(base, ":") {
-		base = "localhost" + base
-	}
-	if strings.HasPrefix(base, "0.0.0.0:") || strings.HasPrefix(base, "[::]:") {
-		parts := strings.Split(base, ":")
-		port := parts[len(parts)-1]
-		base = "localhost:" + port
-	}
-	return "ws://" + base + "/ws"
-}
-
-func toHTTPBase(addr string) string {
-	base := addr
-	if strings.HasPrefix(base, ":") {
-		base = "localhost" + base
-	}
-	if strings.HasPrefix(base, "0.0.0.0:") || strings.HasPrefix(base, "[::]:") {
-		parts := strings.Split(base, ":")
-		port := parts[len(parts)-1]
-		base = "localhost:" + port
-	}
-	return "http://" + base
-}
-
-func spawnBot(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, gameID string, seed int64) <-chan error {
-	return spawnBotWithRole(logger, ctx, cmdStr, serverWS, gameID, "", seed)
-}
-
-var externalBotSeq int64
-
-func spawnBotWithRole(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, gameID, role string, seed int64) <-chan error {
-	// Generate unique sequence number for this bot
-	seq := atomic.AddInt64(&externalBotSeq, 1)
-
-	// Derive unique seed for this bot by adding sequence to base seed
-	// This ensures each bot gets a different but deterministic seed
-	botSeed := seed + seq
-
-	// Pass the derived seed and a unique bot ID
-	env := []string{
-		"POKERFORBOTS_SERVER=" + serverWS,
-		"POKERFORBOTS_GAME=" + gameID,
-		"POKERFORBOTS_SEED=" + strconv.FormatInt(botSeed, 10),
-		"POKERFORBOTS_BOT_ID=" + fmt.Sprintf("bot-%d", seq),
-	}
-	if role != "" {
-		env = append(env, "POKERFORBOTS_ROLE="+role)
-	}
-
-	// Generate prefix for output
-	base := strings.Fields(cmdStr)
-	label := role
-	if label == "" {
-		label = "player"
-	}
-	cmdName := ""
-	if len(base) > 0 {
-		cmdName = filepath.Base(base[0])
-	}
-	prefix := fmt.Sprintf("[%s#%d %s] ", label, seq, cmdName)
-
-	return spawnBotProcess(ctx, logger, cmdStr, env, prefix)
-}
-
-func waitAll(chans []<-chan error) <-chan error {
-	if len(chans) == 0 {
-		return nil
-	}
-	out := make(chan error, 1)
-	go func() {
-		var firstErr error
-		for _, ch := range chans {
-			if err := <-ch; err != nil && firstErr == nil {
-				firstErr = err
-			}
-		}
-		out <- firstErr
-		close(out)
-	}()
-	return out
-}
-
-func printStats(httpBase string) {
-	// Prefer markdown format when available
-	urlMD := fmt.Sprintf("%s/admin/games/default/stats.md", httpBase)
-	resp, err := http.Get(urlMD)
-	if err == nil && resp.StatusCode == http.StatusOK {
-		defer resp.Body.Close()
-		_, _ = io.Copy(os.Stdout, resp.Body)
-		return
-	}
-	if resp != nil {
-		resp.Body.Close()
-	}
-	// Fallback to pretty text
-	urlTxt := fmt.Sprintf("%s/admin/games/default/stats.txt", httpBase)
-	resp, err = http.Get(urlTxt)
-	if err == nil && resp.StatusCode == http.StatusOK {
-		defer resp.Body.Close()
-		_, _ = io.Copy(os.Stdout, resp.Body)
-		return
-	}
-	if resp != nil {
-		resp.Body.Close()
-	}
-	// Fallback to JSON
-	urlJSON := fmt.Sprintf("%s/admin/games/default/stats", httpBase)
-	resp, err = http.Get(urlJSON)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to fetch stats: %v\n", err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "stats request failed: %s\n", resp.Status)
-		return
-	}
-	_, _ = io.Copy(os.Stdout, resp.Body)
-	fmt.Fprintln(os.Stdout)
-}
-
-func writeStatsToFile(httpBase string, filename string) {
-	// Always write JSON format to file
-	url := fmt.Sprintf("%s/admin/games/default/stats", httpBase)
-	resp, err := http.Get(url)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to fetch stats for file: %v\n", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "Failed to fetch stats for file: HTTP %d\n", resp.StatusCode)
-		return
-	}
-
-	// Read the JSON response
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read stats: %v\n", err)
-		return
-	}
-
-	// Write to file
-	if err := os.WriteFile(filename, data, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to write stats to %s: %v\n", filename, err)
-		return
-	}
-}
-
-// parseNPCConfig parses a string like "aggressive:2,calling:1,random:1" into NPCSpec slice
-func parseNPCConfig(config string) ([]server.NPCSpec, error) {
-	if config == "" {
-		return nil, nil
-	}
-
-	var specs []server.NPCSpec
-	parts := strings.SplitSeq(config, ",")
-
-	for part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-
-		strategyCount := strings.Split(part, ":")
-		if len(strategyCount) != 2 {
-			return nil, fmt.Errorf("invalid NPC configuration format: %q (expected strategy:count)", part)
-		}
-
-		strategy := strings.TrimSpace(strategyCount[0])
-		countStr := strings.TrimSpace(strategyCount[1])
-
-		// Validate strategy name (match server's NPC strategies)
-		if strategy != "calling" && strategy != "aggressive" && strategy != "random" {
-			return nil, fmt.Errorf("unknown NPC strategy: %q (valid: calling, aggressive, random)", strategy)
-		}
-
-		count, err := strconv.Atoi(countStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid count for strategy %q: %q", strategy, countStr)
-		}
-		if count <= 0 {
-			return nil, fmt.Errorf("count must be positive for strategy %q: %d", strategy, count)
-		}
-
-		specs = append(specs, server.NPCSpec{
-			Strategy: strategy,
-			Count:    count,
-		})
-	}
-
-	return specs, nil
-}
-
-func computeDefaultNPCSpecs(total, calling, random, aggro int) []server.NPCSpec {
-	if total <= 0 && calling == 0 && random == 0 && aggro == 0 {
-		return nil
-	}
-
-	if total > 0 && calling == 0 && random == 0 && aggro == 0 {
-		base := total / 3
-		remainder := total % 3
-		calling = base
-		random = base
-		aggro = base
-		if remainder >= 1 {
-			calling++
-		}
-		if remainder >= 2 {
-			random++
-		}
-	}
-
-	specs := make([]server.NPCSpec, 0, 3)
-	if calling > 0 {
-		specs = append(specs, server.NPCSpec{Strategy: "calling", Count: calling})
-	}
-	if random > 0 {
-		specs = append(specs, server.NPCSpec{Strategy: "random", Count: random})
-	}
-	if aggro > 0 {
-		specs = append(specs, server.NPCSpec{Strategy: "aggressive", Count: aggro})
-	}
-
-	if len(specs) == 0 {
-		return nil
-	}
-	return specs
 }

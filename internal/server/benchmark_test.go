@@ -5,18 +5,10 @@ import (
 	"math/rand"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/lox/pokerforbots/internal/game"
 	"github.com/lox/pokerforbots/poker"
-	"github.com/rs/zerolog"
 )
-
-// BenchmarkHandRunner is disabled because it requires real bot connections
-// Use BenchmarkGameEngine or BenchmarkNPCStrategies instead
-
-// BenchmarkBotPool is disabled because it requires real bot connections
-// Use BenchmarkNPCStrategies to test pool behavior with NPCs instead
 
 // BenchmarkGameEngine benchmarks just the core game logic
 func BenchmarkGameEngine(b *testing.B) {
@@ -79,74 +71,6 @@ func BenchmarkGameEngine(b *testing.B) {
 			}
 
 			handsPerSec := float64(b.N) / b.Elapsed().Seconds()
-			b.ReportMetric(handsPerSec, "hands/sec")
-		})
-	}
-}
-
-// BenchmarkNPCStrategies benchmarks different NPC strategies
-func BenchmarkNPCStrategies(b *testing.B) {
-	strategies := []struct {
-		name     string
-		strategy npcStrategy
-	}{
-		{"CallingStation", &callingStationStrategy{}},
-		{"Random", &randomStrategy{}},
-		{"Aggressive", &aggressiveStrategy{}},
-	}
-
-	for _, s := range strategies {
-		b.Run(s.name, func(b *testing.B) {
-			logger := zerolog.Nop()
-			rng := rand.New(rand.NewSource(12345))
-
-			config := Config{
-				MinPlayers:       6,
-				MaxPlayers:       6,
-				SmallBlind:       5,
-				BigBlind:         10,
-				StartChips:       1000,
-				Timeout:          5 * time.Millisecond,
-				InfiniteBankroll: true,
-				HandLimit:        uint64(b.N),
-			}
-
-			config.HandLimit = uint64(b.N)
-			pool := NewBotPool(logger, rng, config)
-
-			// Start pool
-			go pool.Run()
-
-			// Create 6 NPCs with the same strategy
-			npcs := make([]*npcBot, 6)
-			for i := range 6 {
-				npc := newNPCBot(logger, pool, "bench", s.strategy)
-				npcs[i] = npc
-				npc.start()
-			}
-
-			// Wait for hands to complete
-			b.ResetTimer()
-			b.ReportAllocs()
-
-			startTime := time.Now()
-			targetHands := b.N
-
-			// Wait for target number of hands
-			for pool.HandCount() < uint64(targetHands) {
-				time.Sleep(10 * time.Millisecond)
-				if time.Since(startTime) > 30*time.Second {
-					b.Fatalf("Timeout waiting for %d hands (completed: %d)", targetHands, pool.HandCount())
-				}
-			}
-
-			// Stop all NPCs
-			for _, npc := range npcs {
-				npc.stop()
-			}
-
-			elapsed := time.Since(startTime)
-			handsPerSec := float64(targetHands) / elapsed.Seconds()
 			b.ReportMetric(handsPerSec, "hands/sec")
 		})
 	}

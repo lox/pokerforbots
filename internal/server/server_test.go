@@ -137,7 +137,6 @@ func TestWebSocketConnection(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	srv := NewServer(testLogger(), rng)
 	srv.pool.minPlayers = 10
-	srv.pool.config.RequirePlayer = false
 	var poolWg sync.WaitGroup
 	poolWg.Go(func() {
 		srv.pool.Run()
@@ -186,7 +185,6 @@ func TestMultipleBotConnections(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	srv := NewServer(testLogger(), rng)
 	srv.pool.minPlayers = 10
-	srv.pool.config.RequirePlayer = false
 	var poolWg sync.WaitGroup
 	poolWg.Go(func() {
 		srv.pool.Run()
@@ -273,8 +271,7 @@ func TestAdminCreateAndDeleteGame(t *testing.T) {
 		"timeout_ms": 200,
 		"min_players": 2,
 		"max_players": 6,
-		"require_player": false,
-		"npcs": [{"strategy": "random", "count": 2}]
+		"require_player": false
 	}`
 	req := httptest.NewRequest(http.MethodPost, "/admin/games", strings.NewReader(createPayload))
 	req.Header.Set("Content-Type", "application/json")
@@ -286,13 +283,11 @@ func TestAdminCreateAndDeleteGame(t *testing.T) {
 		t.Fatalf("expected 201, got %d", rec.Code)
 	}
 
-	game, ok := srv.manager.GetGame("test")
+	_, ok := srv.manager.GetGame("test")
 	if !ok {
 		t.Fatal("expected game to be registered")
 	}
-	if len(game.npcs) != 2 {
-		t.Fatalf("expected 2 NPCs, got %d", len(game.npcs))
-	}
+	// NPCs are now handled externally by the spawner
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/admin/games/test", nil)
 	deleteRec := httptest.NewRecorder()
@@ -306,9 +301,7 @@ func TestAdminCreateAndDeleteGame(t *testing.T) {
 	if _, ok := srv.manager.GetGame("test"); ok {
 		t.Fatal("expected game to be removed")
 	}
-	if len(game.npcs) != 0 {
-		t.Fatalf("expected NPCs to be stopped, still have %d", len(game.npcs))
-	}
+	// NPCs cleanup is now handled externally by the spawner
 }
 
 func TestAdminGameStatsEndpoint(t *testing.T) {

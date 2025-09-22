@@ -848,6 +848,11 @@ func main() {
 	debug := flag.Bool("debug", false, "Enable debug logging")
 	flag.Parse()
 
+	// Check for environment variable override
+	if envURL := os.Getenv("POKERFORBOTS_SERVER"); envURL != "" {
+		*serverURL = envURL
+	}
+
 	level := zerolog.InfoLevel
 	if *debug {
 		level = zerolog.DebugLevel

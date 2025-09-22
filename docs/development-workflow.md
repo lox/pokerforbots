@@ -8,30 +8,42 @@ Uses CashApp's Hermit: `source bin/activate-hermit` or call things directly from
 
 ## Quick Start
 
-### One Command Testing
+### Using the Spawner (Recommended)
 
-Run a complete test session with your bot vs NPCs:
+The spawner manages bot processes and includes an embedded server:
 
 ```bash
-# Basic test run (1000 hands with stats)
-task server -- --hands 1000 --npc-bots 3 --bot-cmd "go run ./sdk/examples/complex" \
-  --collect-detailed-stats --print-stats-on-exit
+# Quick demo with default bots
+go run ./cmd/spawner --demo=simple --num-bots=6
 
-# With deterministic seed for reproducible results
-task server -- --seed 42 --hands 1000 --npc-bots 3 --require-player \
-  --bot-cmd "go run ./sdk/examples/complex" --collect-detailed-stats --print-stats-on-exit
+# Test your bot against NPC strategies
+go run ./cmd/spawner --demo=mixed --num-bots=5 \
+  --bot "go run ./sdk/examples/complex" \
+  --hand-limit 1000 --print-stats-on-exit
 
-# Fast testing (20ms timeout)
-task server -- --hands 5000 --timeout-ms 20 --npc-bots 5 \
-  --bot-cmd "go run ./sdk/examples/complex" --collect-detailed-stats --print-stats-on-exit
+# Deterministic testing with seed
+go run ./cmd/spawner --seed 42 --hand-limit 1000 \
+  --bot "go run ./sdk/examples/complex" \
+  --demo=aggressive --num-bots=3 \
+  --write-stats-on-exit stats.json
 ```
 
-The server will:
-1. Start with specified NPCs
-2. Launch your bot automatically
+### Legacy Server Mode
+
+**Note**: Direct server NPC flags are deprecated. Use the spawner instead.
+
+```bash
+# Basic test run (will show deprecation warning)
+task server -- --hands 1000 --npc-bots 3 --bot-cmd "go run ./sdk/examples/complex" \
+  --collect-detailed-stats --print-stats-on-exit
+```
+
+The spawner will:
+1. Start an embedded server
+2. Spawn and manage bot processes
 3. Run the specified number of hands
-4. Print statistics when complete
-5. Exit cleanly
+4. Write/print statistics when complete
+5. Clean up all processes on exit
 
 ### Monitor Real-time Stats
 
@@ -50,35 +62,57 @@ watch -n 2 'curl -s http://localhost:8080/stats'
 
 ## Common Configurations
 
-### Test Against Specific NPCs
+### Test Against Specific Strategies
 
 ```bash
-# Mix of opponent types
-task server -- --hands 1000 \
-  --npc-calling 2 \  # 2 calling stations
-  --npc-random 1 \   # 1 random bot
-  --npc-aggro 2 \    # 2 aggressive bots
-  --bot-cmd "go run ./sdk/examples/complex" \
-  --collect-detailed-stats --print-stats-on-exit
+# Simple opponents (calling stations)
+go run ./cmd/spawner --demo=simple --num-bots=5 \
+  --bot "go run ./sdk/examples/complex" \
+  --hand-limit 1000
+
+# Mixed opponents (calling, random, aggressive)
+go run ./cmd/spawner --demo=mixed --num-bots=6 \
+  --bot "go run ./sdk/examples/complex" \
+  --hand-limit 1000
+
+# Aggressive opponents only
+go run ./cmd/spawner --demo=aggressive --num-bots=4 \
+  --bot "go run ./sdk/examples/complex" \
+  --hand-limit 1000
 ```
 
-### Infinite Bankroll Mode
+### Configuration File
 
-Prevent eliminations for long-running tests:
+For complex setups, use a YAML or JSON config:
+
+```yaml
+# spawner-config.yaml
+server_url: ws://localhost:8080/ws
+seed: 42
+bots:
+  - command: go
+    args: [run, ./sdk/examples/complex]
+    count: 1
+    game_id: default
+  - command: go
+    args: [run, ./sdk/examples/calling-station]
+    count: 3
+  - command: go
+    args: [run, ./sdk/examples/aggressive]
+    count: 2
+```
 
 ```bash
-task server -- --infinite-bankroll --hands 10000 --npc-bots 3 \
-  --bot-cmd "go run ./sdk/examples/complex" \
-  --collect-detailed-stats --print-stats-on-exit
+go run ./cmd/spawner -c spawner-config.yaml --hand-limit 5000
 ```
 
 ### Custom Stakes
 
 ```bash
-task server -- --hands 1000 --npc-bots 3 \
+go run ./cmd/spawner --demo=mixed --num-bots=5 \
+  --bot "go run ./sdk/examples/complex" \
   --small-blind 25 --big-blind 50 --start-chips 5000 \
-  --bot-cmd "go run ./sdk/examples/complex" \
-  --collect-detailed-stats --print-stats-on-exit
+  --hand-limit 1000 --print-stats-on-exit
 ```
 
 ## Automated Testing Loop
@@ -89,14 +123,16 @@ task server -- --hands 1000 --npc-bots 3 \
 
 for i in {1..5}; do
   echo "Test $i of 5"
-  task server -- --seed $i --hands 1000 --npc-bots 3 \
-    --bot-cmd "go run ./sdk/examples/complex" \
-    --collect-detailed-stats --print-stats-on-exit \
-    | tee results/test-$i.txt
+  go run ./cmd/spawner --seed $i --hand-limit 1000 \
+    --demo=mixed --num-bots=5 \
+    --bot "go run ./sdk/examples/complex" \
+    --write-stats-on-exit results/test-$i.json
 done
 
 # Extract BB/100 from all runs
-grep "BB/100" results/test-*.txt
+for f in results/test-*.json; do
+  echo "$f: $(jq '.players[0].bb_per_100' $f)"
+done
 ```
 
 ## Analyzing Results

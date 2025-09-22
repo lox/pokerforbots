@@ -10,11 +10,9 @@ import (
 
 // GameInstance represents a single logical game/table configuration.
 type GameInstance struct {
-	ID            string
-	Config        Config
-	Pool          *BotPool
-	RequirePlayer bool
-	npcs          []*npcBot
+	ID     string
+	Config Config
+	Pool   *BotPool
 }
 
 // GameSummary holds lightweight metadata for clients.
@@ -26,7 +24,6 @@ type GameSummary struct {
 	TimeoutMs        int    `json:"timeout_ms"`
 	MinPlayers       int    `json:"min_players"`
 	MaxPlayers       int    `json:"max_players"`
-	RequirePlayer    bool   `json:"require_player"`
 	InfiniteBankroll bool   `json:"infinite_bankroll"`
 	ConnectedBots    int    `json:"connected_bots"`
 	HandsPlayed      uint64 `json:"hands_played"`
@@ -56,11 +53,10 @@ func (gm *GameManager) RegisterGame(id string, pool *BotPool, config Config) *Ga
 
 	if existing, ok := gm.games[id]; ok {
 		existing.Config = config
-		existing.RequirePlayer = config.RequirePlayer
 		return existing
 	}
 
-	instance := &GameInstance{ID: id, Config: config, Pool: pool, RequirePlayer: config.RequirePlayer}
+	instance := &GameInstance{ID: id, Config: config, Pool: pool}
 	pool.SetGameID(id)
 	gm.games[id] = instance
 	if gm.defaultGameID == "" {
@@ -90,26 +86,7 @@ func (gm *GameManager) DeleteGame(id string) (*GameInstance, bool) {
 	return instance, true
 }
 
-func (gi *GameInstance) AddNPCs(logger zerolog.Logger, specs []NPCSpec) {
-	for _, spec := range specs {
-		if spec.Count <= 0 {
-			continue
-		}
-		strategy := resolveStrategy(spec.Strategy)
-		for i := 0; i < spec.Count; i++ {
-			npc := newNPCBot(logger, gi.Pool, gi.ID, strategy)
-			npc.start()
-			gi.npcs = append(gi.npcs, npc)
-		}
-	}
-}
-
-func (gi *GameInstance) StopNPCs() {
-	for _, npc := range gi.npcs {
-		npc.stop()
-	}
-	gi.npcs = nil
-}
+// NPC support has been removed - use the spawner tool for bot orchestration
 
 // GetGame retrieves a game by ID.
 func (gm *GameManager) GetGame(id string) (*GameInstance, bool) {
@@ -149,7 +126,6 @@ func (gm *GameManager) ListGames() []GameSummary {
 			TimeoutMs:        int(game.Config.Timeout / time.Millisecond),
 			MinPlayers:       game.Config.MinPlayers,
 			MaxPlayers:       game.Config.MaxPlayers,
-			RequirePlayer:    game.RequirePlayer,
 			InfiniteBankroll: game.Config.InfiniteBankroll,
 			ConnectedBots:    game.Pool.BotCount(),
 			HandsPlayed:      game.Pool.HandCount(),
@@ -198,7 +174,6 @@ func (gi *GameInstance) Stats() GameStats {
 		TimeoutMs:        timeoutMs,
 		MinPlayers:       gi.Config.MinPlayers,
 		MaxPlayers:       gi.Config.MaxPlayers,
-		RequirePlayer:    gi.RequirePlayer,
 		InfiniteBankroll: gi.Config.InfiniteBankroll,
 		HandsCompleted:   handsCompleted,
 		HandLimit:        handLimit,
@@ -238,7 +213,6 @@ func (gm *GameManager) StopAll() {
 	defer gm.mu.RUnlock()
 
 	for _, game := range gm.games {
-		game.StopNPCs()
 		game.Pool.Stop()
 	}
 }

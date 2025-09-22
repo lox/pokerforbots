@@ -34,6 +34,7 @@ type BotPool struct {
 	gameID            string
 	matchTrigger      chan struct{}
 	matcherWG         sync.WaitGroup
+	runOnce           sync.Once
 
 	// Metrics
 	timeoutCounter uint64
@@ -76,15 +77,14 @@ const reasonHandLimitReached = "hand_limit_reached"
 // DefaultConfig returns a config with sensible defaults
 func DefaultConfig(minPlayers, maxPlayers int) Config {
 	return Config{
-		SmallBlind:    5,
-		BigBlind:      10,
-		StartChips:    1000,
-		Timeout:       100 * time.Millisecond,
-		MinPlayers:    minPlayers,
-		MaxPlayers:    maxPlayers,
-		RequirePlayer: true,
-		HandLimit:     0,
-		Seed:          0,
+		SmallBlind: 5,
+		BigBlind:   10,
+		StartChips: 1000,
+		Timeout:    100 * time.Millisecond,
+		MinPlayers: minPlayers,
+		MaxPlayers: maxPlayers,
+		HandLimit:  0,
+		Seed:       0,
 	}
 }
 
@@ -140,10 +140,11 @@ func (p *BotPool) GameID() string {
 }
 
 // Run starts the bot pool manager
-
 func (p *BotPool) Run() {
-	p.matcherWG.Add(1)
-	go p.matchLoop()
+	p.runOnce.Do(func() {
+		p.matcherWG.Add(1)
+		go p.matchLoop()
+	})
 
 	for {
 		select {
@@ -299,26 +300,6 @@ collectLoop:
 	}
 	for i := 0; i < numPlayers; i++ {
 		bots = append(bots, allBots[i])
-	}
-
-	if p.config.RequirePlayer {
-		hasPlayer := false
-		for _, bot := range bots {
-			if bot.Role() == BotRolePlayer {
-				hasPlayer = true
-				break
-			}
-		}
-		if !hasPlayer {
-			// No player present; return bots to available queue and wait
-			for _, bot := range bots {
-				select {
-				case p.available <- bot:
-				default:
-				}
-			}
-			return
-		}
 	}
 
 	// Return unused bots to available queue
@@ -529,7 +510,7 @@ func (p *BotPool) HandsPerSecond() float64 {
 	return handCount / elapsed
 }
 
-// StartTime returns the timestamp when the first hand in the game began (respecting RequirePlayer).
+// StartTime returns the timestamp when the first hand in the game began (min players met).
 func (p *BotPool) StartTime() time.Time {
 	p.metricsLock.RLock()
 	defer p.metricsLock.RUnlock()
@@ -789,7 +770,6 @@ type GameStats struct {
 	TimeoutMs        int                            `json:"timeout_ms"`
 	MinPlayers       int                            `json:"min_players"`
 	MaxPlayers       int                            `json:"max_players"`
-	RequirePlayer    bool                           `json:"require_player"`
 	InfiniteBankroll bool                           `json:"infinite_bankroll"`
 	HandsCompleted   uint64                         `json:"hands_completed"`
 	HandLimit        uint64                         `json:"hand_limit"`

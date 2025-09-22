@@ -37,14 +37,14 @@ tasks:
       - mkdir -p dist
       - go build -o dist/server ./cmd/server
       - go build -o dist/client ./cmd/client
-      - go build -o dist/benchmark ./cmd/benchmark
+      - go build -o dist/spawner ./cmd/spawner
       - go build -o dist/complex-bot ./sdk/examples/complex
     sources:
       - '**/*.go'
     generates:
       - dist/server
       - dist/client
-      - dist/benchmark
+      - dist/spawner
       - dist/complex-bot
 
   snapshot:
@@ -106,9 +106,9 @@ tasks:
       - bin/go run golang.org/x/tools/gopls/internal/analysis/unusedparams/cmd@latest -test -fix ./...
 
   bench:
-    desc: Run WebSocket performance benchmark
+    desc: Run performance benchmark using spawner
     cmds:
-      - go run ./cmd/benchmark {{.CLI_ARGS}}
+      - go run ./cmd/spawner --demo=simple --num-bots=6 --hand-limit=1000 {{.CLI_ARGS}}
     silent: false
 
   bench:go:
@@ -162,14 +162,32 @@ tasks:
           --output {{.OUTPUT | default "summary"}}
 
   regression:all:
-    desc: Run all regression test modes
+    desc: Run all regression test modes sequentially
     cmds:
-      - |
-        go run ./cmd/regression-tester --mode all \
-          --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
-          --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
-          --hands {{.HANDS | default "50000"}} \
-          --output {{.OUTPUT | default "summary"}}
+      - task: regression:heads-up
+        vars:
+          CHALLENGER: "{{.CHALLENGER}}"
+          BASELINE: "{{.BASELINE}}"
+          HANDS: "{{.HANDS}}"
+          OUTPUT: "{{.OUTPUT}}"
+      - task: regression:population
+        vars:
+          CHALLENGER: "{{.CHALLENGER}}"
+          BASELINE: "{{.BASELINE}}"
+          HANDS: "{{.HANDS}}"
+          OUTPUT: "{{.OUTPUT}}"
+      - task: regression:npc
+        vars:
+          CHALLENGER: "{{.CHALLENGER}}"
+          BASELINE: "{{.BASELINE}}"
+          HANDS: "{{.HANDS}}"
+          OUTPUT: "{{.OUTPUT}}"
+      - task: regression:self-play
+        vars:
+          CHALLENGER: "{{.CHALLENGER}}"
+          BASELINE: "{{.BASELINE}}"
+          HANDS: "{{.HANDS}}"
+          OUTPUT: "{{.OUTPUT}}"
 
   bench:evaluator:
     desc: Run evaluator large-sample benchmarks (sequential and parallel)

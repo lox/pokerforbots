@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"syscall"
 	"time"
@@ -16,34 +17,24 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type randomBot struct {
-	rng *rand.Rand
-}
+type callingStationBot struct{}
 
-func (randomBot) OnHandStart(*client.GameState, protocol.HandStart) error         { return nil }
-func (randomBot) OnGameUpdate(*client.GameState, protocol.GameUpdate) error       { return nil }
-func (randomBot) OnPlayerAction(*client.GameState, protocol.PlayerAction) error   { return nil }
-func (randomBot) OnStreetChange(*client.GameState, protocol.StreetChange) error   { return nil }
-func (randomBot) OnHandResult(*client.GameState, protocol.HandResult) error       { return nil }
-func (randomBot) OnGameCompleted(*client.GameState, protocol.GameCompleted) error { return nil }
+func (callingStationBot) OnHandStart(*client.GameState, protocol.HandStart) error         { return nil }
+func (callingStationBot) OnGameUpdate(*client.GameState, protocol.GameUpdate) error       { return nil }
+func (callingStationBot) OnPlayerAction(*client.GameState, protocol.PlayerAction) error   { return nil }
+func (callingStationBot) OnStreetChange(*client.GameState, protocol.StreetChange) error   { return nil }
+func (callingStationBot) OnHandResult(*client.GameState, protocol.HandResult) error       { return nil }
+func (callingStationBot) OnGameCompleted(*client.GameState, protocol.GameCompleted) error { return nil }
 
-func (r randomBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
-	if len(req.ValidActions) == 0 {
-		return "fold", 0, nil
+func (callingStationBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
+	// Calling station strategy: always check or call, never raise
+	if slices.Contains(req.ValidActions, "check") {
+		return "check", 0, nil
 	}
-
-	choice := req.ValidActions[r.rng.Intn(len(req.ValidActions))]
-	if choice == "raise" {
-		amount := req.MinBet
-		if req.ToCall > 0 {
-			amount = req.ToCall + req.MinRaise
-		}
-		if amount < req.MinBet {
-			amount = req.MinBet
-		}
-		return choice, amount, nil
+	if slices.Contains(req.ValidActions, "call") {
+		return "call", 0, nil
 	}
-	return choice, 0, nil
+	return "fold", 0, nil
 }
 
 func main() {
@@ -64,20 +55,20 @@ func main() {
 			seed = parsedSeed
 		}
 	}
-	rng := rand.New(rand.NewSource(seed)) // Create local RNG (Go 1.20+ compatible)
+	rng := rand.New(rand.NewSource(seed))
 
-	// Create bot with random strategy
-	id := fmt.Sprintf("random-%04d", rng.Intn(10000))
+	// Create bot with calling station strategy
+	id := fmt.Sprintf("calling-%04d", rng.Intn(10000))
 	if envID := os.Getenv("POKERFORBOTS_BOT_ID"); envID != "" {
-		id = fmt.Sprintf("random-%s", envID)
+		id = fmt.Sprintf("calling-%s", envID)
 	}
-	bot := client.New(id, randomBot{rng: rng}, logger)
+	bot := client.New(id, callingStationBot{}, logger)
 
 	// Connect and run
 	if err := bot.Connect(*serverURL); err != nil {
 		logger.Fatal().Err(err).Msg("connect failed")
 	}
-	logger.Info().Msg("random bot connected")
+	logger.Info().Msg("calling station bot connected")
 
 	// Handle shutdown gracefully
 	ctx, cancel := context.WithCancel(context.Background())
