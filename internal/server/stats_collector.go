@@ -101,13 +101,14 @@ func (d *DetailedStatsCollector) RecordHandOutcome(detail HandOutcomeDetail) err
 	defer d.mu.Unlock()
 
 	// Implement circular buffer behavior - when we hit max, reset and start over
-	if d.currentHands >= d.maxHands {
+	// IMPORTANT: Reset AFTER recording the current hand to avoid losing the final hand's stats
+	d.currentHands++
+
+	if d.currentHands > d.maxHands {
 		// Reset all statistics to implement circular buffer
 		d.stats = make(map[string]*statistics.Statistics)
-		d.currentHands = 0
+		d.currentHands = 1 // Start at 1 since we just recorded a hand
 	}
-
-	d.currentHands++
 
 	for _, outcome := range detail.BotOutcomes {
 		if outcome.Bot == nil {

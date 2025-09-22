@@ -39,18 +39,19 @@ var (
 
 // Config holds server configuration
 type Config struct {
-	SmallBlind       int
-	BigBlind         int
-	StartChips       int
-	Timeout          time.Duration
-	MinPlayers       int
-	MaxPlayers       int
-	RequirePlayer    bool
-	HandLimit        uint64
-	Seed             int64
-	InfiniteBankroll bool // When true, bots never run out of chips
-	EnableStats      bool // Collect detailed statistics
-	MaxStatsHands    int  // Maximum hands to track for stats (default 10000)
+	SmallBlind             int
+	BigBlind               int
+	StartChips             int
+	Timeout                time.Duration
+	MinPlayers             int
+	MaxPlayers             int
+	RequirePlayer          bool
+	HandLimit              uint64
+	Seed                   int64
+	InfiniteBankroll       bool // When true, bots never run out of chips
+	EnableStats            bool // Collect detailed statistics
+	MaxStatsHands          int  // Maximum hands to track for stats (default 10000)
+	StopOnInsufficientBots bool // Stop game when not enough bots remain (for simulations)
 }
 
 // serverConfig holds the configuration for building a server

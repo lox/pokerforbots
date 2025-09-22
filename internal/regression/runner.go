@@ -356,96 +356,28 @@ func (r *Runner) runPopulationTest(ctx context.Context) (*TestResult, error) {
 		Msg("Starting population test")
 
 	startTime := time.Now()
-	var allBatches []BatchResult
 
-	handsPerBatch := r.config.BatchSize
-	remainingHands := r.config.HandsTotal
-
-	// Generate seeds if needed
-	seeds := r.config.Seeds
-	if len(seeds) == 0 {
-		seeds = []int64{42} // Default seed
+	// Create population strategy
+	strategy := &PopulationStrategy{
+		Challenger:      r.config.Challenger,
+		Baseline:        r.config.Baseline,
+		ChallengerSeats: r.config.ChallengerSeats,
+		BaselineSeats:   r.config.BaselineSeats,
+		Config:          r.config,
 	}
 
-	batchNum := 0
-	for remainingHands > 0 {
-		batchHands := min(handsPerBatch, remainingHands)
-
-		// Get or generate seed for this batch
-		var seed int64
-		if batchNum < len(seeds) {
-			seed = seeds[batchNum]
-		} else {
-			// Generate additional seed based on last available seed
-			seed = seeds[len(seeds)-1] + int64(batchNum-len(seeds)+1)*1000
-		}
-
-		r.config.Logger.Info().
-			Int("batch", batchNum+1).
-			Int64("seed", seed).
-			Int("hands", batchHands).
-			Msg("Running population batch")
-
-		batch, err := r.orchestrator.RunPopulationBatch(ctx, r.config.Challenger, r.config.Baseline,
-			r.config.ChallengerSeats, r.config.BaselineSeats, seed, batchHands)
-		if err != nil {
-			return nil, fmt.Errorf("batch %d failed: %w", batchNum+1, err)
-		}
-
-		allBatches = append(allBatches, *batch)
-		remainingHands -= batchHands
-		batchNum++
-
-		// TODO: Check for early stopping
-	}
-
-	// Check if any batches were run
-	if len(allBatches) == 0 {
-		return nil, fmt.Errorf("no batches completed - check configuration")
+	// Use common batch executor
+	allBatches, err := r.orchestrator.ExecuteBatches(ctx, strategy, r.config.HandsTotal)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute population batches: %w", err)
 	}
 
 	// Aggregate results using weighted averages
-	var totalChallengerChips, totalBaselineChips float64
-	var totalChallengerHands, totalBaselineHands int
-	totalHands := 0
+	challengerStats := CombineBatches(allBatches, "challenger")
+	baselineStats := CombineBatches(allBatches, "baseline")
 
-	// Aggregate challenger results
-	for _, batch := range allBatches {
-		// Use actual hands completed from stats if available
-		actualChallengerHands := batch.Hands
-		if handsFromStats, exists := batch.Results["challenger_hands"]; exists {
-			actualChallengerHands = int(handsFromStats)
-		}
-
-		if challengerBB100, exists := batch.Results["challenger_bb_per_100"]; exists {
-			totalChallengerChips += (challengerBB100 / 100.0) * float64(actualChallengerHands)
-		}
-		totalChallengerHands += actualChallengerHands
-
-		// Same for baseline
-		actualBaselineHands := batch.Hands
-		if handsFromStats, exists := batch.Results["baseline_hands"]; exists {
-			actualBaselineHands = int(handsFromStats)
-		}
-
-		if baselineBB100, exists := batch.Results["baseline_bb_per_100"]; exists {
-			totalBaselineChips += (baselineBB100 / 100.0) * float64(actualBaselineHands)
-		}
-		totalBaselineHands += actualBaselineHands
-
-		totalHands += actualChallengerHands + actualBaselineHands
-	}
-
-	// Calculate weighted average BB/100
-	challengerBB100 := 0.0
-	if totalChallengerHands > 0 {
-		challengerBB100 = (totalChallengerChips / float64(totalChallengerHands)) * 100.0
-	}
-
-	baselineBB100 := 0.0
-	if totalBaselineHands > 0 {
-		baselineBB100 = (totalBaselineChips / float64(totalBaselineHands)) * 100.0
-	}
+	challengerBB100 := challengerStats.BB100
+	baselineBB100 := baselineStats.BB100
 
 	// Calculate confidence intervals (placeholder for now)
 	challengerCI := [2]float64{challengerBB100 - 10, challengerBB100 + 10}
@@ -510,20 +442,20 @@ func (r *Runner) runPopulationTest(ctx context.Context) (*TestResult, error) {
 				BBPer100:         challengerBB100,
 				CI95Low:          challengerCI[0],
 				CI95High:         challengerCI[1],
-				VPIP:             0, // TODO: Extract from stats
-				PFR:              0, // TODO: Extract from stats
+				VPIP:             challengerStats.VPIP,
+				PFR:              challengerStats.PFR,
 				AggressionFactor: 0, // TODO: Calculate
-				BustRate:         0, // TODO: Calculate
+				BustRate:         challengerStats.Busts,
 				EffectSize:       effectSize,
 			},
 			Baseline: &BotResults{
 				BBPer100:         baselineBB100,
 				CI95Low:          baselineCI[0],
 				CI95High:         baselineCI[1],
-				VPIP:             0, // TODO: Extract from stats
-				PFR:              0, // TODO: Extract from stats
+				VPIP:             baselineStats.VPIP,
+				PFR:              baselineStats.PFR,
 				AggressionFactor: 0, // TODO: Calculate
-				BustRate:         0, // TODO: Calculate
+				BustRate:         baselineStats.Busts,
 			},
 		},
 		Performance: PerformanceMetrics{
@@ -576,98 +508,56 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 		Msg("Starting NPC benchmark test")
 
 	startTime := time.Now()
-	var allChallengerBatches []*BatchResult
-	var allBaselineBatches []*BatchResult
-	handsPerBatch := r.config.BatchSize
-	remainingHands := r.config.HandsTotal
 
-	// Generate seeds if needed
-	seeds := r.config.Seeds
-	if len(seeds) == 0 {
-		seeds = []int64{42} // Default seed
+	// Create strategies for challenger and baseline
+	challengerStrategy := &NPCBenchmarkStrategy{
+		Bot:      r.config.Challenger,
+		BotSeats: r.config.ChallengerSeats,
+		NPCs:     npcConfig,
+		Config:   r.config,
 	}
 
-	batchNum := 0
-	for remainingHands > 0 {
-		batchHands := min(handsPerBatch, remainingHands)
-
-		// Get or generate seed for this batch
-		var seed int64
-		if batchNum < len(seeds) {
-			seed = seeds[batchNum]
-		} else {
-			// Generate additional seed based on last available seed
-			seed = seeds[len(seeds)-1] + int64(batchNum-len(seeds)+1)*1000
-		}
-
-		r.config.Logger.Info().
-			Int("batch", batchNum+1).
-			Int64("seed", seed).
-			Int("hands", batchHands).
-			Msg("Running NPC benchmark batch")
-
-		// Run challenger against NPCs
-		challengerBatch, err := r.orchestrator.RunNPCBenchmarkBatch(ctx, r.config.Challenger, r.config.ChallengerSeats, npcConfig, seed, batchHands)
-		if err != nil {
-			return nil, fmt.Errorf("failed to run challenger batch %d: %w", batchNum+1, err)
-		}
-		allChallengerBatches = append(allChallengerBatches, challengerBatch)
-
-		// Run baseline against NPCs with different seed to avoid identical results
-		baselineSeed := seed + 1000000 // Offset to ensure different randomness
-		baselineBatch, err := r.orchestrator.RunNPCBenchmarkBatch(ctx, r.config.Baseline, r.config.BaselineSeats, npcConfig, baselineSeed, batchHands)
-		if err != nil {
-			return nil, fmt.Errorf("failed to run baseline batch %d: %w", batchNum+1, err)
-		}
-		allBaselineBatches = append(allBaselineBatches, baselineBatch)
-
-		remainingHands -= batchHands
-		batchNum++
-
-		// TODO: Check if significance reached for early stopping
+	baselineStrategy := &NPCBenchmarkStrategy{
+		Bot:      r.config.Baseline,
+		BotSeats: r.config.BaselineSeats,
+		NPCs:     npcConfig,
+		Config:   r.config,
 	}
 
-	// Check if any batches were run
-	if len(allChallengerBatches) == 0 || len(allBaselineBatches) == 0 {
-		return nil, fmt.Errorf("no batches completed - check hands and batch size configuration")
+	// Run challenger batches
+	r.config.Logger.Info().
+		Str("bot", r.config.Challenger).
+		Msg("Running challenger vs NPCs batches")
+	allChallengerBatches, err := r.orchestrator.ExecuteBatches(ctx, challengerStrategy, r.config.HandsTotal)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run challenger batches: %w", err)
+	}
+
+	// Run baseline batches with different seeds
+	r.config.Logger.Info().
+		Str("bot", r.config.Baseline).
+		Msg("Running baseline vs NPCs batches")
+
+	// Offset seeds for baseline to ensure different randomness
+	originalSeeds := r.config.Seeds
+	baselineSeeds := make([]int64, len(originalSeeds))
+	for i, seed := range originalSeeds {
+		baselineSeeds[i] = seed + 1000000
+	}
+	r.config.Seeds = baselineSeeds
+	allBaselineBatches, err := r.orchestrator.ExecuteBatches(ctx, baselineStrategy, r.config.HandsTotal)
+	r.config.Seeds = originalSeeds // Restore original seeds
+	if err != nil {
+		return nil, fmt.Errorf("failed to run baseline batches: %w", err)
 	}
 
 	// Calculate aggregate results from challenger and baseline batches using weighted averages
-	var totalChallengerChips, totalBaselineChips float64
-	var totalChallengerHands, totalBaselineHands int
-	totalHands := 0
+	challengerStats := CombineBatches(allChallengerBatches, "bot")
+	baselineStats := CombineBatches(allBaselineBatches, "bot")
 
-	// Aggregate challenger results (weighted by actual hands completed)
-	for _, batch := range allChallengerBatches {
-		// Use actual hands completed from the batch results
-		actualHands := batch.Hands
-		if handsFromStats, exists := batch.Results["bot_hands"]; exists {
-			actualHands = int(handsFromStats)
-		}
-
-		if botBB100, exists := batch.Results["bot_bb_per_100"]; exists {
-			// Convert BB/100 back to total chips for this batch using actual hands
-			totalChallengerChips += (botBB100 / 100.0) * float64(actualHands)
-		}
-		totalChallengerHands += actualHands
-		totalHands += actualHands
-	}
-
-	// Aggregate baseline results (weighted by actual hands completed)
-	for _, batch := range allBaselineBatches {
-		// Use actual hands completed from the batch results
-		actualHands := batch.Hands
-		if handsFromStats, exists := batch.Results["bot_hands"]; exists {
-			actualHands = int(handsFromStats)
-		}
-
-		if botBB100, exists := batch.Results["bot_bb_per_100"]; exists {
-			// Convert BB/100 back to total chips for this batch using actual hands
-			totalBaselineChips += (botBB100 / 100.0) * float64(actualHands)
-		}
-		totalBaselineHands += actualHands
-		totalHands += actualHands
-	}
+	totalChallengerHands := challengerStats.TotalHands
+	totalBaselineHands := baselineStats.TotalHands
+	totalHands := totalChallengerHands + totalBaselineHands
 
 	// Calculate timing and performance
 	endTime := time.Now()
@@ -675,16 +565,9 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 	durationSeconds := duration.Seconds()
 	handsPerSecond := float64(totalHands) / durationSeconds
 
-	// Calculate weighted average BB/100
-	avgChallengerBB100 := 0.0
-	if totalChallengerHands > 0 {
-		avgChallengerBB100 = (totalChallengerChips / float64(totalChallengerHands)) * 100.0
-	}
-
-	avgBaselineBB100 := 0.0
-	if totalBaselineHands > 0 {
-		avgBaselineBB100 = (totalBaselineChips / float64(totalBaselineHands)) * 100.0
-	}
+	// Get weighted average BB/100 from stats
+	avgChallengerBB100 := challengerStats.BB100
+	avgBaselineBB100 := baselineStats.BB100
 
 	// Calculate performance difference (challenger - baseline)
 	performanceDiff := avgChallengerBB100 - avgBaselineBB100
@@ -714,13 +597,13 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 			// Combine challenger and baseline batches for reporting
 			allBatches := make([]BatchResult, 0, len(allChallengerBatches)+len(allBaselineBatches))
 			for i, batch := range allChallengerBatches {
-				result := *batch
+				result := batch
 				result.Results["batch_type"] = float64(1) // Mark as challenger
 				result.Results["batch_index"] = float64(i)
 				allBatches = append(allBatches, result)
 			}
 			for i, batch := range allBaselineBatches {
-				result := *batch
+				result := batch
 				result.Results["batch_type"] = float64(2) // Mark as baseline
 				result.Results["batch_index"] = float64(i)
 				allBatches = append(allBatches, result)
@@ -800,101 +683,31 @@ func (r *Runner) runSelfPlayTest(ctx context.Context) (*TestResult, error) {
 
 	startTime := time.Now()
 
-	// Calculate batches
-	numBatches := (r.config.HandsTotal + r.config.BatchSize - 1) / r.config.BatchSize
-	if numBatches == 0 {
-		numBatches = 1
+	// Create self-play strategy
+	strategy := &SelfPlayStrategy{
+		Bot:      r.config.Bot,
+		BotSeats: r.config.BotSeats,
+		Config:   r.config,
 	}
 
-	// Generate additional seeds if needed
-	seeds := r.config.Seeds
-	for len(seeds) < numBatches {
-		seeds = append(seeds, int64(42+len(seeds)*1337))
+	// Use common batch executor
+	allBatches, err := r.orchestrator.ExecuteBatches(ctx, strategy, r.config.HandsTotal)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute self-play batches: %w", err)
 	}
 
-	// Create health monitor
-	healthMonitor := NewHealthMonitor(
-		r.config.MaxCrashesPerBot,
-		r.config.MaxTimeoutsPerBot,
-		time.Duration(r.config.RestartDelayMs)*time.Millisecond,
-		r.config.Logger,
-	)
+	// Track total hands from batches
+	totalHands := CalculateTotalHands(allBatches, "actual_hands")
 
-	orchestrator := NewOrchestrator(r.config, healthMonitor)
-	var allBatches []BatchResult
-	totalHands := 0
+	// Calculate aggregate results using helpers
+	avgBB100, _ := WeightedBB100(allBatches, "avg_bb_per_100", "actual_hands")
+	avgVPIP := WeightedAverage(allBatches, "avg_vpip", "actual_hands")
+	avgPFR := WeightedAverage(allBatches, "avg_pfr", "actual_hands")
 
-	// Run batches
-	for i := 0; i < numBatches; i++ {
-		handsThisBatch := r.config.BatchSize
-		if i == numBatches-1 {
-			// Last batch might be smaller
-			handsThisBatch = r.config.HandsTotal - (i * r.config.BatchSize)
-		}
-
-		r.config.Logger.Info().
-			Int("batch", i+1).
-			Int("hands", handsThisBatch).
-			Int64("seed", seeds[i]).
-			Msg("Running self-play batch")
-
-		// Create bot commands for self-play (all same bot)
-		var botCmds []string
-		for range r.config.BotSeats {
-			botCmds = append(botCmds, r.config.Bot)
-		}
-
-		// Create temp stats file
-		statsFile := fmt.Sprintf("stats-selfplay-%d-%d.json", seeds[i], time.Now().Unix())
-		defer os.Remove(statsFile) // Clean up after
-
-		// Start server with bots and stats
-		if err := orchestrator.StartServerWithBotsAndStats(ctx, seeds[i], handsThisBatch, botCmds, nil, statsFile); err != nil {
-			return nil, fmt.Errorf("failed to start server: %w", err)
-		}
-
-		// Wait for completion
-		if err := orchestrator.WaitForCompletion(ctx); err != nil {
-			orchestrator.StopServer()
-			return nil, fmt.Errorf("server failed: %w", err)
-		}
-		orchestrator.StopServer()
-
-		// Parse stats - we expect near-zero average since it's zero-sum
-		results, err := r.parseSelfPlayStats(statsFile, r.config.Bot)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse stats: %w", err)
-		}
-
-		batch := BatchResult{
-			Seed:    seeds[i],
-			Hands:   handsThisBatch,
-			Results: results,
-		}
-		allBatches = append(allBatches, batch)
-
-		// Track actual hands completed
-		if actualHands, exists := results["actual_hands"]; exists {
-			totalHands += int(actualHands)
-		} else {
-			totalHands += handsThisBatch
-		}
-	}
-
-	// Calculate aggregate results
-	var totalChips float64
-	var totalHandsPlayed int
-	var avgVPIP, avgPFR float64
+	// Find min/max BB/100 across batches
 	var maxBB100, minBB100 float64
-
 	for i, batch := range allBatches {
-		actualHands := batch.Hands
-		if handsFromStats, exists := batch.Results["actual_hands"]; exists {
-			actualHands = int(handsFromStats)
-		}
-
 		if bb100, exists := batch.Results["avg_bb_per_100"]; exists {
-			totalChips += (bb100 / 100.0) * float64(actualHands)
 			if i == 0 || bb100 > maxBB100 {
 				maxBB100 = bb100
 			}
@@ -902,21 +715,6 @@ func (r *Runner) runSelfPlayTest(ctx context.Context) (*TestResult, error) {
 				minBB100 = bb100
 			}
 		}
-		if vpip, exists := batch.Results["avg_vpip"]; exists {
-			avgVPIP += vpip * float64(actualHands)
-		}
-		if pfr, exists := batch.Results["avg_pfr"]; exists {
-			avgPFR += pfr * float64(actualHands)
-		}
-		totalHandsPlayed += actualHands
-	}
-
-	// Calculate weighted averages
-	avgBB100 := 0.0
-	if totalHandsPlayed > 0 {
-		avgBB100 = (totalChips / float64(totalHandsPlayed)) * 100.0
-		avgVPIP /= float64(totalHandsPlayed)
-		avgPFR /= float64(totalHandsPlayed)
 	}
 
 	// Calculate variance as difference between max and min
@@ -979,82 +777,6 @@ func (r *Runner) runSelfPlayTest(ctx context.Context) (*TestResult, error) {
 			Confidence:            0.95,
 			Recommendation:        verdict,
 		},
-	}, nil
-}
-
-// parseSelfPlayStats parses stats file for self-play mode
-func (r *Runner) parseSelfPlayStats(filename string, _ string) (map[string]float64, error) {
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read stats file: %w", err)
-	}
-
-	var stats struct {
-		Players []struct {
-			DisplayName   string `json:"display_name"`
-			Hands         int    `json:"hands"`
-			NetChips      int64  `json:"net_chips"`
-			DetailedStats *struct {
-				VPIP float64 `json:"vpip"`
-				PFR  float64 `json:"pfr"`
-			} `json:"detailed_stats,omitempty"`
-		} `json:"players"`
-		HandsCompleted uint64 `json:"hands_completed"`
-	}
-
-	if err := json.Unmarshal(data, &stats); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal stats: %w", err)
-	}
-
-	// Calculate average stats across all bot instances
-	var totalChips int64
-	var totalHands int
-	var sumVPIP, sumPFR float64
-	var maxBB100, minBB100 float64
-	first := true
-
-	for _, player := range stats.Players {
-		if player.Hands > 0 {
-			// Convert net chips to BB/100 (assuming big blind = 10)
-			bb100 := float64(player.NetChips) / float64(player.Hands) * 100.0 / 10.0
-
-			totalChips += player.NetChips
-			totalHands += player.Hands
-
-			// Extract VPIP/PFR from detailed stats if available
-			if player.DetailedStats != nil {
-				sumVPIP += player.DetailedStats.VPIP * float64(player.Hands)
-				sumPFR += player.DetailedStats.PFR * float64(player.Hands)
-			}
-
-			if first || bb100 > maxBB100 {
-				maxBB100 = bb100
-				first = false
-			}
-			if first || bb100 < minBB100 {
-				minBB100 = bb100
-			}
-		}
-	}
-
-	avgBB100 := 0.0
-	avgVPIP := 0.0
-	avgPFR := 0.0
-
-	if totalHands > 0 {
-		// Convert to BB/100 (big blind = 10)
-		avgBB100 = float64(totalChips) / float64(totalHands) * 100.0 / 10.0
-		avgVPIP = sumVPIP / float64(totalHands)
-		avgPFR = sumPFR / float64(totalHands)
-	}
-
-	return map[string]float64{
-		"avg_bb_per_100": avgBB100,
-		"max_bb_per_100": maxBB100,
-		"min_bb_per_100": minBB100,
-		"avg_vpip":       avgVPIP,
-		"avg_pfr":        avgPFR,
-		"actual_hands":   float64(stats.HandsCompleted),
 	}, nil
 }
 

@@ -175,7 +175,17 @@ func (p *BotPool) Run() {
 			bot.close()
 			p.mu.Lock()
 			delete(p.bots, bot.ID)
+			remainingBots := len(p.bots)
 			p.mu.Unlock()
+
+			// Check if we still have enough bots to continue (only for simulations)
+			if p.config.StopOnInsufficientBots && remainingBots < p.minPlayers && p.handLimit > 0 {
+				p.logger.Info().
+					Int("remaining_bots", remainingBots).
+					Int("min_players", p.minPlayers).
+					Msg("Not enough bots remaining to continue, shutting down")
+				p.notifyGameCompleted("insufficient_players")
+			}
 		}
 	}
 }
@@ -700,6 +710,17 @@ func (p *BotPool) notifyGameCompleted(reason string) {
 	if !p.handLimitNotified.CompareAndSwap(false, true) {
 		return
 	}
+
+	// Signal that the game is complete
+	p.logger.Info().
+		Str("reason", reason).
+		Msg("Game completion triggered, signaling stop")
+
+	// Trigger shutdown asynchronously to avoid deadlock
+	// (We're in the match loop, and Stop() waits for it to complete)
+	go func() {
+		p.Stop()
+	}()
 
 	playerStats := p.PlayerStats()
 	players := make([]protocol.GameCompletedPlayer, len(playerStats))

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -9,7 +8,6 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -24,29 +22,30 @@ import (
 )
 
 type CLI struct {
-	Addr             string   `kong:"default=':8080',help='Server address'"`
-	Debug            bool     `kong:"help='Enable debug logging'"`
-	SmallBlind       int      `kong:"default='5',help='Small blind amount'"`
-	BigBlind         int      `kong:"default='10',help='Big blind amount'"`
-	StartChips       int      `kong:"default='1000',help='Starting chip count'"`
-	TimeoutMs        int      `kong:"default='100',help='Decision timeout in milliseconds'"`
-	MinPlayers       int      `kong:"default='2',help='Minimum players per hand'"`
-	MaxPlayers       int      `kong:"default='9',help='Maximum players per hand'"`
-	RequirePlayer    bool     `kong:"default='true',help='Require at least one player-role bot per hand'"`
-	InfiniteBankroll bool     `kong:"default='false',help='Bots never run out of chips (for simulations)'"`
-	NPCBots          int      `kong:"default='0',help='Total NPC bots to spawn in default game (auto distribution)'"`
-	NPCCalling       int      `kong:"default='0',help='NPC calling-station bots (overrides auto distribution)'"`
-	NPCRandom        int      `kong:"default='0',help='NPC random bots (overrides auto distribution)'"`
-	NPCAggro         int      `kong:"default='0',help='NPC aggressive bots (overrides auto distribution)'"`
-	Seed             *int64   `kong:"help='Deterministic RNG seed for the server (optional)'"`
-	Hands            uint64   `kong:"default='0',help='Maximum hands to run in the default game (0 = unlimited)'"`
-	CollectDetailed  bool     `kong:"name='collect-detailed-stats',default='false',help='Collect detailed statistics (impacts performance)'"`
-	MaxStatsHands    int      `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
-	BotCmd           []string `kong:"help='Command to run a local bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME'"`
-	NPCBotCmd        []string `kong:"name='npc-bot-cmd',help='Command to run an external NPC bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME, POKERFORBOTS_ROLE=npc'"`
-	NPCs             string   `kong:"name='npcs',help='Built-in NPC configuration (e.g., aggressive:2,calling:1,random:1)'"`
-	PrintStatsOnExit bool     `kong:"help='Print /admin/games/default/stats JSON on exit'"`
-	WriteStatsOnExit string   `kong:"help='Write /admin/games/default/stats JSON to file on exit'"`
+	Addr                   string   `kong:"default=':8080',help='Server address'"`
+	Debug                  bool     `kong:"help='Enable debug logging'"`
+	SmallBlind             int      `kong:"default='5',help='Small blind amount'"`
+	BigBlind               int      `kong:"default='10',help='Big blind amount'"`
+	StartChips             int      `kong:"default='1000',help='Starting chip count'"`
+	TimeoutMs              int      `kong:"default='100',help='Decision timeout in milliseconds'"`
+	MinPlayers             int      `kong:"default='2',help='Minimum players per hand'"`
+	MaxPlayers             int      `kong:"default='9',help='Maximum players per hand'"`
+	RequirePlayer          bool     `kong:"default='true',help='Require at least one player-role bot per hand'"`
+	InfiniteBankroll       bool     `kong:"default='false',help='Bots never run out of chips (for simulations)'"`
+	StopOnInsufficientBots bool     `kong:"default='false',help='Stop game when not enough bots remain (for simulations)'"`
+	NPCBots                int      `kong:"default='0',help='Total NPC bots to spawn in default game (auto distribution)'"`
+	NPCCalling             int      `kong:"default='0',help='NPC calling-station bots (overrides auto distribution)'"`
+	NPCRandom              int      `kong:"default='0',help='NPC random bots (overrides auto distribution)'"`
+	NPCAggro               int      `kong:"default='0',help='NPC aggressive bots (overrides auto distribution)'"`
+	Seed                   *int64   `kong:"help='Deterministic RNG seed for the server (optional)'"`
+	Hands                  uint64   `kong:"default='0',help='Maximum hands to run in the default game (0 = unlimited)'"`
+	CollectDetailed        bool     `kong:"name='collect-detailed-stats',default='false',help='Collect detailed statistics (impacts performance)'"`
+	MaxStatsHands          int      `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
+	BotCmd                 []string `kong:"help='Command to run a local bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME'"`
+	NPCBotCmd              []string `kong:"name='npc-bot-cmd',help='Command to run an external NPC bot; may be specified multiple times. Env: POKERFORBOTS_SERVER, POKERFORBOTS_GAME, POKERFORBOTS_ROLE=npc'"`
+	NPCs                   string   `kong:"name='npcs',help='Built-in NPC configuration (e.g., aggressive:2,calling:1,random:1)'"`
+	PrintStatsOnExit       bool     `kong:"help='Print /admin/games/default/stats JSON on exit'"`
+	WriteStatsOnExit       string   `kong:"help='Write /admin/games/default/stats JSON to file on exit'"`
 }
 
 func main() {
@@ -77,18 +76,19 @@ func main() {
 
 	// Create server configuration
 	config := server.Config{
-		SmallBlind:       cli.SmallBlind,
-		BigBlind:         cli.BigBlind,
-		StartChips:       cli.StartChips,
-		Timeout:          time.Duration(cli.TimeoutMs) * time.Millisecond,
-		MinPlayers:       cli.MinPlayers,
-		MaxPlayers:       cli.MaxPlayers,
-		RequirePlayer:    cli.RequirePlayer,
-		InfiniteBankroll: cli.InfiniteBankroll,
-		HandLimit:        cli.Hands,
-		Seed:             0,
-		EnableStats:      cli.CollectDetailed,
-		MaxStatsHands:    cli.MaxStatsHands,
+		SmallBlind:             cli.SmallBlind,
+		BigBlind:               cli.BigBlind,
+		StartChips:             cli.StartChips,
+		Timeout:                time.Duration(cli.TimeoutMs) * time.Millisecond,
+		MinPlayers:             cli.MinPlayers,
+		MaxPlayers:             cli.MaxPlayers,
+		RequirePlayer:          cli.RequirePlayer,
+		InfiniteBankroll:       cli.InfiniteBankroll,
+		StopOnInsufficientBots: cli.StopOnInsufficientBots,
+		HandLimit:              cli.Hands,
+		Seed:                   0,
+		EnableStats:            cli.CollectDetailed,
+		MaxStatsHands:          cli.MaxStatsHands,
 	}
 
 	// Create RNG instance for server
@@ -288,20 +288,15 @@ func spawnBot(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, game
 var externalBotSeq int64
 
 func spawnBotWithRole(logger zerolog.Logger, ctx context.Context, cmdStr, serverWS, gameID, role string) <-chan error {
-	logger.Info().Str("cmd", cmdStr).Str("server", serverWS).Str("game", gameID).Str("role", role).Msg("Spawning bot")
-	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
-	env := append(os.Environ(),
-		"POKERFORBOTS_SERVER="+serverWS,
-		"POKERFORBOTS_GAME="+gameID,
-	)
+	env := []string{
+		"POKERFORBOTS_SERVER=" + serverWS,
+		"POKERFORBOTS_GAME=" + gameID,
+	}
 	if role != "" {
 		env = append(env, "POKERFORBOTS_ROLE="+role)
 	}
-	cmd.Env = env
 
-	// Prefixed output
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
+	// Generate prefix for output
 	seq := atomic.AddInt64(&externalBotSeq, 1)
 	base := strings.Fields(cmdStr)
 	label := role
@@ -314,51 +309,7 @@ func spawnBotWithRole(logger zerolog.Logger, ctx context.Context, cmdStr, server
 	}
 	prefix := fmt.Sprintf("[%s#%d %s] ", label, seq, cmdName)
 
-	done := make(chan error, 1)
-	if err := cmd.Start(); err != nil {
-		logger.Error().Err(err).Str("cmd", cmdStr).Msg("Failed to start bot process")
-		done <- err
-		close(done)
-		return done
-	}
-	go copyWithPrefix(os.Stdout, stdout, prefix)
-	go copyWithPrefix(os.Stderr, stderr, prefix)
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			logger.Error().Err(err).Str("cmd", cmdStr).Msg("Bot process exited with error")
-			done <- err
-		} else {
-			logger.Info().Str("cmd", cmdStr).Msg("Bot process exited")
-			done <- nil
-		}
-		close(done)
-	}()
-	return done
-}
-
-func copyWithPrefix(dst *os.File, src io.Reader, prefix string) {
-	s := bufio.NewScanner(src)
-	for s.Scan() {
-		fmt.Fprintln(dst, prefix+s.Text())
-	}
-}
-
-func firstDone(chans []<-chan error) <-chan error {
-	if len(chans) == 0 {
-		return nil
-	}
-	out := make(chan error, 1)
-	for _, ch := range chans {
-		c := ch
-		go func() {
-			if err := <-c; err != nil {
-				out <- err
-			} else {
-				out <- nil
-			}
-		}()
-	}
-	return out
+	return spawnBotProcess(ctx, logger, cmdStr, env, prefix)
 }
 
 func waitAll(chans []<-chan error) <-chan error {

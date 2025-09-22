@@ -342,7 +342,19 @@ type TestConfig struct {
 - [x] Multiple comparison correction implementation with Bonferroni adjustment
 - [x] "All" mode that runs applicable tests with automatic correction
 
-### Phase 3: Statistics & Reporting ✅ LARGELY COMPLETE
+### Phase 3: Refactoring & Code Quality 🚧 IN PROGRESS
+- [x] **Strategy pattern implementation** - Eliminated 300+ lines of duplicate batch execution
+- [x] **Extract pure statistics functions** - Created standalone `stats.go` for aggregation
+- [x] **Fix critical bugs** - Min/max BB/100 initialization, hands count for weighting
+- [x] **Wire health policies** - Strategy-specific health monitoring now active
+- [x] **Remove dead code** - Removed 139 lines of unused batch methods from orchestrator
+- [x] **Enhance stats.go** - Added higher-level helpers (WeightedBB100, WeightedAverage, CombineBatches, etc.)
+- [ ] **Extract reporter** - Move reporting logic to dedicated file with shared implementation
+- [ ] **Consolidate server methods** - Single StartServer with minimal options struct
+- [ ] **Split runner.go** - Separate validation, execution, and coordination concerns
+- [ ] **Go idioms cleanup** - Consistent error wrapping, extract magic numbers
+
+### Phase 4: Statistics & Reporting
 - [x] **Real statistical aggregation** - VPIP/PFR tracking implemented in server
 - [x] **Parse server's `--write-stats-on-exit` JSON output** - Working with real statistics
 - [x] **JSON report generation structure** - Fully functional with real data
@@ -355,7 +367,7 @@ type TestConfig struct {
 - [ ] Early stopping for CI efficiency
 - [ ] Result archiving in `snapshots/regression-*.json`
 
-### Phase 4: Advanced Features (Future)
+### Phase 5: Advanced Features (Future)
 - [x] **Add `--write-stats-on-exit` to server for JSON statistics** - COMPLETE
 - [ ] Mirror mode support (when server implements it)
 - [ ] Parallel table execution for faster results
@@ -365,10 +377,17 @@ type TestConfig struct {
 
 ### Next Steps
 
+**Immediate (Phase 3 - Refactoring):**
+1. **Remove dead code**: Eliminate ~140 lines of unused batch methods with verification
+2. **Enhance stats.go**: Add WeightedAverage and CombineBatches helpers
+3. **Extract reporter**: Create dedicated reporter with dependency injection
+4. **Consolidate server**: Simplify to single StartServer method
+5. **Split runner.go**: After extractions, separate concerns into focused files
+
+**Then (Phase 4 - Statistics):**
 1. **Statistical Rigor**: Replace placeholder confidence intervals and effect size calculations with proper statistics
-2. **Multiple Comparison Correction**: Implement Bonferroni correction when running multiple test modes
-3. **Early Stopping**: Implement significance-based early termination for CI efficiency
-4. **Result Archiving**: Save results to `snapshots/regression-*.json` for trend analysis
+2. **Early Stopping**: Implement significance-based early termination for CI efficiency
+3. **Result Archiving**: Save results to `snapshots/regression-*.json` for trend analysis
 
 ## Current Implementation
 

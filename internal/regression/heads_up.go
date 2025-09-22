@@ -12,56 +12,17 @@ func RunHeadsUpTest(ctx context.Context, config *Config, orchestrator *Orchestra
 	startTime := time.Now()
 	testID := fmt.Sprintf("heads-up-%d", startTime.Unix())
 
-	// Use BatchSize for consistent batch sizing across all modes
-	handsPerBatch := config.BatchSize
-	remainingHands := config.HandsTotal
-
-	// Generate seeds if needed (same as NPC mode)
-	seeds := config.Seeds
-	if len(seeds) == 0 {
-		seeds = []int64{42} // Default seed
+	// Create heads-up strategy
+	strategy := &HeadsUpStrategy{
+		BotA:   config.BotA,
+		BotB:   config.BotB,
+		Config: config,
 	}
 
-	config.Logger.Info().
-		Int("hands_total", config.HandsTotal).
-		Int("batch_size", handsPerBatch).
-		Msg("Running heads-up test batches")
-
-	// Run batches
-	var batches []BatchResult
-	batchNum := 0
-	for remainingHands > 0 {
-		batchHands := min(handsPerBatch, remainingHands)
-
-		// Get or generate seed for this batch
-		var seed int64
-		if batchNum < len(seeds) {
-			seed = seeds[batchNum]
-		} else {
-			// Generate additional seed based on last available seed
-			seed = seeds[len(seeds)-1] + int64(batchNum-len(seeds)+1)*1000
-		}
-
-		config.Logger.Info().
-			Int("batch", batchNum+1).
-			Int64("seed", seed).
-			Int("hands", batchHands).
-			Msg("Running batch")
-
-		batch, err := orchestrator.RunHeadsUpBatch(ctx, config.BotA, config.BotB, seed, batchHands)
-		if err != nil {
-			return nil, fmt.Errorf("batch %d failed: %w", batchNum+1, err)
-		}
-
-		batches = append(batches, *batch)
-		remainingHands -= batchHands
-		batchNum++
-
-		// Check for early stopping
-		if config.EarlyStopping && batchNum*handsPerBatch >= config.MinHands {
-			// TODO: Check if significance reached
-			break
-		}
+	// Use common batch executor
+	batches, err := orchestrator.ExecuteBatches(ctx, strategy, config.HandsTotal)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute batches: %w", err)
 	}
 
 	// Aggregate results
@@ -88,7 +49,7 @@ func RunHeadsUpTest(ctx context.Context, config *Config, orchestrator *Orchestra
 			BotB:                   config.BotB,
 			HandsTotal:             config.HandsTotal,
 			Batches:                len(batches),
-			BatchSize:              handsPerBatch,
+			BatchSize:              config.BatchSize,
 			SignificanceLevel:      config.SignificanceLevel,
 			MultipleTestCorrection: config.MultipleTestCorrection,
 		},
