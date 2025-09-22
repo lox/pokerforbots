@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 
@@ -144,17 +143,18 @@ func (o *Orchestrator) runSingleBatch(ctx context.Context, strategy BatchStrateg
 	statsFile := fmt.Sprintf("stats-%s-%d-%d.json", strategy.Name(), config.Seed, time.Now().Unix())
 	defer os.Remove(statsFile) // Clean up after
 
-	// Start server with appropriate configuration
-	if config.NPCConfig != "" {
-		// NPC mode
-		if err := o.StartServerWithBotsAndNPCs(ctx, config.Seed, config.Hands, config.BotCommands, config.NPCConfig, statsFile); err != nil {
-			return nil, fmt.Errorf("failed to start server with NPCs: %w", err)
-		}
-	} else {
-		// Regular bot mode
-		if err := o.StartServerWithBotsAndStats(ctx, config.Seed, config.Hands, config.BotCommands, nil, statsFile); err != nil {
-			return nil, fmt.Errorf("failed to start server with bots: %w", err)
-		}
+	// Build server configuration
+	serverConfig := &ServerConfig{
+		Seed:        config.Seed,
+		Hands:       config.Hands,
+		StatsFile:   statsFile,
+		BotCommands: config.BotCommands,
+		NPCConfig:   config.NPCConfig,
+	}
+
+	// Start server with consolidated configuration
+	if err := o.StartServer(ctx, serverConfig); err != nil {
+		return nil, fmt.Errorf("failed to start server: %w", err)
 	}
 	defer o.StopServer()
 
@@ -195,92 +195,14 @@ func (o *Orchestrator) aggregateBatchResults(batches []BatchResult, _ BatchStrat
 	return batches[len(batches)-1].Results
 }
 
-// StartServerWithBots starts the server with bot commands
-func (o *Orchestrator) StartServerWithBots(ctx context.Context, seed int64, hands int, botCmds []string, npcCmds []string) error {
-	return o.StartServerWithBotsAndStats(ctx, seed, hands, botCmds, npcCmds, "")
-}
+// StartServer starts the server with the given configuration
+func (o *Orchestrator) StartServer(ctx context.Context, serverConfig *ServerConfig) error {
+	// Build arguments using the server configuration
+	args := serverConfig.BuildServerArgs(o.config)
 
-// StartServerWithBotsAndNPCs starts the server with bot commands and built-in NPCs
-func (o *Orchestrator) StartServerWithBotsAndNPCs(ctx context.Context, seed int64, hands int, botCmds []string, npcConfig string, statsFile string) error {
-	// Build server command
-	args := []string{
-		"--addr", o.getServerAddr(),
-		"--start-chips", fmt.Sprintf("%d", o.config.StartingChips),
-		"--timeout-ms", fmt.Sprintf("%d", o.config.TimeoutMs),
-		"--seed", fmt.Sprintf("%d", seed),
-		"--hands", fmt.Sprintf("%d", hands),
-		"--collect-detailed-stats",
-	}
-
-	// Add stats output file if specified
-	if statsFile != "" {
-		args = append(args, "--write-stats-on-exit", statsFile)
-	}
-
-	if o.config.InfiniteBankroll {
-		args = append(args, "--infinite-bankroll")
-	}
-
-	// Add bot commands
-	for _, cmd := range botCmds {
-		args = append(args, "--bot-cmd", cmd)
-	}
-
-	// Add NPCs configuration string
-	if npcConfig != "" {
-		args = append(args, "--npcs", npcConfig)
-	}
-
-	// Count NPCs from config string
-	npcCount := 0
-	if npcConfig != "" {
-		parts := strings.SplitSeq(npcConfig, ",")
-		for part := range parts {
-			if colonPos := strings.Index(part, ":"); colonPos > 0 {
-				if countStr := strings.TrimSpace(part[colonPos+1:]); countStr != "" {
-					if count, err := strconv.Atoi(countStr); err == nil {
-						npcCount += count
-					}
-				}
-			}
-		}
-	}
-
-	return o.startServerWithArgs(ctx, args, seed, hands, len(botCmds), npcCount)
-}
-
-// StartServerWithBotsAndStats starts the server with bot commands and stats output
-func (o *Orchestrator) StartServerWithBotsAndStats(ctx context.Context, seed int64, hands int, botCmds []string, npcCmds []string, statsFile string) error {
-	// Build server command
-	args := []string{
-		"--addr", o.getServerAddr(),
-		"--start-chips", fmt.Sprintf("%d", o.config.StartingChips),
-		"--timeout-ms", fmt.Sprintf("%d", o.config.TimeoutMs),
-		"--seed", fmt.Sprintf("%d", seed),
-		"--hands", fmt.Sprintf("%d", hands),
-		"--collect-detailed-stats",
-	}
-
-	// Add stats output file if specified
-	if statsFile != "" {
-		args = append(args, "--write-stats-on-exit", statsFile)
-	}
-
-	if o.config.InfiniteBankroll {
-		args = append(args, "--infinite-bankroll")
-	}
-
-	// Add bot commands
-	for _, cmd := range botCmds {
-		args = append(args, "--bot-cmd", cmd)
-	}
-
-	// Add NPC commands
-	for _, cmd := range npcCmds {
-		args = append(args, "--npc-bot-cmd", cmd)
-	}
-
-	return o.startServerWithArgs(ctx, args, seed, hands, len(botCmds), len(npcCmds))
+	// Start the server
+	return o.startServerWithArgs(ctx, args, serverConfig.Seed, serverConfig.Hands,
+		len(serverConfig.BotCommands), serverConfig.CountNPCs())
 }
 
 // startServerWithArgs starts the server with the given arguments
@@ -367,14 +289,6 @@ func (o *Orchestrator) StopServer() error {
 	}
 
 	return nil
-}
-
-// getServerAddr returns the server address
-func (o *Orchestrator) getServerAddr() string {
-	if o.config.ServerAddr == "" || o.config.ServerAddr == "embedded" {
-		return "localhost:8080"
-	}
-	return o.config.ServerAddr
 }
 
 // parseStatsFile reads and parses the JSON stats file written by the server

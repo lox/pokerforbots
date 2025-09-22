@@ -14,9 +14,9 @@ func RunHeadsUpTest(ctx context.Context, config *Config, orchestrator *Orchestra
 
 	// Create heads-up strategy
 	strategy := &HeadsUpStrategy{
-		BotA:   config.BotA,
-		BotB:   config.BotB,
-		Config: config,
+		Challenger: config.Challenger,
+		Baseline:   config.Baseline,
+		Config:     config,
 	}
 
 	// Use common batch executor
@@ -45,8 +45,8 @@ func RunHeadsUpTest(ctx context.Context, config *Config, orchestrator *Orchestra
 			TestEnvironment: getTestEnvironment(),
 		},
 		Config: TestConfigSummary{
-			BotA:                   config.BotA,
-			BotB:                   config.BotB,
+			Challenger:             config.Challenger,
+			Baseline:               config.Baseline,
 			HandsTotal:             config.HandsTotal,
 			Batches:                len(batches),
 			BatchSize:              config.BatchSize,
@@ -105,15 +105,15 @@ func aggregateHeadsUpResults(batches []BatchResult) AggregateResults {
 	margin := 2.0 // Placeholder
 
 	return AggregateResults{
-		BotA: &BotResults{
-			BBPer100: botAMean,
+		Challenger: &BotResults{
+			BBPer100: botAMean, // Bot A is challenger in heads-up
 			CI95Low:  botAMean - margin,
 			CI95High: botAMean + margin,
 			VPIP:     0.45, // TODO: Aggregate from batches
 			PFR:      0.35,
 		},
-		BotB: &BotResults{
-			BBPer100: botBMean,
+		Baseline: &BotResults{
+			BBPer100: botBMean, // Bot B is baseline in heads-up
 			CI95Low:  botBMean - margin,
 			CI95High: botBMean + margin,
 			VPIP:     0.42,
@@ -138,17 +138,17 @@ func calculateVerdict(aggregate AggregateResults, config *Config) TestVerdict {
 	recommendation := "inconclusive"
 
 	// Determine direction based on which bot is being tested
-	// Bot A is typically the baseline/old version
-	// Bot B is typically the challenger/new version
-	if aggregate.BotA != nil && aggregate.BotB != nil {
-		if aggregate.BotB.BBPer100 > aggregate.BotA.BBPer100 {
-			// Bot B (new) beats Bot A (old) = improvement
+	// Challenger is the new version being tested
+	// Baseline is the reference version
+	if aggregate.Challenger != nil && aggregate.Baseline != nil {
+		if aggregate.Challenger.BBPer100 > aggregate.Baseline.BBPer100 {
+			// Challenger beats baseline = improvement
 			direction = "improvement"
 			if significant {
 				recommendation = "accept"
 			}
 		} else {
-			// Bot A (old) beats Bot B (new) = regression
+			// Baseline beats challenger = regression
 			direction = "regression"
 			if significant {
 				recommendation = "reject"

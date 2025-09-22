@@ -55,10 +55,8 @@ type ReportMetadata struct {
 
 // ReportConfig contains test configuration
 type ReportConfig struct {
-	Challenger        string  `json:"challenger,omitempty"`
-	Baseline          string  `json:"baseline,omitempty"`
-	BotA              string  `json:"bot_a,omitempty"`
-	BotB              string  `json:"bot_b,omitempty"`
+	Challenger        string  `json:"challenger"`
+	Baseline          string  `json:"baseline"`
 	HandsRequested    int     `json:"hands_requested"`
 	HandsCompleted    int     `json:"hands_completed"`
 	BatchSize         int     `json:"batch_size"`
@@ -74,8 +72,6 @@ type ReportConfig struct {
 type ReportStatistics struct {
 	ChallengerStats *BotStatistics `json:"challenger,omitempty"`
 	BaselineStats   *BotStatistics `json:"baseline,omitempty"`
-	BotAStats       *BotStatistics `json:"bot_a,omitempty"`
-	BotBStats       *BotStatistics `json:"bot_b,omitempty"`
 
 	// Statistical analysis
 	EffectSize     float64 `json:"effect_size"`
@@ -142,17 +138,9 @@ func (r *Reporter) GenerateReport(mode TestMode, batches []BatchResult, startTim
 		StartingChips:     r.config.StartingChips,
 	}
 
-	// Mode-specific configuration
-	switch mode {
-	case ModeHeadsUp:
-		config.BotA = r.config.BotA
-		config.BotB = r.config.BotB
-	case ModePopulation, ModeNPCBenchmark:
-		config.Challenger = r.config.Challenger
-		config.Baseline = r.config.Baseline
-	case ModeSelfPlay:
-		config.BotA = r.config.BotA
-	}
+	// All modes now use challenger and baseline
+	config.Challenger = r.config.Challenger
+	config.Baseline = r.config.Baseline
 
 	// Aggregate statistics based on mode
 	stats := r.aggregateStatistics(mode, batches)
@@ -180,34 +168,34 @@ func (r *Reporter) aggregateStatistics(mode TestMode, batches []BatchResult) Rep
 
 	switch mode {
 	case ModeHeadsUp:
-		// Aggregate bot A stats
-		botACombined := CombineBatches(batches, "bot_a")
-		stats.BotAStats = &BotStatistics{
-			BB100:    botACombined.BB100,
-			CI95Low:  botACombined.BB100 - 1.96*10, // Placeholder CI
-			CI95High: botACombined.BB100 + 1.96*10,
-			VPIP:     botACombined.VPIP,
-			PFR:      botACombined.PFR,
-			Hands:    botACombined.TotalHands,
-			Timeouts: botACombined.Timeouts,
-			Busts:    botACombined.Busts,
+		// Aggregate challenger stats (bot_a in heads-up data)
+		challengerCombined := CombineBatches(batches, "bot_a")
+		stats.ChallengerStats = &BotStatistics{
+			BB100:    challengerCombined.BB100,
+			CI95Low:  challengerCombined.BB100 - 1.96*10, // Placeholder CI
+			CI95High: challengerCombined.BB100 + 1.96*10,
+			VPIP:     challengerCombined.VPIP,
+			PFR:      challengerCombined.PFR,
+			Hands:    challengerCombined.TotalHands,
+			Timeouts: challengerCombined.Timeouts,
+			Busts:    challengerCombined.Busts,
 		}
 
-		// Aggregate bot B stats
-		botBCombined := CombineBatches(batches, "bot_b")
-		stats.BotBStats = &BotStatistics{
-			BB100:    botBCombined.BB100,
-			CI95Low:  botBCombined.BB100 - 1.96*10, // Placeholder CI
-			CI95High: botBCombined.BB100 + 1.96*10,
-			VPIP:     botBCombined.VPIP,
-			PFR:      botBCombined.PFR,
-			Hands:    botBCombined.TotalHands,
-			Timeouts: botBCombined.Timeouts,
-			Busts:    botBCombined.Busts,
+		// Aggregate baseline stats (bot_b in heads-up data)
+		baselineCombined := CombineBatches(batches, "bot_b")
+		stats.BaselineStats = &BotStatistics{
+			BB100:    baselineCombined.BB100,
+			CI95Low:  baselineCombined.BB100 - 1.96*10, // Placeholder CI
+			CI95High: baselineCombined.BB100 + 1.96*10,
+			VPIP:     baselineCombined.VPIP,
+			PFR:      baselineCombined.PFR,
+			Hands:    baselineCombined.TotalHands,
+			Timeouts: baselineCombined.Timeouts,
+			Busts:    baselineCombined.Busts,
 		}
 
 		// Calculate effect size (placeholder Cohen's d)
-		stats.EffectSize = (botACombined.BB100 - botBCombined.BB100) / 20.0
+		stats.EffectSize = (challengerCombined.BB100 - baselineCombined.BB100) / 20.0
 
 	case ModePopulation, ModeNPCBenchmark:
 		// Aggregate challenger stats
@@ -242,7 +230,7 @@ func (r *Reporter) aggregateStatistics(mode TestMode, batches []BatchResult) Rep
 	case ModeSelfPlay:
 		// For self-play, we expect near-zero BB/100
 		combined := CombineBatches(batches, "bot")
-		stats.BotAStats = &BotStatistics{
+		stats.ChallengerStats = &BotStatistics{
 			BB100:    combined.BB100,
 			CI95Low:  combined.BB100 - 1.96*10,
 			CI95High: combined.BB100 + 1.96*10,
@@ -252,6 +240,8 @@ func (r *Reporter) aggregateStatistics(mode TestMode, batches []BatchResult) Rep
 			Timeouts: combined.Timeouts,
 			Busts:    combined.Busts,
 		}
+		// In self-play, baseline is the same as challenger
+		stats.BaselineStats = stats.ChallengerStats
 
 		// Effect size is BB/100 divided by expected variance
 		stats.EffectSize = combined.BB100 / 20.0
@@ -280,16 +270,12 @@ func (r *Reporter) WriteSummary(report *ReportResult) error {
 	sb.WriteString("\nRegression Test Report\n")
 	sb.WriteString("======================\n")
 
-	// Test configuration
-	switch TestMode(report.Mode) {
-	case ModeHeadsUp:
-		sb.WriteString(fmt.Sprintf("Bot A: %s\n", report.Config.BotA))
-		sb.WriteString(fmt.Sprintf("Bot B: %s\n", report.Config.BotB))
-	case ModePopulation, ModeNPCBenchmark:
-		sb.WriteString(fmt.Sprintf("Challenger: %s\n", report.Config.Challenger))
+	// Test configuration - unified for all modes
+	sb.WriteString(fmt.Sprintf("Challenger: %s\n", report.Config.Challenger))
+	if report.Mode == string(ModeSelfPlay) {
+		sb.WriteString("(Self-play mode)\n")
+	} else {
 		sb.WriteString(fmt.Sprintf("Baseline: %s\n", report.Config.Baseline))
-	case ModeSelfPlay:
-		sb.WriteString(fmt.Sprintf("Bot: %s\n", report.Config.BotA))
 	}
 
 	sb.WriteString(fmt.Sprintf("Mode: %s\n", report.Mode))
@@ -301,43 +287,25 @@ func (r *Reporter) WriteSummary(report *ReportResult) error {
 	sb.WriteString("Results\n")
 	sb.WriteString("-------\n")
 
-	// Mode-specific results
-	switch TestMode(report.Mode) {
-	case ModeHeadsUp:
-		if report.Results.BotAStats != nil {
-			sb.WriteString(fmt.Sprintf("Bot A BB/100: %.2f (VPIP: %.1f%%, PFR: %.1f%%)\n",
-				report.Results.BotAStats.BB100,
-				report.Results.BotAStats.VPIP*100,
-				report.Results.BotAStats.PFR*100))
-		}
-		if report.Results.BotBStats != nil {
-			sb.WriteString(fmt.Sprintf("Bot B BB/100: %.2f (VPIP: %.1f%%, PFR: %.1f%%)\n",
-				report.Results.BotBStats.BB100,
-				report.Results.BotBStats.VPIP*100,
-				report.Results.BotBStats.PFR*100))
-		}
-
-	case ModePopulation, ModeNPCBenchmark:
-		if report.Results.ChallengerStats != nil {
+	// Unified results display for all modes
+	if report.Results.ChallengerStats != nil {
+		if report.Mode == string(ModeSelfPlay) {
+			sb.WriteString(fmt.Sprintf("Average BB/100: %.2f (expected ~0)\n", report.Results.ChallengerStats.BB100))
+			sb.WriteString(fmt.Sprintf("VPIP: %.1f%%, PFR: %.1f%%\n",
+				report.Results.ChallengerStats.VPIP*100,
+				report.Results.ChallengerStats.PFR*100))
+		} else {
 			sb.WriteString(fmt.Sprintf("Challenger BB/100: %.2f (VPIP: %.1f%%, PFR: %.1f%%)\n",
 				report.Results.ChallengerStats.BB100,
 				report.Results.ChallengerStats.VPIP*100,
 				report.Results.ChallengerStats.PFR*100))
 		}
-		if report.Results.BaselineStats != nil {
-			sb.WriteString(fmt.Sprintf("Baseline BB/100: %.2f (VPIP: %.1f%%, PFR: %.1f%%)\n",
-				report.Results.BaselineStats.BB100,
-				report.Results.BaselineStats.VPIP*100,
-				report.Results.BaselineStats.PFR*100))
-		}
-
-	case ModeSelfPlay:
-		if report.Results.BotAStats != nil {
-			sb.WriteString(fmt.Sprintf("Average BB/100: %.2f (expected ~0)\n", report.Results.BotAStats.BB100))
-			sb.WriteString(fmt.Sprintf("VPIP: %.1f%%, PFR: %.1f%%\n",
-				report.Results.BotAStats.VPIP*100,
-				report.Results.BotAStats.PFR*100))
-		}
+	}
+	if report.Results.BaselineStats != nil && report.Mode != string(ModeSelfPlay) {
+		sb.WriteString(fmt.Sprintf("Baseline BB/100: %.2f (VPIP: %.1f%%, PFR: %.1f%%)\n",
+			report.Results.BaselineStats.BB100,
+			report.Results.BaselineStats.VPIP*100,
+			report.Results.BaselineStats.PFR*100))
 	}
 
 	// Statistical analysis

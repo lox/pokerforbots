@@ -170,19 +170,15 @@ func TestAggregateHeadsUpStats_WrongPlayerCount(t *testing.T) {
 func TestStrategyInterface(t *testing.T) {
 	// Test that our strategies implement the interface correctly
 	config := &Config{
-		BotA:            "bot-a",
-		BotB:            "bot-b",
 		Challenger:      "challenger",
 		Baseline:        "baseline",
-		Bot:             "bot",
 		ChallengerSeats: 2,
 		BaselineSeats:   4,
-		BotSeats:        6,
 		BatchSize:       1000,
 	}
 
 	strategies := []BatchStrategy{
-		&HeadsUpStrategy{BotA: config.BotA, BotB: config.BotB, Config: config},
+		&HeadsUpStrategy{Challenger: config.Challenger, Baseline: config.Baseline, Config: config},
 		&PopulationStrategy{
 			Challenger:      config.Challenger,
 			Baseline:        config.Baseline,
@@ -191,15 +187,18 @@ func TestStrategyInterface(t *testing.T) {
 			Config:          config,
 		},
 		&NPCBenchmarkStrategy{
-			Bot:      config.Bot,
-			BotSeats: config.BotSeats,
-			NPCs:     map[string]int{"calling": 1, "aggressive": 1},
-			Config:   config,
+			Challenger:      config.Challenger,
+			Baseline:        config.Baseline,
+			ChallengerSeats: 2,
+			BaselineSeats:   0,
+			NPCs:            map[string]int{"calling": 1, "aggressive": 1},
+			Config:          config,
 		},
 		&SelfPlayStrategy{
-			Bot:      config.Bot,
-			BotSeats: config.BotSeats,
-			Config:   config,
+			Challenger: config.Challenger,
+			Baseline:   config.Challenger,
+			BotSeats:   6,
+			Config:     config,
 		},
 	}
 

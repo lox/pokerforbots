@@ -147,11 +147,11 @@ func (r *Runner) Run(ctx context.Context) error {
 		var allResults []*TestResult
 		numTests := 0
 
-		// Determine which tests can be run based on provided bots
-		canRunHeadsUp := r.config.BotA != "" && r.config.BotB != ""
+		// All modes now use challenger and baseline
+		canRunHeadsUp := r.config.Challenger != "" && r.config.Baseline != ""
 		canRunPopulation := r.config.Challenger != "" && r.config.Baseline != ""
-		canRunNPCBenchmark := (r.config.Challenger != "" && r.config.Baseline != "") || r.config.Bot != ""
-		canRunSelfPlay := r.config.Bot != ""
+		canRunNPCBenchmark := r.config.Challenger != "" && r.config.Baseline != ""
+		canRunSelfPlay := r.config.Challenger != "" // Self-play only needs challenger
 
 		// Count number of tests that will be run for Bonferroni correction
 		if canRunHeadsUp {
@@ -202,11 +202,6 @@ func (r *Runner) Run(ctx context.Context) error {
 		// Run NPC benchmark test if possible
 		if canRunNPCBenchmark {
 			r.config.Logger.Info().Msg("Running NPC benchmark test")
-			// Use challenger/baseline if available, otherwise use bot
-			if r.config.Challenger == "" && r.config.Bot != "" {
-				r.config.Challenger = r.config.Bot
-				r.config.Baseline = r.config.Bot
-			}
 			result, err := r.runNPCBenchmarkTest(ctx)
 			if err != nil {
 				r.config.Logger.Error().Err(err).Msg("NPC benchmark test failed")
@@ -294,20 +289,12 @@ func addSampleSizeGuidance(results []*TestResult) {
 func (r *Runner) collectBinaries() []string {
 	binaries := make(map[string]bool)
 
-	if r.config.BotA != "" {
-		binaries[r.config.BotA] = true
-	}
-	if r.config.BotB != "" {
-		binaries[r.config.BotB] = true
-	}
+	// All modes now use challenger and baseline
 	if r.config.Challenger != "" {
 		binaries[r.config.Challenger] = true
 	}
 	if r.config.Baseline != "" {
 		binaries[r.config.Baseline] = true
-	}
-	if r.config.Bot != "" {
-		binaries[r.config.Bot] = true
 	}
 
 	result := make([]string, 0, len(binaries))
@@ -319,14 +306,14 @@ func (r *Runner) collectBinaries() []string {
 
 // runHeadsUpTest runs a heads-up test between two bots
 func (r *Runner) runHeadsUpTest(ctx context.Context) (*TestResult, error) {
-	if r.config.BotA == "" || r.config.BotB == "" {
-		return nil, fmt.Errorf("heads-up mode requires bot-a and bot-b")
+	if r.config.Challenger == "" || r.config.Baseline == "" {
+		return nil, fmt.Errorf("heads-up mode requires challenger and baseline")
 	}
 
 	r.config.Logger.Info().
 		Str("mode", "heads-up").
-		Str("bot_a", r.config.BotA).
-		Str("bot_b", r.config.BotB).
+		Str("challenger", r.config.Challenger).
+		Str("baseline", r.config.Baseline).
 		Int("hands", r.config.HandsTotal).
 		Msg("Starting heads-up test")
 
@@ -512,17 +499,21 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 
 	// Create strategies for challenger and baseline
 	challengerStrategy := &NPCBenchmarkStrategy{
-		Bot:      r.config.Challenger,
-		BotSeats: r.config.ChallengerSeats,
-		NPCs:     npcConfig,
-		Config:   r.config,
+		Challenger:      r.config.Challenger,
+		Baseline:        r.config.Challenger, // Challenger vs NPCs
+		ChallengerSeats: r.config.ChallengerSeats,
+		BaselineSeats:   0, // No baseline bots in challenger run
+		NPCs:            npcConfig,
+		Config:          r.config,
 	}
 
 	baselineStrategy := &NPCBenchmarkStrategy{
-		Bot:      r.config.Baseline,
-		BotSeats: r.config.BaselineSeats,
-		NPCs:     npcConfig,
-		Config:   r.config,
+		Challenger:      r.config.Baseline,
+		Baseline:        r.config.Baseline, // Baseline vs NPCs
+		ChallengerSeats: r.config.BaselineSeats,
+		BaselineSeats:   0, // No baseline bots in baseline run
+		NPCs:            npcConfig,
+		Config:          r.config,
 	}
 
 	// Run challenger batches
@@ -616,19 +607,19 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 				BBPer100:         avgChallengerBB100,
 				CI95Low:          avgChallengerBB100 - challengerCIRange,
 				CI95High:         avgChallengerBB100 + challengerCIRange,
-				VPIP:             0, // TODO: Extract from detailed stats
-				PFR:              0, // TODO: Extract from detailed stats
+				VPIP:             challengerStats.VPIP,
+				PFR:              challengerStats.PFR,
 				AggressionFactor: 0, // TODO: Calculate
-				BustRate:         0, // TODO: Calculate
+				BustRate:         challengerStats.Busts,
 			},
 			Baseline: &BotResults{
 				BBPer100:         avgBaselineBB100,
 				CI95Low:          avgBaselineBB100 - baselineCIRange,
 				CI95High:         avgBaselineBB100 + baselineCIRange,
-				VPIP:             0, // TODO: Extract from detailed stats
-				PFR:              0, // TODO: Extract from detailed stats
+				VPIP:             baselineStats.VPIP,
+				PFR:              baselineStats.PFR,
 				AggressionFactor: 0, // TODO: Calculate
-				BustRate:         0, // TODO: Calculate
+				BustRate:         baselineStats.Busts,
 			},
 		},
 		Performance: PerformanceMetrics{
@@ -671,14 +662,20 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 
 // runSelfPlayTest runs a self-play test
 func (r *Runner) runSelfPlayTest(ctx context.Context) (*TestResult, error) {
-	if r.config.Bot == "" {
-		return nil, fmt.Errorf("self-play mode requires bot")
+	if r.config.Challenger == "" {
+		return nil, fmt.Errorf("self-play mode requires challenger")
+	}
+
+	// Default bot seats for self-play
+	bots := r.config.ChallengerSeats
+	if bots == 0 {
+		bots = 6 // Default to 6-max
 	}
 
 	r.config.Logger.Info().
 		Str("mode", "self-play").
-		Str("bot", r.config.Bot).
-		Int("seats", r.config.BotSeats).
+		Str("bot", r.config.Challenger).
+		Int("seats", bots).
 		Int("hands", r.config.HandsTotal).
 		Msg("Starting self-play test")
 
@@ -686,9 +683,10 @@ func (r *Runner) runSelfPlayTest(ctx context.Context) (*TestResult, error) {
 
 	// Create self-play strategy
 	strategy := &SelfPlayStrategy{
-		Bot:      r.config.Bot,
-		BotSeats: r.config.BotSeats,
-		Config:   r.config,
+		Challenger: r.config.Challenger,
+		Baseline:   r.config.Challenger, // Same bot for self-play
+		BotSeats:   bots,
+		Config:     r.config,
 	}
 
 	// Use common batch executor
@@ -743,7 +741,8 @@ func (r *Runner) runSelfPlayTest(ctx context.Context) (*TestResult, error) {
 			TestEnvironment: "test",
 		},
 		Config: TestConfigSummary{
-			BotA:              r.config.Bot,
+			Challenger:        r.config.Challenger,
+			Baseline:          r.config.Challenger, // Same bot for self-play
 			HandsTotal:        r.config.HandsTotal,
 			Batches:           len(allBatches),
 			BatchSize:         r.config.BatchSize,
@@ -751,7 +750,7 @@ func (r *Runner) runSelfPlayTest(ctx context.Context) (*TestResult, error) {
 		},
 		Batches: allBatches,
 		Aggregate: AggregateResults{
-			BotA: &BotResults{
+			Challenger: &BotResults{
 				BBPer100:         avgBB100,
 				CI95Low:          minBB100, // Using min/max as variance bounds
 				CI95High:         maxBB100,
@@ -759,6 +758,16 @@ func (r *Runner) runSelfPlayTest(ctx context.Context) (*TestResult, error) {
 				PFR:              avgPFR,
 				AggressionFactor: 0, // TODO: Calculate
 				BustRate:         0, // TODO: Calculate
+			},
+			// In self-play, baseline is the same as challenger
+			Baseline: &BotResults{
+				BBPer100:         avgBB100,
+				CI95Low:          minBB100,
+				CI95High:         maxBB100,
+				VPIP:             avgVPIP,
+				PFR:              avgPFR,
+				AggressionFactor: 0,
+				BustRate:         0,
 			},
 		},
 		Performance: PerformanceMetrics{

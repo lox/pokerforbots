@@ -43,9 +43,9 @@ type HealthPolicy struct {
 
 // HeadsUpStrategy implements BatchStrategy for heads-up testing
 type HeadsUpStrategy struct {
-	BotA   string
-	BotB   string
-	Config *Config
+	Challenger string
+	Baseline   string
+	Config     *Config
 }
 
 func (s *HeadsUpStrategy) Name() string {
@@ -54,7 +54,7 @@ func (s *HeadsUpStrategy) Name() string {
 
 func (s *HeadsUpStrategy) ConfigureBatch(batchNum int, seed int64) BatchConfiguration {
 	return BatchConfiguration{
-		BotCommands: []string{s.BotA, s.BotB},
+		BotCommands: []string{s.Challenger, s.Baseline},
 		Seed:        seed,
 		Hands:       s.Config.BatchSize,
 	}
@@ -139,10 +139,12 @@ func (s *PopulationStrategy) GetHealthPolicy() HealthPolicy {
 
 // NPCBenchmarkStrategy implements BatchStrategy for NPC benchmark testing
 type NPCBenchmarkStrategy struct {
-	Bot      string
-	BotSeats int
-	NPCs     map[string]int
-	Config   *Config
+	Challenger      string
+	Baseline        string
+	ChallengerSeats int
+	BaselineSeats   int
+	NPCs            map[string]int
+	Config          *Config
 }
 
 func (s *NPCBenchmarkStrategy) Name() string {
@@ -151,8 +153,13 @@ func (s *NPCBenchmarkStrategy) Name() string {
 
 func (s *NPCBenchmarkStrategy) ConfigureBatch(batchNum int, seed int64) BatchConfiguration {
 	var botCmds []string
-	for i := 0; i < s.BotSeats; i++ {
-		botCmds = append(botCmds, s.Bot)
+	// Add challenger bots
+	for i := 0; i < s.ChallengerSeats; i++ {
+		botCmds = append(botCmds, s.Challenger)
+	}
+	// Add baseline bots
+	for i := 0; i < s.BaselineSeats; i++ {
+		botCmds = append(botCmds, s.Baseline)
 	}
 
 	// Build NPC configuration string
@@ -197,9 +204,10 @@ func (s *NPCBenchmarkStrategy) GetHealthPolicy() HealthPolicy {
 
 // SelfPlayStrategy implements BatchStrategy for self-play testing
 type SelfPlayStrategy struct {
-	Bot      string
-	BotSeats int
-	Config   *Config
+	Challenger string // Bot playing against itself
+	Baseline   string // Same as Challenger for self-play
+	BotSeats   int
+	Config     *Config
 }
 
 func (s *SelfPlayStrategy) Name() string {
@@ -208,8 +216,9 @@ func (s *SelfPlayStrategy) Name() string {
 
 func (s *SelfPlayStrategy) ConfigureBatch(batchNum int, seed int64) BatchConfiguration {
 	var botCmds []string
+	// In self-play, all bots are the same (using Challenger)
 	for i := 0; i < s.BotSeats; i++ {
-		botCmds = append(botCmds, s.Bot)
+		botCmds = append(botCmds, s.Challenger)
 	}
 
 	return BatchConfiguration{

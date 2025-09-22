@@ -18,12 +18,9 @@ type CLI struct {
 	// Test modes
 	Mode string `kong:"default='heads-up',enum='heads-up,population,npc-benchmark,self-play,all',help='Test mode to run'"`
 
-	// Bot binaries
-	BotA       string `kong:"help='Bot A binary path (heads-up mode)'"`
-	BotB       string `kong:"help='Bot B binary path (heads-up mode)'"`
-	Challenger string `kong:"help='Challenger bot binary path (population/npc modes)'"`
-	Baseline   string `kong:"help='Baseline bot binary path (population/npc modes)'"`
-	Bot        string `kong:"help='Bot binary path (self-play mode)'"`
+	// Bot binaries - unified approach
+	Challenger string `kong:"help='Challenger bot binary path (all modes)'"`
+	Baseline   string `kong:"help='Baseline bot binary path (all modes except self-play)'"`
 
 	// Test configuration
 	Hands         int    `kong:"default='10000',help='Total hands to play'"`
@@ -32,9 +29,8 @@ type CLI struct {
 	StartingChips int    `kong:"default='1000',help='Starting chips in big blinds'"`
 
 	// Table configuration
-	ChallengerSeats int    `kong:"default='2',help='Number of challenger seats (population/npc modes)'"`
-	BaselineSeats   int    `kong:"default='4',help='Number of baseline seats (population mode) or baseline seats for NPC mode'"`
-	BotSeats        int    `kong:"default='2',help='Number of bot seats (self-play mode)'"`
+	ChallengerSeats int    `kong:"default='2',help='Number of challenger seats'"`
+	BaselineSeats   int    `kong:"default='4',help='Number of baseline seats'"`
 	NPCs            string `kong:"name='npcs',help='NPC configuration (e.g., aggressive:2,callbot:1,random:1)'"`
 
 	// Statistical options
@@ -133,12 +129,9 @@ func main() {
 	config := &regression.Config{
 		Mode: regression.TestMode(cli.Mode),
 
-		// Bot binaries
-		BotA:       cli.BotA,
-		BotB:       cli.BotB,
+		// Bot binaries - unified
 		Challenger: cli.Challenger,
 		Baseline:   cli.Baseline,
-		Bot:        cli.Bot,
 
 		// Test configuration
 		HandsTotal:    cli.Hands,
@@ -149,7 +142,6 @@ func main() {
 		// Table configuration
 		ChallengerSeats: cli.ChallengerSeats,
 		BaselineSeats:   cli.BaselineSeats,
-		BotSeats:        cli.BotSeats,
 		NPCs:            npcs,
 
 		// Statistical

@@ -25,10 +25,8 @@ type TestMetadata struct {
 
 // TestConfigSummary summarizes test configuration
 type TestConfigSummary struct {
-	Challenger             string  `json:"challenger,omitempty"`
-	Baseline               string  `json:"baseline,omitempty"`
-	BotA                   string  `json:"bot_a,omitempty"`
-	BotB                   string  `json:"bot_b,omitempty"`
+	Challenger             string  `json:"challenger"`
+	Baseline               string  `json:"baseline"`
 	HandsTotal             int     `json:"hands_total"`
 	Batches                int     `json:"batches"`
 	BatchSize              int     `json:"batch_size"`
@@ -47,8 +45,6 @@ type BatchResult struct {
 type AggregateResults struct {
 	Challenger *BotResults `json:"challenger,omitempty"`
 	Baseline   *BotResults `json:"baseline,omitempty"`
-	BotA       *BotResults `json:"bot_a,omitempty"`
-	BotB       *BotResults `json:"bot_b,omitempty"`
 }
 
 // BotResults contains statistical results for a bot

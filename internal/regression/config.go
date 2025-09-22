@@ -25,17 +25,13 @@ type Config struct {
 	BatchSize  int
 	Seeds      []int64
 
-	// Bot binaries
-	BotA       string // For heads-up mode
-	BotB       string // For heads-up mode
-	Challenger string // For population mode
-	Baseline   string // For population mode
-	Bot        string // For self-play and NPC modes
+	// Bot binaries - unified across all modes
+	Challenger string // Primary bot being tested (all modes)
+	Baseline   string // Reference bot for comparison (all modes)
 
 	// Table configuration
 	ChallengerSeats int
 	BaselineSeats   int
-	BotSeats        int
 	NPCs            map[string]int // NPC type -> count
 
 	// Bankroll
@@ -56,11 +52,14 @@ type Config struct {
 	MaxConcurrentTables int
 	ServerAddr          string
 	ServerCmd           string // Command to run the server
+	MinPlayers          int
+	MaxPlayers          int
 
 	// Health
-	MaxCrashesPerBot  int
-	MaxTimeoutsPerBot int
-	RestartDelayMs    int
+	MaxCrashesPerBot       int
+	MaxTimeoutsPerBot      int
+	RestartDelayMs         int
+	StopOnInsufficientBots bool // Stop when not enough bots remain (for simulations)
 
 	// Output
 	OutputFormat string // "json", "summary", "both"
