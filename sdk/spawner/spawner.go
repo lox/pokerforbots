@@ -8,7 +8,6 @@ import (
 	"io"
 	"maps"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -235,113 +234,6 @@ func (s *BotSpawner) GetProcess(botID string) (*Process, bool) {
 	defer s.mu.RUnlock()
 	proc, ok := s.processes[botID]
 	return proc, ok
-}
-
-// ServerConfig defines configuration for spawning a server subprocess.
-type ServerConfig struct {
-	Command     string   // Command to execute (default: "go")
-	Args        []string // Arguments (default: ["run", "./cmd/server"])
-	Addr        string   // Server address
-	SmallBlind  int
-	BigBlind    int
-	StartChips  int
-	TimeoutMs   int
-	MinPlayers  int
-	MaxPlayers  int
-	Seed        int64
-	HandLimit   int
-	EnableStats bool
-	Env         map[string]string // Additional environment variables
-}
-
-// SpawnServer spawns a poker server as a subprocess and returns its process handle.
-// This is useful for isolation and testing different server versions.
-func (s *BotSpawner) SpawnServer(config ServerConfig) (*Process, error) {
-	// Set defaults
-	if config.Command == "" {
-		config.Command = "go"
-		config.Args = []string{"run", "./cmd/server"}
-	}
-
-	// Build command line arguments
-	args := append([]string{}, config.Args...)
-
-	if config.Addr != "" {
-		args = append(args, "--addr", config.Addr)
-	}
-	if config.SmallBlind > 0 {
-		args = append(args, "--small-blind", strconv.Itoa(config.SmallBlind))
-	}
-	if config.BigBlind > 0 {
-		args = append(args, "--big-blind", strconv.Itoa(config.BigBlind))
-	}
-	if config.StartChips > 0 {
-		args = append(args, "--start-chips", strconv.Itoa(config.StartChips))
-	}
-	if config.TimeoutMs > 0 {
-		args = append(args, "--timeout-ms", strconv.Itoa(config.TimeoutMs))
-	}
-	if config.MinPlayers > 0 {
-		args = append(args, "--min-players", strconv.Itoa(config.MinPlayers))
-	}
-	if config.MaxPlayers > 0 {
-		args = append(args, "--max-players", strconv.Itoa(config.MaxPlayers))
-	}
-	if config.Seed != 0 {
-		args = append(args, "--seed", strconv.FormatInt(config.Seed, 10))
-	}
-	if config.HandLimit > 0 {
-		args = append(args, "--hand-limit", strconv.Itoa(config.HandLimit))
-	}
-	if config.EnableStats {
-		args = append(args, "--enable-stats")
-	}
-
-	// Build environment
-	env := make(map[string]string)
-	maps.Copy(env, config.Env)
-
-	// Create and start the process
-	proc := NewProcess(s.ctx, config.Command, args, env, s.logger)
-	if err := proc.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start server: %w", err)
-	}
-
-	// Register as a special process
-	s.mu.Lock()
-	s.processes["__server__"] = proc
-	s.mu.Unlock()
-
-	s.logger.Info().
-		Str("addr", config.Addr).
-		Msg("Server spawned")
-
-	return proc, nil
-}
-
-// WaitForServer waits for a server to be ready by polling its health endpoint.
-func WaitForServer(url string, timeout time.Duration) error {
-	// Convert WebSocket URL to HTTP
-	httpURL := strings.Replace(url, "ws://", "http://", 1)
-	httpURL = strings.Replace(httpURL, "wss://", "https://", 1)
-	httpURL = strings.TrimSuffix(httpURL, "/ws")
-
-	healthURL := httpURL + "/health"
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		resp, err := http.Get(healthURL)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			resp.Body.Close()
-			return nil
-		}
-		if resp != nil {
-			resp.Body.Close()
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	return fmt.Errorf("server not ready after %v", timeout)
 }
 
 // GameStats represents aggregate game statistics.

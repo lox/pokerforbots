@@ -6,10 +6,10 @@ The bot spawner is a library and tool for managing bot processes in the PokerFor
 
 The spawner consists of:
 
-1. **Library Package** (`sdk/spawner`) - Public API for process management
+1. **Library Package** (`sdk/spawner`) - Public API for bot process management
 2. **Config Package** (`sdk/config`) - Environment variable handling for bots
-3. **Spawner Tool** (`cmd/spawner`) - Standalone orchestrator with embedded server
-4. **Integration Points** - Used by regression tester and other tools
+3. **Spawner Tool** (`cmd/spawner`) - Orchestrator with embedded server (runs server in-process, not as subprocess)
+4. **Integration Points** - Used by regression tester and other tools (all use embedded server)
 
 ## SDK Packages
 
@@ -142,7 +142,14 @@ The spawner automatically sets these environment variables:
 - `POKERFORBOTS_BOT_ID` - Unique bot identifier
 - `POKERFORBOTS_GAME` - Target game ID (defaults to "default")
 
-### Embedded Server Mode
+### Embedded Server Architecture
+
+**Important**: Both the spawner tool (`cmd/spawner`) and regression tester use an **embedded server** by importing `internal/server` directly, rather than spawning the server as a subprocess. This approach provides:
+
+- **Better performance** - No subprocess overhead
+- **Direct control** - Can call methods directly on the server instance
+- **Cleaner shutdown** - Direct access to server for graceful termination
+- **No external dependencies** - Doesn't require `go` command or source code access
 
 The regression tester uses an embedded server with the spawner library:
 

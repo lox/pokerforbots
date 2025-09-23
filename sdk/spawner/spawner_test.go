@@ -190,38 +190,6 @@ func TestSpawnBot(t *testing.T) {
 	spawner.StopAll()
 }
 
-func TestWaitForServer(t *testing.T) {
-	// Create a test server
-	mux := http.NewServeMux()
-	healthHit := false
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		healthHit = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	server := httptest.NewServer(mux)
-	defer server.Close()
-
-	// Convert to WebSocket URL format
-	wsURL := strings.Replace(server.URL, "http://", "ws://", 1) + "/ws"
-
-	// Test successful wait
-	err := WaitForServer(wsURL, 1*time.Second)
-	if err != nil {
-		t.Errorf("Failed to wait for server: %v", err)
-	}
-
-	if !healthHit {
-		t.Error("Health endpoint not called")
-	}
-
-	// Test timeout
-	err = WaitForServer("ws://localhost:9999/ws", 100*time.Millisecond)
-	if err == nil {
-		t.Error("Expected timeout error")
-	}
-}
-
 func TestCollectStats(t *testing.T) {
 	// Create a test server
 	mux := http.NewServeMux()
