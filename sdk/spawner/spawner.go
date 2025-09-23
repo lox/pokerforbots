@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
+	"github.com/lox/pokerforbots/internal/server"
 	"github.com/lox/pokerforbots/sdk/config"
 	"github.com/rs/zerolog"
 )
@@ -56,46 +56,42 @@ func NewWithSeed(serverURL string, logger zerolog.Logger, seed int64) *BotSpawne
 	return spawner
 }
 
-// Spawn spawns one or more bots according to the spec.
-func (s *BotSpawner) Spawn(spec BotSpec) error {
-	if spec.Count <= 0 {
-		spec.Count = 1
-	}
-	if spec.GameID == "" {
-		spec.GameID = "default"
-	}
-
-	s.logger.Info().
-		Str("command", spec.Command).
-		Strs("args", spec.Args).
-		Int("count", spec.Count).
-		Str("game", spec.GameID).
-		Msg("Spawning bots")
-
-	for i := 0; i < spec.Count; i++ {
-		proc, err := s.spawnOne(spec, i)
-		if err != nil {
-			s.logger.Error().Err(err).Int("index", i).Msg("Failed to spawn bot")
-			// Stop previously spawned bots on error
-			s.StopAll()
-			return fmt.Errorf("failed to spawn bot %d: %w", i, err)
-		}
-
-		s.mu.Lock()
-		s.processes[proc.ID] = proc
-		s.mu.Unlock()
-	}
-
-	return nil
-}
-
-// SpawnMany spawns multiple bot specs.
-func (s *BotSpawner) SpawnMany(specs []BotSpec) error {
+// Spawn spawns one or more bot specs.
+func (s *BotSpawner) Spawn(specs ...BotSpec) error {
 	for _, spec := range specs {
-		if err := s.Spawn(spec); err != nil {
-			return err
+		if spec.Count <= 0 {
+			spec.Count = 1
+		}
+		if spec.GameID == "" {
+			spec.GameID = "default"
+		}
+
+		s.logger.Info().
+			Str("command", spec.Command).
+			Strs("args", spec.Args).
+			Int("count", spec.Count).
+			Str("game", spec.GameID).
+			Msg("Spawning bots")
+
+		for i := 0; i < spec.Count; i++ {
+			// Build environment
+			env := s.buildEnv(spec, i)
+
+			// Create and start process
+			proc := NewProcess(s.ctx, spec.Command, spec.Args, env, s.logger)
+			if err := proc.Start(); err != nil {
+				s.logger.Error().Err(err).Int("index", i).Msg("Failed to spawn bot")
+				// Stop previously spawned bots on error
+				s.StopAll()
+				return fmt.Errorf("failed to spawn bot %d: %w", i, err)
+			}
+
+			s.mu.Lock()
+			s.processes[proc.ID] = proc
+			s.mu.Unlock()
 		}
 	}
+
 	return nil
 }
 
@@ -150,20 +146,6 @@ func (s *BotSpawner) ActiveCount() int {
 		}
 	}
 	return count
-}
-
-// spawnOne spawns a single bot instance.
-func (s *BotSpawner) spawnOne(spec BotSpec, index int) (*Process, error) {
-	// Build environment
-	env := s.buildEnv(spec, index)
-
-	// Create and start process
-	proc := NewProcess(s.ctx, spec.Command, spec.Args, env, s.logger)
-	if err := proc.Start(); err != nil {
-		return nil, err
-	}
-
-	return proc, nil
 }
 
 // buildEnv builds the environment variables for a bot.
@@ -236,28 +218,8 @@ func (s *BotSpawner) GetProcess(botID string) (*Process, bool) {
 	return proc, ok
 }
 
-// GameStats represents aggregate game statistics.
-type GameStats struct {
-	ID              string    `json:"id"`
-	SmallBlind      int       `json:"small_blind"`
-	BigBlind        int       `json:"big_blind"`
-	StartChips      int       `json:"start_chips"`
-	TimeoutMs       int       `json:"timeout_ms"`
-	MinPlayers      int       `json:"min_players"`
-	MaxPlayers      int       `json:"max_players"`
-	HandsCompleted  int       `json:"hands_completed"`
-	HandLimit       int       `json:"hand_limit"`
-	HandsRemaining  int       `json:"hands_remaining"`
-	Timeouts        int       `json:"timeouts"`
-	HandsPerSecond  float64   `json:"hands_per_second"`
-	StartTime       time.Time `json:"start_time"`
-	EndTime         time.Time `json:"end_time"`
-	DurationSeconds float64   `json:"duration_seconds"`
-	Seed            int64     `json:"seed"`
-}
-
 // CollectStats fetches game statistics from the server.
-func CollectStats(serverURL string, gameID string) (*GameStats, error) {
+func CollectStats(serverURL string, gameID string) (*server.GameStats, error) {
 	// Convert WebSocket URL to HTTP
 	httpURL := strings.Replace(serverURL, "ws://", "http://", 1)
 	httpURL = strings.Replace(httpURL, "wss://", "https://", 1)
@@ -280,7 +242,7 @@ func CollectStats(serverURL string, gameID string) (*GameStats, error) {
 		return nil, fmt.Errorf("failed to read stats response: %w", err)
 	}
 
-	var stats GameStats
+	var stats server.GameStats
 	if err := json.Unmarshal(data, &stats); err != nil {
 		return nil, fmt.Errorf("failed to parse stats: %w", err)
 	}

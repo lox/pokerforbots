@@ -128,7 +128,7 @@ func main() {
 	logger.Info().Str("spec", cli.Spec).Int("additional", len(cli.BotCmd)).Msg("Spawning bots")
 
 	// Spawn bots
-	if err := sp.SpawnMany(specs); err != nil {
+	if err := sp.Spawn(specs...); err != nil {
 		logger.Fatal().Err(err).Msg("Failed to spawn bots")
 	}
 	defer sp.StopAll()

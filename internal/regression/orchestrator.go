@@ -317,7 +317,7 @@ func (o *Orchestrator) startEmbeddedServer(ctx context.Context, serverConfig *Se
 	}
 
 	// Spawn all bots
-	if err := o.botSpawner.SpawnMany(specs); err != nil {
+	if err := o.botSpawner.Spawn(specs...); err != nil {
 		return fmt.Errorf("failed to spawn bots: %w", err)
 	}
 

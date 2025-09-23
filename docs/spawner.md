@@ -104,7 +104,7 @@ specs := []spawner.BotSpec{
 }
 
 // Spawn all bots
-if err := sp.SpawnMany(specs); err != nil {
+if err := sp.Spawn(specs...); err != nil {
     log.Fatal(err)
 }
 
@@ -164,7 +164,7 @@ serverURL := fmt.Sprintf("ws://%s/ws", listener.Addr())
 botSpawner := spawner.New(serverURL, logger)
 
 // Spawn bots
-botSpawner.SpawnMany(specs)
+botSpawner.Spawn(specs...)
 
 // Wait for game completion
 <-srv.DefaultGameDone()

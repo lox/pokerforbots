@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lox/pokerforbots/internal/server"
 	"github.com/lox/pokerforbots/sdk/config"
 	"github.com/rs/zerolog"
 )
@@ -194,7 +195,7 @@ func TestCollectStats(t *testing.T) {
 	// Create a test server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/admin/games/test-game/stats", func(w http.ResponseWriter, r *http.Request) {
-		stats := GameStats{
+		stats := server.GameStats{
 			ID:             "test-game",
 			HandsCompleted: 42,
 			HandLimit:      100,
