@@ -7,12 +7,9 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"math/rand"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/lox/pokerforbots/internal/server"
 	"github.com/lox/pokerforbots/sdk/config"
@@ -219,132 +216,6 @@ func (s *BotSpawner) GetProcess(botID string) (*Process, bool) {
 	defer s.mu.RUnlock()
 	proc, ok := s.processes[botID]
 	return proc, ok
-}
-
-// EmbeddedServer wraps a poker server running in-process with spawner integration.
-type EmbeddedServer struct {
-	Server   *server.Server
-	Listener net.Listener
-	Spawner  *BotSpawner
-	logger   zerolog.Logger
-	cancel   context.CancelFunc
-}
-
-// EmbeddedServerConfig configures an embedded server with spawner.
-type EmbeddedServerConfig struct {
-	Addr          string        // Listen address (default: "localhost:0" for random port)
-	SmallBlind    int           // Small blind amount
-	BigBlind      int           // Big blind amount
-	StartChips    int           // Starting chip stack
-	Timeout       time.Duration // Action timeout
-	MinPlayers    int           // Minimum players to start
-	MaxPlayers    int           // Maximum players per table
-	HandLimit     uint64        // Stop after N hands (0 = unlimited)
-	Seed          int64         // Random seed (0 = use time)
-	EnableStats   bool          // Enable statistics collection
-	MaxStatsHands int           // Maximum hands to track in stats
-}
-
-// StartEmbeddedServer creates and starts an embedded server with integrated spawner.
-// Returns the server wrapper and the WebSocket URL for bot connections.
-func StartEmbeddedServer(cfg EmbeddedServerConfig, logger zerolog.Logger) (*EmbeddedServer, string, error) {
-	// Set defaults
-	if cfg.Addr == "" {
-		cfg.Addr = "localhost:0" // Random port
-	}
-	if cfg.MinPlayers == 0 {
-		cfg.MinPlayers = 2
-	}
-	if cfg.MaxPlayers == 0 {
-		cfg.MaxPlayers = 9
-	}
-	if cfg.Seed == 0 {
-		cfg.Seed = time.Now().UnixNano()
-	}
-
-	// Create RNG
-	rng := rand.New(rand.NewSource(cfg.Seed))
-
-	// Create server configuration
-	serverCfg := server.Config{
-		SmallBlind:    cfg.SmallBlind,
-		BigBlind:      cfg.BigBlind,
-		StartChips:    cfg.StartChips,
-		Timeout:       cfg.Timeout,
-		MinPlayers:    cfg.MinPlayers,
-		MaxPlayers:    cfg.MaxPlayers,
-		Seed:          cfg.Seed,
-		HandLimit:     cfg.HandLimit,
-		EnableStats:   cfg.EnableStats,
-		MaxStatsHands: cfg.MaxStatsHands,
-	}
-
-	// Create server
-	srv := server.NewServer(logger, rng, server.WithConfig(serverCfg))
-
-	// Create listener
-	listener, err := net.Listen("tcp", cfg.Addr)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to create listener: %w", err)
-	}
-
-	// Start server in background
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
-			logger.Error().Err(err).Msg("Server error")
-		}
-	}()
-
-	// Wait for server to be ready
-	baseURL := fmt.Sprintf("http://%s", listener.Addr())
-	if err := server.WaitForHealthy(ctx, baseURL); err != nil {
-		cancel()
-		listener.Close()
-		return nil, "", fmt.Errorf("server failed to start: %w", err)
-	}
-
-	// Create WebSocket URL and spawner
-	wsURL := fmt.Sprintf("ws://%s/ws", listener.Addr())
-	spawner := NewWithSeed(wsURL, logger, cfg.Seed)
-
-	es := &EmbeddedServer{
-		Server:   srv,
-		Listener: listener,
-		Spawner:  spawner,
-		logger:   logger,
-		cancel:   cancel,
-	}
-
-	return es, wsURL, nil
-}
-
-// Shutdown gracefully stops the embedded server and all spawned bots.
-func (es *EmbeddedServer) Shutdown() error {
-	es.logger.Info().Msg("Shutting down embedded server")
-
-	// Stop all bots first
-	if err := es.Spawner.StopAll(); err != nil {
-		es.logger.Error().Err(err).Msg("Error stopping bots")
-	}
-
-	// Cancel context
-	es.cancel()
-
-	// Shutdown server
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := es.Server.Shutdown(ctx); err != nil {
-		return fmt.Errorf("server shutdown failed: %w", err)
-	}
-
-	// Close listener
-	if err := es.Listener.Close(); err != nil && err != net.ErrClosed {
-		return fmt.Errorf("listener close failed: %w", err)
-	}
-
-	return nil
 }
 
 // CollectStats fetches game statistics from the server.

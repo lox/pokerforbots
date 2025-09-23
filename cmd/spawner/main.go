@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
+	"github.com/lox/pokerforbots/internal/server"
 	"github.com/lox/pokerforbots/sdk/spawner"
 	"github.com/rs/zerolog"
 )
@@ -81,8 +84,7 @@ func main() {
 		seed = time.Now().UnixNano()
 	}
 
-	serverCfg := spawner.EmbeddedServerConfig{
-		Addr:          cli.Addr,
+	serverCfg := server.Config{
 		SmallBlind:    cli.SmallBlind,
 		BigBlind:      cli.BigBlind,
 		StartChips:    cli.StartChips,
@@ -95,13 +97,23 @@ func main() {
 		MaxStatsHands: 10000,
 	}
 
-	// Start embedded server with integrated spawner
-	embedded, wsURL, err := spawner.StartEmbeddedServer(serverCfg, logger)
+	// Start embedded server
+	srv := server.NewServer(logger, rand.New(rand.NewSource(seed)), server.WithConfig(serverCfg))
+	listener, err := net.Listen("tcp", cli.Addr)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("Failed to start embedded server")
+		logger.Fatal().Err(err).Msg("Failed to listen")
 	}
-	defer embedded.Shutdown()
 
+	go srv.Serve(listener)
+	defer srv.Shutdown(ctx)
+
+	// Wait for server to be ready
+	serverURL := fmt.Sprintf("http://%s", listener.Addr())
+	if err := server.WaitForHealthy(ctx, serverURL); err != nil {
+		logger.Fatal().Err(err).Msg("Server failed to start")
+	}
+
+	wsURL := fmt.Sprintf("ws://%s/ws", listener.Addr())
 	logger.Info().Str("url", wsURL).Msg("Server started")
 	if cli.Seed != 0 {
 		logger.Info().Int64("seed", cli.Seed).Msg("Using deterministic seed")
@@ -132,23 +144,26 @@ func main() {
 
 	logger.Info().Str("spec", cli.Spec).Int("additional", len(cli.BotCmd)).Msg("Spawning bots")
 
-	// Spawn bots using embedded server's spawner
-	if err := embedded.Spawner.Spawn(specs...); err != nil {
+	// Create spawner and spawn bots
+	botSpawner := spawner.NewWithSeed(wsURL, logger, seed)
+	defer botSpawner.StopAll()
+
+	if err := botSpawner.Spawn(specs...); err != nil {
 		logger.Fatal().Err(err).Msg("Failed to spawn bots")
 	}
 
-	logger.Info().Int("count", embedded.Spawner.ActiveCount()).Msg("Bots spawned")
+	logger.Info().Int("count", botSpawner.ActiveCount()).Msg("Bots spawned")
 
 	// Wait for context cancellation or hand limit
 	select {
 	case <-ctx.Done():
-	case <-embedded.Server.DefaultGameDone():
+	case <-srv.DefaultGameDone():
 		logger.Info().Msg("Hand limit reached")
 	}
 
 	// Write stats if requested
 	if cli.WriteStats != "" || cli.PrintStats {
-		handleStatsOutput(embedded.Listener.Addr().String(), cli.WriteStats, cli.PrintStats, logger)
+		handleStatsOutput(listener.Addr().String(), cli.WriteStats, cli.PrintStats, logger)
 	}
 
 	// Stop bots (will be done by defer)
