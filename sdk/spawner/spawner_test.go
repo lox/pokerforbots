@@ -174,8 +174,8 @@ func TestSpawnBot(t *testing.T) {
 		t.Fatalf("Failed to spawn bot: %v", err)
 	}
 
-	// Process should be registered
-	if retrieved, ok := spawner.GetProcess("bot-0"); !ok {
+	// Process should be registered with bot-1 (first bot gets ID 1, not 0)
+	if retrieved, ok := spawner.GetProcess("bot-1"); !ok {
 		t.Error("Bot not registered")
 	} else if retrieved != proc {
 		t.Error("Retrieved different process")

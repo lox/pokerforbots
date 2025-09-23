@@ -49,6 +49,9 @@ type BotPool struct {
 
 	// Statistics collector (optional)
 	statsCollector StatsCollector
+
+	// Hand monitor (optional)
+	handMonitor HandMonitor
 }
 
 // WithRNG executes fn with exclusive access to the pool's RNG.
@@ -129,6 +132,15 @@ func (p *BotPool) SetGameID(id string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.gameID = id
+}
+
+// SetHandMonitor sets or replaces the hand monitor
+func (p *BotPool) SetHandMonitor(monitor HandMonitor) {
+	p.handMonitor = monitor
+	// Notify monitor of game start if we're starting fresh
+	if monitor != nil && atomic.LoadUint64(&p.handCounter) == 0 {
+		monitor.OnGameStart(p.handLimit)
+	}
 }
 
 // GameID returns the identifier associated with this pool.
@@ -597,6 +609,12 @@ func (p *BotPool) RecordHandOutcomeDetailed(detail HandOutcomeDetail) {
 			p.logger.Error().Err(err).Msg("Failed to record detailed hand statistics")
 		}
 	}
+
+	// Notify hand monitor if present
+	if p.handMonitor != nil {
+		handsCompleted := atomic.LoadUint64(&p.handCounter)
+		p.handMonitor.OnHandComplete(handsCompleted, p.handLimit)
+	}
 }
 
 // PlayerStats returns a snapshot of aggregate statistics for all bots in the pool.
@@ -687,6 +705,12 @@ func (p *BotPool) notifyGameCompleted(reason string) {
 	p.logger.Info().
 		Str("reason", reason).
 		Msg("Game completion triggered, signaling stop")
+
+	// Notify hand monitor if present
+	if p.handMonitor != nil {
+		handsCompleted := atomic.LoadUint64(&p.handCounter)
+		p.handMonitor.OnGameComplete(handsCompleted, reason)
+	}
 
 	// Trigger shutdown asynchronously to avoid deadlock
 	// (We're in the match loop, and Stop() waits for it to complete)

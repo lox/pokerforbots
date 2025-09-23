@@ -19,6 +19,13 @@ import (
 )
 
 // Orchestrator manages server and bot lifecycle for regression testing
+// ProgressReporter receives progress updates during test execution
+type ProgressReporter interface {
+	OnBatchStart(batchNum int, totalBatches int, handsInBatch int)
+	OnBatchComplete(batchNum int, handsCompleted int)
+	OnHandsProgress(handsCompleted int, totalHands int)
+}
+
 type Orchestrator struct {
 	config           *Config
 	healthMonitor    *HealthMonitor
@@ -29,15 +36,51 @@ type Orchestrator struct {
 	serverListener   net.Listener        // For embedded server mode
 	serverURL        string              // WebSocket URL for bots
 	currentStatsFile string              // Current batch's stats file path
+	progressReporter ProgressReporter    // Optional progress reporting
+	handMonitor      server.HandMonitor  // Optional server hand monitor
 }
 
-// NewOrchestrator creates a new orchestrator
-func NewOrchestrator(config *Config, healthMonitor *HealthMonitor) *Orchestrator {
-	return &Orchestrator{
+// OrchestratorOption configures an Orchestrator
+type OrchestratorOption func(*Orchestrator)
+
+// WithOrchestratorProgressReporter sets a progress reporter
+func WithOrchestratorProgressReporter(reporter ProgressReporter) OrchestratorOption {
+	return func(o *Orchestrator) {
+		o.progressReporter = reporter
+	}
+}
+
+// WithOrchestratorHandMonitor sets a hand monitor
+func WithOrchestratorHandMonitor(monitor server.HandMonitor) OrchestratorOption {
+	return func(o *Orchestrator) {
+		o.handMonitor = monitor
+	}
+}
+
+// NewOrchestrator creates a new orchestrator with options
+func NewOrchestrator(config *Config, healthMonitor *HealthMonitor, opts ...OrchestratorOption) *Orchestrator {
+	orchestrator := &Orchestrator{
 		config:        config,
 		healthMonitor: healthMonitor,
 		logger:        config.Logger,
 	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(orchestrator)
+	}
+
+	return orchestrator
+}
+
+// SetProgressReporter sets the progress reporter (used by Runner options)
+func (o *Orchestrator) SetProgressReporter(reporter ProgressReporter) {
+	o.progressReporter = reporter
+}
+
+// SetHandMonitor sets the hand monitor (used by Runner options)
+func (o *Orchestrator) SetHandMonitor(monitor server.HandMonitor) {
+	o.handMonitor = monitor
 }
 
 // ExecuteBatches runs multiple batches using the provided strategy
@@ -111,6 +154,12 @@ func (o *Orchestrator) ExecuteBatches(ctx context.Context, strategy BatchStrateg
 		batchConfig := strategy.ConfigureBatch(batchNum, seed)
 		batchConfig.Hands = batchHands // Override with actual hands for this batch
 
+		// Notify progress reporter of batch start
+		if o.progressReporter != nil {
+			totalBatches := (totalHands + o.config.BatchSize - 1) / o.config.BatchSize
+			o.progressReporter.OnBatchStart(batchNum+1, totalBatches, batchHands)
+		}
+
 		// Run the batch
 		batch, err := o.runSingleBatch(ctx, strategy, batchConfig)
 		if err != nil {
@@ -120,6 +169,13 @@ func (o *Orchestrator) ExecuteBatches(ctx context.Context, strategy BatchStrateg
 		allBatches = append(allBatches, *batch)
 		remainingHands -= batchHands
 		totalHandsCompleted += batchHands
+
+		// Notify progress reporter of batch completion
+		if o.progressReporter != nil {
+			o.progressReporter.OnBatchComplete(batchNum+1, totalHandsCompleted)
+			o.progressReporter.OnHandsProgress(totalHandsCompleted, totalHands)
+		}
+
 		batchNum++
 
 		// Check for early stopping
@@ -266,6 +322,13 @@ func (o *Orchestrator) startEmbeddedServer(ctx context.Context, serverConfig *Se
 
 	// Create embedded server
 	o.embeddedServer = server.NewServer(o.logger, rng, server.WithConfig(srvConfig))
+
+	// Set hand monitor if available
+	if o.handMonitor != nil {
+		if err := o.embeddedServer.SetHandMonitor(o.handMonitor); err != nil {
+			o.logger.Warn().Err(err).Msg("Failed to set hand monitor")
+		}
+	}
 
 	// Find a free port
 	listener, err := net.Listen("tcp", "localhost:0")

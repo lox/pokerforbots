@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/lox/pokerforbots/internal/server"
 )
 
 // Runner orchestrates regression tests
@@ -19,8 +21,25 @@ type Runner struct {
 	reporter      *Reporter
 }
 
-// NewRunner creates a new test runner
-func NewRunner(config *Config) *Runner {
+// RunnerOption configures a Runner
+type RunnerOption func(*Runner)
+
+// WithProgressReporter sets a progress reporter for batch progress
+func WithProgressReporter(reporter ProgressReporter) RunnerOption {
+	return func(r *Runner) {
+		r.orchestrator.SetProgressReporter(reporter)
+	}
+}
+
+// WithHandMonitor sets a hand monitor for real-time server progress
+func WithHandMonitor(monitor server.HandMonitor) RunnerOption {
+	return func(r *Runner) {
+		r.orchestrator.SetHandMonitor(monitor)
+	}
+}
+
+// NewRunner creates a new test runner with options
+func NewRunner(config *Config, opts ...RunnerOption) *Runner {
 	healthMonitor := NewHealthMonitor(
 		config.MaxCrashesPerBot,
 		config.MaxTimeoutsPerBot,
@@ -31,12 +50,19 @@ func NewRunner(config *Config) *Runner {
 	orchestrator := NewOrchestrator(config, healthMonitor)
 	reporter := NewReporter(nil, config.Logger, config)
 
-	return &Runner{
+	runner := &Runner{
 		config:        config,
 		healthMonitor: healthMonitor,
 		orchestrator:  orchestrator,
 		reporter:      reporter,
 	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(runner)
+	}
+
+	return runner
 }
 
 // ValidateBinaries validates all configured bot binaries
@@ -314,11 +340,33 @@ func (r *Runner) collectBinaries() []string {
 	return result
 }
 
+// printTestHeader prints a formatted header for the test
+func (r *Runner) printTestHeader(mode string, totalBots int) {
+	// We need to use fmt.Printf here for immediate output to the user
+	//nolint:forbidigo
+	fmt.Printf("\n%s\n", strings.Repeat("=", 60))
+	//nolint:forbidigo
+	fmt.Printf("Test Mode: %s\n", mode)
+	//nolint:forbidigo
+	fmt.Printf("Bots at table: %d\n", totalBots)
+	//nolint:forbidigo
+	fmt.Printf("Total hands: %d\n", r.config.HandsTotal)
+	//nolint:forbidigo
+	fmt.Printf("Batch size: %d\n", r.config.BatchSize)
+	//nolint:forbidigo
+	fmt.Printf("Number of batches: %d\n", (r.config.HandsTotal+r.config.BatchSize-1)/r.config.BatchSize)
+	//nolint:forbidigo
+	fmt.Printf("%s\n\n", strings.Repeat("=", 60))
+}
+
 // runHeadsUpTest runs a heads-up test between two bots
 func (r *Runner) runHeadsUpTest(ctx context.Context) (*TestResult, error) {
 	if r.config.Challenger == "" || r.config.Baseline == "" {
 		return nil, fmt.Errorf("heads-up mode requires challenger and baseline")
 	}
+
+	// Print test header
+	r.printTestHeader("Heads-Up", 2)
 
 	r.config.Logger.Info().
 		Str("mode", "heads-up").
@@ -343,6 +391,10 @@ func (r *Runner) runPopulationTest(ctx context.Context) (*TestResult, error) {
 	if r.config.BaselineSeats == 0 {
 		r.config.BaselineSeats = 4
 	}
+
+	// Print test header
+	totalBots := r.config.ChallengerSeats + r.config.BaselineSeats
+	r.printTestHeader(fmt.Sprintf("Population (%d challenger vs %d baseline)", r.config.ChallengerSeats, r.config.BaselineSeats), totalBots)
 
 	r.config.Logger.Info().
 		Str("mode", "population").
@@ -494,6 +546,29 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 			"random":     1,
 		}
 	}
+
+	// Count total NPCs
+	totalNPCs := 0
+	for _, count := range npcConfig {
+		totalNPCs += count
+	}
+
+	// Default bot seats if not specified
+	botSeats := r.config.ChallengerSeats
+	if botSeats == 0 {
+		botSeats = 1 // Default to 1 bot vs NPCs
+	}
+
+	// Print test header
+	totalBots := botSeats + totalNPCs
+	npcStr := ""
+	for npcType, count := range npcConfig {
+		if npcStr != "" {
+			npcStr += ", "
+		}
+		npcStr += fmt.Sprintf("%d %s", count, npcType)
+	}
+	r.printTestHeader(fmt.Sprintf("NPC Benchmark (%d bot vs %s NPCs)", botSeats, npcStr), totalBots)
 
 	r.config.Logger.Info().
 		Str("mode", "npc-benchmark").
@@ -694,6 +769,9 @@ func (r *Runner) runSelfPlayTest(ctx context.Context) (*TestResult, error) {
 	if bots == 0 {
 		bots = 6 // Default to 6-max
 	}
+
+	// Print test header
+	r.printTestHeader(fmt.Sprintf("Self-Play (%d identical bots)", bots), bots)
 
 	r.config.Logger.Info().
 		Str("mode", "self-play").

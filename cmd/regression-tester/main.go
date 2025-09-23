@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
@@ -58,6 +59,7 @@ type CLI struct {
 	OutputFile string `kong:"help='Output file path (default: stdout)'"`
 	Verbose    bool   `kong:"help='Enable verbose output'"`
 	Debug      bool   `kong:"help='Enable debug logging'"`
+	Quiet      bool   `kong:"help='Quiet mode - show progress dots instead of logs'"`
 
 	// Special commands
 	ValidateBinaries bool `kong:"help='Validate bot binaries and exit'"`
@@ -75,15 +77,25 @@ func main() {
 	)
 
 	// Configure logging
-	level := zerolog.InfoLevel
-	if cli.Debug {
-		level = zerolog.DebugLevel
+	var logger zerolog.Logger
+	if cli.Quiet {
+		// In quiet mode, disable most logging
+		logger = zerolog.New(zerolog.ConsoleWriter{Out: io.Discard}).
+			Level(zerolog.ErrorLevel).
+			With().
+			Timestamp().
+			Logger()
+	} else {
+		level := zerolog.InfoLevel
+		if cli.Debug {
+			level = zerolog.DebugLevel
+		}
+		logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
+			Level(level).
+			With().
+			Timestamp().
+			Logger()
 	}
-	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
-		Level(level).
-		With().
-		Timestamp().
-		Logger()
 
 	// Parse seeds
 	var seeds []int64
@@ -179,8 +191,21 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	// Create runner
-	runner := regression.NewRunner(config)
+	// Create runner with options
+	var opts []regression.RunnerOption
+	var simpleMonitor *SimpleProgressMonitor
+
+	if cli.Quiet {
+		// Calculate total batches
+		totalBatches := (cli.Hands + cli.BatchSize - 1) / cli.BatchSize
+
+		// Use simple unified progress monitor
+		simpleMonitor = NewSimpleProgressMonitor(totalBatches)
+		opts = append(opts, regression.WithHandMonitor(simpleMonitor))
+		opts = append(opts, regression.WithProgressReporter(simpleMonitor))
+	}
+
+	runner := regression.NewRunner(config, opts...)
 
 	// Handle special commands
 	if config.ValidateOnly {
@@ -204,5 +229,10 @@ func main() {
 	// Run the regression tests
 	if err := runner.Run(runCtx); err != nil {
 		ctx.Fatalf("Test failed: %v", err)
+	}
+
+	// Print final summary if in quiet mode
+	if simpleMonitor != nil {
+		simpleMonitor.PrintSummary(cli.Hands)
 	}
 }

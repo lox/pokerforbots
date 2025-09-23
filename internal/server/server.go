@@ -284,11 +284,54 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 // DefaultGameDone returns a channel that will be closed when the default game completes.
 // Returns nil if no default game exists.
+// Deprecated: Use SetHandMonitor for progress tracking instead
 func (s *Server) DefaultGameDone() <-chan struct{} {
 	if s.pool != nil {
 		return s.pool.Done()
 	}
 	return nil
+}
+
+// SetHandMonitor sets a monitor for the default game's hand progress.
+// Returns an error if no default game exists.
+func (s *Server) SetHandMonitor(monitor HandMonitor) error {
+	if s.pool == nil {
+		return fmt.Errorf("no default game pool")
+	}
+	s.pool.SetHandMonitor(monitor)
+	return nil
+}
+
+// WaitForCompletion returns a channel that closes when the game completes.
+// This is a convenience wrapper that uses HandMonitor internally.
+func (s *Server) WaitForCompletion() <-chan struct{} {
+	done := make(chan struct{})
+
+	monitor := &completionMonitor{
+		done: done,
+	}
+
+	if err := s.SetHandMonitor(monitor); err != nil {
+		// No default game, close immediately
+		close(done)
+		return done
+	}
+
+	return done
+}
+
+// completionMonitor is a simple HandMonitor that signals completion
+type completionMonitor struct {
+	done chan struct{}
+	once sync.Once
+}
+
+func (m *completionMonitor) OnHandComplete(handsCompleted uint64, handLimit uint64) {}
+func (m *completionMonitor) OnGameStart(handLimit uint64)                           {}
+func (m *completionMonitor) OnGameComplete(handsCompleted uint64, reason string) {
+	m.once.Do(func() {
+		close(m.done)
+	})
 }
 
 // handleWebSocket handles WebSocket connections from bots

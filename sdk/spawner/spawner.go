@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/lox/pokerforbots/internal/server"
 	"github.com/lox/pokerforbots/sdk/config"
 	"github.com/rs/zerolog"
 )
@@ -35,6 +35,29 @@ type BotSpec struct {
 	Count   int               // Number to spawn
 	GameID  string            // Target game (default: "default")
 	Env     map[string]string // Additional environment variables
+}
+
+// GameStats represents game statistics from the server.
+// This is a public DTO that doesn't leak internal types.
+type GameStats struct {
+	ID               string                        `json:"id"`
+	SmallBlind       int                           `json:"small_blind"`
+	BigBlind         int                           `json:"big_blind"`
+	StartChips       int                           `json:"start_chips"`
+	TimeoutMs        int                           `json:"timeout_ms"`
+	MinPlayers       int                           `json:"min_players"`
+	MaxPlayers       int                           `json:"max_players"`
+	InfiniteBankroll bool                          `json:"infinite_bankroll"`
+	HandsCompleted   uint64                        `json:"hands_completed"`
+	HandLimit        uint64                        `json:"hand_limit"`
+	HandsRemaining   uint64                        `json:"hands_remaining"`
+	Timeouts         uint64                        `json:"timeouts"`
+	HandsPerSecond   float64                       `json:"hands_per_second"`
+	StartTime        time.Time                     `json:"start_time"`
+	EndTime          time.Time                     `json:"end_time"`
+	BotStatistics    map[string]map[string]float64 `json:"bot_statistics"`
+	ActiveBots       int                           `json:"active_bots"`
+	TotalBots        int                           `json:"total_bots"`
 }
 
 // New creates a new BotSpawner.
@@ -116,6 +139,10 @@ func (s *BotSpawner) StopAll() error {
 
 	// Clear process map
 	s.processes = make(map[string]*Process)
+
+	// Create a new context for future spawns
+	s.ctx, s.cancel = context.WithCancel(context.Background())
+
 	return lastErr
 }
 
@@ -183,16 +210,13 @@ func (s *BotSpawner) SpawnBot(spec BotSpec) (*Process, error) {
 		return nil, fmt.Errorf("SpawnBot expects Count=1, got %d", spec.Count)
 	}
 
-	// Generate deterministic bot ID
-	botID := fmt.Sprintf("bot-%d", s.botSeq)
-	s.botSeq++
-
-	// Build environment
+	// Build environment (this already increments botSeq and sets bot ID)
 	env := s.buildEnv(spec, 0)
-	env[config.EnvBotID] = botID
+	botID := env[config.EnvBotID]
 
 	// Create and start the process
 	proc := NewProcess(s.ctx, spec.Command, spec.Args, env, s.logger)
+	proc.ID = botID // Set the process ID to match bot ID
 	if err := proc.Start(); err != nil {
 		return nil, fmt.Errorf("failed to start bot: %w", err)
 	}
@@ -219,7 +243,7 @@ func (s *BotSpawner) GetProcess(botID string) (*Process, bool) {
 }
 
 // CollectStats fetches game statistics from the server.
-func CollectStats(serverURL string, gameID string) (*server.GameStats, error) {
+func CollectStats(serverURL string, gameID string) (*GameStats, error) {
 	// Convert WebSocket URL to HTTP
 	httpURL := strings.Replace(serverURL, "ws://", "http://", 1)
 	httpURL = strings.Replace(httpURL, "wss://", "https://", 1)
@@ -242,7 +266,7 @@ func CollectStats(serverURL string, gameID string) (*server.GameStats, error) {
 		return nil, fmt.Errorf("failed to read stats response: %w", err)
 	}
 
-	var stats server.GameStats
+	var stats GameStats
 	if err := json.Unmarshal(data, &stats); err != nil {
 		return nil, fmt.Errorf("failed to parse stats: %w", err)
 	}

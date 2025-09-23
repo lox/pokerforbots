@@ -27,15 +27,20 @@ A regression testing framework for comparing poker bot performance across versio
 4. **Report Generator**: Produces JSON and human-readable summaries with effect sizes
 5. **Statistical Analyzer**: Calculates confidence intervals, p-values, and effect sizes
 
-### Key Design Decision: Server-Managed Bots
+### Key Design Decision: Embedded Server with SDK Spawner
 
-The regression tester delegates all bot management to the server via `--bot-cmd` flags. This provides:
-- **Automatic bot output with prefixes**: `[player#1 bot-name]` for clear identification
-- **Server-managed lifecycle**: Server spawns bots, monitors health, and ensures clean shutdown
-- **Built-in crash handling**: Server already handles bot disconnections gracefully
-- **Simplified architecture**: Regression tester focuses only on statistical analysis
+**As Implemented**: The regression tester uses an embedded server with the SDK spawner for better performance and control:
+- **Embedded server**: Avoids subprocess overhead, direct access to stats
+- **SDK spawner**: Manages bot processes via `sdk/spawner` package
+- **Direct statistics**: No need to parse server output, access via API
+- **Better control**: Can set hand monitors and progress reporters directly
 
-Future enhancements to bot management (crash detection, restart policies, health monitoring) should be implemented in the server itself, keeping the regression tester minimal and focused.
+**Trade-offs**:
+- Shared address space (less isolation but better performance)
+- Direct coupling to server internals (but simpler integration)
+- Can still fall back to subprocess mode via `--server-cmd` if needed
+
+This architectural change from the original plan provides significant performance benefits while maintaining clean separation through the SDK API.
 
 ## Test Modes
 
@@ -377,9 +382,13 @@ type TestConfig struct {
 - [x] **Weighted averaging** - Properly uses actual completed hands for statistics
 - [x] **Multi-seat aggregation** - Correctly combines stats from multiple bot instances
 - [x] Automatic sample size warnings when needed
-- [ ] Proper confidence interval calculations (using placeholder 95% CI)
-- [ ] Effect size calculations (using placeholder Cohen's d)
-- [ ] Result archiving in `snapshots/regression-*.json`
+- [x] Test configuration headers - Shows mode, bots, hands, batches
+- [x] Quiet progress mode - Dots instead of verbose logging
+- [ ] **Proper confidence interval calculations** (currently using placeholder ±10 BB/100)
+- [ ] **Effect size calculations** (currently using placeholder Cohen's d)
+- [ ] **P-value calculations** (currently using hard-coded values)
+- [ ] **Result archiving** in `snapshots/regression-*.json`
+- [ ] **Health metrics tracking** (crashes, timeouts currently zeroed)
 
 ### Phase 5: Advanced Features (Future)
 - [ ] Mirror mode support (when server implements it)

@@ -144,7 +144,8 @@ tasks:
           --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
           --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
           --hands {{.HANDS | default "50000"}} \
-          --output {{.OUTPUT | default "summary"}}
+          --output {{.OUTPUT | default "summary"}} \
+          {{if ne .VERBOSE "true"}}--quiet{{end}}
 
   regression:population:
     desc: Run population regression test
@@ -154,7 +155,8 @@ tasks:
           --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
           --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
           --hands {{.HANDS | default "50000"}} \
-          --output {{.OUTPUT | default "summary"}}
+          --output {{.OUTPUT | default "summary"}} \
+          {{if ne .VERBOSE "true"}}--quiet{{end}}
 
   regression:npc:
     desc: Run NPC benchmark regression test
@@ -164,7 +166,8 @@ tasks:
           --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
           --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
           --hands {{.HANDS | default "50000"}} \
-          --output {{.OUTPUT | default "summary"}}
+          --output {{.OUTPUT | default "summary"}} \
+          {{if ne .VERBOSE "true"}}--quiet{{end}}
 
   regression:self-play:
     desc: Run self-play regression test
@@ -174,7 +177,8 @@ tasks:
           --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
           --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
           --hands {{.HANDS | default "50000"}} \
-          --output {{.OUTPUT | default "summary"}}
+          --output {{.OUTPUT | default "summary"}} \
+          {{if ne .VERBOSE "true"}}--quiet{{end}}
 
   regression:all:
     desc: Run all regression test modes sequentially

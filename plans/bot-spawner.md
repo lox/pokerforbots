@@ -46,14 +46,18 @@ After analysis with Codex, we've refined the approach to be **evolutionary rathe
 2. **Simplify server** to focus on core poker game logic
 3. **Move complex orchestration** to external tools
 
-### Core Design
+### Core Design (As Implemented)
 
 ```go
-// internal/spawner/spawner.go
+// sdk/spawner/spawner.go (moved to SDK as public API)
 type BotSpawner struct {
     serverURL string
     processes map[string]*Process  // All bots are external processes
     logger    zerolog.Logger
+    ctx       context.Context      // Recreated after StopAll for reuse
+    cancel    context.CancelFunc
+    seed      int64                // Base seed for deterministic testing
+    botSeq    int                  // Bot sequence counter (starts at 1)
 }
 
 type BotSpec struct {
@@ -64,13 +68,20 @@ type BotSpec struct {
     Env      map[string]string // Additional environment variables
 }
 
-// Simple, focused API
+// Simple, focused API (as implemented)
 func New(serverURL string, logger zerolog.Logger) *BotSpawner
-func (s *BotSpawner) Spawn(spec BotSpec) error
-func (s *BotSpawner) SpawnMany(specs []BotSpec) error
+func (s *BotSpawner) Spawn(specs ...BotSpec) error  // Variadic instead of separate SpawnMany
+func (s *BotSpawner) SpawnBot(spec BotSpec) (*Process, error)  // For individual tracking
 func (s *BotSpawner) StopAll() error
 func (s *BotSpawner) Wait() error
+func CollectStats(serverURL string, gameID string) (*GameStats, error)  // Public DTO
 ```
+
+**Key Implementation Decisions:**
+- Single variadic `Spawn(...BotSpec)` instead of separate `SpawnMany`
+- Context recreated after `StopAll()` to enable reuse
+- Bot IDs start at 1 (bot-1, bot-2, etc.) not 0
+- No `SpawnServer` wrapper - use embedded server or exec.Command
 
 ### Strategy Bots (External)
 
@@ -112,9 +123,12 @@ No built-in strategies needed - they're all just external processes!
 ### Phase 5: Library Functions ✅
 - [x] Export spawner functions for regression tester to use
 - [x] Add SpawnBot() for individual bot tracking
-- [x] Add SpawnServer() for subprocess server mode
-- [x] Add WaitForServer() and CollectStats() helpers
+- [x] ~~Add SpawnServer() for subprocess server mode~~ Not implemented - use embedded server or exec.Command directly
+- [x] ~~Add WaitForServer()~~ Use server.WaitForCompletion() from internal/server
+- [x] Add CollectStats() helper (returns public GameStats DTO)
 - [x] Comprehensive tests for all new functionality
+
+**Design Decision**: Simplified API by not wrapping server spawning. The internal/server API is simple enough to use directly.
 
 ### Phase 6: Regression Tester Integration ✅
 - [x] Update regression tester to use spawner package as library
