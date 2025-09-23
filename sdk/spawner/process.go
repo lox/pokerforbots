@@ -191,8 +191,13 @@ func (p *Process) monitor() {
 	p.mu.Unlock()
 
 	if err != nil {
-		// Check if this was a signal termination (expected during shutdown)
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		// Check for context cancellation (normal during shutdown)
+		if err.Error() == "context canceled" {
+			p.logger.Info().
+				Dur("duration", time.Since(p.startTime)).
+				Msg("Process stopped due to context cancellation")
+		} else if exitErr, ok := err.(*exec.ExitError); ok {
+			// Check if this was a signal termination (expected during shutdown)
 			if exitErr.String() == "signal: killed" || exitErr.String() == "signal: terminated" || exitErr.String() == "signal: interrupt" {
 				// Expected during shutdown, log as info not error
 				p.logger.Info().

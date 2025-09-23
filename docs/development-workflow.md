@@ -209,13 +209,184 @@ The spawner automatically sets these for your bot:
 - `POKERFORBOTS_BOT_ID` - Unique identifier
 - `POKERFORBOTS_GAME` - Target game (default: "default")
 
+## Regression Testing
+
+The regression tester compares bot performance across versions to detect improvements or regressions.
+
+### Quick Start
+
+```bash
+# Fastest check - heads-up test with 1000 hands (default)
+task regression:heads-up
+
+# With more hands for higher confidence
+task regression:heads-up HANDS=5000
+
+# Compare two specific bots
+task regression:heads-up \
+  CHALLENGER="go run ./sdk/examples/complex" \
+  BASELINE="go run ./sdk/examples/calling-station" \
+  HANDS=10000
+```
+
+### Test Modes
+
+#### Heads-Up Mode
+Direct 1v1 comparison between two bot versions:
+```bash
+task regression:heads-up HANDS=5000
+```
+- **Purpose**: Isolate performance difference
+- **Setup**: 2 seats, challenger vs baseline
+- **Key Metric**: BB/100 win rate difference
+
+#### Population Mode
+Test challenger bots against a field of baseline bots:
+```bash
+task regression:population HANDS=10000
+```
+- **Purpose**: Test performance in multi-way pots
+- **Setup**: 6 seats with configurable mix
+- **Metrics**: BB/100, VPIP, PFR, aggression
+
+#### NPC Benchmark Mode
+Compare bots against fixed-strategy NPCs:
+```bash
+task regression:npc HANDS=10000
+```
+- **Purpose**: Detect regression against exploitable strategies
+- **Expected Performance**:
+  - vs Calling: +25 to +35 BB/100
+  - vs Random: +15 to +25 BB/100
+  - vs Aggressive: +5 to +15 BB/100
+
+#### Self-Play Mode
+Baseline variance measurement with identical bots:
+```bash
+task regression:self-play HANDS=2500
+```
+- **Purpose**: Establish variance baseline
+- **Expected**: Near 0 BB/100 (zero-sum)
+
+#### Run All Modes
+Comprehensive testing with multiple comparison correction:
+```bash
+# Quick test all modes (5000 hands each)
+task regression:all HANDS=5000
+
+# Or with custom bots
+task regression:all \
+  CHALLENGER="./my-bot" \
+  BASELINE="go run ./sdk/examples/complex" \
+  HANDS=10000
+```
+
+### Advanced Usage
+
+#### Custom Regression Test
+```bash
+go run ./cmd/regression-tester \
+  --mode heads-up \
+  --challenger "./my-improved-bot" \
+  --baseline "./my-old-bot" \
+  --hands 50000 \
+  --batch-size 10000 \
+  --seeds "42,123,456,789,999" \
+  --significance-level 0.05 \
+  --output both \
+  --output-file results.json
+```
+
+#### Batching for Variance Control
+```bash
+go run ./cmd/regression-tester \
+  --mode population \
+  --challenger "go run ./sdk/examples/complex" \
+  --baseline "go run ./sdk/examples/aggressive" \
+  --batch-size 1000 \
+  --hands 10000 \
+  --starting-chips 1000 \
+  --seeds "42,123,456,789,1337"
+```
+
+### Understanding Results
+
+#### Sample Output
+```
+Regression Test Report
+======================
+Challenger: complex-v2
+Baseline: complex-v1
+Mode: heads-up
+Hands: 10000
+Duration: 15.2s
+
+Results
+-------
+Challenger: +9.7 BB/100 [95% CI: +5.2 to +14.2]
+  VPIP: 15.2%, PFR: 12.8%, Busts: 0.0%
+Baseline: -9.7 BB/100 [95% CI: -14.2 to -5.2]
+  VPIP: 14.8%, PFR: 11.9%, Busts: 0.0%
+Effect Size: 0.42 (medium)
+P-Value: 0.003
+Hands/sec: 657
+
+Verdict: IMPROVEMENT (95% confidence)
+```
+
+#### Key Metrics
+- **BB/100**: Big blinds won/lost per 100 hands
+- **VPIP**: Voluntarily put money in pot %
+- **PFR**: Pre-flop raise %
+- **Effect Size**: Magnitude of difference (>0.2 = meaningful)
+- **P-Value**: Statistical significance (<0.05 = significant)
+
+#### Sample Size Warnings
+- **< 5,000 hands**: ⚠️ Results may be unreliable
+- **5,000-10,000 hands**: May need more for small effects
+- **10,000+ hands**: Generally sufficient
+
+### CI/CD Integration
+
+```yaml
+# .github/workflows/regression.yml
+- name: Run regression tests
+  run: |
+    task regression:npc \
+      CHALLENGER="./dist/bot-${{ github.sha }}" \
+      BASELINE="./dist/bot-stable" \
+      HANDS=50000
+```
+
+### Snapshot Testing Workflow
+
+```bash
+#!/bin/bash
+# Create snapshot of current bot
+VERSION=$(git rev-parse --short HEAD)
+go build -o snapshots/complex-$VERSION ./sdk/examples/complex
+
+# Test against previous snapshot
+task regression:heads-up \
+  CHALLENGER="snapshots/complex-$VERSION" \
+  BASELINE="snapshots/complex-previous" \
+  HANDS=50000
+
+# If improvement confirmed, update latest
+ln -sf complex-$VERSION snapshots/complex-latest
+```
+
 ## Troubleshooting
 
 ```bash
 # Kill stuck processes
 pkill -f "task server"
 pkill -f "sdk/examples/complex"
+pkill -f "regression-tester"
 
 # Check if server is running
 lsof -i :8080
+
+# Clean up temporary stats files
+rm stats-*.json
 ```

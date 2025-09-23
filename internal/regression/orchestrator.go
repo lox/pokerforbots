@@ -276,7 +276,9 @@ func (o *Orchestrator) startEmbeddedServer(ctx context.Context, serverConfig *Se
 
 	// Start server in background
 	go func() {
-		if err := o.embeddedServer.Serve(listener); err != nil {
+		err := o.embeddedServer.Serve(listener)
+		// Only log actual errors, not normal shutdown
+		if err != nil && err != http.ErrServerClosed {
 			o.logger.Error().Err(err).Msg("Server stopped with error")
 		}
 	}()
