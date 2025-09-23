@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,7 +15,6 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
-	"github.com/lox/pokerforbots/internal/server"
 	"github.com/lox/pokerforbots/sdk/spawner"
 	"github.com/rs/zerolog"
 )
@@ -78,28 +75,36 @@ func main() {
 		cancel()
 	}()
 
-	// Start embedded server
-	srv, listener, err := startServer(logger)
-	if err != nil {
-		logger.Fatal().Err(err).Msg("Failed to start server")
+	// Configure and start embedded server with spawner
+	seed := cli.Seed
+	if seed == 0 {
+		seed = time.Now().UnixNano()
 	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		srv.Shutdown(shutdownCtx)
-	}()
 
-	// Get WebSocket URL
-	serverURL := fmt.Sprintf("ws://%s/ws", listener.Addr())
-	logger.Info().Str("url", serverURL).Msg("Server started")
+	serverCfg := spawner.EmbeddedServerConfig{
+		Addr:          cli.Addr,
+		SmallBlind:    cli.SmallBlind,
+		BigBlind:      cli.BigBlind,
+		StartChips:    cli.StartChips,
+		Timeout:       time.Duration(cli.TimeoutMs) * time.Millisecond,
+		MinPlayers:    2,
+		MaxPlayers:    9,
+		Seed:          seed,
+		HandLimit:     uint64(cli.HandLimit),
+		EnableStats:   cli.WriteStats != "" || cli.PrintStats,
+		MaxStatsHands: 10000,
+	}
 
-	// Create spawner
-	var sp *spawner.BotSpawner
+	// Start embedded server with integrated spawner
+	embedded, wsURL, err := spawner.StartEmbeddedServer(serverCfg, logger)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("Failed to start embedded server")
+	}
+	defer embedded.Shutdown()
+
+	logger.Info().Str("url", wsURL).Msg("Server started")
 	if cli.Seed != 0 {
-		sp = spawner.NewWithSeed(serverURL, logger, cli.Seed)
 		logger.Info().Int64("seed", cli.Seed).Msg("Using deterministic seed")
-	} else {
-		sp = spawner.New(serverURL, logger)
 	}
 
 	// Parse bot specifications
@@ -127,78 +132,27 @@ func main() {
 
 	logger.Info().Str("spec", cli.Spec).Int("additional", len(cli.BotCmd)).Msg("Spawning bots")
 
-	// Spawn bots
-	if err := sp.Spawn(specs...); err != nil {
+	// Spawn bots using embedded server's spawner
+	if err := embedded.Spawner.Spawn(specs...); err != nil {
 		logger.Fatal().Err(err).Msg("Failed to spawn bots")
 	}
-	defer sp.StopAll()
 
-	logger.Info().Int("count", sp.ActiveCount()).Msg("Bots spawned")
+	logger.Info().Int("count", embedded.Spawner.ActiveCount()).Msg("Bots spawned")
 
 	// Wait for context cancellation or hand limit
 	select {
 	case <-ctx.Done():
-	case <-srv.DefaultGameDone():
+	case <-embedded.Server.DefaultGameDone():
 		logger.Info().Msg("Hand limit reached")
 	}
 
 	// Write stats if requested
 	if cli.WriteStats != "" || cli.PrintStats {
-		handleStatsOutput(listener.Addr().String(), cli.WriteStats, cli.PrintStats, logger)
+		handleStatsOutput(embedded.Listener.Addr().String(), cli.WriteStats, cli.PrintStats, logger)
 	}
 
 	// Stop bots (will be done by defer)
 	logger.Info().Msg("Stopping bots...")
-}
-
-func startServer(logger zerolog.Logger) (*server.Server, net.Listener, error) {
-	// Create server configuration
-	seed := cli.Seed
-	if seed == 0 {
-		seed = time.Now().UnixNano()
-	}
-	rng := rand.New(rand.NewSource(seed))
-
-	config := server.Config{
-		SmallBlind:    cli.SmallBlind,
-		BigBlind:      cli.BigBlind,
-		StartChips:    cli.StartChips,
-		Timeout:       time.Duration(cli.TimeoutMs) * time.Millisecond,
-		MinPlayers:    2,
-		MaxPlayers:    9,
-		Seed:          seed,
-		HandLimit:     uint64(cli.HandLimit),
-		EnableStats:   cli.WriteStats != "" || cli.PrintStats,
-		MaxStatsHands: 10000, // Default for regression testing
-	}
-
-	// Create server
-	srv := server.NewServer(logger, rng, server.WithConfig(config))
-
-	// Create listener
-	listener, err := net.Listen("tcp", cli.Addr)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create listener: %w", err)
-	}
-
-	// Start server in background
-	serverErr := make(chan error, 1)
-	go func() {
-		serverErr <- srv.Serve(listener)
-	}()
-
-	// Wait for server to be ready
-	baseURL := fmt.Sprintf("http://%s", listener.Addr())
-	for range 50 {
-		resp, err := http.Get(baseURL + "/health")
-		if err == nil && resp.StatusCode == http.StatusOK {
-			resp.Body.Close()
-			return srv, listener, nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	return nil, nil, fmt.Errorf("server failed to start")
 }
 
 // parseSpecString parses a specification string like "calling-station:2,random:1,aggressive:3"
