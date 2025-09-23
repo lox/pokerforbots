@@ -4,6 +4,18 @@ Quick guide for testing and improving poker bots.
 
 For detailed spawner documentation and API reference, see [spawner.md](spawner.md).
 
+## SDK Overview
+
+PokerForBots provides an SDK with reusable components for bot development:
+
+- **`sdk/spawner`** - Bot process management (public API)
+- **`sdk/config`** - Environment variable configuration
+- **`sdk/client`** - WebSocket client for connections
+- **`sdk/analysis`** - Hand analysis utilities
+- **`sdk/classification`** - Card classification
+
+Example bots in `sdk/examples/` demonstrate SDK usage.
+
 ## Prerequisites
 
 Uses CashApp's Hermit: `source bin/activate-hermit` or call things directly from bin.
@@ -154,6 +166,48 @@ jq '.players[] | select(.role == "player") | .detailed_stats.position_stats' las
 - **Showdown Win Rate**: % won at showdown (target: 50-60%)
 - **Position Stats**: Button should be most profitable
 - **Street Stats**: Track where hands end (avoid playing every hand to showdown)
+
+## Creating Custom Bots
+
+### Using the SDK
+
+Create a new bot using the SDK packages:
+
+```go
+package main
+
+import (
+    "github.com/lox/pokerforbots/sdk/client"
+    "github.com/lox/pokerforbots/sdk/config"
+    "github.com/lox/pokerforbots/protocol"
+)
+
+type MyBot struct{}
+
+func (MyBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
+    // Your strategy logic here
+    return "call", 0, nil
+}
+
+func main() {
+    // Parse environment configuration
+    cfg, _ := config.FromEnv()
+
+    // Create and run bot
+    bot := client.New("my-bot", MyBot{}, logger)
+    bot.Connect(cfg.ServerURL)
+    bot.Run(context.Background())
+}
+```
+
+### Environment Variables
+
+The spawner automatically sets these for your bot:
+
+- `POKERFORBOTS_SERVER` - WebSocket URL
+- `POKERFORBOTS_SEED` - Random seed for deterministic behavior
+- `POKERFORBOTS_BOT_ID` - Unique identifier
+- `POKERFORBOTS_GAME` - Target game (default: "default")
 
 ## Troubleshooting
 

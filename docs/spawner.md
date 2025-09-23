@@ -11,6 +11,27 @@ The spawner consists of:
 3. **Spawner Tool** (`cmd/spawner`) - Standalone orchestrator with embedded server
 4. **Integration Points** - Used by regression tester and other tools
 
+## SDK Packages
+
+The spawner is part of the PokerForBots SDK, providing public APIs for bot development:
+
+### Available SDK Packages
+
+- **`sdk/spawner`** - Process management for bot spawning
+- **`sdk/config`** - Environment variable configuration for bots
+- **`sdk/client`** - WebSocket client for bot connections
+- **`sdk/analysis`** - Hand analysis utilities
+- **`sdk/classification`** - Card and hand classification
+
+### Import in Your Code
+
+```go
+import (
+    "github.com/lox/pokerforbots/sdk/spawner"
+    "github.com/lox/pokerforbots/sdk/config"
+)
+```
+
 ## Using the Spawner Tool
 
 ### Basic Usage
