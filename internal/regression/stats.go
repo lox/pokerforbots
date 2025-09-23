@@ -29,8 +29,10 @@ func AggregateHeadsUpStats(stats *server.GameStats) (map[string]float64, error) 
 		results["challenger_bb_per_100"] = challenger.DetailedStats.BB100
 		results["challenger_vpip"] = challenger.DetailedStats.VPIP
 		results["challenger_pfr"] = challenger.DetailedStats.PFR
-		results["challenger_timeouts"] = float64(challenger.DetailedStats.Timeouts)
-		results["challenger_busts"] = float64(challenger.DetailedStats.Busts)
+		if challenger.Hands > 0 {
+			results["challenger_timeouts"] = float64(challenger.DetailedStats.Timeouts) / float64(challenger.Hands)
+			results["challenger_busts"] = float64(challenger.DetailedStats.Busts) / float64(challenger.Hands)
+		}
 		results["challenger_std_dev"] = challenger.DetailedStats.StdDev
 	} else if challenger.Hands > 0 && stats.BigBlind > 0 {
 		// Calculate BB/100 from basic stats if detailed stats not available
@@ -44,8 +46,10 @@ func AggregateHeadsUpStats(stats *server.GameStats) (map[string]float64, error) 
 		results["baseline_bb_per_100"] = baseline.DetailedStats.BB100
 		results["baseline_vpip"] = baseline.DetailedStats.VPIP
 		results["baseline_pfr"] = baseline.DetailedStats.PFR
-		results["baseline_timeouts"] = float64(baseline.DetailedStats.Timeouts)
-		results["baseline_busts"] = float64(baseline.DetailedStats.Busts)
+		if baseline.Hands > 0 {
+			results["baseline_timeouts"] = float64(baseline.DetailedStats.Timeouts) / float64(baseline.Hands)
+			results["baseline_busts"] = float64(baseline.DetailedStats.Busts) / float64(baseline.Hands)
+		}
 		results["baseline_std_dev"] = baseline.DetailedStats.StdDev
 	} else if baseline.Hands > 0 && stats.BigBlind > 0 {
 		// Calculate BB/100 from basic stats if detailed stats not available
@@ -62,39 +66,49 @@ func AggregatePopulationStats(stats *server.GameStats, challengerSeats, baseline
 	// Aggregate stats for challenger bots (first N seats)
 	var challengerNetChips int64
 	var challengerHands int
-	var challengerVPIP, challengerPFR float64
+	var challengerVPIPWeighted, challengerPFRWeighted float64
 	var challengerTimeouts, challengerBusts int
-	challengerCount := 0
+	var challengerStdDevs []float64
+	var challengerStdWeights []float64
 
 	// Aggregate stats for baseline bots (next M seats)
 	var baselineNetChips int64
 	var baselineHands int
-	var baselineVPIP, baselinePFR float64
+	var baselineVPIPWeighted, baselinePFRWeighted float64
 	var baselineTimeouts, baselineBusts int
-	baselineCount := 0
+	var baselineStdDevs []float64
+	var baselineStdWeights []float64
 
 	for i, player := range stats.Players {
 		if i < challengerSeats {
 			// Challenger bot
 			challengerNetChips += player.NetChips
 			challengerHands += player.Hands
-			challengerCount++
 			if player.DetailedStats != nil {
-				challengerVPIP += player.DetailedStats.VPIP
-				challengerPFR += player.DetailedStats.PFR
+				hands := float64(player.Hands)
+				challengerVPIPWeighted += player.DetailedStats.VPIP * hands
+				challengerPFRWeighted += player.DetailedStats.PFR * hands
 				challengerTimeouts += player.DetailedStats.Timeouts
 				challengerBusts += player.DetailedStats.Busts
+				if player.Hands > 1 && player.DetailedStats.StdDev > 0 {
+					challengerStdDevs = append(challengerStdDevs, player.DetailedStats.StdDev)
+					challengerStdWeights = append(challengerStdWeights, hands)
+				}
 			}
 		} else if i < challengerSeats+baselineSeats {
 			// Baseline bot
 			baselineNetChips += player.NetChips
 			baselineHands += player.Hands
-			baselineCount++
 			if player.DetailedStats != nil {
-				baselineVPIP += player.DetailedStats.VPIP
-				baselinePFR += player.DetailedStats.PFR
+				hands := float64(player.Hands)
+				baselineVPIPWeighted += player.DetailedStats.VPIP * hands
+				baselinePFRWeighted += player.DetailedStats.PFR * hands
 				baselineTimeouts += player.DetailedStats.Timeouts
 				baselineBusts += player.DetailedStats.Busts
+				if player.Hands > 1 && player.DetailedStats.StdDev > 0 {
+					baselineStdDevs = append(baselineStdDevs, player.DetailedStats.StdDev)
+					baselineStdWeights = append(baselineStdWeights, hands)
+				}
 			}
 		}
 	}
@@ -109,17 +123,24 @@ func AggregatePopulationStats(stats *server.GameStats, challengerSeats, baseline
 	}
 
 	// Average the strategy metrics
-	if challengerCount > 0 {
-		results["challenger_vpip"] = challengerVPIP / float64(challengerCount)
-		results["challenger_pfr"] = challengerPFR / float64(challengerCount)
-		results["challenger_timeouts"] = float64(challengerTimeouts) / float64(challengerCount)
-		results["challenger_busts"] = float64(challengerBusts) / float64(challengerCount)
+	if challengerHands > 0 {
+		results["challenger_vpip"] = challengerVPIPWeighted / float64(challengerHands)
+		results["challenger_pfr"] = challengerPFRWeighted / float64(challengerHands)
+		results["challenger_timeouts"] = float64(challengerTimeouts) / float64(challengerHands)
+		results["challenger_busts"] = float64(challengerBusts) / float64(challengerHands)
 	}
-	if baselineCount > 0 {
-		results["baseline_vpip"] = baselineVPIP / float64(baselineCount)
-		results["baseline_pfr"] = baselinePFR / float64(baselineCount)
-		results["baseline_timeouts"] = float64(baselineTimeouts) / float64(baselineCount)
-		results["baseline_busts"] = float64(baselineBusts) / float64(baselineCount)
+	if baselineHands > 0 {
+		results["baseline_vpip"] = baselineVPIPWeighted / float64(baselineHands)
+		results["baseline_pfr"] = baselinePFRWeighted / float64(baselineHands)
+		results["baseline_timeouts"] = float64(baselineTimeouts) / float64(baselineHands)
+		results["baseline_busts"] = float64(baselineBusts) / float64(baselineHands)
+	}
+
+	if len(challengerStdDevs) > 0 {
+		results["challenger_std_dev"] = calculatePooledStdDevWeighted(challengerStdDevs, challengerStdWeights)
+	}
+	if len(baselineStdDevs) > 0 {
+		results["baseline_std_dev"] = calculatePooledStdDevWeighted(baselineStdDevs, baselineStdWeights)
 	}
 
 	// Store hands for weighting in batch aggregation
@@ -142,9 +163,10 @@ func AggregateNPCStats(stats *server.GameStats, isChallenger bool) map[string]fl
 	// Aggregate all non-NPC bot stats
 	var totalNetChips int64
 	var totalHands int
-	var totalVPIP, totalPFR float64
+	var totalVPIPWeighted, totalPFRWeighted float64
 	var totalTimeouts, totalBusts int
-	botCount := 0
+	var stdDevs []float64
+	var stdWeights []float64
 
 	for _, player := range stats.Players {
 		if strings.HasPrefix(player.DisplayName, "npc-") {
@@ -153,14 +175,18 @@ func AggregateNPCStats(stats *server.GameStats, isChallenger bool) map[string]fl
 		// This is one of our test bot instances
 		totalNetChips += player.NetChips
 		totalHands += player.Hands
-		botCount++
 
 		// Aggregate detailed stats if available
 		if player.DetailedStats != nil {
-			totalVPIP += player.DetailedStats.VPIP
-			totalPFR += player.DetailedStats.PFR
+			hands := float64(player.Hands)
+			totalVPIPWeighted += player.DetailedStats.VPIP * hands
+			totalPFRWeighted += player.DetailedStats.PFR * hands
 			totalTimeouts += player.DetailedStats.Timeouts
 			totalBusts += player.DetailedStats.Busts
+			if player.Hands > 1 && player.DetailedStats.StdDev > 0 {
+				stdDevs = append(stdDevs, player.DetailedStats.StdDev)
+				stdWeights = append(stdWeights, hands)
+			}
 		}
 	}
 
@@ -171,15 +197,19 @@ func AggregateNPCStats(stats *server.GameStats, isChallenger bool) map[string]fl
 	}
 
 	// Average the strategy metrics
-	if botCount > 0 {
-		results[prefix+"_vpip"] = totalVPIP / float64(botCount)
-		results[prefix+"_pfr"] = totalPFR / float64(botCount)
-		results[prefix+"_timeouts"] = float64(totalTimeouts) / float64(botCount)
-		results[prefix+"_busts"] = float64(totalBusts) / float64(botCount)
+	if totalHands > 0 {
+		results[prefix+"_vpip"] = totalVPIPWeighted / float64(totalHands)
+		results[prefix+"_pfr"] = totalPFRWeighted / float64(totalHands)
+		results[prefix+"_timeouts"] = float64(totalTimeouts) / float64(totalHands)
+		results[prefix+"_busts"] = float64(totalBusts) / float64(totalHands)
 	}
 
 	// Store hands for weighting
 	results[prefix+"_hands"] = float64(totalHands)
+
+	if len(stdDevs) > 0 {
+		results[prefix+"_std_dev"] = calculatePooledStdDevWeighted(stdDevs, stdWeights)
+	}
 
 	return results
 }
@@ -251,18 +281,12 @@ func WeightedBB100(batches []BatchResult, metricKey string, handsKey string) (bb
 	var totalChips float64
 
 	for _, batch := range batches {
-		// Get actual hands for this batch
-		actualHands := batch.Hands
-		if handsFromStats, exists := batch.Results[handsKey]; exists {
-			actualHands = int(handsFromStats)
-		}
-
 		// Get BB/100 for this batch and convert to total chips
 		if bb100Val, exists := batch.Results[metricKey]; exists {
+			actualHands := ExtractActualHands(batch, handsKey)
 			totalChips += (bb100Val / 100.0) * float64(actualHands)
+			totalHands += actualHands
 		}
-
-		totalHands += actualHands
 	}
 
 	// Calculate weighted average BB/100

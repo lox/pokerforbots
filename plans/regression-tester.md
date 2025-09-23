@@ -384,11 +384,12 @@ type TestConfig struct {
 - [x] Automatic sample size warnings when needed
 - [x] Test configuration headers - Shows mode, bots, hands, batches
 - [x] Quiet progress mode - Dots instead of verbose logging
-- [ ] **Proper confidence interval calculations** (currently using placeholder ±10 BB/100)
-- [ ] **Effect size calculations** (currently using placeholder Cohen's d)
-- [ ] **P-value calculations** (currently using hard-coded values)
+- [x] Configurable std-dev clamping with optional warnings
+- [x] **Proper confidence interval calculations** (currently using placeholder ±10 BB/100)
+- [x] **Effect size calculations** (currently using placeholder Cohen's d)
+- [x] **P-value calculations** (currently using hard-coded values)
 - [ ] **Result archiving** in `snapshots/regression-*.json`
-- [ ] **Health metrics tracking** (crashes, timeouts currently zeroed)
+- [x] **Health metrics tracking** (crashes, timeouts currently zeroed)
 
 ### Phase 5: Advanced Features (Future)
 - [ ] Mirror mode support (when server implements it)
@@ -400,8 +401,8 @@ type TestConfig struct {
 ### Next Steps
 
 **Immediate (Phase 4 - Statistics):**
-1. **Statistical Rigor**: Replace placeholder confidence intervals and effect size calculations with proper statistics
-2. **Result Archiving**: Save results to `snapshots/regression-*.json` for trend analysis
+1. **Result Archiving**: Save results to `snapshots/regression-*.json` for trend analysis
+2. **Historical Comparison Hooks**: Decide how archived results will be indexed for future trend analysis
 
 **Future (Phase 5):**
 1. **Split runner.go**: Separate concerns into focused files for maintainability
@@ -428,7 +429,6 @@ type TestConfig struct {
 - **Multi-seat aggregation**: Properly combines stats from multiple bot instances
 
 ### Known Limitations
-- **Statistical calculations**: Using placeholder confidence intervals and effect sizes
 - **Result archiving**: Not yet saving results to snapshots/ directory
 
 ### Example Output

@@ -25,11 +25,18 @@ func RunHeadsUpTest(ctx context.Context, config *Config, orchestrator *Orchestra
 		return nil, fmt.Errorf("failed to execute batches: %w", err)
 	}
 
+	// Calculate proper statistics
+	challengerStats := CalculateStatistics(batches, "challenger_bb_per_100", "challenger_hands")
+	baselineStats := CalculateStatistics(batches, "baseline_bb_per_100", "baseline_hands")
+
+	// Perform statistical comparison
+	comparison := CompareStatistics(challengerStats, baselineStats)
+
 	// Aggregate results
-	aggregate := aggregateHeadsUpResults(batches)
+	aggregate := aggregateHeadsUpResults(batches, challengerStats, baselineStats, comparison)
 
 	// Calculate verdict
-	verdict := calculateVerdict(aggregate, config)
+	verdict := calculateVerdict(comparison, config)
 
 	// Get error summary
 	crashes, timeouts, recovered := orchestrator.healthMonitor.GetErrorSummary()
@@ -70,97 +77,67 @@ func RunHeadsUpTest(ctx context.Context, config *Config, orchestrator *Orchestra
 }
 
 // aggregateHeadsUpResults aggregates batch results for heads-up mode
-func aggregateHeadsUpResults(batches []BatchResult) AggregateResults {
-	// Calculate means and confidence intervals using weighted averages
-	var botASum, botBSum float64
-	var botACount, botBCount int
-
-	for _, batch := range batches {
-		// Use actual hands completed from stats if available, otherwise use requested
-		actualHandsA := batch.Hands
-		if handsFromStats, exists := batch.Results["challenger_hands"]; exists {
-			actualHandsA = int(handsFromStats)
-		}
-
-		actualHandsB := batch.Hands
-		if handsFromStats, exists := batch.Results["baseline_hands"]; exists {
-			actualHandsB = int(handsFromStats)
-		}
-
-		if val, ok := batch.Results["challenger_bb_per_100"]; ok {
-			botASum += val * float64(actualHandsA)
-			botACount += actualHandsA
-		}
-		if val, ok := batch.Results["baseline_bb_per_100"]; ok {
-			botBSum += val * float64(actualHandsB)
-			botBCount += actualHandsB
-		}
-	}
-
-	botAMean := botASum / float64(botACount)
-	botBMean := botBSum / float64(botBCount)
-
-	// TODO: Calculate proper confidence intervals
-	// For now, use simple approximation
-	margin := 2.0 // Placeholder
+func aggregateHeadsUpResults(batches []BatchResult, challengerStats, baselineStats StatisticalResult, comparison StatisticalComparison) AggregateResults {
+	// Get aggregated VPIP/PFR from batches
+	challengerCombined := CombineBatches(batches, "challenger")
+	baselineCombined := CombineBatches(batches, "baseline")
 
 	return AggregateResults{
 		Challenger: &BotResults{
-			BBPer100: botAMean, // Challenger is first bot in heads-up
-			CI95Low:  botAMean - margin,
-			CI95High: botAMean + margin,
-			VPIP:     0.45, // TODO: Aggregate from batches
-			PFR:      0.35,
+			BBPer100:   challengerStats.Mean,
+			CI95Low:    challengerStats.CI95Low,
+			CI95High:   challengerStats.CI95High,
+			VPIP:       challengerCombined.VPIP,
+			PFR:        challengerCombined.PFR,
+			EffectSize: comparison.EffectSize,
 		},
 		Baseline: &BotResults{
-			BBPer100: botBMean, // Baseline is second bot in heads-up
-			CI95Low:  botBMean - margin,
-			CI95High: botBMean + margin,
-			VPIP:     0.42,
-			PFR:      0.30,
+			BBPer100: baselineStats.Mean,
+			CI95Low:  baselineStats.CI95Low,
+			CI95High: baselineStats.CI95High,
+			VPIP:     baselineCombined.VPIP,
+			PFR:      baselineCombined.PFR,
 		},
 	}
 }
 
 // calculateVerdict calculates the test verdict
-func calculateVerdict(aggregate AggregateResults, config *Config) TestVerdict {
-	// Simple verdict calculation for demonstration
-	// TODO: Implement proper statistical tests
+func calculateVerdict(comparison StatisticalComparison, config *Config) TestVerdict {
+	// comparison already contains all the statistical results we need
 
-	pValue := 0.02    // Placeholder
-	effectSize := 0.3 // Placeholder
+	// Determine direction
+	direction := "no_change"
+	if comparison.Difference > 0 {
+		direction = "improvement"
+	} else if comparison.Difference < 0 {
+		direction = "regression"
+	}
 
-	// Don't apply correction here - it's done in the runner for "all" mode
-	adjustedPValue := pValue
-
-	significant := adjustedPValue < config.SignificanceLevel
-	direction := "neutral"
+	// Determine recommendation based on significance and effect size
 	recommendation := "inconclusive"
-
-	// Determine direction based on which bot is being tested
-	// Challenger is the new version being tested
-	// Baseline is the reference version
-	if aggregate.Challenger != nil && aggregate.Baseline != nil {
-		if aggregate.Challenger.BBPer100 > aggregate.Baseline.BBPer100 {
-			// Challenger beats baseline = improvement
-			direction = "improvement"
-			if significant {
+	if comparison.PValue < config.SignificanceLevel {
+		effectMagnitude := InterpretEffectSize(comparison.EffectSize)
+		switch direction {
+		case "improvement":
+			if effectMagnitude == "large" || effectMagnitude == "medium" {
 				recommendation = "accept"
+			} else {
+				recommendation = "marginal"
 			}
-		} else {
-			// Baseline beats challenger = regression
-			direction = "regression"
-			if significant {
+		case "regression":
+			if effectMagnitude == "large" || effectMagnitude == "medium" {
 				recommendation = "reject"
+			} else {
+				recommendation = "marginal"
 			}
 		}
 	}
 
 	return TestVerdict{
-		SignificantDifference: significant,
-		PValue:                pValue,
-		AdjustedPValue:        adjustedPValue,
-		EffectSize:            effectSize,
+		SignificantDifference: comparison.PValue < config.SignificanceLevel,
+		PValue:                comparison.PValue,
+		AdjustedPValue:        comparison.PValue, // No correction in single test
+		EffectSize:            comparison.EffectSize,
 		Direction:             direction,
 		Confidence:            0.95,
 		Recommendation:        recommendation,

@@ -78,6 +78,8 @@ type ReportStatistics struct {
 	PValue         float64 `json:"p_value"`
 	AdjustedPValue float64 `json:"adjusted_p_value"`
 	IsSignificant  bool    `json:"is_significant"`
+	Direction      string  `json:"direction"`
+	Recommendation string  `json:"recommendation"`
 
 	// Sample size analysis
 	SampleSizeWarning string `json:"sample_size_warning,omitempty"`
@@ -96,13 +98,12 @@ type BotStatistics struct {
 }
 
 // GenerateReport creates a comprehensive test report
-func (r *Reporter) GenerateReport(mode TestMode, batches []BatchResult, startTime, endTime time.Time) (*ReportResult, error) {
-	duration := endTime.Sub(startTime)
+func (r *Reporter) GenerateReport(result *TestResult) (*ReportResult, error) {
+	batches := result.Batches
 
 	// Calculate total hands actually played
 	totalHands := 0
 	for _, batch := range batches {
-		// Use actual hands from results if available
 		if actualHands, ok := batch.Results["actual_hands"]; ok {
 			totalHands += int(actualHands)
 		} else {
@@ -110,26 +111,33 @@ func (r *Reporter) GenerateReport(mode TestMode, batches []BatchResult, startTim
 		}
 	}
 
-	handsPerSecond := float64(totalHands) / duration.Seconds()
+	duration := time.Duration(result.Metadata.DurationSeconds * float64(time.Second))
+	if duration < 0 {
+		duration = 0
+	}
 
-	// Generate test ID
-	testID := fmt.Sprintf("regression-%s-%s", string(mode), startTime.Format("20060102-150405"))
+	startTime := result.Metadata.StartTime
+	endTime := startTime.Add(duration)
 
-	// Build metadata
 	metadata := ReportMetadata{
 		StartTime:        startTime,
 		EndTime:          endTime,
 		DurationSeconds:  duration.Seconds(),
-		HandsPerSecond:   handsPerSecond,
+		ServerVersion:    result.Metadata.ServerVersion,
+		TestEnvironment:  result.Metadata.TestEnvironment,
 		TotalHandsPlayed: totalHands,
 		BatchesCompleted: len(batches),
 	}
+	if duration.Seconds() > 0 {
+		metadata.HandsPerSecond = float64(totalHands) / duration.Seconds()
+	}
 
-	// Build configuration
 	config := ReportConfig{
-		HandsRequested:    r.config.HandsTotal,
+		Challenger:        result.Config.Challenger,
+		Baseline:          result.Config.Baseline,
+		HandsRequested:    result.Config.HandsTotal,
 		HandsCompleted:    totalHands,
-		BatchSize:         r.config.BatchSize,
+		BatchSize:         result.Config.BatchSize,
 		TotalBatches:      len(batches),
 		Seeds:             r.config.Seeds,
 		SignificanceLevel: r.config.SignificanceLevel,
@@ -138,12 +146,7 @@ func (r *Reporter) GenerateReport(mode TestMode, batches []BatchResult, startTim
 		StartingChips:     r.config.StartingChips,
 	}
 
-	// All modes now use challenger and baseline
-	config.Challenger = r.config.Challenger
-	config.Baseline = r.config.Baseline
-
-	// Aggregate statistics based on mode
-	stats := r.aggregateStatistics(mode, batches)
+	stats := r.aggregateStatistics(result)
 
 	// Add sample size warning if needed
 	if totalHands < 5000 {
@@ -152,9 +155,14 @@ func (r *Reporter) GenerateReport(mode TestMode, batches []BatchResult, startTim
 		stats.SampleSizeWarning = "Note: More hands needed for small effect sizes"
 	}
 
+	testID := result.TestID
+	if testID == "" {
+		testID = fmt.Sprintf("regression-%s-%s", string(result.Mode), startTime.Format("20060102-150405"))
+	}
+
 	return &ReportResult{
 		TestID:   testID,
-		Mode:     string(mode),
+		Mode:     string(result.Mode),
 		Metadata: metadata,
 		Config:   config,
 		Batches:  batches,
@@ -163,92 +171,81 @@ func (r *Reporter) GenerateReport(mode TestMode, batches []BatchResult, startTim
 }
 
 // aggregateStatistics combines batch results into final statistics
-func (r *Reporter) aggregateStatistics(mode TestMode, batches []BatchResult) ReportStatistics {
+func (r *Reporter) aggregateStatistics(result *TestResult) ReportStatistics {
 	stats := ReportStatistics{}
+	batches := result.Batches
 
-	switch mode {
+	switch result.Mode {
 	case ModeHeadsUp, ModePopulation, ModeNPCBenchmark:
-		// All three modes use standardized challenger/baseline prefixes
-		// Aggregate challenger stats
 		challengerCombined := CombineBatches(batches, "challenger")
+		baselineCombined := CombineBatches(batches, "baseline")
+
+		challengerStats := CalculateStatistics(batches, "challenger_bb_per_100", "challenger_hands")
+		baselineStats := CalculateStatistics(batches, "baseline_bb_per_100", "baseline_hands")
+
+		challengerHands := challengerStats.SampleSize
+		if challengerHands == 0 {
+			challengerHands = challengerCombined.TotalHands
+		}
+		baselineHands := baselineStats.SampleSize
+		if baselineHands == 0 {
+			baselineHands = baselineCombined.TotalHands
+		}
+
 		stats.ChallengerStats = &BotStatistics{
-			BB100:    challengerCombined.BB100,
-			CI95Low:  challengerCombined.BB100 - 1.96*10, // Placeholder CI
-			CI95High: challengerCombined.BB100 + 1.96*10,
+			BB100:    challengerStats.Mean,
+			CI95Low:  challengerStats.CI95Low,
+			CI95High: challengerStats.CI95High,
 			VPIP:     challengerCombined.VPIP,
 			PFR:      challengerCombined.PFR,
-			Hands:    challengerCombined.TotalHands,
-			Timeouts: challengerCombined.Timeouts,
-			Busts:    challengerCombined.Busts,
+			Hands:    challengerHands,
+			Timeouts: challengerCombined.Timeouts * float64(challengerHands),
+			Busts:    challengerCombined.Busts * float64(challengerHands),
 		}
-
-		// Aggregate baseline stats
-		baselineCombined := CombineBatches(batches, "baseline")
 		stats.BaselineStats = &BotStatistics{
-			BB100:    baselineCombined.BB100,
-			CI95Low:  baselineCombined.BB100 - 1.96*10, // Placeholder CI
-			CI95High: baselineCombined.BB100 + 1.96*10,
+			BB100:    baselineStats.Mean,
+			CI95Low:  baselineStats.CI95Low,
+			CI95High: baselineStats.CI95High,
 			VPIP:     baselineCombined.VPIP,
 			PFR:      baselineCombined.PFR,
-			Hands:    baselineCombined.TotalHands,
-			Timeouts: baselineCombined.Timeouts,
-			Busts:    baselineCombined.Busts,
+			Hands:    baselineHands,
+			Timeouts: baselineCombined.Timeouts * float64(baselineHands),
+			Busts:    baselineCombined.Busts * float64(baselineHands),
 		}
-
-		// Calculate effect size (placeholder Cohen's d)
-		stats.EffectSize = (challengerCombined.BB100 - baselineCombined.BB100) / 20.0
 
 	case ModeSelfPlay:
-		// Self-play uses "avg_" prefix for its metrics
-		// Calculate weighted averages manually since CombineBatches expects standard prefixes
-		var totalBB100, totalVPIP, totalPFR float64
-		var totalHands int
-
-		for _, batch := range batches {
-			if bb100, exists := batch.Results["avg_bb_per_100"]; exists {
-				actualHands := int(batch.Results["total_hands"])
-				totalBB100 += bb100 * float64(actualHands)
-				totalHands += actualHands
-			}
-			if vpip, exists := batch.Results["avg_vpip"]; exists {
-				totalVPIP += vpip * float64(batch.Results["total_hands"])
-			}
-			if pfr, exists := batch.Results["avg_pfr"]; exists {
-				totalPFR += pfr * float64(batch.Results["total_hands"])
-			}
+		selfStats := CalculateStatistics(batches, "avg_bb_per_100", "actual_hands")
+		totalHands := selfStats.SampleSize
+		if totalHands == 0 {
+			totalHands = CalculateTotalHands(batches, "actual_hands")
 		}
 
-		// Calculate final averages
-		avgBB100 := 0.0
-		avgVPIP := 0.0
-		avgPFR := 0.0
-		if totalHands > 0 {
-			avgBB100 = totalBB100 / float64(totalHands)
-			avgVPIP = totalVPIP / float64(totalHands)
-			avgPFR = totalPFR / float64(totalHands)
-		}
+		avgVPIP := WeightedAverage(batches, "avg_vpip", "actual_hands")
+		avgPFR := WeightedAverage(batches, "avg_pfr", "actual_hands")
 
 		stats.ChallengerStats = &BotStatistics{
-			BB100:    avgBB100,
-			CI95Low:  avgBB100 - 1.96*10,
-			CI95High: avgBB100 + 1.96*10,
+			BB100:    selfStats.Mean,
+			CI95Low:  selfStats.CI95Low,
+			CI95High: selfStats.CI95High,
 			VPIP:     avgVPIP,
 			PFR:      avgPFR,
 			Hands:    totalHands,
-			Timeouts: 0, // Not tracked in self-play
-			Busts:    0, // Not tracked in self-play
+			Timeouts: 0,
+			Busts:    0,
 		}
-		// In self-play, baseline is the same as challenger
 		stats.BaselineStats = stats.ChallengerStats
-
-		// Effect size is BB/100 divided by expected variance
-		stats.EffectSize = avgBB100 / 20.0
 	}
 
-	// Placeholder p-value calculation
-	stats.PValue = 2.0 * (1.0 - normalCDF(math.Abs(stats.EffectSize)))
-	stats.AdjustedPValue = stats.PValue // No correction for now
-	stats.IsSignificant = stats.AdjustedPValue < r.config.SignificanceLevel
+	stats.EffectSize = result.Verdict.EffectSize
+	stats.PValue = result.Verdict.PValue
+	if result.Verdict.AdjustedPValue > 0 {
+		stats.AdjustedPValue = math.Min(1.0, result.Verdict.AdjustedPValue)
+	} else {
+		stats.AdjustedPValue = result.Verdict.PValue
+	}
+	stats.IsSignificant = result.Verdict.SignificantDifference
+	stats.Direction = result.Verdict.Direction
+	stats.Recommendation = result.Verdict.Recommendation
 
 	return stats
 }
@@ -322,18 +319,32 @@ func (r *Reporter) WriteSummary(report *ReportResult) error {
 
 	// Verdict
 	sb.WriteString("\n")
-	if report.Results.IsSignificant {
-		sb.WriteString(fmt.Sprintf("Verdict: REJECT (%.0f%% confidence)\n",
-			(1-r.config.SignificanceLevel)*100))
-	} else {
-		sb.WriteString("Verdict: NO SIGNIFICANT DIFFERENCE\n")
-	}
+	sb.WriteString(renderVerdictLine(report.Results, r.config.SignificanceLevel))
 
 	_, err := fmt.Fprint(r.writer, sb.String())
 	return err
 }
 
+func renderVerdictLine(stats ReportStatistics, alpha float64) string {
+	confidence := (1 - alpha) * 100
+	switch strings.ToLower(stats.Recommendation) {
+	case "accept":
+		return fmt.Sprintf("Verdict: ACCEPT (%.0f%% confidence)\n", confidence)
+	case "reject":
+		return fmt.Sprintf("Verdict: REJECT (%.0f%% confidence)\n", confidence)
+	case "marginal":
+		return fmt.Sprintf("Verdict: MARGINAL (%s, %.0f%% confidence)\n", stats.Direction, confidence)
+	case "inconclusive":
+		return "Verdict: INCONCLUSIVE\n"
+	}
+	if stats.IsSignificant {
+		return fmt.Sprintf("Verdict: SIGNIFICANT (%s, %.0f%% confidence)\n", stats.Direction, confidence)
+	}
+	return "Verdict: NO SIGNIFICANT DIFFERENCE\n"
+}
+
 // interpretEffectSize provides a human-readable interpretation
+
 func interpretEffectSize(d float64) string {
 	absD := math.Abs(d)
 	switch {
@@ -346,33 +357,4 @@ func interpretEffectSize(d float64) string {
 	default:
 		return "large"
 	}
-}
-
-// normalCDF approximates the cumulative distribution function of standard normal
-func normalCDF(z float64) float64 {
-	// Using approximation from Abramowitz and Stegun
-	const (
-		a1 = 0.254829592
-		a2 = -0.284496736
-		a3 = 1.421413741
-		a4 = -1.453152027
-		a5 = 1.061405429
-		p  = 0.3275911
-	)
-
-	sign := 1.0
-	if z < 0 {
-		sign = -1.0
-	}
-	z = math.Abs(z) / math.Sqrt(2.0)
-
-	t := 1.0 / (1.0 + p*z)
-	t2 := t * t
-	t3 := t2 * t
-	t4 := t3 * t
-	t5 := t4 * t
-
-	y := 1.0 - (((((a5*t5+a4)*t4+a3)*t3+a2)*t2+a1)*t)*math.Exp(-z*z)
-
-	return 0.5 * (1.0 + sign*y)
 }

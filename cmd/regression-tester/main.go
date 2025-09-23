@@ -43,6 +43,9 @@ type CLI struct {
 	MinHands               int     `kong:"default='10000',help='Minimum hands before early stopping'"`
 	MaxHands               int     `kong:"default='100000',help='Maximum hands for early stopping'"`
 	CheckInterval          int     `kong:"default='5000',help='Check interval for early stopping'"`
+	StdDevClampMin         float64 `kong:"default='5',help='Minimum per-batch standard deviation (BB/100) before clamping'"`
+	StdDevClampFallback    float64 `kong:"default='50',help='Fallback standard deviation (BB/100) applied after clamping'"`
+	WarnStdDevClamp        bool    `kong:"help='Emit warnings when standard deviation clamping occurs'"`
 
 	// Server configuration
 	ServerAddr string `kong:"default='localhost:8080',help='Poker server address'"`
@@ -165,6 +168,9 @@ func main() {
 		MinHands:               cli.MinHands,
 		MaxHands:               cli.MaxHands,
 		CheckInterval:          cli.CheckInterval,
+		StdDevClampMin:         cli.StdDevClampMin,
+		StdDevClampFallback:    cli.StdDevClampFallback,
+		WarnOnStdDevClamp:      cli.WarnStdDevClamp,
 
 		// Server
 		ServerAddr: cli.ServerAddr,
@@ -186,6 +192,14 @@ func main() {
 
 		Logger: logger,
 	}
+
+	// Apply statistics clamp configuration before running tests
+	regression.ConfigureStatisticsClamp(regression.StatisticsClampConfig{
+		MinStdDevBB100:      config.StdDevClampMin,
+		FallbackStdDevBB100: config.StdDevClampFallback,
+		WarnOnClamp:         config.WarnOnStdDevClamp,
+		Logger:              &config.Logger,
+	})
 
 	// Set up signal handling
 	sigChan := make(chan os.Signal, 1)

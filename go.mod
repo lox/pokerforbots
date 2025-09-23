@@ -15,4 +15,5 @@ require (
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	golang.org/x/sys v0.21.0 // indirect
+	gonum.org/v1/gonum v0.16.0 // indirect
 )

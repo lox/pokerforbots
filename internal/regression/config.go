@@ -46,6 +46,9 @@ type Config struct {
 	MinHands               int
 	MaxHands               int
 	CheckInterval          int
+	StdDevClampMin         float64
+	StdDevClampFallback    float64
+	WarnOnStdDevClamp      bool
 
 	// Performance
 	TimeoutMs           int

@@ -36,28 +36,24 @@ func NewDotProgressReporter(totalHands int) *DotProgressReporter {
 
 // OnBatchStart is called when a batch starts
 func (r *DotProgressReporter) OnBatchStart(batchNum int, totalBatches int, handsInBatch int) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.spinner.Stop()
 
+	r.mu.Lock()
 	r.currentBatch = batchNum
 	r.totalBatches = totalBatches
 	r.batchStartTime = time.Now()
+	r.mu.Unlock()
 
-	// Stop any existing spinner
-	r.spinner.Stop()
-
-	// Start spinner with batch info
 	batchInfo := fmt.Sprintf("Batch %d/%d (%d hands)", batchNum, totalBatches, handsInBatch)
 	r.spinner.Start(batchInfo)
 }
 
 // OnBatchComplete is called when a batch completes
 func (r *DotProgressReporter) OnBatchComplete(batchNum int, handsCompleted int) {
+	r.spinner.Stop()
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	// Stop spinner
-	r.spinner.Stop()
 
 	// Show completion message for this batch
 	batchDuration := time.Since(r.batchStartTime)
@@ -98,11 +94,10 @@ func (r *DotProgressReporter) OnHandsProgress(handsCompleted int, totalHands int
 
 // Finish shows the final summary
 func (r *DotProgressReporter) Finish() {
+	r.spinner.Stop()
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	// Ensure spinner is stopped
-	r.spinner.Stop()
 
 	// Print final newline if we have dots on current line
 	if r.lastDotHands%(r.dotsPerLine*100) != 0 {
@@ -120,15 +115,15 @@ func (r *DotProgressReporter) Finish() {
 type Spinner struct {
 	mu       sync.Mutex
 	active   bool
-	stopChan chan bool
+	stopChan chan struct{}
 	frames   []string
+	wg       sync.WaitGroup
 }
 
 // NewSpinner creates a new spinner
 func NewSpinner() *Spinner {
 	return &Spinner{
-		frames:   []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
-		stopChan: make(chan bool, 1),
+		frames: []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
 	}
 }
 
@@ -140,16 +135,20 @@ func (s *Spinner) Start(message string) {
 		return
 	}
 	s.active = true
+	stopChan := make(chan struct{})
+	s.stopChan = stopChan
+	s.wg.Add(1)
 	s.mu.Unlock()
 
-	go func() {
+	go func(stop <-chan struct{}) {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
+		defer s.wg.Done()
 
 		frame := 0
 		for {
 			select {
-			case <-s.stopChan:
+			case <-stop:
 				// Clear the spinner line
 				fmt.Printf("\r%s\r", strings.Repeat(" ", len(message)+4))
 				return
@@ -158,22 +157,24 @@ func (s *Spinner) Start(message string) {
 				frame = (frame + 1) % len(s.frames)
 			}
 		}
-	}()
+	}(stopChan)
 }
 
 // Stop stops the spinner
 func (s *Spinner) Stop() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !s.active {
+	stopChan := s.stopChan
+	if !s.active && stopChan == nil {
+		s.mu.Unlock()
 		return
 	}
-
 	s.active = false
-	select {
-	case s.stopChan <- true:
-	default:
+	s.stopChan = nil
+	s.mu.Unlock()
+
+	if stopChan != nil {
+		close(stopChan)
+		s.wg.Wait()
 	}
 }
 

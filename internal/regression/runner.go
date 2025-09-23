@@ -426,46 +426,44 @@ func (r *Runner) runPopulationTest(ctx context.Context) (*TestResult, error) {
 	challengerStats := CombineBatches(allBatches, "challenger")
 	baselineStats := CombineBatches(allBatches, "baseline")
 
-	challengerBB100 := challengerStats.BB100
-	baselineBB100 := baselineStats.BB100
+	// Calculate proper statistics
+	challengerStatResult := CalculateStatistics(allBatches, "challenger_bb_per_100", "challenger_hands")
+	baselineStatResult := CalculateStatistics(allBatches, "baseline_bb_per_100", "baseline_hands")
 
-	// Calculate confidence intervals (placeholder for now)
-	challengerCI := [2]float64{challengerBB100 - 10, challengerBB100 + 10}
-	baselineCI := [2]float64{baselineBB100 - 10, baselineBB100 + 10}
+	// Perform statistical comparison
+	comparison := CompareStatistics(challengerStatResult, baselineStatResult)
 
 	duration := time.Since(startTime)
 	handsPerSecond := float64(r.config.HandsTotal) / duration.Seconds()
 
-	// Calculate effect size (Cohen's d placeholder)
-	effectSize := (challengerBB100 - baselineBB100) / 50.0 // Using 50 BB/100 as std dev estimate
-
-	// Calculate p-value (placeholder)
-	pValue := 0.05
-	if math.Abs(effectSize) > 0.5 {
-		pValue = 0.01
-	}
+	// Get health metrics
+	crashes, timeouts, recovered := r.healthMonitor.GetErrorSummary()
 
 	// Determine direction
 	direction := "no_change"
-	if challengerBB100 > baselineBB100 {
+	if comparison.Difference > 0 {
 		direction = "improvement"
-	} else if challengerBB100 < baselineBB100 {
+	} else if comparison.Difference < 0 {
 		direction = "regression"
 	}
 
-	// Determine verdict
-	verdict := "marginal"
-	if math.Abs(effectSize) > 0.8 {
+	// Determine verdict based on p-value and effect size
+	verdict := "inconclusive"
+	if comparison.PValue < r.config.SignificanceLevel {
+		// Statistically significant
+		effectMagnitude := InterpretEffectSize(comparison.EffectSize)
 		if direction == "improvement" {
-			verdict = "accept"
-		} else {
-			verdict = "reject"
-		}
-	} else if math.Abs(effectSize) > 0.5 {
-		if direction == "improvement" {
-			verdict = "accept"
-		} else {
-			verdict = "marginal"
+			if effectMagnitude == "large" || effectMagnitude == "medium" {
+				verdict = "accept"
+			} else {
+				verdict = "marginal"
+			}
+		} else { // regression
+			if effectMagnitude == "large" || effectMagnitude == "medium" {
+				verdict = "reject"
+			} else {
+				verdict = "marginal"
+			}
 		}
 	}
 
@@ -489,19 +487,19 @@ func (r *Runner) runPopulationTest(ctx context.Context) (*TestResult, error) {
 		Batches: allBatches,
 		Aggregate: AggregateResults{
 			Challenger: &BotResults{
-				BBPer100:         challengerBB100,
-				CI95Low:          challengerCI[0],
-				CI95High:         challengerCI[1],
+				BBPer100:         challengerStatResult.Mean,
+				CI95Low:          challengerStatResult.CI95Low,
+				CI95High:         challengerStatResult.CI95High,
 				VPIP:             challengerStats.VPIP,
 				PFR:              challengerStats.PFR,
 				AggressionFactor: 0, // TODO: Calculate
 				BustRate:         challengerStats.Busts,
-				EffectSize:       effectSize,
+				EffectSize:       comparison.EffectSize,
 			},
 			Baseline: &BotResults{
-				BBPer100:         baselineBB100,
-				CI95Low:          baselineCI[0],
-				CI95High:         baselineCI[1],
+				BBPer100:         baselineStatResult.Mean,
+				CI95Low:          baselineStatResult.CI95Low,
+				CI95High:         baselineStatResult.CI95High,
 				VPIP:             baselineStats.VPIP,
 				PFR:              baselineStats.PFR,
 				AggressionFactor: 0, // TODO: Calculate
@@ -512,15 +510,15 @@ func (r *Runner) runPopulationTest(ctx context.Context) (*TestResult, error) {
 			HandsPerSecond: handsPerSecond,
 		},
 		Errors: ErrorSummary{
-			BotCrashes:       0, // TODO: Track
-			Timeouts:         0, // TODO: Track
-			ConnectionErrors: 0, // TODO: Track
-			RecoveredCrashes: 0, // TODO: Track
+			BotCrashes:       crashes,
+			Timeouts:         timeouts,
+			ConnectionErrors: 0, // Connection errors tracked separately if needed
+			RecoveredCrashes: recovered,
 		},
 		Verdict: TestVerdict{
-			SignificantDifference: math.Abs(effectSize) > 0.5,
-			PValue:                pValue,
-			EffectSize:            effectSize,
+			SignificantDifference: comparison.PValue < r.config.SignificanceLevel,
+			PValue:                comparison.PValue,
+			EffectSize:            comparison.EffectSize,
 			Direction:             direction,
 			Confidence:            0.95,
 			Recommendation:        verdict,
@@ -652,19 +650,15 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 	durationSeconds := duration.Seconds()
 	handsPerSecond := float64(totalHands) / durationSeconds
 
-	// Get weighted average BB/100 from stats
-	avgChallengerBB100 := challengerStats.BB100
-	avgBaselineBB100 := baselineStats.BB100
+	// Calculate proper statistics
+	challengerStatResult := CalculateStatistics(allChallengerBatches, "bot_bb_per_100", "actual_hands")
+	baselineStatResult := CalculateStatistics(allBaselineBatches, "bot_bb_per_100", "actual_hands")
 
-	// Calculate performance difference (challenger - baseline)
-	performanceDiff := avgChallengerBB100 - avgBaselineBB100
+	// Perform statistical comparison
+	comparison := CompareStatistics(challengerStatResult, baselineStatResult)
 
-	// Calculate proper confidence intervals using pooled standard deviation
-	challengerStdDev := CalculatePooledStdDev(allChallengerBatches, "challenger_bb_per_100", "challenger_std_dev", "challenger_hands")
-	baselineStdDev := CalculatePooledStdDev(allBaselineBatches, "baseline_bb_per_100", "baseline_std_dev", "baseline_hands")
-
-	challengerCI95Low, challengerCI95High := CalculateConfidenceInterval(avgChallengerBB100, challengerStdDev, totalChallengerHands)
-	baselineCI95Low, baselineCI95High := CalculateConfidenceInterval(avgBaselineBB100, baselineStdDev, totalBaselineHands)
+	// Get health metrics
+	crashes, timeouts, recovered := r.healthMonitor.GetErrorSummary()
 
 	return &TestResult{
 		TestID: fmt.Sprintf("npc-benchmark-%d", time.Now().Unix()),
@@ -702,18 +696,19 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 		}(),
 		Aggregate: AggregateResults{
 			Challenger: &BotResults{
-				BBPer100:         avgChallengerBB100,
-				CI95Low:          challengerCI95Low,
-				CI95High:         challengerCI95High,
+				BBPer100:         challengerStatResult.Mean,
+				CI95Low:          challengerStatResult.CI95Low,
+				CI95High:         challengerStatResult.CI95High,
 				VPIP:             challengerStats.VPIP,
 				PFR:              challengerStats.PFR,
 				AggressionFactor: 0, // TODO: Calculate
 				BustRate:         challengerStats.Busts,
+				EffectSize:       comparison.EffectSize,
 			},
 			Baseline: &BotResults{
-				BBPer100:         avgBaselineBB100,
-				CI95Low:          baselineCI95Low,
-				CI95High:         baselineCI95High,
+				BBPer100:         baselineStatResult.Mean,
+				CI95Low:          baselineStatResult.CI95Low,
+				CI95High:         baselineStatResult.CI95High,
 				VPIP:             baselineStats.VPIP,
 				PFR:              baselineStats.PFR,
 				AggressionFactor: 0, // TODO: Calculate
@@ -724,34 +719,45 @@ func (r *Runner) runNPCBenchmarkTest(ctx context.Context) (*TestResult, error) {
 			HandsPerSecond: handsPerSecond,
 		},
 		Errors: ErrorSummary{
-			BotCrashes:       0,
-			Timeouts:         0,
+			BotCrashes:       crashes,
+			Timeouts:         timeouts,
 			ConnectionErrors: 0,
-			RecoveredCrashes: 0,
+			RecoveredCrashes: recovered,
 		},
 		Verdict: TestVerdict{
-			SignificantDifference: math.Abs(performanceDiff) > 10, // Significant if > 10 BB/100 difference
-			PValue:                0.001,                          // TODO: Calculate proper p-value
-			EffectSize:            performanceDiff / 25,           // Effect size relative to 25 BB/100 baseline
+			SignificantDifference: comparison.PValue < r.config.SignificanceLevel,
+			PValue:                comparison.PValue,
+			EffectSize:            comparison.EffectSize,
 			Direction: func() string {
-				if performanceDiff > 0 {
+				switch {
+				case comparison.Difference > 0:
 					return "improvement"
-				} else {
+				case comparison.Difference < 0:
 					return "regression"
+				default:
+					return "no_change"
 				}
 			}(),
 			Confidence: 0.95,
 			Recommendation: func() string {
-				// Regression test verdict based on challenger vs baseline performance
+				// Verdict based on statistical significance and effect size
+				if comparison.PValue >= r.config.SignificanceLevel {
+					return "inconclusive"
+				}
+				effectMagnitude := InterpretEffectSize(comparison.EffectSize)
 				switch {
-				case performanceDiff > 20:
-					return "accept" // Strong improvement
-				case performanceDiff > 5:
-					return "accept" // Modest improvement
-				case performanceDiff > -5:
-					return "marginal" // No significant change
+				case comparison.Difference > 0:
+					// Improvement
+					if effectMagnitude == "large" || effectMagnitude == "medium" {
+						return "accept"
+					}
+					return "marginal"
 				default:
-					return "reject" // Performance regression
+					// Regression
+					if effectMagnitude == "large" || effectMagnitude == "medium" {
+						return "reject"
+					}
+					return "marginal"
 				}
 			}(),
 		},
@@ -799,37 +805,41 @@ func (r *Runner) runSelfPlayTest(ctx context.Context) (*TestResult, error) {
 	// Track total hands from batches
 	totalHands := CalculateTotalHands(allBatches, "actual_hands")
 
-	// Calculate aggregate results using helpers
-	avgBB100, _ := WeightedBB100(allBatches, "avg_bb_per_100", "actual_hands")
+	// Calculate proper statistics for self-play
+	selfPlayStats := CalculateStatistics(allBatches, "avg_bb_per_100", "actual_hands")
+
+	// Calculate aggregate playing stats
 	avgVPIP := WeightedAverage(allBatches, "avg_vpip", "actual_hands")
 	avgPFR := WeightedAverage(allBatches, "avg_pfr", "actual_hands")
-
-	// Find min/max BB/100 across batches
-	var maxBB100, minBB100 float64
-	for i, batch := range allBatches {
-		if bb100, exists := batch.Results["avg_bb_per_100"]; exists {
-			if i == 0 || bb100 > maxBB100 {
-				maxBB100 = bb100
-			}
-			if i == 0 || bb100 < minBB100 {
-				minBB100 = bb100
-			}
-		}
-	}
-
-	// Calculate variance as difference between max and min
-	_ = maxBB100 - minBB100 // variance, could be used for reporting
 
 	// Calculate timing
 	duration := time.Since(startTime)
 	handsPerSecond := float64(totalHands) / duration.Seconds()
 
+	// Get health metrics
+	crashes, timeouts, recovered := r.healthMonitor.GetErrorSummary()
+
 	// Self-play should average near zero (zero-sum game)
-	// Large deviations indicate potential issues
-	isNearZero := math.Abs(avgBB100) < 5.0 // Within 5 BB/100 of zero
+	// Test if mean is significantly different from zero
+	zeroComparison := StatisticalResult{
+		Mean:       0.0,
+		StdDev:     selfPlayStats.StdDev, // Use same StdDev for null hypothesis
+		CI95Low:    -5.0,                 // Acceptable range for zero-sum
+		CI95High:   5.0,
+		SampleSize: selfPlayStats.SampleSize,
+	}
+	comparison := CompareStatistics(selfPlayStats, zeroComparison)
+
+	// Determine verdict based on deviation from zero
 	verdict := "pass"
-	if !isNearZero {
+	direction := "balanced"
+	if math.Abs(selfPlayStats.Mean) > 5.0 {
 		verdict = "warning"
+		if selfPlayStats.Mean > 5.0 {
+			direction = "positive_bias"
+		} else {
+			direction = "negative_bias"
+		}
 	}
 
 	return &TestResult{
@@ -852,19 +862,20 @@ func (r *Runner) runSelfPlayTest(ctx context.Context) (*TestResult, error) {
 		Batches: allBatches,
 		Aggregate: AggregateResults{
 			Challenger: &BotResults{
-				BBPer100:         avgBB100,
-				CI95Low:          minBB100, // Using min/max as variance bounds
-				CI95High:         maxBB100,
+				BBPer100:         selfPlayStats.Mean,
+				CI95Low:          selfPlayStats.CI95Low,
+				CI95High:         selfPlayStats.CI95High,
 				VPIP:             avgVPIP,
 				PFR:              avgPFR,
-				AggressionFactor: 0, // TODO: Calculate
-				BustRate:         0, // TODO: Calculate
+				AggressionFactor: 0,                     // TODO: Calculate
+				BustRate:         0,                     // TODO: Calculate
+				EffectSize:       comparison.EffectSize, // Effect size vs zero
 			},
 			// In self-play, baseline is the same as challenger
 			Baseline: &BotResults{
-				BBPer100:         avgBB100,
-				CI95Low:          minBB100,
-				CI95High:         maxBB100,
+				BBPer100:         selfPlayStats.Mean,
+				CI95Low:          selfPlayStats.CI95Low,
+				CI95High:         selfPlayStats.CI95High,
 				VPIP:             avgVPIP,
 				PFR:              avgPFR,
 				AggressionFactor: 0,
@@ -875,16 +886,16 @@ func (r *Runner) runSelfPlayTest(ctx context.Context) (*TestResult, error) {
 			HandsPerSecond: handsPerSecond,
 		},
 		Errors: ErrorSummary{
-			BotCrashes:       0, // TODO: Track
-			Timeouts:         0, // TODO: Track
-			ConnectionErrors: 0, // TODO: Track
-			RecoveredCrashes: 0, // TODO: Track
+			BotCrashes:       crashes,
+			Timeouts:         timeouts,
+			ConnectionErrors: 0, // Connection errors tracked separately if needed
+			RecoveredCrashes: recovered,
 		},
 		Verdict: TestVerdict{
-			SignificantDifference: !isNearZero,
-			PValue:                0.5,             // N/A for self-play
-			EffectSize:            avgBB100 / 50.0, // Relative to typical std dev
-			Direction:             "baseline",
+			SignificantDifference: comparison.PValue < r.config.SignificanceLevel,
+			PValue:                comparison.PValue,
+			EffectSize:            comparison.EffectSize,
+			Direction:             direction,
 			Confidence:            0.95,
 			Recommendation:        verdict,
 		},
@@ -899,21 +910,8 @@ func (r *Runner) outputResults(results []*TestResult) error {
 
 	// Convert TestResults to ReportResults for the reporter
 	for _, result := range results {
-		startTime := time.Now().Add(-time.Duration(result.Metadata.DurationSeconds) * time.Second)
-		endTime := time.Now()
-
-		// Convert batches to the format expected by reporter
-		var batches []BatchResult
-		for _, b := range result.Batches {
-			batches = append(batches, BatchResult{
-				Seed:    b.Seed,
-				Hands:   b.Hands,
-				Results: b.Results,
-			})
-		}
-
 		// Generate report using the reporter
-		report, err := r.reporter.GenerateReport(result.Mode, batches, startTime, endTime)
+		report, err := r.reporter.GenerateReport(result)
 		if err != nil {
 			return fmt.Errorf("failed to generate report: %w", err)
 		}
