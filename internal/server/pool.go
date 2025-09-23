@@ -62,8 +62,7 @@ type botStats struct {
 	BotID        string
 	DisplayName  string
 	BotCommand   string // Original bot command (e.g., "./snapshots/complex-20250921")
-	Role         BotRole
-	ConnectOrder int // Order in which the bot connected (1st, 2nd, etc.)
+	ConnectOrder int    // Order in which the bot connected (1st, 2nd, etc.)
 	Hands        int
 	NetChips     int64
 	TotalWon     int64
@@ -367,9 +366,6 @@ func (p *BotPool) runHand(bots []*Bot) {
 	// Skip if any bot doesn't have a connection (for testing)
 	for _, bot := range bots {
 		if bot.conn == nil {
-			if bot.Role() == BotRoleNPC {
-				continue
-			}
 			return
 		}
 	}
@@ -562,7 +558,6 @@ func (p *BotPool) RecordHandOutcome(handID string, bots []*Bot, deltas []int) {
 		}
 
 		stats.DisplayName = displayName
-		stats.Role = bot.Role()
 		stats.BotCommand = bot.BotCommand()
 		stats.Hands++
 
@@ -627,7 +622,6 @@ func (p *BotPool) PlayerStats() []PlayerStats {
 
 	players := make([]PlayerStats, 0, len(allStats))
 	for _, stats := range allStats {
-		role := string(stats.Role)
 		avg := 0.0
 		if stats.Hands > 0 {
 			avg = float64(stats.NetChips) / float64(stats.Hands)
@@ -637,7 +631,7 @@ func (p *BotPool) PlayerStats() []PlayerStats {
 			GameCompletedPlayer: protocol.GameCompletedPlayer{
 				BotID:       stats.BotID,
 				DisplayName: stats.DisplayName,
-				Role:        role,
+				Role:        "", // Roles removed - all bots are equal
 				Hands:       stats.Hands,
 				NetChips:    stats.NetChips,
 				AvgPerHand:  avg,
@@ -657,13 +651,10 @@ func (p *BotPool) PlayerStats() []PlayerStats {
 	}
 
 	sort.Slice(players, func(i, j int) bool {
-		if players[i].Role == players[j].Role {
-			if players[i].DisplayName == players[j].DisplayName {
-				return players[i].BotID < players[j].BotID
-			}
-			return players[i].DisplayName < players[j].DisplayName
+		if players[i].DisplayName == players[j].DisplayName {
+			return players[i].BotID < players[j].BotID
 		}
-		return players[i].Role < players[j].Role
+		return players[i].DisplayName < players[j].DisplayName
 	})
 
 	return players

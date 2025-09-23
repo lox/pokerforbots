@@ -159,7 +159,7 @@ func TestWebSocketConnection(t *testing.T) {
 		t.Fatalf("Failed to connect: %v", err)
 	}
 	defer ws.Close()
-	sendConnectMessage(t, ws, "TestBot", "", string(BotRolePlayer))
+	sendConnectMessage(t, ws, "TestBot", "")
 
 	// Give the server time to register the bot
 	time.Sleep(100 * time.Millisecond)
@@ -207,7 +207,7 @@ func TestMultipleBotConnections(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to connect bot %d: %v", i, err)
 		}
-		sendConnectMessage(t, ws, fmt.Sprintf("Bot%02d", i), "", string(BotRolePlayer))
+		sendConnectMessage(t, ws, fmt.Sprintf("Bot%02d", i), "")
 		bots = append(bots, ws)
 	}
 
@@ -315,11 +315,9 @@ func TestAdminGameStatsEndpoint(t *testing.T) {
 
 	bot1 := NewBot(testLogger(), "bot-player", nil, game.Pool)
 	bot1.SetDisplayName("complex")
-	bot1.SetRole(BotRolePlayer)
 
 	bot2 := NewBot(testLogger(), "bot-npc", nil, game.Pool)
 	bot2.SetDisplayName("npc-aggr")
-	bot2.SetRole(BotRoleNPC)
 
 	game.Pool.RecordHandOutcome("hand-1", []*Bot{bot1, bot2}, []int{150, -150})
 
@@ -351,9 +349,6 @@ func TestAdminGameStatsEndpoint(t *testing.T) {
 			foundPlayer = true
 			if ps.NetChips != 150 {
 				t.Fatalf("expected complex net chips 150, got %d", ps.NetChips)
-			}
-			if ps.Role != string(BotRolePlayer) {
-				t.Fatalf("expected complex role player, got %s", ps.Role)
 			}
 		}
 	}

@@ -347,7 +347,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	bot := NewBot(s.logger, botID, conn, game.Pool)
 	bot.SetDisplayName(connectMsg.Name)
 	bot.SetGameID(game.ID)
-	bot.SetRole(normalizeRole(connectMsg.Role))
 
 	// Register with game pool
 	game.Pool.Register(bot)
@@ -478,7 +477,6 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 	instance := s.manager.RegisterGame(req.ID, pool, config)
 	go pool.Run()
 
-	// NPC spawning removed - use spawner for bot orchestration
 	_ = instance // Avoid unused variable warning
 
 	s.logger.Info().
@@ -532,7 +530,6 @@ func (s *Server) serveAdminGameDelete(w http.ResponseWriter, id string, partsLen
 		return
 	}
 
-	// NPC stopping removed - use spawner for bot orchestration
 	instance.Pool.Stop()
 	s.logger.Info().Str("game_id", id).Msg("Admin deleted game")
 	w.WriteHeader(http.StatusNoContent)
@@ -558,5 +555,31 @@ func (s *Server) serveAdminGameStatsJSON(w http.ResponseWriter, id string) {
 	if err := json.NewEncoder(w).Encode(stats); err != nil {
 		s.logger.Error().Err(err).Msg("failed to encode game stats response")
 		w.WriteHeader(http.StatusInternalServerError)
+	}
+}
+
+// WaitForHealthy polls the /health endpoint until it returns 200 OK or the context is cancelled.
+// baseURL should be the server's base URL (e.g., "http://localhost:8080").
+func WaitForHealthy(ctx context.Context, baseURL string) error {
+	healthURL := baseURL + "/health"
+	client := &http.Client{Timeout: 1 * time.Second}
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			resp, err := client.Get(healthURL)
+			if err == nil && resp.StatusCode == http.StatusOK {
+				resp.Body.Close()
+				return nil
+			}
+			if resp != nil {
+				resp.Body.Close()
+			}
+		}
 	}
 }

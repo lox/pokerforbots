@@ -54,10 +54,10 @@ func TestBotActionsAreProcessed(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws"
 
 	// Connect two bots
-	bot1Conn := dialAndConnect(t, wsURL, "TestBot1", "", string(BotRolePlayer))
+	bot1Conn := dialAndConnect(t, wsURL, "TestBot1", "")
 	defer bot1Conn.Close()
 
-	bot2Conn := dialAndConnect(t, wsURL, "TestBot2", "", string(BotRolePlayer))
+	bot2Conn := dialAndConnect(t, wsURL, "TestBot2", "")
 	defer bot2Conn.Close()
 
 	// Track what actions we receive
@@ -127,10 +127,10 @@ func TestPotDistribution(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws"
 
 	// Connect two bots
-	bot1Conn := dialAndConnect(t, wsURL, "PotBot1", "", string(BotRolePlayer))
+	bot1Conn := dialAndConnect(t, wsURL, "PotBot1", "")
 	defer bot1Conn.Close()
 
-	bot2Conn := dialAndConnect(t, wsURL, "PotBot2", "", string(BotRolePlayer))
+	bot2Conn := dialAndConnect(t, wsURL, "PotBot2", "")
 	defer bot2Conn.Close()
 
 	// Track starting chips from hand start message
@@ -266,10 +266,10 @@ func TestTimeoutActuallyFolds(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws"
 
 	// Connect two bots
-	bot1Conn := dialAndConnect(t, wsURL, "TimeoutBot1", "", string(BotRolePlayer))
+	bot1Conn := dialAndConnect(t, wsURL, "TimeoutBot1", "")
 	defer bot1Conn.Close()
 
-	bot2Conn := dialAndConnect(t, wsURL, "TimeoutBot2", "", string(BotRolePlayer))
+	bot2Conn := dialAndConnect(t, wsURL, "TimeoutBot2", "")
 	defer bot2Conn.Close()
 
 	bot2Actions := make(chan string, 10)

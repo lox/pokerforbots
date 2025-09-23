@@ -26,7 +26,6 @@ type Bot struct {
 	logger       zerolog.Logger
 	displayName  string
 	gameID       string
-	role         BotRole
 	botCommand   string // Original bot command for tracking
 }
 
@@ -74,7 +73,6 @@ func NewBot(logger zerolog.Logger, id string, conn *websocket.Conn, pool *BotPoo
 		done:     make(chan struct{}),
 		bankroll: bankroll,
 		logger:   logger.With().Str("component", "bot").Str("bot_id", id).Logger(),
-		role:     BotRoleNPC,
 	}
 }
 
@@ -104,20 +102,6 @@ func (b *Bot) GameID() string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.gameID
-}
-
-// SetRole sets the semantic role for the bot (player/npc).
-func (b *Bot) SetRole(role BotRole) {
-	b.mu.Lock()
-	b.role = role
-	b.mu.Unlock()
-}
-
-// Role returns the bot's role.
-func (b *Bot) Role() BotRole {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.role
 }
 
 // BotCommand returns the original bot command

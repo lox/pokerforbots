@@ -19,7 +19,6 @@ func newTestBot(id string, pool *BotPool) *Bot {
 		inHand:   false,
 		bankroll: 1000,
 	}
-	bot.SetRole(BotRolePlayer) // Default to Player role for tests
 	return bot
 }
 

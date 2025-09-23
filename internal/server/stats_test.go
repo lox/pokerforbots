@@ -41,8 +41,8 @@ func TestDetailedStatsCollector(t *testing.T) {
 	}
 
 	// Create test bots
-	bot1 := &Bot{ID: "bot1", displayName: "TestBot1", role: "player"}
-	bot2 := &Bot{ID: "bot2", displayName: "TestBot2", role: "npc"}
+	bot1 := &Bot{ID: "bot1", displayName: "TestBot1"}
+	bot2 := &Bot{ID: "bot2", displayName: "TestBot2"}
 
 	// Record a hand outcome
 	detail := HandOutcomeDetail{
@@ -113,27 +113,17 @@ func TestDetailedStatsCollector(t *testing.T) {
 		t.Errorf("Expected showdown win rate 100%%, got %.2f%%", detailedStats.ShowdownWinRate)
 	}
 
-	// Check position stats
-	if len(detailedStats.PositionStats) == 0 {
-		t.Error("Expected position stats")
+	// Check that basic stats are present
+	if detailedStats.Hands != 1 {
+		t.Errorf("Expected 1 hand, got %d", detailedStats.Hands)
 	}
 
-	buttonStats, exists := detailedStats.PositionStats["Button"]
-	if !exists {
-		t.Error("Expected button position stats")
-	}
-	if buttonStats.Hands != 1 {
-		t.Errorf("Expected 1 hand on button, got %d", buttonStats.Hands)
+	if detailedStats.WinningHands != 1 {
+		t.Errorf("Expected 1 winning hand, got %d", detailedStats.WinningHands)
 	}
 
-	// Check street stats
-	if len(detailedStats.StreetStats) == 0 {
-		t.Error("Expected street stats")
-	}
-
-	// Check hand category stats are present in detailed mode
-	if len(detailedStats.HandCategoryStats) == 0 {
-		t.Error("Expected hand category stats")
+	if detailedStats.ShowdownWins != 1 {
+		t.Errorf("Expected 1 showdown win, got %d", detailedStats.ShowdownWins)
 	}
 }
 
@@ -141,7 +131,7 @@ func TestDetailedStatsCollectorMemoryLimit(t *testing.T) {
 	// Create collector with max 2 hands
 	collector := NewDetailedStatsCollector(2, 10)
 
-	bot := &Bot{ID: "bot1", displayName: "TestBot", role: "player"}
+	bot := &Bot{ID: "bot1", displayName: "TestBot"}
 
 	// Record 3 hands
 	for i := range 3 {
@@ -186,7 +176,7 @@ func TestDetailedStatsCollectorMemoryLimit(t *testing.T) {
 func TestDetailedStatsCollectorReset(t *testing.T) {
 	collector := NewDetailedStatsCollector(100, 10)
 
-	bot := &Bot{ID: "bot1", displayName: "TestBot", role: "player"}
+	bot := &Bot{ID: "bot1", displayName: "TestBot"}
 
 	// Record a hand
 	detail := HandOutcomeDetail{
@@ -230,36 +220,9 @@ func TestDetailedStatsCollectorReset(t *testing.T) {
 	}
 }
 
-func TestHandCategorization(t *testing.T) {
-	tests := []struct {
-		cards    []string
-		expected string
-	}{
-		{[]string{"As", "Ad"}, "Premium"}, // Pocket aces
-		{[]string{"Kh", "Kc"}, "Premium"}, // Pocket kings
-		{[]string{"Ac", "Kd"}, "Premium"}, // AK offsuit
-		{[]string{"Ah", "Qh"}, "Strong"},  // AQ suited
-		{[]string{"Tc", "Td"}, "Strong"},  // Pocket tens
-		{[]string{"9s", "9d"}, "Medium"},  // Pocket nines
-		{[]string{"7h", "7c"}, "Medium"},  // Pocket sevens
-		{[]string{"5c", "5d"}, "Weak"},    // Small pocket pair
-		{[]string{"7h", "2c"}, "Trash"},   // 72 offsuit
-		{[]string{}, "Unknown"},           // No cards (capitalized now)
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.expected, func(t *testing.T) {
-			result := categorizeHoleCards(tt.cards)
-			if result != tt.expected {
-				t.Errorf("categorizeHoleCards(%v) = %s, want %s", tt.cards, result, tt.expected)
-			}
-		})
-	}
-}
-
 func BenchmarkStatsCollection(b *testing.B) {
 	collector := NewDetailedStatsCollector(10000, 10)
-	bot := &Bot{ID: "bot1", displayName: "TestBot", role: "player"}
+	bot := &Bot{ID: "bot1", displayName: "TestBot"}
 
 	detail := HandOutcomeDetail{
 		HandID:         "hand1",

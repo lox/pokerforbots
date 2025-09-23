@@ -29,7 +29,7 @@ func startTestPool(t *testing.T, pool *BotPool) func() {
 }
 
 // dialAndConnect creates a WebSocket connection and sends connect message
-func dialAndConnect(t *testing.T, url, name, game, role string) *websocket.Conn {
+func dialAndConnect(t *testing.T, url, name, game string) *websocket.Conn {
 	t.Helper()
 
 	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
@@ -37,19 +37,18 @@ func dialAndConnect(t *testing.T, url, name, game, role string) *websocket.Conn 
 		t.Fatalf("failed to dial %s: %v", url, err)
 	}
 
-	sendConnectMessage(t, conn, name, game, role)
+	sendConnectMessage(t, conn, name, game)
 	return conn
 }
 
 // sendConnectMessage sends a connect message over WebSocket
-func sendConnectMessage(t *testing.T, conn *websocket.Conn, name, game, role string) {
+func sendConnectMessage(t *testing.T, conn *websocket.Conn, name, game string) {
 	t.Helper()
 
 	connectMsg := &protocol.Connect{
 		Type: "connect",
 		Name: name,
 		Game: game,
-		Role: role,
 	}
 
 	data, err := protocol.Marshal(connectMsg)
