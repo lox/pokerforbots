@@ -116,10 +116,18 @@ No built-in strategies needed - they're all just external processes!
 - [x] Add WaitForServer() and CollectStats() helpers
 - [x] Comprehensive tests for all new functionality
 
-### Phase 6: Next Steps
-- [ ] Update regression tester to use spawner package
-- [ ] Simplify server stats to essential aggregates only
-- [ ] Update documentation with new workflows
+### Phase 6: Regression Tester Integration ✅
+- [x] Update regression tester to use spawner package as library
+- [x] Add embedded server mode with spawner library
+- [x] Fix NPC configuration parsing to use --spec format
+- [x] Update documentation with correct spawner usage
+
+### Phase 7: SDK Migration ✅
+- [x] Move `internal/spawner` → `sdk/spawner` as public API
+- [x] Create `sdk/config` for centralized environment variable handling
+- [x] Update regression tester imports to use `sdk/spawner`
+- [x] Update example bots to use `sdk/config` for environment parsing
+- [x] Update documentation to reflect SDK-based spawner usage
 
 ## Benefits
 
@@ -310,10 +318,12 @@ func runTest() {
 
 ### Completed Work
 - **Server Simplification**: Removed all bot spawning, NPC logic, and rendering
-- **Spawner Package**: Fully functional process management in `internal/spawner`
+- **Spawner SDK Package**: Fully functional process management in `sdk/spawner` (public API)
+- **Config SDK Package**: Environment variable handling in `sdk/config`
 - **Spawner Tool**: `cmd/spawner` with embedded server and `--spec` support
 - **Library Functions**: Exported functions for subprocess servers, stats collection
-- **All Tests Passing**: 395 tests including new spawner functionality
+- **SDK Integration**: All example bots using `sdk/config` for environment parsing
+- **All Tests Passing**: 395+ tests including new spawner functionality
 
 ### Metrics Achieved
 - Server main.go: ~120 lines (was ~500) ✅
@@ -321,6 +331,93 @@ func runTest() {
 - Spawner package: ~400 lines of focused process management ✅
 - Spawner tool: ~325 lines of orchestration logic ✅
 - Clean separation of concerns achieved ✅
+
+## SDK Migration Architecture
+
+### Motivation
+The spawner package sets environment variables that SDK bots consume:
+- `POKERFORBOTS_SERVER` - WebSocket URL for connection
+- `POKERFORBOTS_SEED` - Random seed for deterministic testing
+- `POKERFORBOTS_BOT_ID` - Unique bot identifier
+- `POKERFORBOTS_GAME` - Target game ID
+
+Since the SDK is the consumer of these environment variables, it makes architectural sense for:
+1. The spawner to be part of the SDK (producers and consumers in same package)
+2. The SDK to provide a config package for parsing these variables
+3. Both spawner and bots to share the same configuration constants
+
+### Migration Plan
+
+#### Step 1: Create SDK Config Package
+```go
+// sdk/config/config.go
+package config
+
+import "os"
+
+// Environment variable names
+const (
+    EnvServer = "POKERFORBOTS_SERVER"
+    EnvSeed   = "POKERFORBOTS_SEED"
+    EnvBotID  = "POKERFORBOTS_BOT_ID"
+    EnvGame   = "POKERFORBOTS_GAME"
+)
+
+// BotConfig holds configuration parsed from environment
+type BotConfig struct {
+    ServerURL string
+    Seed      int64
+    BotID     string
+    GameID    string
+}
+
+// FromEnv parses configuration from environment variables
+func FromEnv() (*BotConfig, error) {
+    // Parse and validate environment variables
+}
+```
+
+#### Step 2: Move Spawner to SDK
+```go
+// sdk/spawner/spawner.go
+package spawner
+
+import "github.com/lox/pokerforbots/sdk/config"
+
+// BotSpawner uses config constants for environment setup
+func (s *BotSpawner) spawnProcess(spec BotSpec) (*Process, error) {
+    env := os.Environ()
+    env = append(env, fmt.Sprintf("%s=%s", config.EnvServer, s.serverURL))
+    env = append(env, fmt.Sprintf("%s=%s", config.EnvBotID, botID))
+    // ... rest of environment setup
+}
+```
+
+#### Step 3: Update Example Bots
+```go
+// sdk/examples/calling-station/main.go
+import (
+    "github.com/lox/pokerforbots/sdk"
+    "github.com/lox/pokerforbots/sdk/config"
+)
+
+func main() {
+    cfg, err := config.FromEnv()
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    bot := sdk.NewBot(cfg.ServerURL, "CallingStation")
+    // ... rest of bot logic
+}
+```
+
+### Benefits of SDK Migration
+1. **Cohesion**: Environment producers and consumers in same package
+2. **Type Safety**: Shared constants prevent typos in env var names
+3. **Reusability**: Other tools can import SDK spawner as public API
+4. **Documentation**: SDK becomes single source of truth for bot development
+5. **Testing**: Easier to test spawner and bots together in SDK
 
 ## Key Principle (Refined)
 

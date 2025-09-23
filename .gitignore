@@ -51,4 +51,4 @@ snapshots/
 /benchmark
 /client
 /gen-preflop
-spawner
+/spawner

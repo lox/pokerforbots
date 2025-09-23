@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lox/pokerforbots/sdk/config"
 	"github.com/rs/zerolog"
 )
 
@@ -171,8 +172,8 @@ func (s *BotSpawner) buildEnv(spec BotSpec, _ int) map[string]string {
 	env := make(map[string]string)
 
 	// Core environment
-	env["POKERFORBOTS_SERVER"] = s.serverURL
-	env["POKERFORBOTS_GAME"] = spec.GameID
+	env[config.EnvServer] = s.serverURL
+	env[config.EnvGame] = spec.GameID
 
 	// Increment bot sequence and use for ID
 	s.mu.Lock()
@@ -180,12 +181,12 @@ func (s *BotSpawner) buildEnv(spec BotSpec, _ int) map[string]string {
 	botID := s.botSeq
 	s.mu.Unlock()
 
-	env["POKERFORBOTS_BOT_ID"] = fmt.Sprintf("bot-%d", botID)
+	env[config.EnvBotID] = fmt.Sprintf("bot-%d", botID)
 
 	// Add seed derivation for deterministic testing
 	if s.seed != 0 {
 		botSeed := s.seed + int64(botID)
-		env["POKERFORBOTS_SEED"] = fmt.Sprintf("%d", botSeed)
+		env[config.EnvSeed] = fmt.Sprintf("%d", botSeed)
 	}
 
 	// Add custom environment variables
@@ -207,7 +208,7 @@ func (s *BotSpawner) SpawnBot(spec BotSpec) (*Process, error) {
 
 	// Build environment
 	env := s.buildEnv(spec, 0)
-	env["POKERFORBOTS_BOT_ID"] = botID
+	env[config.EnvBotID] = botID
 
 	// Create and start the process
 	proc := NewProcess(s.ctx, spec.Command, spec.Args, env, s.logger)

@@ -6,9 +6,10 @@ The bot spawner is a library and tool for managing bot processes in the PokerFor
 
 The spawner consists of:
 
-1. **Library Package** (`internal/spawner`) - Reusable process management functions
-2. **Spawner Tool** (`cmd/spawner`) - Standalone orchestrator with embedded server
-3. **Integration Points** - Used by regression tester and other tools
+1. **Library Package** (`sdk/spawner`) - Public API for process management
+2. **Config Package** (`sdk/config`) - Environment variable handling for bots
+3. **Spawner Tool** (`cmd/spawner`) - Standalone orchestrator with embedded server
+4. **Integration Points** - Used by regression tester and other tools
 
 ## Using the Spawner Tool
 
@@ -60,7 +61,7 @@ Example specifications:
 ### In Your Own Tools
 
 ```go
-import "github.com/lox/pokerforbots/internal/spawner"
+import "github.com/lox/pokerforbots/sdk/spawner"
 
 // Create a spawner instance
 sp := spawner.New("ws://localhost:8080/ws", logger)
@@ -72,7 +73,7 @@ specs := []spawner.BotSpec{
         Args:    []string{"run", "./sdk/examples/complex"},
         Count:   2,
         Env: map[string]string{
-            "POKERFORBOTS_SEED": "42",
+            "CUSTOM_ENV": "value",  // Additional env vars
         },
     },
     {
@@ -89,6 +90,36 @@ if err := sp.SpawnMany(specs); err != nil {
 // Later: stop all bots
 sp.StopAll()
 ```
+
+### Bot Configuration via SDK
+
+Bots can use the SDK config package to parse environment variables:
+
+```go
+import "github.com/lox/pokerforbots/sdk/config"
+
+func main() {
+    // Parse configuration from environment
+    cfg, err := config.FromEnv()
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Use the configuration
+    serverURL := cfg.ServerURL  // From POKERFORBOTS_SERVER
+    seed := cfg.Seed            // From POKERFORBOTS_SEED
+    botID := cfg.BotID          // From POKERFORBOTS_BOT_ID
+    gameID := cfg.GameID        // From POKERFORBOTS_GAME
+
+    // Initialize bot with config...
+}
+```
+
+The spawner automatically sets these environment variables:
+- `POKERFORBOTS_SERVER` - WebSocket URL for connection
+- `POKERFORBOTS_SEED` - Random seed for deterministic testing
+- `POKERFORBOTS_BOT_ID` - Unique bot identifier
+- `POKERFORBOTS_GAME` - Target game ID (defaults to "default")
 
 ### Embedded Server Mode
 

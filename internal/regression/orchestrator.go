@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/lox/pokerforbots/internal/server"
-	"github.com/lox/pokerforbots/internal/spawner"
+	"github.com/lox/pokerforbots/sdk/spawner"
 	"github.com/rs/zerolog"
 )
 

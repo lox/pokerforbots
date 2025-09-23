@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lox/pokerforbots/sdk/config"
 	"github.com/rs/zerolog"
 )
 
@@ -79,10 +80,10 @@ func TestSpawnerEnvironment(t *testing.T) {
 
 	// Create temp script to echo environment
 	script := `#!/bin/sh
-echo "SERVER=$POKERFORBOTS_SERVER"
-echo "GAME=$POKERFORBOTS_GAME"
-echo "ID=$POKERFORBOTS_BOT_ID"
-echo "SEED=$POKERFORBOTS_SEED"
+echo "SERVER=$` + config.EnvServer + `"
+echo "GAME=$` + config.EnvGame + `"
+echo "ID=$` + config.EnvBotID + `"
+echo "SEED=$` + config.EnvSeed + `"
 `
 	tmpfile := t.TempDir() + "/test.sh"
 	if err := os.WriteFile(tmpfile, []byte(script), 0755); err != nil {

@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"slices"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/lox/pokerforbots/sdk/analysis"
 	"github.com/lox/pokerforbots/sdk/classification"
 	"github.com/lox/pokerforbots/sdk/client"
+	"github.com/lox/pokerforbots/sdk/config"
 	"github.com/rs/zerolog"
 )
 
@@ -55,14 +55,13 @@ type complexBot struct {
 }
 
 func newcomplexBot(logger zerolog.Logger) *complexBot {
+	// Parse configuration from environment
+	cfg, err := config.FromEnv()
+
 	// Read seed from environment, fallback to timestamp if not provided
 	seed := time.Now().UnixNano()
-	if envSeed := os.Getenv("POKERFORBOTS_SEED"); envSeed != "" {
-		if parsedSeed, err := strconv.ParseInt(envSeed, 10, 64); err == nil {
-			seed = parsedSeed
-		} else {
-			logger.Warn().Str("seed", envSeed).Err(err).Msg("Failed to parse POKERFORBOTS_SEED, using timestamp")
-		}
+	if err == nil && cfg.Seed != 0 {
+		seed = cfg.Seed
 	}
 
 	// Create deterministic RNG for decision-making using the provided seed
@@ -70,9 +69,9 @@ func newcomplexBot(logger zerolog.Logger) *complexBot {
 
 	// Check if bot ID is provided by server, otherwise generate one
 	var id string
-	if envID := os.Getenv("POKERFORBOTS_BOT_ID"); envID != "" {
+	if err == nil && cfg.BotID != "" {
 		// Use the server-provided ID with a complex bot prefix
-		id = fmt.Sprintf("complex-%s", envID)
+		id = fmt.Sprintf("complex-%s", cfg.BotID)
 	} else {
 		// Generate our own ID if not provided (e.g., when run standalone)
 		id = fmt.Sprintf("complex-improved-%04d", rng.Intn(10000))
@@ -848,9 +847,11 @@ func main() {
 	debug := flag.Bool("debug", false, "Enable debug logging")
 	flag.Parse()
 
-	// Check for environment variable override
-	if envURL := os.Getenv("POKERFORBOTS_SERVER"); envURL != "" {
-		*serverURL = envURL
+	// Parse configuration from environment
+	cfg, err := config.FromEnv()
+	if err == nil {
+		// Use environment config if available
+		*serverURL = cfg.ServerURL
 	}
 
 	level := zerolog.InfoLevel

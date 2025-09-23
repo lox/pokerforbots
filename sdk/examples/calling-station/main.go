@@ -8,12 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"slices"
-	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/lox/pokerforbots/protocol"
 	"github.com/lox/pokerforbots/sdk/client"
+	"github.com/lox/pokerforbots/sdk/config"
 	"github.com/rs/zerolog"
 )
 
@@ -41,26 +41,26 @@ func main() {
 	serverURL := flag.String("server", "ws://localhost:8080/ws", "WebSocket server URL")
 	flag.Parse()
 
-	// Check for environment variable override
-	if envURL := os.Getenv("POKERFORBOTS_SERVER"); envURL != "" {
-		*serverURL = envURL
-	}
-
 	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
+
+	// Parse configuration from environment
+	cfg, err := config.FromEnv()
+	if err == nil {
+		// Use environment config if available
+		*serverURL = cfg.ServerURL
+	}
 
 	// Initialize RNG with seed from environment or time
 	seed := time.Now().UnixNano()
-	if envSeed := os.Getenv("POKERFORBOTS_SEED"); envSeed != "" {
-		if parsedSeed, err := strconv.ParseInt(envSeed, 10, 64); err == nil {
-			seed = parsedSeed
-		}
+	if cfg != nil && cfg.Seed != 0 {
+		seed = cfg.Seed
 	}
 	rng := rand.New(rand.NewSource(seed))
 
 	// Create bot with calling station strategy
 	id := fmt.Sprintf("calling-%04d", rng.Intn(10000))
-	if envID := os.Getenv("POKERFORBOTS_BOT_ID"); envID != "" {
-		id = fmt.Sprintf("calling-%s", envID)
+	if cfg != nil && cfg.BotID != "" {
+		id = fmt.Sprintf("calling-%s", cfg.BotID)
 	}
 	bot := client.New(id, callingStationBot{}, logger)
 
