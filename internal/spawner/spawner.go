@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -166,7 +167,7 @@ func (s *BotSpawner) spawnOne(spec BotSpec, index int) (*Process, error) {
 }
 
 // buildEnv builds the environment variables for a bot.
-func (s *BotSpawner) buildEnv(spec BotSpec, index int) map[string]string {
+func (s *BotSpawner) buildEnv(spec BotSpec, _ int) map[string]string {
 	env := make(map[string]string)
 
 	// Core environment
@@ -188,9 +189,7 @@ func (s *BotSpawner) buildEnv(spec BotSpec, index int) map[string]string {
 	}
 
 	// Add custom environment variables
-	for k, v := range spec.Env {
-		env[k] = v
-	}
+	maps.Copy(env, spec.Env)
 
 	return env
 }
@@ -299,9 +298,7 @@ func (s *BotSpawner) SpawnServer(config ServerConfig) (*Process, error) {
 
 	// Build environment
 	env := make(map[string]string)
-	for k, v := range config.Env {
-		env[k] = v
-	}
+	maps.Copy(env, config.Env)
 
 	// Create and start the process
 	proc := NewProcess(s.ctx, config.Command, args, env, s.logger)

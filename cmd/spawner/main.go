@@ -189,7 +189,7 @@ func startServer(logger zerolog.Logger) (*server.Server, net.Listener, error) {
 
 	// Wait for server to be ready
 	baseURL := fmt.Sprintf("http://%s", listener.Addr())
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		resp, err := http.Get(baseURL + "/health")
 		if err == nil && resp.StatusCode == http.StatusOK {
 			resp.Body.Close()
@@ -208,9 +208,8 @@ func parseSpecString(spec string) ([]spawner.BotSpec, error) {
 	}
 
 	var specs []spawner.BotSpec
-	parts := strings.Split(spec, ",")
 
-	for _, part := range parts {
+	for part := range strings.SplitSeq(spec, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue

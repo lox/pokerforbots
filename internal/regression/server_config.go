@@ -106,8 +106,7 @@ func (sc *ServerConfig) CountNPCs() int {
 
 	// Count NPCs from built-in config string
 	if sc.NPCConfig != "" {
-		parts := strings.Split(sc.NPCConfig, ",")
-		for _, part := range parts {
+		for part := range strings.SplitSeq(sc.NPCConfig, ",") {
 			if colonPos := strings.Index(part, ":"); colonPos > 0 {
 				if countStr := strings.TrimSpace(part[colonPos+1:]); countStr != "" {
 					if n, err := strconv.Atoi(countStr); err == nil {
