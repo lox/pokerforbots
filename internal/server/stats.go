@@ -23,6 +23,10 @@ type BotStatistics struct {
 	showdownLosses  int
 	showdownBB      float64
 	nonShowdownBB   float64
+	vpipHands       int
+	pfrHands        int
+	timeoutCount    int
+	bustCount       int
 }
 
 // NewBotStatistics creates a new BotStatistics instance
@@ -63,6 +67,34 @@ func (b *BotStatistics) AddResult(netBB float64, wentToShowdown, wonAtShowdown b
 	}
 }
 
+// RecordPreflopAction updates VPIP/PFR counters based on the action taken.
+func (b *BotStatistics) RecordPreflopAction(action string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	switch action {
+	case "call", "raise", "allin", "bet":
+		b.vpipHands++
+		if action == "raise" || action == "allin" || action == "bet" {
+			b.pfrHands++
+		}
+	}
+}
+
+// RecordTimeout increments the timeout counter for the bot.
+func (b *BotStatistics) RecordTimeout() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.timeoutCount++
+}
+
+// RecordBust increments the bust counter for the bot.
+func (b *BotStatistics) RecordBust() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.bustCount++
+}
+
 // ToProtocolStats converts to protocol.PlayerDetailedStats
 func (b *BotStatistics) ToProtocolStats() *protocol.PlayerDetailedStats {
 	b.mu.RLock()
@@ -89,6 +121,14 @@ func (b *BotStatistics) ToProtocolStats() *protocol.PlayerDetailedStats {
 		ShowdownBB:      b.showdownBB,
 		NonShowdownBB:   b.nonShowdownBB,
 	}
+
+	if b.hands > 0 {
+		result.VPIP = float64(b.vpipHands) / float64(b.hands)
+		result.PFR = float64(b.pfrHands) / float64(b.hands)
+	}
+
+	result.Timeouts = b.timeoutCount
+	result.Busts = b.bustCount
 
 	// Calculate CI if we have enough hands
 	if b.hands >= 30 {
@@ -276,7 +316,20 @@ func (d *DetailedStatsCollector) RecordHandOutcome(detail HandOutcomeDetail) err
 		netBB := float64(outcome.NetChips) / float64(d.bigBlind)
 
 		// Add the result
-		d.stats[botID].AddResult(netBB, outcome.WentToShowdown, outcome.WonAtShowdown)
+		stat := d.stats[botID]
+		stat.AddResult(netBB, outcome.WentToShowdown, outcome.WonAtShowdown)
+
+		if outcome.Actions != nil {
+			stat.RecordPreflopAction(outcome.Actions["preflop"])
+		}
+
+		if outcome.TimedOut {
+			stat.RecordTimeout()
+		}
+
+		if outcome.WentBroke {
+			stat.RecordBust()
+		}
 	}
 
 	return nil
