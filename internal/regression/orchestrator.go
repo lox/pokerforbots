@@ -4,43 +4,39 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math/rand"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/lox/pokerforbots/internal/server"
+	"github.com/lox/pokerforbots/internal/spawner"
 	"github.com/rs/zerolog"
 )
 
-// Orchestrator uses spawner for bot management instead of managing processes directly
+// Orchestrator manages server and bot lifecycle for regression testing
 type Orchestrator struct {
-	config        *Config
-	healthMonitor *HealthMonitor
-	logger        zerolog.Logger
-	serverCmd     *exec.Cmd
-	useSpawner    bool // Flag to use new spawner-based approach
+	config           *Config
+	healthMonitor    *HealthMonitor
+	logger           zerolog.Logger
+	serverCmd        *exec.Cmd           // For legacy mode
+	botSpawner       *spawner.BotSpawner // For spawner mode
+	embeddedServer   *server.Server      // For embedded server mode
+	serverListener   net.Listener        // For embedded server mode
+	serverURL        string              // WebSocket URL for bots
+	currentStatsFile string              // Current batch's stats file path
 }
 
-// NewOrchestrator creates a new orchestrator that uses server bot commands
+// NewOrchestrator creates a new orchestrator
 func NewOrchestrator(config *Config, healthMonitor *HealthMonitor) *Orchestrator {
-	// Check if spawner command exists in PATH or as ./cmd/spawner
-	useSpawner := false
-	if _, err := exec.LookPath("spawner"); err == nil {
-		useSpawner = true
-		config.Logger.Info().Msg("Using spawner for bot orchestration")
-	} else if _, err := os.Stat("./cmd/spawner/main.go"); err == nil {
-		useSpawner = true
-		config.Logger.Info().Msg("Using spawner (via go run) for bot orchestration")
-	} else {
-		config.Logger.Info().Msg("Using legacy server-based bot orchestration (spawner not found)")
-	}
-
 	return &Orchestrator{
 		config:        config,
 		healthMonitor: healthMonitor,
 		logger:        config.Logger,
-		useSpawner:    useSpawner,
 	}
 }
 
@@ -155,7 +151,8 @@ func (o *Orchestrator) ExecuteBatches(ctx context.Context, strategy BatchStrateg
 func (o *Orchestrator) runSingleBatch(ctx context.Context, strategy BatchStrategy, config BatchConfiguration) (*BatchResult, error) {
 	// Create temporary file for stats
 	statsFile := fmt.Sprintf("stats-%s-%d-%d.json", strategy.Name(), config.Seed, time.Now().Unix())
-	defer os.Remove(statsFile) // Clean up after
+	o.currentStatsFile = statsFile // Store for embedded server to use
+	defer os.Remove(statsFile)     // Clean up after
 
 	// Build server configuration
 	serverConfig := &ServerConfig{
@@ -236,79 +233,152 @@ func (o *Orchestrator) aggregateBatchResults(batches []BatchResult, _ BatchStrat
 
 // StartServer starts the server with the given configuration
 func (o *Orchestrator) StartServer(ctx context.Context, serverConfig *ServerConfig) error {
-	if o.useSpawner {
-		return o.startServerWithSpawner(ctx, serverConfig)
+	// Try embedded server mode first (fastest)
+	if err := o.startEmbeddedServer(ctx, serverConfig); err == nil {
+		return nil
 	}
 
-	// Build arguments using the server configuration
+	// Fall back to legacy subprocess mode
+	o.logger.Info().Msg("Using legacy server subprocess mode")
 	args := serverConfig.BuildServerArgs(o.config)
-
-	// Start the server
 	return o.startServerWithArgs(ctx, args, serverConfig.Seed, serverConfig.Hands,
 		len(serverConfig.BotCommands), serverConfig.CountNPCs())
 }
 
-// startServerWithSpawner starts the server using the spawner tool
-func (o *Orchestrator) startServerWithSpawner(ctx context.Context, serverConfig *ServerConfig) error {
-	var args []string
+// startEmbeddedServer starts an embedded server with spawner for bot management
+func (o *Orchestrator) startEmbeddedServer(ctx context.Context, serverConfig *ServerConfig) error {
+	o.logger.Info().Msg("Starting embedded server with spawner library")
 
-	// Core server configuration
-	args = append(args,
-		"--addr", o.config.ServerAddr,
-		"--seed", fmt.Sprintf("%d", serverConfig.Seed),
-		"--hand-limit", fmt.Sprintf("%d", serverConfig.Hands),
-		"--write-stats-on-exit", serverConfig.StatsFile,
-	)
+	// Create RNG with seed
+	rng := rand.New(rand.NewSource(serverConfig.Seed))
 
-	// Add debug flag if logger is in debug mode
-	if o.logger.GetLevel() == zerolog.DebugLevel {
-		args = append(args, "--debug")
+	// Create server configuration
+	srvConfig := server.Config{
+		SmallBlind:  5,
+		BigBlind:    10,
+		StartChips:  o.config.StartingChips,
+		Timeout:     time.Duration(o.config.TimeoutMs) * time.Millisecond,
+		MinPlayers:  2,
+		MaxPlayers:  9,
+		HandLimit:   uint64(serverConfig.Hands),
+		EnableStats: true,
 	}
 
-	// Add bot commands
+	// Create embedded server
+	o.embeddedServer = server.NewServer(o.logger, rng, server.WithConfig(srvConfig))
+
+	// Find a free port
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		return fmt.Errorf("failed to find free port: %w", err)
+	}
+	o.serverListener = listener
+
+	// Start server in background
+	go func() {
+		if err := o.embeddedServer.Serve(listener); err != nil {
+			o.logger.Error().Err(err).Msg("Server stopped with error")
+		}
+	}()
+
+	// Build WebSocket URL
+	o.serverURL = fmt.Sprintf("ws://%s/ws", listener.Addr().String())
+	o.logger.Info().Str("url", o.serverURL).Msg("Embedded server started")
+
+	// Create bot spawner
+	o.botSpawner = spawner.New(o.serverURL, o.logger)
+
+	// Spawn bot processes
+	var specs []spawner.BotSpec
+
+	// Add external bot commands
 	for _, botCmd := range serverConfig.BotCommands {
-		args = append(args, "--bot", botCmd)
-	}
-
-	// Add NPC configuration if present
-	if serverConfig.NPCConfig != "" {
-		// Parse NPC config and convert to spawner demo mode
-		switch {
-		case serverConfig.NPCConfig == "aggressive:3,calling:3":
-			args = append(args, "--demo", "mixed", "--num-bots", "6")
-		case strings.Contains(serverConfig.NPCConfig, "aggressive"):
-			args = append(args, "--demo", "aggressive", "--num-bots", fmt.Sprintf("%d", serverConfig.CountNPCs()))
-		case strings.Contains(serverConfig.NPCConfig, "calling"):
-			args = append(args, "--demo", "simple", "--num-bots", fmt.Sprintf("%d", serverConfig.CountNPCs()))
-		case strings.Contains(serverConfig.NPCConfig, "random"):
-			args = append(args, "--demo", "mixed", "--num-bots", fmt.Sprintf("%d", serverConfig.CountNPCs()))
+		parts := strings.Fields(botCmd)
+		if len(parts) > 0 {
+			spec := spawner.BotSpec{
+				Command: parts[0],
+				Args:    parts[1:],
+				Count:   1,
+				Env: map[string]string{
+					"POKERFORBOTS_SEED": fmt.Sprintf("%d", serverConfig.Seed),
+				},
+			}
+			specs = append(specs, spec)
 		}
 	}
 
-	// Determine spawner command
-	spawnerCmd := "spawner"
-	if _, err := exec.LookPath(spawnerCmd); err != nil {
-		// Try using go run
-		spawnerCmd = "go"
-		args = append([]string{"run", "./cmd/spawner"}, args...)
+	// Convert NPC config to bot specs
+	if serverConfig.NPCConfig != "" {
+		npcSpecs, err := o.parseNPCConfig(serverConfig.NPCConfig, serverConfig.Seed)
+		if err != nil {
+			return fmt.Errorf("failed to parse NPC config: %w", err)
+		}
+		specs = append(specs, npcSpecs...)
 	}
 
-	o.serverCmd = exec.CommandContext(ctx, spawnerCmd, args...)
-	o.serverCmd.Stdout = os.Stdout
-	o.serverCmd.Stderr = os.Stderr
-
-	o.logger.Debug().
-		Str("command", spawnerCmd).
-		Strs("args", args).
-		Msg("Starting spawner")
-
-	if err := o.serverCmd.Start(); err != nil {
-		return fmt.Errorf("failed to start spawner: %w", err)
+	// Spawn all bots
+	if err := o.botSpawner.SpawnMany(specs); err != nil {
+		return fmt.Errorf("failed to spawn bots: %w", err)
 	}
 
-	// Wait for server to be ready
+	// Wait for bots to connect
 	time.Sleep(2 * time.Second)
+
 	return nil
+}
+
+// parseNPCConfig converts NPC configuration string to bot specs
+func (o *Orchestrator) parseNPCConfig(npcConfig string, seed int64) ([]spawner.BotSpec, error) {
+	var specs []spawner.BotSpec
+
+	// Parse config like "aggressive:3,calling:2,random:1"
+	for _, part := range strings.Split(npcConfig, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		strategyCount := strings.Split(part, ":")
+		if len(strategyCount) != 2 {
+			return nil, fmt.Errorf("invalid NPC config format: %q", part)
+		}
+
+		strategy := strings.TrimSpace(strategyCount[0])
+		count := 0
+		if _, err := fmt.Sscanf(strategyCount[1], "%d", &count); err != nil {
+			return nil, fmt.Errorf("invalid count in NPC config: %q", part)
+		}
+
+		// Map strategy names to bot commands
+		var command string
+		var args []string
+
+		switch strategy {
+		case "calling", "calling-station", "callbot":
+			command = "go"
+			args = []string{"run", "./sdk/examples/calling-station"}
+		case "aggressive", "aggro":
+			command = "go"
+			args = []string{"run", "./sdk/examples/aggressive"}
+		case "random":
+			command = "go"
+			args = []string{"run", "./sdk/examples/random"}
+		default:
+			return nil, fmt.Errorf("unknown NPC strategy: %q", strategy)
+		}
+
+		spec := spawner.BotSpec{
+			Command: command,
+			Args:    args,
+			Count:   count,
+			Env: map[string]string{
+				"POKERFORBOTS_SEED": fmt.Sprintf("%d", seed),
+			},
+		}
+		specs = append(specs, spec)
+	}
+
+	return specs, nil
 }
 
 // startServerWithArgs starts the server with the given arguments
@@ -347,6 +417,24 @@ func (o *Orchestrator) startServerWithArgs(ctx context.Context, args []string, s
 
 // WaitForCompletion waits for the server to complete all hands
 func (o *Orchestrator) WaitForCompletion(ctx context.Context) error {
+	// Handle embedded server mode
+	if o.embeddedServer != nil {
+		// Wait for the default game to complete (hand limit reached)
+		select {
+		case <-ctx.Done():
+			o.logger.Info().Msg("Context cancelled")
+			return ctx.Err()
+		case <-o.embeddedServer.DefaultGameDone():
+			o.logger.Info().Msg("Server completed successfully")
+			// Write stats to file for later parsing
+			if err := o.writeEmbeddedServerStats(); err != nil {
+				return fmt.Errorf("failed to write stats: %w", err)
+			}
+			return nil
+		}
+	}
+
+	// Handle legacy subprocess mode
 	if o.serverCmd == nil || o.serverCmd.Process == nil {
 		return fmt.Errorf("server not started")
 	}
@@ -372,8 +460,31 @@ func (o *Orchestrator) WaitForCompletion(ctx context.Context) error {
 
 // StopServer stops the server
 func (o *Orchestrator) StopServer() error {
+	// Stop spawned bots first
+	if o.botSpawner != nil {
+		o.logger.Info().Msg("Stopping spawned bots")
+		if err := o.botSpawner.StopAll(); err != nil {
+			o.logger.Warn().Err(err).Msg("Failed to stop some bots")
+		}
+	}
+
+	// Stop embedded server
+	if o.embeddedServer != nil {
+		o.logger.Info().Msg("Shutting down embedded server")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := o.embeddedServer.Shutdown(ctx); err != nil {
+			o.logger.Warn().Err(err).Msg("Failed to shutdown server gracefully")
+		}
+		if o.serverListener != nil {
+			o.serverListener.Close()
+		}
+		return nil
+	}
+
+	// Stop legacy subprocess server
 	if o.serverCmd != nil && o.serverCmd.Process != nil {
-		o.logger.Info().Msg("Stopping server")
+		o.logger.Info().Msg("Stopping server subprocess")
 
 		// Try graceful shutdown first
 		o.serverCmd.Process.Signal(os.Interrupt)
@@ -394,6 +505,49 @@ func (o *Orchestrator) StopServer() error {
 		}
 	}
 
+	return nil
+}
+
+// writeEmbeddedServerStats fetches stats from the embedded server and writes to file
+func (o *Orchestrator) writeEmbeddedServerStats() error {
+	if o.serverURL == "" || o.embeddedServer == nil {
+		return fmt.Errorf("no embedded server running")
+	}
+
+	// Get the stats file path from server config (stored during runSingleBatch)
+	statsFile := o.currentStatsFile
+	if statsFile == "" {
+		return fmt.Errorf("no stats file configured")
+	}
+
+	// Convert WebSocket URL to HTTP URL
+	baseURL := strings.Replace(o.serverURL, "ws://", "http://", 1)
+	baseURL = strings.Replace(baseURL, "/ws", "", 1)
+	url := fmt.Sprintf("%s/admin/games/default/stats", baseURL)
+
+	// Fetch stats from HTTP API
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to fetch stats: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to fetch stats: status %d", resp.StatusCode)
+	}
+
+	// Read the JSON response
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read stats: %w", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(statsFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write stats file: %w", err)
+	}
+
+	o.logger.Info().Str("file", statsFile).Msg("Stats written to file")
 	return nil
 }
 

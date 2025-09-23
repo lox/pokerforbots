@@ -2,6 +2,8 @@
 
 Quick guide for testing and improving poker bots.
 
+For detailed spawner documentation and API reference, see [spawner.md](spawner.md).
+
 ## Prerequisites
 
 Uses CashApp's Hermit: `source bin/activate-hermit` or call things directly from bin.
@@ -13,19 +15,19 @@ Uses CashApp's Hermit: `source bin/activate-hermit` or call things directly from
 The spawner manages bot processes and includes an embedded server:
 
 ```bash
-# Quick demo with default bots
-go run ./cmd/spawner --demo=simple --num-bots=6
+# Quick demo with default bots (6 calling stations)
+go run ./cmd/spawner
 
 # Test your bot against NPC strategies
-go run ./cmd/spawner --demo=mixed --num-bots=5 \
-  --bot "go run ./sdk/examples/complex" \
-  --hand-limit 1000 --print-stats-on-exit
+go run ./cmd/spawner --spec "calling-station:3,random:2" \
+  --bot-cmd "go run ./sdk/examples/complex" \
+  --hand-limit 1000 --print-stats
 
 # Deterministic testing with seed
 go run ./cmd/spawner --seed 42 --hand-limit 1000 \
-  --bot "go run ./sdk/examples/complex" \
-  --demo=aggressive --num-bots=3 \
-  --write-stats-on-exit stats.json
+  --bot-cmd "go run ./sdk/examples/complex" \
+  --spec "aggressive:3" \
+  --write-stats stats.json
 ```
 
 ### Legacy Server Mode
@@ -66,53 +68,41 @@ watch -n 2 'curl -s http://localhost:8080/stats'
 
 ```bash
 # Simple opponents (calling stations)
-go run ./cmd/spawner --demo=simple --num-bots=5 \
-  --bot "go run ./sdk/examples/complex" \
+go run ./cmd/spawner --spec "calling-station:5" \
+  --bot-cmd "go run ./sdk/examples/complex" \
   --hand-limit 1000
 
 # Mixed opponents (calling, random, aggressive)
-go run ./cmd/spawner --demo=mixed --num-bots=6 \
-  --bot "go run ./sdk/examples/complex" \
+go run ./cmd/spawner --spec "calling-station:2,random:2,aggressive:2" \
+  --bot-cmd "go run ./sdk/examples/complex" \
   --hand-limit 1000
 
 # Aggressive opponents only
-go run ./cmd/spawner --demo=aggressive --num-bots=4 \
-  --bot "go run ./sdk/examples/complex" \
+go run ./cmd/spawner --spec "aggressive:4" \
+  --bot-cmd "go run ./sdk/examples/complex" \
   --hand-limit 1000
 ```
 
-### Configuration File
+### Multiple Bot Commands
 
-For complex setups, use a YAML or JSON config:
-
-```yaml
-# spawner-config.yaml
-server_url: ws://localhost:8080/ws
-seed: 42
-bots:
-  - command: go
-    args: [run, ./sdk/examples/complex]
-    count: 1
-    game_id: default
-  - command: go
-    args: [run, ./sdk/examples/calling-station]
-    count: 3
-  - command: go
-    args: [run, ./sdk/examples/aggressive]
-    count: 2
-```
+You can spawn multiple different bot commands:
 
 ```bash
-go run ./cmd/spawner -c spawner-config.yaml --hand-limit 5000
+# Mix custom bots with built-in strategies
+go run ./cmd/spawner \
+  --bot-cmd "go run ./my-bot" --count 2 \
+  --bot-cmd "./another-bot" --count 1 \
+  --spec "calling-station:3" \
+  --hand-limit 1000
 ```
 
 ### Custom Stakes
 
 ```bash
-go run ./cmd/spawner --demo=mixed --num-bots=5 \
-  --bot "go run ./sdk/examples/complex" \
+go run ./cmd/spawner --spec "calling-station:2,aggressive:3" \
+  --bot-cmd "go run ./sdk/examples/complex" \
   --small-blind 25 --big-blind 50 --start-chips 5000 \
-  --hand-limit 1000 --print-stats-on-exit
+  --hand-limit 1000 --print-stats
 ```
 
 ## Automated Testing Loop
@@ -124,9 +114,9 @@ go run ./cmd/spawner --demo=mixed --num-bots=5 \
 for i in {1..5}; do
   echo "Test $i of 5"
   go run ./cmd/spawner --seed $i --hand-limit 1000 \
-    --demo=mixed --num-bots=5 \
-    --bot "go run ./sdk/examples/complex" \
-    --write-stats-on-exit results/test-$i.json
+    --spec "calling-station:2,random:2,aggressive:1" \
+    --bot-cmd "go run ./sdk/examples/complex" \
+    --write-stats results/test-$i.json
 done
 
 # Extract BB/100 from all runs

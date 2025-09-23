@@ -87,10 +87,25 @@ tasks:
       - go test -json -short ./... | gotestsum tool slowest
 
   lint:
-    desc: Run linters
+    desc: Run linters in parallel
+    deps:
+      - lint:golangci
+      - lint:modernize
+      - lint:unusedparams
+
+  lint:golangci:
+    desc: golangci-lint
     cmds:
       - bin/golangci-lint run ./...
+
+  lint:modernize:
+    desc: gopls modernize analysis
+    cmds:
       - bin/go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test ./...
+
+  lint:unusedparams:
+    desc: gopls unusedparams analysis
+    cmds:
       - bin/go run golang.org/x/tools/gopls/internal/analysis/unusedparams/cmd@latest -test ./...
 
   format:
