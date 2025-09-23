@@ -85,7 +85,7 @@ func (c *client) connect(server string) error {
 
 	c.conn = conn
 
-	connectMsg := &protocol.Connect{Type: protocol.TypeConnect, Name: c.name, Game: c.game, Role: "player"}
+	connectMsg := &protocol.Connect{Type: protocol.TypeConnect, Name: c.name, Game: c.game}
 	payload, err := protocol.Marshal(connectMsg)
 	if err != nil {
 		return fmt.Errorf("failed to encode connect message: %w", err)

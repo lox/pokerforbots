@@ -148,15 +148,15 @@ After a run completes, the server prints a summary table. For more detail:
 curl -s http://localhost:8080/admin/games/default/stats > last-run.json
 
 # Player performance
-jq '.players[] | select(.role == "player") | {
+jq '.players[] | {
   name: .display_name,
   bb_per_100: .detailed_stats.bb_per_100,
   win_rate: .detailed_stats.win_rate,
   showdown_rate: .detailed_stats.showdown_rate
 }' last-run.json
 
-# Position breakdown
-jq '.players[] | select(.role == "player") | .detailed_stats.position_stats' last-run.json
+# Position breakdown for specific player
+jq '.players[] | select(.display_name == "complex") | .detailed_stats.position_stats' last-run.json
 ```
 
 ## Key Metrics

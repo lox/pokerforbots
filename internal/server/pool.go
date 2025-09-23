@@ -649,7 +649,6 @@ func (p *BotPool) PlayerStats() []PlayerStats {
 			GameCompletedPlayer: protocol.GameCompletedPlayer{
 				BotID:       stats.BotID,
 				DisplayName: stats.DisplayName,
-				Role:        "", // Roles removed - all bots are equal
 				Hands:       stats.Hands,
 				NetChips:    stats.NetChips,
 				AvgPerHand:  avg,

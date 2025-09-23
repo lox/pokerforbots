@@ -89,14 +89,10 @@ func (b *Bot) Connect(serverURL string) error {
 	connect := &protocol.Connect{
 		Type: protocol.TypeConnect,
 		Name: b.id,
-		Role: "player",
 	}
-	// Allow environment overrides for game and role when launched by server
+	// Allow environment override for game when launched by server
 	if game := os.Getenv("POKERFORBOTS_GAME"); game != "" {
 		connect.Game = game
-	}
-	if role := os.Getenv("POKERFORBOTS_ROLE"); role != "" {
-		connect.Role = role
 	}
 	payload, err := protocol.Marshal(connect)
 	if err != nil {

@@ -29,7 +29,7 @@ Returns the list of configured game instances.
 1. Bot makes an HTTP request to `/games`.
 2. Chooses the appropriate `id` for the desired table.
 3. Opens a WebSocket connection and sends the usual `connect` message with the
-   selected `game` and `role` (`player` or `npc`).
+   selected `game`.
 
 ## `GET /stats`
 
@@ -99,7 +99,6 @@ Strategies supported for NPCs: `calling` (calling-station), `aggressive`, `rando
     {
       "bot_id": "bot-player-1234",
       "display_name": "complex",
-      "role": "player",
       "hands": 120,
       "net_chips": 480,
       "avg_per_hand": 4.0,

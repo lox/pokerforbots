@@ -48,7 +48,7 @@ curl -X POST http://localhost:8080/admin/games \
            ]
          }'
 
-# Run your development bot (connecting as role=player)
+# Run your development bot
 go run ./sdk/examples/random --server ws://localhost:8080/ws --game sandbox
 
 # OR launch the complex bot skeleton (for custom logic)

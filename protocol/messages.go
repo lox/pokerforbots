@@ -32,7 +32,6 @@ type Connect struct {
 	Name      string `msg:"name"`
 	Game      string `msg:"game,omitempty"`
 	AuthToken string `msg:"auth_token,omitempty"`
-	Role      string `msg:"role,omitempty"`
 }
 
 // Action is sent by client in response to ActionRequest
@@ -121,7 +120,6 @@ type HandResult struct {
 type GameCompletedPlayer struct {
 	BotID       string  `msg:"bot_id" json:"bot_id"`
 	DisplayName string  `msg:"display_name" json:"display_name"`
-	Role        string  `msg:"role" json:"role"`
 	Hands       int     `msg:"hands" json:"hands"`
 	NetChips    int64   `msg:"net_chips" json:"net_chips"`
 	AvgPerHand  float64 `msg:"avg_per_hand" json:"avg_per_hand"`

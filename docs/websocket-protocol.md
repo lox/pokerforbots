@@ -24,12 +24,11 @@ Sent immediately after WebSocket connection established.
   "type": "connect",
   "name": "BotName",          // Bot identifier (max 32 chars)
   "game": "default",          // Preferred game/table identifier (optional, defaults to server's default game)
-  "role": "player",           // "player" (must be present for dev bots) or "npc" (background sparring bot)
   "auth_token": "..."         // (optional/TODO) Authentication credential
 }
 ```
 
-If `game` is omitted the server will place the bot in the default game (until the lobby/listing flow ships). `role` defaults to `"npc"`; game instances can require that at least one `player` be present before starting hands. `auth_token` is ignored today but reserved for future authentication.
+If `game` is omitted the server will place the bot in the default game (until the lobby/listing flow ships). `auth_token` is ignored today but reserved for future authentication.
 
 ### Game Discovery & Selection *(TODO)*
 Planned additions to allow bots to list, join, and leave named game instances:
@@ -189,7 +188,6 @@ Broadcast exactly once when a game instance stops creating new hands (for exampl
     {
       "bot_id": "complex-3298",
       "display_name": "complex",
-      "role": "player",
       "hands": 500,
       "net_chips": 12850,
       "avg_per_hand": 25.7,

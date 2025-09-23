@@ -48,7 +48,7 @@ Bot → WebSocket → Game Manager → Game Instance → Bot Pool → Hand Runne
 ### Message Types
 
 **Client → Server:**
-- `Connect`: Join server with bot name, desired role (player/npc), and target game
+- `Connect`: Join server with bot name and target game
 - `Action`: Send poker decision (fold/call/raise)
 
 **Server → Client:**
@@ -152,7 +152,6 @@ game:
   small_blind: 5
   big_blind: 10
   decision_timeout_ms: 100
-  require_player: true   # Hand will only start if at least one player-role bot is seated
   hand_limit: 0          # 0 = unlimited, otherwise stop spawning hands after N
 
 pool:
@@ -222,13 +221,12 @@ The server uses dependency injection for all random number generation. A single 
 
 ### Stateless Design
 Each hand is completely independent:
-- Random selection of 2-9 bots from the available pool (respecting per-game requirements such as "must include a player")
+- Random selection of 2-9 bots from the available pool
 - Button assigned to the first seat in that shuffled order (no rotation carried between hands), so the seating shuffle alone defines blinds/position
 - Fresh game state with no carryover
 
 ### Game Manager & Simulation Roadmap
 - **Multiple Game Instances**: The server will expose multiple named "games", each with their own `Config` (blinds, timeouts, min/max seats) and bot pool. Bots join and leave games explicitly through the protocol.
-- **Bot Roles**: Connecting bots declare a role (`player` or `npc`). Game configs (default included) can require at least one `player` before starting a hand, keeping background sparring bots idle until a focus bot attaches.
 - **Built-in NPC Bots**: Games may spawn NPC opponents (calling station, aggressive, random). The server runs these strategies in-process when configured via the admin API.
 - **Deterministic Runs**: CLI flags (`--seed`, `--hands`) and matching admin payload fields let you spin up reproducible games that halt after N hands, while `/admin/games/{id}/stats` exposes per-bot performance metrics for rapid tuning.
 - **Session Completion Signal**: When a game exhausts its configured hand budget it emits a `game_completed` message (with per-bot stats) so tooling can wrap up gracefully without tearing down connections.

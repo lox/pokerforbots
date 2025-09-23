@@ -192,8 +192,8 @@ A successful demo should:
 ### 13. Game Manager & Lobby ✅
 - [x] Introduce a `GameManager` that tracks multiple named game instances with per-table configs
 - [x] Update connection flow: bots specify a game during connect (defaulting to `default`)
-- [x] Teach `protocol.Connect` new fields (`game`, `role`, `auth_token` placeholder)
-- [x] Ensure bots persist metadata (display name, game, role) for logging/hand runner usage
+- [x] Teach `protocol.Connect` new fields (`game`, `auth_token` placeholder)
+- [x] Ensure bots persist metadata (display name, game) for logging/hand runner usage
 - [x] **Tests:** updated integration helpers to send connect handshake before assertions
 
 TODO follow-up:
