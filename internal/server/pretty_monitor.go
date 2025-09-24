@@ -221,7 +221,7 @@ func (p *PrettyPrintMonitor) OnHandComplete(outcome HandOutcome) {
 		// Show winners
 		for _, winner := range winners {
 			if len(winner.HoleCards) > 0 {
-				name := p.formatSummaryName(winner.Bot.DisplayName())
+				name := p.formatSummaryName(p.getBotDisplayName(winner.Bot))
 				showLine := fmt.Sprintf("%s: shows %s", name, formatCards(winner.HoleCards))
 				// Note: HandRank would need to be added to BotHandOutcome for full detail
 				fmt.Fprintln(p.writer, showLine)
@@ -230,16 +230,16 @@ func (p *PrettyPrintMonitor) OnHandComplete(outcome HandOutcome) {
 
 		// Show losers
 		for _, bot := range showdown {
-			name := p.formatSummaryName(bot.Bot.DisplayName())
+			name := p.formatSummaryName(p.getBotDisplayName(bot.Bot))
 			line := fmt.Sprintf("%s: shows %s", name, formatCards(bot.HoleCards))
 			fmt.Fprintln(p.writer, line)
 		}
 	}
 
-	// Print winners collecting pot
+	// Print winners collecting pot (showing net profit)
 	for _, winner := range winners {
-		name := p.formatSummaryName(winner.Bot.DisplayName())
-		fmt.Fprintf(p.writer, "%s collected %s from pot\n", name, formatAmount(winner.NetChips))
+		name := p.formatSummaryName(p.getBotDisplayName(winner.Bot))
+		fmt.Fprintf(p.writer, "%s won %s (net)\n", name, formatAmount(winner.NetChips))
 	}
 
 	// Print summary
@@ -251,7 +251,7 @@ func (p *PrettyPrintMonitor) OnHandComplete(outcome HandOutcome) {
 	// Player summaries
 	for _, bot := range detail.BotOutcomes {
 		seat := bot.Position
-		name := bot.Bot.DisplayName()
+		name := p.getBotDisplayName(bot.Bot)
 		nameFmt := p.formatSummaryName(name)
 
 		// Get roles for this seat
@@ -292,6 +292,7 @@ func (p *PrettyPrintMonitor) OnHandComplete(outcome HandOutcome) {
 		fmt.Fprintln(p.writer, line)
 	}
 
+	fmt.Fprintln(p.writer)
 	fmt.Fprintln(p.writer, colorize("────────────────────────────────────────", colorDim))
 }
 
@@ -341,6 +342,20 @@ func (p *PrettyPrintMonitor) formatActionName(seat int, name string, folded, all
 
 func (p *PrettyPrintMonitor) formatSummaryName(name string) string {
 	return colorize(name, colorBold)
+}
+
+// getBotDisplayName returns the bot's display name with fallback to bot ID
+func (p *PrettyPrintMonitor) getBotDisplayName(bot *Bot) string {
+	name := bot.DisplayName()
+	if name == "" {
+		// Fallback to a shortened bot ID
+		id := bot.ID
+		if len(id) > 8 {
+			return id[:8]
+		}
+		return id
+	}
+	return name
 }
 
 func (p *PrettyPrintMonitor) describePlayerAction(action string, amount, stack int) string {
