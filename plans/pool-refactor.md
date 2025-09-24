@@ -1,5 +1,17 @@
 # BotPool Statistics Refactoring Plan (Simplified)
 
+## Current Status: COMPLETE ✅
+
+All phases of the pool statistics refactoring have been successfully completed:
+
+- **Monitor System**: Created clean `HandMonitor` and `StatsProvider` interfaces
+- **Unified Statistics**: Consolidated into single `StatsMonitor` with optional detailed tracking
+- **Error Tracking**: Added timeout, invalid action, disconnect, and bust counters
+- **Protocol Updates**: Extended `GameCompletedPlayer` with error metrics
+- **Code Reduction**: Removed ~250 lines from pool.go, achieving simplification goal
+- **Tests**: Added comprehensive monitor tests, all passing
+- **Documentation**: Updated design docs with statistics configuration details
+
 ## Problem Statement
 
 The current BotPool implementation has accumulated significant complexity from managing three separate statistics systems:
@@ -451,36 +463,36 @@ func (hr *HandRunner) processAction(bot *Bot) {
 
 ## Implementation Plan
 
-### Phase 1: Create New Monitor System (2-3 hours)
-1. Create `internal/server/monitor.go` with interfaces
-2. Implement `StatsMonitor` with both basic and detailed tracking
-3. Add comprehensive tests for StatsMonitor
-4. Ensure all existing botStats fields are preserved
+### Phase 1: Create New Monitor System ✅
+- [x] Create `internal/server/monitor.go` with interfaces
+- [x] Implement `StatsMonitor` with both basic and detailed tracking
+- [x] Add comprehensive tests for StatsMonitor
+- [x] Ensure all existing botStats fields are preserved
 
-### Phase 2: Update HandRunner (1-2 hours)
-1. Add error tracking fields and instrumentation
-2. Create `buildDetailedOutcome()` method
-3. Add `NeedsDetailedData()` check
-4. Update to call `pool.RecordHandOutcome()`
+### Phase 2: Update HandRunner ✅
+- [x] Add error tracking fields and instrumentation
+- [x] Create `buildDetailedOutcome()` method
+- [x] Add `NeedsDetailedData()` check
+- [x] Update to call `pool.RecordHandOutcome()`
 
-### Phase 3: Update BotPool (1-2 hours)
-1. Add `progressMonitor` and `statsMonitor` fields
-2. Add `SetHandMonitor()` method
-3. Implement new `RecordHandOutcome()` method
-4. Add `NeedsDetailedData()` helper
-5. Update `PlayerStats()` to delegate
+### Phase 3: Update BotPool ✅
+- [x] Add `progressMonitor` and `statsMonitor` fields
+- [x] Add `SetHandMonitor()` method
+- [x] Implement new `RecordHandOutcome()` method
+- [x] Add `NeedsDetailedData()` helper
+- [x] Update `PlayerStats()` to delegate
 
-### Phase 4: Migrate and Test (2-3 hours)
-1. Update regression tester to use `SetHandMonitor()`
-2. Verify HTTP endpoints work with new system
-3. Run side-by-side with old system to verify correctness
-4. Performance benchmark
+### Phase 4: Migrate and Test ✅
+- [x] Update regression tester to use `SetHandMonitor()`
+- [x] Verify HTTP endpoints work with new system
+- [x] Run side-by-side with old system to verify correctness
+- [x] Performance benchmark
 
-### Phase 5: Remove Legacy Code (1 hour)
-1. Remove `botStats` map and `statsMu`
-2. Remove `statsCollector` and `StatsCollector` interface
-3. Remove old `RecordHandOutcome` methods
-4. Clean up unused code
+### Phase 5: Remove Legacy Code ✅
+- [x] Remove `botStats` map and `statsMu`
+- [x] Remove `statsCollector` and `StatsCollector` interface
+- [x] Remove old `RecordHandOutcome` methods
+- [x] Clean up unused code
 
 **Total: 7-10 hours** (reduced from 10-12 with simpler design)
 
@@ -508,14 +520,38 @@ func (hr *HandRunner) processAction(bot *Bot) {
 3. **Switch consumers**: Update regression tester, HTTP endpoints
 4. **Remove old system**: Once verified working
 
-## Success Criteria
+## Success Criteria ✅
 
-1. **Functionality preserved**: All existing features work
-2. **Performance maintained**: No regression in throughput
-3. **Code simplified**: 200+ lines removed from pool.go
-4. **Tests pass**: All existing and new tests
-5. **Error tracking works**: Timeouts and invalid actions tracked
-6. **Downstream visibility**: Error counters exposed via GameCompleted/admin stats
+- [x] **Functionality preserved**: All existing features work
+- [x] **Performance maintained**: No regression in throughput
+- [x] **Code simplified**: 200+ lines removed from pool.go
+- [x] **Tests pass**: All existing and new tests
+- [x] **Error tracking works**: Timeouts and invalid actions tracked
+- [x] **Downstream visibility**: Error counters exposed via GameCompleted/admin stats
+
+## Delivered Features
+
+### New Components
+- [x] `internal/server/monitor.go` - Clean interface definitions
+- [x] `internal/server/monitor_test.go` - Comprehensive monitor tests
+- [x] `MultiHandMonitor` - Composite pattern for multiple monitors
+- [x] `StatsMonitor` - Unified statistics collector with memory management
+
+### Enhanced Error Tracking
+- [x] Timeout counters per bot
+- [x] Invalid action counters per bot
+- [x] Disconnect tracking per bot
+- [x] Bust (went broke) tracking
+- [x] Error metrics in `GameCompletedPlayer` protocol messages
+- [x] Error metrics exposed via HTTP admin stats endpoint
+
+### Code Improvements
+- [x] Removed redundant `botStats` map from BotPool
+- [x] Removed complex `StatsCollector` interface hierarchy
+- [x] Simplified mutex usage (single mutex in StatsMonitor)
+- [x] Conditional detail building for performance
+- [x] Deterministic sorting by connection order
+- [x] Memory management with circular buffer (10,000 hand default)
 
 ## Future Enhancements (If Needed)
 
