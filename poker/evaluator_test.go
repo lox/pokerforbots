@@ -157,6 +157,19 @@ func TestCompareHands(t *testing.T) {
 	}
 }
 
+func TestEvaluate7CardsBatchMatchesSingle(t *testing.T) {
+	t.Parallel()
+	hands := generateRandomHands(256, 1234)
+	out := Evaluate7CardsBatch(hands, nil)
+
+	for i, hand := range hands {
+		single := Evaluate7Cards(hand)
+		if out[i] != single {
+			t.Fatalf("batch mismatch at index %d: got %v want %v", i, out[i], single)
+		}
+	}
+}
+
 func BenchmarkEvaluate7Cards(b *testing.B) {
 	hand := parseCards("As", "Kh", "Qd", "Jc", "Ts", "9h", "7d")
 
@@ -179,6 +192,18 @@ func BenchmarkEvaluateFullHouse(b *testing.B) {
 	for b.Loop() {
 		_ = Evaluate7Cards(hand)
 	}
+}
+
+func BenchmarkEvaluate7CardsBatch32(b *testing.B) {
+	hands := generateRandomHands(32, 5678)
+	out := make([]HandRank, len(hands))
+
+	b.ResetTimer()
+	for b.Loop() {
+		Evaluate7CardsBatch(hands, out)
+	}
+
+	benchSink = out[0]
 }
 
 // Rigorous large-sample benchmarks

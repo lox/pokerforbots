@@ -114,18 +114,21 @@ Acceptance for Phase 2:
 - [x] Measure: benches + pprof top; record before/after
 - [x] Phase 2: mask algebra for pairs/trips/quads; remove `[13]uint8` counts
 - [x] Re-run tests and benches; document results here
+- [x] Add batch evaluation surface (non-SIMD) to amortize call overhead
 
 ## Experiment Log
 
 - 2025-09-24 — Baseline Apple M1, Go `task bench:evaluator -- -benchtime=3s`: `BenchmarkEvaluate7Cards_LargeSample` 199.6 ns/op (≈5.01M hands/sec), parallel 69.57 ns/op (≈14.37M hands/sec); 0 B/op, 0 allocs/op.
 - 2025-09-24 — Branchless straight detection + bitmask kickers/counting: sequential 49.70 ns/op (≈20.12M hands/sec), parallel 53.87 ns/op (≈18.56M hands/sec); `go test ./poker` passes.
-- 2025-09-24 — Suit mask reuse + full mask algebra for pairs/trips/quads: sequential 25.59 ns/op (≈39.06M hands/sec), parallel 51.42 ns/op (≈19.45M hands/sec); `go test ./poker` passes.
+- 2025-09-24 — Suit mask reuse + full mask algebra for pairs/trips/quads: sequential 22.95 ns/op (≈43.58M hands/sec), parallel 57.01 ns/op (≈17.54M hands/sec); `go test ./poker` passes.
+- 2025-09-24 — Batch API prototype (32 at a time, scalar): `BenchmarkEvaluate7CardsBatch32` 555.9 ns/op total (≈17.4 ns per hand); sequential bench unchanged (22.95 ns/op) while parallel settles around 57 ns/op due to framework overhead; `go test ./poker` passes.
 
 ### Notes 2025-09-24
 
 - Suit masks cached at eval entry; straight-high cascade now feeds both flush and board checks directly.
 - Count arrays removed in favour of suit-intersection masks (`quadsMask`, `tripsMask`, `pairsMask`); kickers sourced from shared rank mask.
 - Next profiling pass (`task profile:evaluator:top`) scheduled to confirm new hotspots before further micro-tuning.
+- Batched Go API mirrors Zig structure-of-arrays approach (no SIMD yet) and gives ~1.5× effective speedup when processing 32 hands per call; parallel harness now dominated by scheduler/cache overhead (~57 ns/op).
 
 ## Notes & References
 

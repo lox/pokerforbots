@@ -66,6 +66,27 @@ func Evaluate7Cards(hand Hand) HandRank {
 		return 0
 	}
 
+	return evaluate7CardsUnchecked(hand)
+}
+
+// Evaluate7CardsBatch evaluates multiple 7-card hands and writes results into out.
+// If out is nil or smaller than hands, a new slice is allocated and returned.
+// Each hand is assumed to contain exactly seven cards; behavior is undefined otherwise.
+func Evaluate7CardsBatch(hands []Hand, out []HandRank) []HandRank {
+	if len(out) < len(hands) {
+		out = make([]HandRank, len(hands))
+	} else {
+		out = out[:len(hands)]
+	}
+
+	for i, hand := range hands {
+		out[i] = evaluate7CardsUnchecked(hand)
+	}
+
+	return out
+}
+
+func evaluate7CardsUnchecked(hand Hand) HandRank {
 	var suitMasks [4]uint16
 	var rankMask uint16
 	for suit := uint8(0); suit < 4; suit++ {
@@ -74,6 +95,10 @@ func Evaluate7Cards(hand Hand) HandRank {
 		rankMask |= mask
 	}
 
+	return rankFromMasks(suitMasks, rankMask)
+}
+
+func rankFromMasks(suitMasks [4]uint16, rankMask uint16) HandRank {
 	// Check for flush first (most restrictive) - check ALL suits for best flush
 	bestFlushRank := HandRank(0)
 	for _, suitMask := range suitMasks {
