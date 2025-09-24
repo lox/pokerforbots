@@ -96,6 +96,15 @@ func (m *SimpleProgressMonitor) OnGameComplete(handsCompleted uint64, reason str
 	// Don't print anything - handled by OnHandComplete
 }
 
+// OnHandStart is called when a new hand begins
+func (m *SimpleProgressMonitor) OnHandStart(string, []server.HandPlayer, int, server.Blinds) {}
+
+// OnPlayerAction is called when a player takes an action
+func (m *SimpleProgressMonitor) OnPlayerAction(string, int, string, int, int) {}
+
+// OnStreetChange is called when the street changes
+func (m *SimpleProgressMonitor) OnStreetChange(string, string, []string) {}
+
 // startBatch marks the beginning of a new batch
 func (m *SimpleProgressMonitor) startBatch(batchNum int, totalBatches int) {
 	m.mu.Lock()

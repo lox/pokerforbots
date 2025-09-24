@@ -29,6 +29,8 @@ var cli struct {
 	BigBlind   int    `kong:"default='10',help='Big blind'"`
 	StartChips int    `kong:"default='1000',help='Starting chip stack'"`
 	TimeoutMs  int    `kong:"default='100',help='Bot decision timeout in milliseconds'"`
+	MinPlayers int    `kong:"default='0',help='Minimum players to start a hand (0 = auto, matches bot count)'"`
+	MaxPlayers int    `kong:"default='9',help='Maximum players at a table'"`
 	Seed       int64  `kong:"help='Seed for deterministic testing (0 for random)'"`
 
 	// Bot specification
@@ -42,6 +44,9 @@ var cli struct {
 	// Stats output
 	WriteStats string `kong:"help='Write stats to file on exit'"`
 	PrintStats bool   `kong:"help='Print stats on exit'"`
+
+	// Display mode
+	Pretty bool `kong:"help='Display hands in pretty format instead of logs'"`
 
 	// Logging
 	LogLevel string `kong:"help='Log level (debug|info|warn|error)'"`
@@ -62,6 +67,12 @@ func main() {
 	case "error":
 		level = zerolog.ErrorLevel
 	}
+
+	// In pretty mode, suppress most logs unless explicitly set
+	if cli.Pretty && cli.LogLevel == "" {
+		level = zerolog.WarnLevel
+	}
+
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
 		Level(level).
 		With().Timestamp().Logger()
@@ -78,6 +89,44 @@ func main() {
 		cancel()
 	}()
 
+	// Parse bot specifications first to determine total bot count
+	specs, err := parseSpecString(cli.Spec)
+	if err != nil {
+		logger.Fatal().Err(err).Str("spec", cli.Spec).Msg("Failed to parse spec")
+	}
+
+	// Add any additional bots specified via --bot
+	for _, botCmd := range cli.BotCmd {
+		parts := strings.Fields(botCmd)
+		if len(parts) == 0 {
+			continue
+		}
+		specs = append(specs, spawner.BotSpec{
+			Command: parts[0],
+			Args:    parts[1:],
+			Count:   cli.Count,
+		})
+	}
+
+	if len(specs) == 0 {
+		logger.Fatal().Msg("No bots specified (use --spec to specify bots)")
+	}
+
+	// Calculate total number of bots
+	totalBots := 0
+	for _, spec := range specs {
+		totalBots += spec.Count
+	}
+
+	// If MinPlayers is 0 (auto), set it to match bot count but at least 2
+	// This ensures all spawned bots participate in hands
+	if cli.MinPlayers == 0 {
+		cli.MinPlayers = max(2, min(totalBots, cli.MaxPlayers))
+		if !cli.Pretty {
+			logger.Info().Int("min_players", cli.MinPlayers).Int("total_bots", totalBots).Msg("Auto-setting min-players to match bot count")
+		}
+	}
+
 	// Configure and start embedded server with spawner
 	seed := cli.Seed
 	if seed == 0 {
@@ -89,8 +138,8 @@ func main() {
 		BigBlind:      cli.BigBlind,
 		StartChips:    cli.StartChips,
 		Timeout:       time.Duration(cli.TimeoutMs) * time.Millisecond,
-		MinPlayers:    2,
-		MaxPlayers:    9,
+		MinPlayers:    cli.MinPlayers,
+		MaxPlayers:    cli.MaxPlayers,
 		Seed:          seed,
 		HandLimit:     uint64(cli.HandLimit),
 		EnableStats:   cli.WriteStats != "" || cli.PrintStats,
@@ -114,51 +163,48 @@ func main() {
 	}
 
 	wsURL := fmt.Sprintf("ws://%s/ws", listener.Addr())
-	logger.Info().Str("url", wsURL).Msg("Server started")
-	if cli.Seed != 0 {
-		logger.Info().Int64("seed", cli.Seed).Msg("Using deterministic seed")
-	}
 
-	// Parse bot specifications
-	specs, err := parseSpecString(cli.Spec)
-	if err != nil {
-		logger.Fatal().Err(err).Str("spec", cli.Spec).Msg("Failed to parse spec")
-	}
-
-	// Add any additional bots specified via --bot
-	for _, botCmd := range cli.BotCmd {
-		parts := strings.Fields(botCmd)
-		if len(parts) == 0 {
-			continue
+	// Set up pretty printer if requested
+	if cli.Pretty {
+		monitor := server.NewPrettyPrintMonitor(os.Stdout)
+		if err := srv.SetHandMonitor(monitor); err != nil {
+			logger.Error().Err(err).Msg("Failed to set pretty print monitor")
 		}
-		specs = append(specs, spawner.BotSpec{
-			Command: parts[0],
-			Args:    parts[1:],
-			Count:   cli.Count,
-		})
+	} else {
+		logger.Info().Str("url", wsURL).Msg("Server started")
+		if cli.Seed != 0 {
+			logger.Info().Int64("seed", cli.Seed).Msg("Using deterministic seed")
+		}
 	}
 
-	if len(specs) == 0 {
-		logger.Fatal().Msg("No bots specified (use --spec to specify bots)")
+	if !cli.Pretty {
+		logger.Info().Str("spec", cli.Spec).Int("additional", len(cli.BotCmd)).Int("total_bots", totalBots).Msg("Spawning bots")
 	}
-
-	logger.Info().Str("spec", cli.Spec).Int("additional", len(cli.BotCmd)).Msg("Spawning bots")
 
 	// Create spawner and spawn bots
-	botSpawner := spawner.NewWithSeed(wsURL, logger, seed)
+	spawnerLogger := logger
+	if cli.Pretty {
+		// Create a quiet logger for bot processes in pretty mode
+		spawnerLogger = zerolog.New(io.Discard).Level(zerolog.Disabled)
+	}
+	botSpawner := spawner.NewWithSeed(wsURL, spawnerLogger, seed)
 	defer botSpawner.StopAll()
 
 	if err := botSpawner.Spawn(specs...); err != nil {
 		logger.Fatal().Err(err).Msg("Failed to spawn bots")
 	}
 
-	logger.Info().Int("count", botSpawner.ActiveCount()).Msg("Bots spawned")
+	if !cli.Pretty {
+		logger.Info().Int("count", botSpawner.ActiveCount()).Msg("Bots spawned")
+	}
 
 	// Wait for context cancellation or hand limit
 	select {
 	case <-ctx.Done():
 	case <-srv.DefaultGameDone():
-		logger.Info().Msg("Hand limit reached")
+		if !cli.Pretty {
+			logger.Info().Msg("Hand limit reached")
+		}
 	}
 
 	if metrics, ok := srv.DefaultGameMetrics(); ok {
@@ -189,7 +235,9 @@ func main() {
 	}
 
 	// Stop bots (will be done by defer)
-	logger.Info().Msg("Stopping bots...")
+	if !cli.Pretty {
+		logger.Info().Msg("Stopping bots...")
+	}
 }
 
 // parseSpecString parses a specification string like "calling-station:2,random:1,aggressive:3"

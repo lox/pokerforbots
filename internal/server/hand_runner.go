@@ -277,6 +277,24 @@ func (hr *HandRunner) Run() {
 
 // broadcastHandStart sends the initial hand information to all bots
 func (hr *HandRunner) broadcastHandStart() {
+	// Notify monitor of hand start
+	if hr.pool != nil {
+		monitor := hr.pool.GetHandMonitor()
+		players := make([]HandPlayer, len(hr.bots))
+		for i, p := range hr.handState.Players {
+			players[i] = HandPlayer{
+				Seat:  i,
+				Name:  hr.displayName(-1, i), // Use -1 for neutral perspective
+				Chips: p.Chips,
+			}
+		}
+		blinds := Blinds{
+			Small: hr.config.SmallBlind,
+			Big:   hr.config.BigBlind,
+		}
+		monitor.OnHandStart(hr.handID, players, hr.button, blinds)
+	}
+
 	for i, bot := range hr.bots {
 		player := hr.handState.Players[i]
 
@@ -577,6 +595,12 @@ func (hr *HandRunner) broadcastPlayerAction(seat int, action string, amountPaid 
 	player := hr.handState.Players[seat]
 	pot := hr.totalPot()
 
+	// Notify monitor of player action
+	if hr.pool != nil {
+		monitor := hr.pool.GetHandMonitor()
+		monitor.OnPlayerAction(hr.handID, seat, action, amountPaid, player.Chips)
+	}
+
 	for observerSeat, bot := range hr.bots {
 		msg := &protocol.PlayerAction{
 			Type:        "player_action",
@@ -811,6 +835,7 @@ func (hr *HandRunner) buildDetailedOutcome(winners []winnerSummary) *HandOutcome
 		ButtonPosition: hr.button,
 		StreetReached:  hr.lastStreet.String(),
 		Board:          hr.boardStrings(),
+		TotalPot:       hr.totalPot(),
 		BotOutcomes:    make([]BotHandOutcome, len(hr.bots)),
 	}
 
@@ -954,6 +979,12 @@ func (hr *HandRunner) broadcastSpecificStreet(previous, current game.Street, boa
 		Str("to", current.String()).
 		Strs("board", board).
 		Msg("Street advanced")
+
+	// Notify monitor of street change
+	if hr.pool != nil {
+		monitor := hr.pool.GetHandMonitor()
+		monitor.OnStreetChange(hr.handID, current.String(), board)
+	}
 
 	for _, bot := range hr.bots {
 		msg := &protocol.StreetChange{

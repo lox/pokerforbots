@@ -266,5 +266,14 @@ func (m *ServerProgressMonitor) OnGameComplete(handsCompleted uint64, reason str
 		handsCompleted, duration.Seconds(), handsPerSec)
 }
 
+// OnHandStart is called when a new hand begins
+func (m *ServerProgressMonitor) OnHandStart(string, []server.HandPlayer, int, server.Blinds) {}
+
+// OnPlayerAction is called when a player takes an action
+func (m *ServerProgressMonitor) OnPlayerAction(string, int, string, int, int) {}
+
+// OnStreetChange is called when the street changes
+func (m *ServerProgressMonitor) OnStreetChange(string, string, []string) {}
+
 // Ensure interface compliance
 var _ server.HandMonitor = (*ServerProgressMonitor)(nil)

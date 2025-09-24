@@ -81,10 +81,17 @@ func NewWithSeed(serverURL string, logger zerolog.Logger, seed int64) *BotSpawne
 
 // Spawn spawns one or more bot specs.
 func (s *BotSpawner) Spawn(specs ...BotSpec) error {
+	// Pre-allocate bot IDs deterministically based on spec order
+	totalBots := 0
 	for _, spec := range specs {
 		if spec.Count <= 0 {
 			spec.Count = 1
 		}
+		totalBots += spec.Count
+	}
+
+	botID := 0
+	for _, spec := range specs {
 		if spec.GameID == "" {
 			spec.GameID = "default"
 		}
@@ -97,8 +104,9 @@ func (s *BotSpawner) Spawn(specs ...BotSpec) error {
 			Msg("Spawning bots")
 
 		for i := 0; i < spec.Count; i++ {
-			// Build environment
-			env := s.buildEnv(spec, i)
+			botID++
+			// Build environment with deterministic bot ID
+			env := s.buildEnvWithID(spec, botID)
 
 			// Create and start process
 			proc := NewProcess(s.ctx, spec.Command, spec.Args, env, s.logger)
@@ -177,18 +185,20 @@ func (s *BotSpawner) ActiveCount() int {
 
 // buildEnv builds the environment variables for a bot.
 func (s *BotSpawner) buildEnv(spec BotSpec, _ int) map[string]string {
+	// This method is deprecated, use buildEnvWithID instead
+	s.mu.Lock()
+	s.botSeq++
+	botID := s.botSeq
+	s.mu.Unlock()
+	return s.buildEnvWithID(spec, botID)
+}
+
+func (s *BotSpawner) buildEnvWithID(spec BotSpec, botID int) map[string]string {
 	env := make(map[string]string)
 
 	// Core environment
 	env[config.EnvServer] = s.serverURL
 	env[config.EnvGame] = spec.GameID
-
-	// Increment bot sequence and use for ID
-	s.mu.Lock()
-	s.botSeq++
-	botID := s.botSeq
-	s.mu.Unlock()
-
 	env[config.EnvBotID] = fmt.Sprintf("bot-%d", botID)
 
 	// Add seed derivation for deterministic testing

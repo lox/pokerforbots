@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"math/rand"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -118,6 +119,18 @@ func (p *BotPool) SetHandMonitor(monitor HandMonitor) {
 	if monitor != nil && atomic.LoadUint64(&p.handCounter) == 0 {
 		monitor.OnGameStart(p.handLimit)
 	}
+}
+
+// GetHandMonitor returns the combined monitor (both progress and stats)
+func (p *BotPool) GetHandMonitor() HandMonitor {
+	monitors := []HandMonitor{}
+	if p.progressMonitor != nil {
+		monitors = append(monitors, p.progressMonitor)
+	}
+	if p.statsMonitor != nil {
+		monitors = append(monitors, p.statsMonitor)
+	}
+	return NewMultiHandMonitor(monitors...)
 }
 
 // GameID returns the identifier associated with this pool.
@@ -273,6 +286,12 @@ collectLoop:
 			break collectLoop
 		}
 	}
+
+	// Sort bots by ID for deterministic ordering before shuffle
+	// This ensures consistent behavior regardless of connection timing
+	sort.Slice(allBots, func(i, j int) bool {
+		return allBots[i].ID < allBots[j].ID
+	})
 
 	// Randomly shuffle and select bots for this hand with mutex protection
 	p.rngMutex.Lock()
