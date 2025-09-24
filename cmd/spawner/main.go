@@ -43,6 +43,9 @@ var cli struct {
 	WriteStats string `kong:"help='Write stats to file on exit'"`
 	PrintStats bool   `kong:"help='Print stats on exit'"`
 
+	// Display mode
+	Pretty bool `kong:"help='Display hands in pretty format instead of logs'"`
+
 	// Logging
 	LogLevel string `kong:"help='Log level (debug|info|warn|error)'"`
 }
@@ -62,6 +65,12 @@ func main() {
 	case "error":
 		level = zerolog.ErrorLevel
 	}
+
+	// In pretty mode, suppress most logs unless explicitly set
+	if cli.Pretty && cli.LogLevel == "" {
+		level = zerolog.WarnLevel
+	}
+
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
 		Level(level).
 		With().Timestamp().Logger()
@@ -114,9 +123,18 @@ func main() {
 	}
 
 	wsURL := fmt.Sprintf("ws://%s/ws", listener.Addr())
-	logger.Info().Str("url", wsURL).Msg("Server started")
-	if cli.Seed != 0 {
-		logger.Info().Int64("seed", cli.Seed).Msg("Using deterministic seed")
+
+	// Set up pretty printer if requested
+	if cli.Pretty {
+		monitor := server.NewPrettyPrintMonitor(os.Stdout)
+		if err := srv.SetHandMonitor(monitor); err != nil {
+			logger.Error().Err(err).Msg("Failed to set pretty print monitor")
+		}
+	} else {
+		logger.Info().Str("url", wsURL).Msg("Server started")
+		if cli.Seed != 0 {
+			logger.Info().Int64("seed", cli.Seed).Msg("Using deterministic seed")
+		}
 	}
 
 	// Parse bot specifications
@@ -142,23 +160,34 @@ func main() {
 		logger.Fatal().Msg("No bots specified (use --spec to specify bots)")
 	}
 
-	logger.Info().Str("spec", cli.Spec).Int("additional", len(cli.BotCmd)).Msg("Spawning bots")
+	if !cli.Pretty {
+		logger.Info().Str("spec", cli.Spec).Int("additional", len(cli.BotCmd)).Msg("Spawning bots")
+	}
 
 	// Create spawner and spawn bots
-	botSpawner := spawner.NewWithSeed(wsURL, logger, seed)
+	spawnerLogger := logger
+	if cli.Pretty {
+		// Create a quiet logger for bot processes in pretty mode
+		spawnerLogger = zerolog.New(io.Discard).Level(zerolog.Disabled)
+	}
+	botSpawner := spawner.NewWithSeed(wsURL, spawnerLogger, seed)
 	defer botSpawner.StopAll()
 
 	if err := botSpawner.Spawn(specs...); err != nil {
 		logger.Fatal().Err(err).Msg("Failed to spawn bots")
 	}
 
-	logger.Info().Int("count", botSpawner.ActiveCount()).Msg("Bots spawned")
+	if !cli.Pretty {
+		logger.Info().Int("count", botSpawner.ActiveCount()).Msg("Bots spawned")
+	}
 
 	// Wait for context cancellation or hand limit
 	select {
 	case <-ctx.Done():
 	case <-srv.DefaultGameDone():
-		logger.Info().Msg("Hand limit reached")
+		if !cli.Pretty {
+			logger.Info().Msg("Hand limit reached")
+		}
 	}
 
 	// Write stats if requested
@@ -167,7 +196,9 @@ func main() {
 	}
 
 	// Stop bots (will be done by defer)
-	logger.Info().Msg("Stopping bots...")
+	if !cli.Pretty {
+		logger.Info().Msg("Stopping bots...")
+	}
 }
 
 // parseSpecString parses a specification string like "calling-station:2,random:1,aggressive:3"
