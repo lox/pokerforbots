@@ -138,8 +138,8 @@ func TestBotPoolMatching(t *testing.T) {
 		return pool.BotCount() == 3
 	}, 200*time.Millisecond, "Expected 3 bots to be registered")
 
-	// Give the matcher time to work
-	time.Sleep(300 * time.Millisecond)
+	// Give the matcher time to work (reduced from 300ms to 50ms)
+	time.Sleep(50 * time.Millisecond)
 
 	// Verify pool is still functional
 	if pool.BotCount() == 0 {
