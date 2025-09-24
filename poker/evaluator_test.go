@@ -21,7 +21,7 @@ func TestEvaluateHandTypes(t *testing.T) {
 	tests := []struct {
 		name     string
 		cards    []string
-		expected HandRank
+		expected HandType
 	}{
 		{
 			name:     "high card",

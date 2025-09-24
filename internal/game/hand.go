@@ -442,7 +442,7 @@ func (h *HandState) GetWinners() map[int][]int {
 		}
 
 		// Evaluate hands
-		bestRank := poker.HandRank(0)
+		bestRank := poker.HandRank(^uint16(0))
 		bestPlayers := []int{}
 
 		for _, seat := range pot.Eligible {
