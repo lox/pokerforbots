@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"math/rand"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -285,6 +286,12 @@ collectLoop:
 			break collectLoop
 		}
 	}
+
+	// Sort bots by ID for deterministic ordering before shuffle
+	// This ensures consistent behavior regardless of connection timing
+	sort.Slice(allBots, func(i, j int) bool {
+		return allBots[i].ID < allBots[j].ID
+	})
 
 	// Randomly shuffle and select bots for this hand with mutex protection
 	p.rngMutex.Lock()
