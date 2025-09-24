@@ -120,6 +120,7 @@ Each street includes a betting round with standard actions:
 
 ### Performance Achieved
 
+- ✅ **~1.2K hands/second** measured on 24 Sep 2025 using four random bots, 100ms decision timeout, 1000-hand run via `go run ./cmd/spawner --count=4 --spec="" --bot-cmd="go run ./sdk/examples/random" --hand-limit=1000`
 - ✅ **350+ hands/second** with 6-bot tables at 10ms timeout
 - ✅ **2000+ hands/second** aggregate with parallel games
 - ✅ **5ms decision timeout** capability demonstrated

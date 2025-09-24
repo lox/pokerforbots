@@ -222,6 +222,14 @@ tasks:
       - ./dist/evaluator.test -test.run=^$ -test.bench=^BenchmarkEvaluate7Cards_LargeSample$ -test.count=1 -test.benchtime=10s -test.cpuprofile=dist/eval-seq.pprof {{.CLI_ARGS}}
       - go tool pprof -top -nodecount=10 ./dist/evaluator.test dist/eval-seq.pprof
 
+  profile:handrunner:top:
+    desc: CPU profile of hand runner benchmark (top 10)
+    cmds:
+      - mkdir -p dist
+      - go test -c -o dist/internal_server.test ./internal/server
+      - ./dist/internal_server.test -test.run=^$ -test.bench=^BenchmarkHandRunnerHeadsUpFold$ -test.count=1 -test.benchtime=10s -test.cpuprofile=dist/handrunner.pprof {{.CLI_ARGS}}
+      - go tool pprof -top -nodecount=10 ./dist/internal_server.test dist/handrunner.pprof
+
   clean:
     desc: Clean build artifacts
     cmds:

@@ -161,6 +161,28 @@ func main() {
 		logger.Info().Msg("Hand limit reached")
 	}
 
+	if metrics, ok := srv.DefaultGameMetrics(); ok {
+		endTime := metrics.EndTime
+		if endTime.IsZero() {
+			endTime = time.Now()
+		}
+		var duration time.Duration
+		if !metrics.StartTime.IsZero() && endTime.After(metrics.StartTime) {
+			duration = endTime.Sub(metrics.StartTime)
+		}
+
+		event := logger.Info().
+			Uint64("hands_completed", metrics.HandsCompleted).
+			Float64("hands_per_second", metrics.HandsPerSecond)
+		if metrics.HandLimit > 0 {
+			event = event.Uint64("hand_limit", metrics.HandLimit)
+		}
+		if duration > 0 {
+			event = event.Dur("duration", duration)
+		}
+		event.Msg("Run performance")
+	}
+
 	// Write stats if requested
 	if cli.WriteStats != "" || cli.PrintStats {
 		handleStatsOutput(listener.Addr().String(), cli.WriteStats, cli.PrintStats, logger)

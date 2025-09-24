@@ -200,20 +200,21 @@ func (hr *HandRunner) Run() {
 			break // Invalid state, end hand
 		}
 
-		// Convert actions to strings for logging
-		actionStrs := make([]string, len(validActions))
-		for i, a := range validActions {
-			actionStrs[i] = a.String()
-		}
 		streetName := hr.handState.Street.String()
 		toCall := hr.handState.Betting.CurrentBet - hr.handState.Players[activePlayer].Bet
-		hr.logger.Debug().
-			Int("seat", activePlayer).
-			Str("bot", hr.playerLabels[activePlayer]).
-			Str("street", streetName).
-			Strs("valid_actions", actionStrs).
-			Int("to_call", toCall).
-			Msg("Player to act")
+		if event := hr.logger.Debug(); event.Enabled() {
+			actionStrs := make([]string, len(validActions))
+			for i, a := range validActions {
+				actionStrs[i] = a.String()
+			}
+			event.
+				Int("seat", activePlayer).
+				Str("bot", hr.playerLabels[activePlayer]).
+				Str("street", streetName).
+				Strs("valid_actions", actionStrs).
+				Int("to_call", toCall).
+				Msg("Player to act")
+		}
 
 		// Send action request to active bot
 		bot := hr.bots[activePlayer]
@@ -604,8 +605,8 @@ func (hr *HandRunner) broadcastPlayerAction(seat int, action string, amountPaid 
 // broadcastGameUpdate sends game state updates to all bots
 func (hr *HandRunner) broadcastGameUpdate() {
 	totalPot := hr.totalPot()
+	players := make([]protocol.Player, len(hr.handState.Players))
 	for observerSeat, bot := range hr.bots {
-		players := make([]protocol.Player, len(hr.handState.Players))
 		for seat, p := range hr.handState.Players {
 			players[seat] = protocol.Player{
 				Name:   hr.displayName(observerSeat, seat),
@@ -655,23 +656,26 @@ func (hr *HandRunner) totalPot() int {
 
 func (hr *HandRunner) logPlayerAction(seat int, street string, action game.Action, declaredAmount int, toCall int) {
 	player := hr.handState.Players[seat]
-	hr.logger.Debug().
-		Int("seat", seat).
-		Str("bot", hr.playerLabels[seat]).
-		Str("street", street).
-		Str("action", action.String()).
-		Int("declared_amount", declaredAmount).
-		Int("to_call", toCall).
-		Int("pot", hr.totalPot()).
-		Int("chips", player.Chips).
-		Int("bet", player.Bet).
-		Int("total_bet", player.TotalBet).
-		Msg("Player action")
+	actionName := action.String()
+	if event := hr.logger.Debug(); event.Enabled() {
+		event.
+			Int("seat", seat).
+			Str("bot", hr.playerLabels[seat]).
+			Str("street", street).
+			Str("action", actionName).
+			Int("declared_amount", declaredAmount).
+			Int("to_call", toCall).
+			Int("pot", hr.totalPot()).
+			Int("chips", player.Chips).
+			Int("bet", player.Bet).
+			Int("total_bet", player.TotalBet).
+			Msg("Player action")
+	}
 
 	// Track action for statistics if enabled
 	if hr.trackActions && seat >= 0 && seat < len(hr.botActions) {
 		// Store the most significant action per street (fold > check > call < raise < allin)
-		actionStr := strings.ToLower(action.String())
+		actionStr := strings.ToLower(actionName)
 		if action == game.AllIn {
 			actionStr = "allin"
 		}
@@ -743,39 +747,42 @@ func (hr *HandRunner) furthestActionStreet() string {
 }
 
 func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
-	boardCards := hr.boardStrings()
-	totalPot := hr.totalPot()
-
-	initialStacks := make([]string, len(hr.seatBuyIns))
-	finalStacks := make([]string, len(hr.seatBuyIns))
-	pnlSummary := make([]string, len(hr.seatBuyIns))
-
 	for i := range hr.bots {
 		finalChips := hr.handState.Players[i].Chips
 		delta := finalChips - hr.seatBuyIns[i]
-		label := hr.playerLabels[i]
-		initialStacks[i] = fmt.Sprintf("seat%d/%s/%d", i, label, hr.seatBuyIns[i])
-		finalStacks[i] = fmt.Sprintf("seat%d/%s/%d", i, label, finalChips)
-		pnlSummary[i] = fmt.Sprintf("seat%d/%s/%+d", i, label, delta)
 		hr.bots[i].ApplyResult(delta)
 	}
 
-	winnerSummaries := make([]string, len(winners))
-	for i, winner := range winners {
-		label := hr.playerLabels[winner.seat]
-		winnerSummaries[i] = fmt.Sprintf("seat%d/%s/%d", winner.seat, label, winner.amount)
+	if event := hr.logger.Debug(); event.Enabled() {
+		boardCards := hr.boardStrings()
+		totalPot := hr.totalPot()
+		initialStacks := make([]string, len(hr.seatBuyIns))
+		finalStacks := make([]string, len(hr.seatBuyIns))
+		pnlSummary := make([]string, len(hr.seatBuyIns))
+		for i := range hr.bots {
+			finalChips := hr.handState.Players[i].Chips
+			label := hr.playerLabels[i]
+			initialStacks[i] = fmt.Sprintf("seat%d/%s/%d", i, label, hr.seatBuyIns[i])
+			finalStacks[i] = fmt.Sprintf("seat%d/%s/%d", i, label, finalChips)
+			delta := finalChips - hr.seatBuyIns[i]
+			pnlSummary[i] = fmt.Sprintf("seat%d/%s/%+d", i, label, delta)
+		}
+		winnerSummaries := make([]string, len(winners))
+		for i, winner := range winners {
+			label := hr.playerLabels[winner.seat]
+			winnerSummaries[i] = fmt.Sprintf("seat%d/%s/%d", winner.seat, label, winner.amount)
+		}
+		event.
+			Int("player_count", len(hr.bots)).
+			Int("button_seat", hr.button).
+			Int("pot_final", totalPot).
+			Strs("board", boardCards).
+			Strs("initial_stacks", initialStacks).
+			Strs("final_stacks", finalStacks).
+			Strs("winners", winnerSummaries).
+			Strs("pnls", pnlSummary).
+			Msg("Hand summary")
 	}
-
-	hr.logger.Debug().
-		Int("player_count", len(hr.bots)).
-		Int("button_seat", hr.button).
-		Int("pot_final", totalPot).
-		Strs("board", boardCards).
-		Strs("initial_stacks", initialStacks).
-		Strs("final_stacks", finalStacks).
-		Strs("winners", winnerSummaries).
-		Strs("pnls", pnlSummary).
-		Msg("Hand summary")
 
 	if hr.pool != nil {
 		var detail *HandOutcomeDetail

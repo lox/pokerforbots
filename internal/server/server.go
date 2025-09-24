@@ -116,6 +116,15 @@ type Server struct {
 	routesOnce sync.Once
 }
 
+// GameMetrics summarizes runtime performance for a game instance.
+type GameMetrics struct {
+	HandsCompleted uint64
+	HandLimit      uint64
+	HandsPerSecond float64
+	StartTime      time.Time
+	EndTime        time.Time
+}
+
 // createDeterministicBotIDGen creates a deterministic bot ID generator using the provided RNG accessor.
 // If no accessor is supplied, a local mutex is used to guard the RNG.
 func createDeterministicBotIDGen(rng *rand.Rand, withRNG func(func(*rand.Rand))) func() string {
@@ -290,6 +299,21 @@ func (s *Server) DefaultGameDone() <-chan struct{} {
 		return s.pool.Done()
 	}
 	return nil
+}
+
+// DefaultGameMetrics returns aggregate metrics for the default game, when present.
+func (s *Server) DefaultGameMetrics() (GameMetrics, bool) {
+	if s.pool == nil {
+		return GameMetrics{}, false
+	}
+	metrics := GameMetrics{
+		HandsCompleted: s.pool.HandCount(),
+		HandLimit:      s.pool.HandLimit(),
+		HandsPerSecond: s.pool.HandsPerSecond(),
+		StartTime:      s.pool.StartTime(),
+		EndTime:        s.pool.EndTime(),
+	}
+	return metrics, true
 }
 
 // SetHandMonitor sets a monitor for the default game's hand progress.
