@@ -29,7 +29,7 @@ var cli struct {
 	BigBlind   int    `kong:"default='10',help='Big blind'"`
 	StartChips int    `kong:"default='1000',help='Starting chip stack'"`
 	TimeoutMs  int    `kong:"default='100',help='Bot decision timeout in milliseconds'"`
-	MinPlayers int    `kong:"default='2',help='Minimum players to start a hand'"`
+	MinPlayers int    `kong:"default='0',help='Minimum players to start a hand (0 = auto, matches bot count)'"`
 	MaxPlayers int    `kong:"default='9',help='Maximum players at a table'"`
 	Seed       int64  `kong:"help='Seed for deterministic testing (0 for random)'"`
 
@@ -89,6 +89,44 @@ func main() {
 		cancel()
 	}()
 
+	// Parse bot specifications first to determine total bot count
+	specs, err := parseSpecString(cli.Spec)
+	if err != nil {
+		logger.Fatal().Err(err).Str("spec", cli.Spec).Msg("Failed to parse spec")
+	}
+
+	// Add any additional bots specified via --bot
+	for _, botCmd := range cli.BotCmd {
+		parts := strings.Fields(botCmd)
+		if len(parts) == 0 {
+			continue
+		}
+		specs = append(specs, spawner.BotSpec{
+			Command: parts[0],
+			Args:    parts[1:],
+			Count:   cli.Count,
+		})
+	}
+
+	if len(specs) == 0 {
+		logger.Fatal().Msg("No bots specified (use --spec to specify bots)")
+	}
+
+	// Calculate total number of bots
+	totalBots := 0
+	for _, spec := range specs {
+		totalBots += spec.Count
+	}
+
+	// If MinPlayers is 0 (auto), set it to match bot count but at least 2
+	// This ensures all spawned bots participate in hands
+	if cli.MinPlayers == 0 {
+		cli.MinPlayers = max(2, min(totalBots, cli.MaxPlayers))
+		if !cli.Pretty {
+			logger.Info().Int("min_players", cli.MinPlayers).Int("total_bots", totalBots).Msg("Auto-setting min-players to match bot count")
+		}
+	}
+
 	// Configure and start embedded server with spawner
 	seed := cli.Seed
 	if seed == 0 {
@@ -139,31 +177,8 @@ func main() {
 		}
 	}
 
-	// Parse bot specifications
-	specs, err := parseSpecString(cli.Spec)
-	if err != nil {
-		logger.Fatal().Err(err).Str("spec", cli.Spec).Msg("Failed to parse spec")
-	}
-
-	// Add any additional bots specified via --bot
-	for _, botCmd := range cli.BotCmd {
-		parts := strings.Fields(botCmd)
-		if len(parts) == 0 {
-			continue
-		}
-		specs = append(specs, spawner.BotSpec{
-			Command: parts[0],
-			Args:    parts[1:],
-			Count:   cli.Count,
-		})
-	}
-
-	if len(specs) == 0 {
-		logger.Fatal().Msg("No bots specified (use --spec to specify bots)")
-	}
-
 	if !cli.Pretty {
-		logger.Info().Str("spec", cli.Spec).Int("additional", len(cli.BotCmd)).Msg("Spawning bots")
+		logger.Info().Str("spec", cli.Spec).Int("additional", len(cli.BotCmd)).Int("total_bots", totalBots).Msg("Spawning bots")
 	}
 
 	// Create spawner and spawn bots
