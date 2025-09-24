@@ -258,12 +258,12 @@ func TestBotPoolStatistics(t *testing.T) {
 		return pool.BotCount() == 2
 	}, 200*time.Millisecond, "Expected 2 bots to be registered")
 
-	// Verify stats collection is enabled
-	if pool.statsCollector == nil {
-		t.Error("Expected stats collector to be initialized")
+	// Verify stats monitor is initialized and requires detailed data
+	if pool.statsMonitor == nil {
+		t.Error("Expected stats monitor to be initialized")
 	}
-	if !pool.statsCollector.IsEnabled() {
-		t.Error("Expected stats collection to be enabled")
+	if !pool.NeedsDetailedData() {
+		t.Error("Expected pool to request detailed hand data when stats enabled")
 	}
 
 	// Check initial empty stats

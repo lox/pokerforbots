@@ -42,9 +42,11 @@ type HandRunner struct {
 	config        Config   // Server configuration
 
 	// Track actions for statistics (only if enabled)
-	trackActions bool
-	botActions   []map[string]string // Per-bot action tracking: street -> action
-	botTimeouts  []bool              // Track which bots timed out
+	trackActions      bool
+	botActions        []map[string]string // Per-bot action tracking: street -> action
+	botTimeouts       []bool              // Track which bots timed out
+	botInvalidActions []int               // Count invalid actions per bot
+	botDisconnects    []bool              // Track bots that disconnected mid-hand
 }
 
 // ActionEnvelope wraps an action with the sender's bot ID for verification
@@ -103,13 +105,15 @@ func (hr *HandRunner) SetPool(pool *BotPool) {
 	hr.pool = pool
 
 	// Check if we should track actions for statistics
-	if pool != nil && pool.statsCollector != nil && pool.statsCollector.IsEnabled() {
+	if pool != nil && pool.NeedsDetailedData() {
 		hr.trackActions = true
 		hr.botActions = make([]map[string]string, len(hr.bots))
 		for i := range hr.botActions {
 			hr.botActions[i] = make(map[string]string)
 		}
 		hr.botTimeouts = make([]bool, len(hr.bots))
+		hr.botInvalidActions = make([]int, len(hr.bots))
+		hr.botDisconnects = make([]bool, len(hr.bots))
 	}
 }
 
@@ -218,7 +222,11 @@ func (hr *HandRunner) Run() {
 			continue
 		}
 		if err := hr.sendActionRequest(bot, activePlayer, validActions); err != nil {
-			if !errors.Is(err, ErrBotClosed) {
+			if errors.Is(err, ErrBotClosed) {
+				if hr.botDisconnects != nil && activePlayer < len(hr.botDisconnects) {
+					hr.botDisconnects[activePlayer] = true
+				}
+			} else {
 				hr.logger.Error().Err(err).Msg("Failed to send action request")
 			}
 			executed := hr.processAction(activePlayer, game.Fold, 0)
@@ -358,6 +366,9 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 
 	case <-hr.bots[botIndex].Done():
 		hr.logger.Warn().Str("bot_id", hr.bots[botIndex].ID).Msg("Bot disconnected during action window")
+		if hr.botDisconnects != nil && botIndex < len(hr.botDisconnects) {
+			hr.botDisconnects[botIndex] = true
+		}
 		return game.Fold, 0
 
 	case <-timer.C:
@@ -459,6 +470,9 @@ func (hr *HandRunner) processAction(botIndex int, action game.Action, amount int
 			Int("amount", amount).
 			Int("seat", botIndex).
 			Msg("Invalid action from bot - forcing fold")
+		if hr.botInvalidActions != nil && botIndex < len(hr.botInvalidActions) {
+			hr.botInvalidActions[botIndex]++
+		}
 		// Force fold on invalid action
 		_ = hr.handState.ProcessAction(game.Fold, 0)
 
@@ -497,6 +511,9 @@ func (hr *HandRunner) foldDisconnectedPlayers(skipSeat int) bool {
 			continue
 		}
 		if bot.IsClosed() {
+			if hr.botDisconnects != nil && seat < len(hr.botDisconnects) {
+				hr.botDisconnects[seat] = true
+			}
 			if hr.forceFoldSeat(seat) {
 				changed = true
 			}
@@ -732,35 +749,6 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 	initialStacks := make([]string, len(hr.seatBuyIns))
 	finalStacks := make([]string, len(hr.seatBuyIns))
 	pnlSummary := make([]string, len(hr.seatBuyIns))
-	deltas := make([]int, len(hr.seatBuyIns))
-
-	// Build detailed outcome if statistics are enabled
-	var detailedOutcome *HandOutcomeDetail
-	if hr.pool != nil && hr.pool.statsCollector != nil && hr.pool.statsCollector.IsEnabled() {
-		detailedOutcome = &HandOutcomeDetail{
-			HandID:         hr.handID,
-			ButtonPosition: hr.button,
-			StreetReached:  hr.lastStreet.String(),
-			Board:          boardCards,
-			BotOutcomes:    make([]BotHandOutcome, len(hr.bots)),
-		}
-	}
-
-	// Track who went to showdown and who won
-	wentToShowdown := make(map[int]bool)
-	wonAtShowdown := make(map[int]bool)
-	if hr.handState.Street == game.Showdown {
-		// Mark all non-folded players as going to showdown
-		for i, player := range hr.handState.Players {
-			if !player.Folded {
-				wentToShowdown[i] = true
-			}
-		}
-		// Mark winners
-		for _, winner := range winners {
-			wonAtShowdown[winner.seat] = true
-		}
-	}
 
 	for i := range hr.bots {
 		finalChips := hr.handState.Players[i].Chips
@@ -769,58 +757,7 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 		initialStacks[i] = fmt.Sprintf("seat%d/%s/%d", i, label, hr.seatBuyIns[i])
 		finalStacks[i] = fmt.Sprintf("seat%d/%s/%d", i, label, finalChips)
 		pnlSummary[i] = fmt.Sprintf("seat%d/%s/%+d", i, label, delta)
-		deltas[i] = delta
 		hr.bots[i].ApplyResult(delta)
-
-		// Add detailed outcome if tracking
-		if detailedOutcome != nil {
-			// Calculate button distance (0=button, 1=CO, 2=MP, etc.)
-			buttonDist := (i - hr.button + len(hr.bots)) % len(hr.bots)
-
-			// Get hole cards
-			holeCards := []string{}
-			player := hr.handState.Players[i]
-			if player.HoleCards != 0 {
-				holeCards = []string{
-					player.HoleCards.GetCard(0).String(),
-					player.HoleCards.GetCard(1).String(),
-				}
-			}
-
-			outcome := BotHandOutcome{
-				Bot:            hr.bots[i],
-				Position:       i,
-				ButtonDistance: buttonDist,
-				HoleCards:      holeCards,
-				NetChips:       delta,
-				WentToShowdown: wentToShowdown[i],
-				WonAtShowdown:  wonAtShowdown[i],
-			}
-
-			// Add actions if we tracked them
-			if hr.trackActions && i < len(hr.botActions) {
-				outcome.Actions = hr.botActions[i]
-			}
-
-			// Add timeout tracking
-			if hr.botTimeouts != nil && i < len(hr.botTimeouts) {
-				outcome.TimedOut = hr.botTimeouts[i]
-			}
-
-			// Check if bot went broke (final stack is 0)
-			if hr.handState.Players[i].Chips == 0 {
-				outcome.WentBroke = true
-			}
-
-			detailedOutcome.BotOutcomes[i] = outcome
-		}
-	}
-
-	// If we collected detailed outcome, refine StreetReached to the furthest street where any action occurred
-	if detailedOutcome != nil && hr.trackActions {
-		if s := hr.furthestActionStreet(); s != "" {
-			detailedOutcome.StreetReached = s
-		}
 	}
 
 	winnerSummaries := make([]string, len(winners))
@@ -841,13 +778,99 @@ func (hr *HandRunner) logHandSummary(winners []winnerSummary) {
 		Msg("Hand summary")
 
 	if hr.pool != nil {
-		// Use detailed outcome if available, otherwise fall back to simple version
-		if detailedOutcome != nil {
-			hr.pool.RecordHandOutcomeDetailed(*detailedOutcome)
-		} else {
-			hr.pool.RecordHandOutcome(hr.handID, hr.bots, deltas)
+		var detail *HandOutcomeDetail
+		if hr.pool.NeedsDetailedData() {
+			detail = hr.buildDetailedOutcome(winners)
+		}
+
+		outcome := HandOutcome{
+			HandID:         hr.handID,
+			HandsCompleted: hr.pool.HandCount(),
+			HandLimit:      hr.pool.HandLimit(),
+			Detail:         detail,
+		}
+
+		hr.pool.RecordHandOutcome(outcome)
+	}
+}
+
+func (hr *HandRunner) buildDetailedOutcome(winners []winnerSummary) *HandOutcomeDetail {
+	if hr.handState == nil {
+		return nil
+	}
+
+	detail := &HandOutcomeDetail{
+		HandID:         hr.handID,
+		ButtonPosition: hr.button,
+		StreetReached:  hr.lastStreet.String(),
+		Board:          hr.boardStrings(),
+		BotOutcomes:    make([]BotHandOutcome, len(hr.bots)),
+	}
+
+	wentToShowdown := make(map[int]bool)
+	wonAtShowdown := make(map[int]bool)
+	if hr.handState.Street == game.Showdown {
+		for i, player := range hr.handState.Players {
+			if !player.Folded {
+				wentToShowdown[i] = true
+			}
+		}
+		for _, winner := range winners {
+			wonAtShowdown[winner.seat] = true
 		}
 	}
+
+	for i := range hr.bots {
+		bot := hr.bots[i]
+		if bot == nil {
+			continue
+		}
+
+		player := hr.handState.Players[i]
+		delta := player.Chips - hr.seatBuyIns[i]
+
+		holeCards := []string{}
+		if player.HoleCards != 0 {
+			holeCards = []string{
+				player.HoleCards.GetCard(0).String(),
+				player.HoleCards.GetCard(1).String(),
+			}
+		}
+
+		outcome := BotHandOutcome{
+			Bot:            bot,
+			Position:       i,
+			ButtonDistance: (i - hr.button + len(hr.bots)) % len(hr.bots),
+			HoleCards:      holeCards,
+			NetChips:       delta,
+			WentToShowdown: wentToShowdown[i],
+			WonAtShowdown:  wonAtShowdown[i],
+			WentBroke:      player.Chips == 0,
+		}
+
+		if hr.trackActions && i < len(hr.botActions) {
+			outcome.Actions = hr.botActions[i]
+		}
+		if hr.botTimeouts != nil && i < len(hr.botTimeouts) {
+			outcome.TimedOut = hr.botTimeouts[i]
+		}
+		if hr.botInvalidActions != nil && i < len(hr.botInvalidActions) {
+			outcome.InvalidActions = hr.botInvalidActions[i]
+		}
+		if hr.botDisconnects != nil && i < len(hr.botDisconnects) {
+			outcome.Disconnected = hr.botDisconnects[i]
+		}
+
+		detail.BotOutcomes[i] = outcome
+	}
+
+	if hr.trackActions {
+		if s := hr.furthestActionStreet(); s != "" {
+			detail.StreetReached = s
+		}
+	}
+
+	return detail
 }
 
 // broadcastStreetChange sends street change notification

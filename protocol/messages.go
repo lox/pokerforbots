@@ -118,14 +118,18 @@ type HandResult struct {
 
 // GameCompletedPlayer summarizes a bot's performance during the game run.
 type GameCompletedPlayer struct {
-	BotID       string  `msg:"bot_id" json:"bot_id"`
-	DisplayName string  `msg:"display_name" json:"display_name"`
-	Hands       int     `msg:"hands" json:"hands"`
-	NetChips    int64   `msg:"net_chips" json:"net_chips"`
-	AvgPerHand  float64 `msg:"avg_per_hand" json:"avg_per_hand"`
-	TotalWon    int64   `msg:"total_won" json:"total_won"`
-	TotalLost   int64   `msg:"total_lost" json:"total_lost"`
-	LastDelta   int     `msg:"last_delta" json:"last_delta"`
+	BotID          string  `msg:"bot_id" json:"bot_id"`
+	DisplayName    string  `msg:"display_name" json:"display_name"`
+	Hands          int     `msg:"hands" json:"hands"`
+	NetChips       int64   `msg:"net_chips" json:"net_chips"`
+	AvgPerHand     float64 `msg:"avg_per_hand" json:"avg_per_hand"`
+	TotalWon       int64   `msg:"total_won" json:"total_won"`
+	TotalLost      int64   `msg:"total_lost" json:"total_lost"`
+	LastDelta      int     `msg:"last_delta" json:"last_delta"`
+	Timeouts       int     `msg:"timeouts" json:"timeouts"`
+	InvalidActions int     `msg:"invalid_actions" json:"invalid_actions"`
+	Disconnects    int     `msg:"disconnects" json:"disconnects"`
+	Busts          int     `msg:"busts" json:"busts"`
 
 	// Optional detailed statistics (only when server has statistics enabled)
 	DetailedStats *PlayerDetailedStats `msg:"detailed_stats,omitempty" json:"detailed_stats,omitempty"`

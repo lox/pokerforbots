@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/lox/pokerforbots/protocol"
 )
@@ -227,143 +228,230 @@ func GetPositionName(distance int) string {
 	}
 }
 
-// StatsCollector defines the interface for collecting game statistics
-type StatsCollector interface {
-	IsEnabled() bool
-	RecordHandOutcome(detail HandOutcomeDetail) error
-	GetPlayerStats() map[string]PlayerStats
-	GetDetailedStats(botID string) *protocol.PlayerDetailedStats
-	Reset()
+// BasicBotStats tracks lightweight per-bot aggregates.
+type BasicBotStats struct {
+	BotID          string
+	DisplayName    string
+	BotCommand     string
+	ConnectOrder   int
+	Hands          int
+	NetChips       int64
+	TotalWon       int64
+	TotalLost      int64
+	Timeouts       int
+	InvalidActions int
+	Disconnects    int
+	Busts          int
+	LastDelta      int
+	LastUpdated    time.Time
 }
 
-// HandOutcomeDetail contains the complete outcome of a hand for statistics tracking
-type HandOutcomeDetail struct {
-	HandID         string
-	ButtonPosition int
-	StreetReached  string
-	Board          []string
-	BotOutcomes    []BotHandOutcome
+// StatsMonitor collects both basic and detailed statistics and satisfies HandMonitor and StatsProvider.
+type StatsMonitor struct {
+	mu             sync.RWMutex
+	basicStats     map[string]*BasicBotStats
+	detailedStats  map[string]*BotStatistics
+	enableDetailed bool
+	bigBlind       int
+	maxHands       int
+	currentHands   int
 }
 
-// BotHandOutcome contains per-bot outcome details
-type BotHandOutcome struct {
-	Bot            *Bot
-	Position       int
-	ButtonDistance int
-	HoleCards      []string
-	NetChips       int
-	WentToShowdown bool
-	WonAtShowdown  bool
-	Actions        map[string]string // Street -> last action taken
-	TimedOut       bool              // Whether the bot timed out during the hand
-	WentBroke      bool              // Whether the bot went broke in this hand
-}
-
-// NullStatsCollector implements StatsCollector with no-ops for when stats are disabled
-type NullStatsCollector struct{}
-
-func (n *NullStatsCollector) IsEnabled() bool                                         { return false }
-func (n *NullStatsCollector) RecordHandOutcome(_ HandOutcomeDetail) error             { return nil }
-func (n *NullStatsCollector) GetPlayerStats() map[string]PlayerStats                  { return nil }
-func (n *NullStatsCollector) GetDetailedStats(_ string) *protocol.PlayerDetailedStats { return nil }
-func (n *NullStatsCollector) Reset()                                                  {}
-
-// DetailedStatsCollector implements StatsCollector with comprehensive statistics tracking
-type DetailedStatsCollector struct {
-	mu           sync.RWMutex
-	bigBlind     int
-	stats        map[string]*BotStatistics // Per-bot statistics
-	maxHands     int                       // Maximum hands to store before reset
-	currentHands int                       // Current number of hands stored
-}
-
-// NewDetailedStatsCollector creates a new DetailedStatsCollector with memory limits
-func NewDetailedStatsCollector(maxHands, bigBlind int) *DetailedStatsCollector {
-	return &DetailedStatsCollector{
-		bigBlind: bigBlind,
-		stats:    make(map[string]*BotStatistics),
-		maxHands: maxHands,
+// NewStatsMonitor creates a new statistics monitor.
+func NewStatsMonitor(bigBlind int, enableDetailed bool, maxHands int) *StatsMonitor {
+	monitor := &StatsMonitor{
+		basicStats:     make(map[string]*BasicBotStats),
+		enableDetailed: enableDetailed,
+		bigBlind:       bigBlind,
+		maxHands:       maxHands,
 	}
+	if enableDetailed {
+		monitor.detailedStats = make(map[string]*BotStatistics)
+	}
+	return monitor
 }
 
-func (d *DetailedStatsCollector) IsEnabled() bool { return true }
+// OnGameStart resets per-game counters if necessary.
+func (s *StatsMonitor) OnGameStart(uint64) {}
 
-// RecordHandOutcome records the outcome of a hand for all participating bots
-func (d *DetailedStatsCollector) RecordHandOutcome(detail HandOutcomeDetail) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+// OnGameComplete currently performs no cleanup; stats remain available for querying.
+func (s *StatsMonitor) OnGameComplete(uint64, string) {}
 
-	// Check memory limit and reset if necessary
-	d.currentHands++
-	if d.maxHands > 0 && d.currentHands > d.maxHands {
-		// Reset to avoid unbounded memory growth
-		d.stats = make(map[string]*BotStatistics)
-		d.currentHands = 1
+// OnHandComplete records the provided outcome and updates aggregates.
+func (s *StatsMonitor) OnHandComplete(outcome HandOutcome) {
+	if outcome.Detail == nil {
+		return
 	}
 
-	// Process each bot's outcome
-	for _, outcome := range detail.BotOutcomes {
-		if outcome.Bot == nil {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.maxHands > 0 && s.currentHands >= s.maxHands {
+		s.resetLocked()
+	}
+
+	now := time.Now()
+
+	for _, botOutcome := range outcome.Detail.BotOutcomes {
+		if botOutcome.Bot == nil {
 			continue
 		}
 
-		botID := outcome.Bot.ID
-		if d.stats[botID] == nil {
-			d.stats[botID] = NewBotStatistics(d.bigBlind)
+		botID := botOutcome.Bot.ID
+		stats := s.basicStats[botID]
+		if stats == nil {
+			stats = &BasicBotStats{
+				BotID:        botID,
+				ConnectOrder: len(s.basicStats) + 1,
+			}
+			s.basicStats[botID] = stats
 		}
 
-		// Convert chips to big blinds
-		netBB := float64(outcome.NetChips) / float64(d.bigBlind)
-
-		// Add the result
-		stat := d.stats[botID]
-		stat.AddResult(netBB, outcome.WentToShowdown, outcome.WonAtShowdown)
-
-		if outcome.Actions != nil {
-			stat.RecordPreflopAction(outcome.Actions["preflop"])
+		displayName := botOutcome.Bot.DisplayName()
+		if displayName == "" {
+			displayName = botID
 		}
-
-		if outcome.TimedOut {
-			stat.RecordTimeout()
+		stats.DisplayName = displayName
+		stats.BotCommand = botOutcome.Bot.BotCommand()
+		stats.Hands++
+		stats.NetChips += int64(botOutcome.NetChips)
+		if botOutcome.NetChips >= 0 {
+			stats.TotalWon += int64(botOutcome.NetChips)
+		} else {
+			stats.TotalLost += int64(-botOutcome.NetChips)
 		}
-
-		if outcome.WentBroke {
-			stat.RecordBust()
+		stats.LastDelta = botOutcome.NetChips
+		stats.LastUpdated = now
+		if botOutcome.TimedOut {
+			stats.Timeouts++
+		}
+		stats.InvalidActions += botOutcome.InvalidActions
+		if botOutcome.Disconnected {
+			stats.Disconnects++
+		}
+		if botOutcome.WentBroke {
+			stats.Busts++
 		}
 	}
 
-	return nil
+	if s.enableDetailed && s.bigBlind > 0 {
+		for _, botOutcome := range outcome.Detail.BotOutcomes {
+			if botOutcome.Bot == nil {
+				continue
+			}
+			botID := botOutcome.Bot.ID
+			detailed := s.detailedStats[botID]
+			if detailed == nil {
+				detailed = NewBotStatistics(s.bigBlind)
+				s.detailedStats[botID] = detailed
+			}
+			netBB := float64(botOutcome.NetChips) / float64(s.bigBlind)
+			detailed.AddResult(netBB, botOutcome.WentToShowdown, botOutcome.WonAtShowdown)
+		}
+	}
+
+	s.currentHands++
 }
 
-// GetPlayerStats returns nil as basic stats are maintained by BotPool
-func (d *DetailedStatsCollector) GetPlayerStats() map[string]PlayerStats {
-	return nil
-}
+// GetPlayerStats returns a deterministic snapshot of player statistics.
+func (s *StatsMonitor) GetPlayerStats() []PlayerStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-// GetDetailedStats returns comprehensive statistics for a specific bot
-func (d *DetailedStatsCollector) GetDetailedStats(botID string) *protocol.PlayerDetailedStats {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
-	stats, exists := d.stats[botID]
-	if !exists || stats == nil || stats.Hands() == 0 {
+	if len(s.basicStats) == 0 {
 		return nil
 	}
 
-	return stats.ToProtocolStats()
+	ordered := make([]*BasicBotStats, 0, len(s.basicStats))
+	for _, stats := range s.basicStats {
+		ordered = append(ordered, stats)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].ConnectOrder == ordered[j].ConnectOrder {
+			return ordered[i].BotID < ordered[j].BotID
+		}
+		return ordered[i].ConnectOrder < ordered[j].ConnectOrder
+	})
+
+	players := make([]PlayerStats, 0, len(ordered))
+	for _, stats := range ordered {
+		avg := 0.0
+		if stats.Hands > 0 {
+			avg = float64(stats.NetChips) / float64(stats.Hands)
+		}
+
+		ps := PlayerStats{
+			GameCompletedPlayer: protocol.GameCompletedPlayer{
+				BotID:          stats.BotID,
+				DisplayName:    stats.DisplayName,
+				Hands:          stats.Hands,
+				NetChips:       stats.NetChips,
+				AvgPerHand:     avg,
+				TotalWon:       stats.TotalWon,
+				TotalLost:      stats.TotalLost,
+				LastDelta:      stats.LastDelta,
+				Timeouts:       stats.Timeouts,
+				InvalidActions: stats.InvalidActions,
+				Disconnects:    stats.Disconnects,
+				Busts:          stats.Busts,
+			},
+			LastUpdated: stats.LastUpdated,
+		}
+
+		if s.enableDetailed {
+			if detail := s.detailedStats[stats.BotID]; detail != nil {
+				if protoStats := detail.ToProtocolStats(); protoStats != nil {
+					protoStats.Timeouts = stats.Timeouts
+					protoStats.Busts = stats.Busts
+					ps.DetailedStats = protoStats
+				}
+			}
+		}
+
+		players = append(players, ps)
+	}
+
+	return players
 }
 
-// Reset clears all collected statistics
-func (d *DetailedStatsCollector) Reset() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.stats = make(map[string]*BotStatistics)
-	d.currentHands = 0
+// GetDetailedStats returns comprehensive statistics for a specific bot.
+func (s *StatsMonitor) GetDetailedStats(botID string) *protocol.PlayerDetailedStats {
+	if !s.enableDetailed {
+		return nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	detailed := s.detailedStats[botID]
+	if detailed == nil {
+		return nil
+	}
+
+	protoStats := detailed.ToProtocolStats()
+	if protoStats == nil {
+		return nil
+	}
+
+	if basic := s.basicStats[botID]; basic != nil {
+		protoStats.Timeouts = basic.Timeouts
+		protoStats.Busts = basic.Busts
+	}
+
+	return protoStats
 }
 
-// GetMemoryUsage returns current and maximum hands stored
-func (d *DetailedStatsCollector) GetMemoryUsage() (current, max int) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	return d.currentHands, d.maxHands
+// Reset clears all collected statistics.
+func (s *StatsMonitor) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resetLocked()
+}
+
+func (s *StatsMonitor) resetLocked() {
+	s.basicStats = make(map[string]*BasicBotStats)
+	s.currentHands = 0
+	if s.enableDetailed {
+		s.detailedStats = make(map[string]*BotStatistics)
+	}
 }
