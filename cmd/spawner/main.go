@@ -476,7 +476,7 @@ func printPlayerDetails(name string, stats *DetailedStats) {
 	fmt.Printf("    Showdown wins: %d | Non-showdown wins: %d\n", stats.ShowdownWins, stats.NonShowdownWins)
 	losingHands := stats.Hands - stats.WinningHands
 	fmt.Printf("  Losing hands: %d (%.1f%%)\n", losingHands, 100-stats.WinRate)
-	fmt.Printf("  VPIP: %.1f%% | PFR: %.1f%%\n", stats.VPIP*100, stats.PFR*100)
+	fmt.Printf("  VPIP: %.1f%% | PFR: %.1f%%\n", stats.VPIP, stats.PFR)
 	fmt.Println()
 
 	// Showdown analysis

@@ -287,20 +287,20 @@ func (r *Reporter) WriteSummary(report *ReportResult) error {
 		if report.Mode == string(ModeSelfPlay) {
 			sb.WriteString(fmt.Sprintf("Average BB/100: %.2f (expected ~0)\n", report.Results.ChallengerStats.BB100))
 			sb.WriteString(fmt.Sprintf("VPIP: %.1f%%, PFR: %.1f%%\n",
-				report.Results.ChallengerStats.VPIP*100,
-				report.Results.ChallengerStats.PFR*100))
+				report.Results.ChallengerStats.VPIP,
+				report.Results.ChallengerStats.PFR))
 		} else {
 			sb.WriteString(fmt.Sprintf("Challenger BB/100: %.2f (VPIP: %.1f%%, PFR: %.1f%%)\n",
 				report.Results.ChallengerStats.BB100,
-				report.Results.ChallengerStats.VPIP*100,
-				report.Results.ChallengerStats.PFR*100))
+				report.Results.ChallengerStats.VPIP,
+				report.Results.ChallengerStats.PFR))
 		}
 	}
 	if report.Results.BaselineStats != nil && report.Mode != string(ModeSelfPlay) {
 		sb.WriteString(fmt.Sprintf("Baseline BB/100: %.2f (VPIP: %.1f%%, PFR: %.1f%%)\n",
 			report.Results.BaselineStats.BB100,
-			report.Results.BaselineStats.VPIP*100,
-			report.Results.BaselineStats.PFR*100))
+			report.Results.BaselineStats.VPIP,
+			report.Results.BaselineStats.PFR))
 	}
 
 	// Statistical analysis

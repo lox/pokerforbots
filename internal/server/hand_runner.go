@@ -281,11 +281,11 @@ func (hr *HandRunner) broadcastHandStart() {
 	if hr.pool != nil {
 		monitor := hr.pool.GetHandMonitor()
 		players := make([]HandPlayer, len(hr.bots))
-		for i, p := range hr.handState.Players {
+		for i, bot := range hr.bots {
 			players[i] = HandPlayer{
 				Seat:  i,
-				Name:  hr.displayName(-1, i), // Use -1 for neutral perspective
-				Chips: p.Chips,
+				Name:  bot.ID, // Use bot ID for stats tracking
+				Chips: hr.handState.Players[i].Chips,
 			}
 		}
 		blinds := Blinds{

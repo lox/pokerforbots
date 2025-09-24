@@ -40,8 +40,8 @@ func TestParseStatsFile(t *testing.T) {
 				DetailedStats: &protocol.PlayerDetailedStats{
 					Hands:    100,
 					BB100:    -10.0,
-					VPIP:     0.25,
-					PFR:      0.15,
+					VPIP:     25.0,
+					PFR:      15.0,
 					Timeouts: 0,
 					Busts:    0,
 				},
@@ -54,8 +54,8 @@ func TestParseStatsFile(t *testing.T) {
 				DetailedStats: &protocol.PlayerDetailedStats{
 					Hands:    100,
 					BB100:    10.0,
-					VPIP:     0.30,
-					PFR:      0.18,
+					VPIP:     30.0,
+					PFR:      18.0,
 					Timeouts: 1,
 					Busts:    0,
 				},
@@ -105,8 +105,8 @@ func TestAggregateHeadsUpStats(t *testing.T) {
 				NetChips: -1000,
 				DetailedStats: &protocol.PlayerDetailedStats{
 					BB100: -10.0,
-					VPIP:  0.25,
-					PFR:   0.15,
+					VPIP:  25.0,
+					PFR:   15.0,
 				},
 			},
 			{
@@ -114,8 +114,8 @@ func TestAggregateHeadsUpStats(t *testing.T) {
 				NetChips: 1000,
 				DetailedStats: &protocol.PlayerDetailedStats{
 					BB100: 10.0,
-					VPIP:  0.30,
-					PFR:   0.18,
+					VPIP:  30.0,
+					PFR:   18.0,
 				},
 			},
 		},
@@ -130,22 +130,22 @@ func TestAggregateHeadsUpStats(t *testing.T) {
 	if results["challenger_bb_per_100"] != -10.0 {
 		t.Errorf("Expected challenger_bb_per_100 = -10.0, got %f", results["challenger_bb_per_100"])
 	}
-	if results["challenger_vpip"] != 0.25 {
-		t.Errorf("Expected challenger_vpip = 0.25, got %f", results["challenger_vpip"])
+	if results["challenger_vpip"] != 25.0 {
+		t.Errorf("Expected challenger_vpip = 25.0, got %f", results["challenger_vpip"])
 	}
-	if results["challenger_pfr"] != 0.15 {
-		t.Errorf("Expected challenger_pfr = 0.15, got %f", results["challenger_pfr"])
+	if results["challenger_pfr"] != 15.0 {
+		t.Errorf("Expected challenger_pfr = 15.0, got %f", results["challenger_pfr"])
 	}
 
 	// Check Baseline (second player)
 	if results["baseline_bb_per_100"] != 10.0 {
 		t.Errorf("Expected baseline_bb_per_100 = 10.0, got %f", results["baseline_bb_per_100"])
 	}
-	if results["baseline_vpip"] != 0.30 {
-		t.Errorf("Expected baseline_vpip = 0.30, got %f", results["baseline_vpip"])
+	if results["baseline_vpip"] != 30.0 {
+		t.Errorf("Expected baseline_vpip = 30.0, got %f", results["baseline_vpip"])
 	}
-	if results["baseline_pfr"] != 0.18 {
-		t.Errorf("Expected baseline_pfr = 0.18, got %f", results["baseline_pfr"])
+	if results["baseline_pfr"] != 18.0 {
+		t.Errorf("Expected baseline_pfr = 18.0, got %f", results["baseline_pfr"])
 	}
 }
 
@@ -268,8 +268,8 @@ func BenchmarkStatsAggregation(b *testing.B) {
 	stats := &server.GameStats{
 		BigBlind: 10,
 		Players: []protocol.GameCompletedPlayer{
-			{Hands: 100, NetChips: -1000, DetailedStats: &protocol.PlayerDetailedStats{BB100: -10.0, VPIP: 0.25, PFR: 0.15}},
-			{Hands: 100, NetChips: 1000, DetailedStats: &protocol.PlayerDetailedStats{BB100: 10.0, VPIP: 0.30, PFR: 0.18}},
+			{Hands: 100, NetChips: -1000, DetailedStats: &protocol.PlayerDetailedStats{BB100: -10.0, VPIP: 25.0, PFR: 15.0}},
+			{Hands: 100, NetChips: 1000, DetailedStats: &protocol.PlayerDetailedStats{BB100: 10.0, VPIP: 30.0, PFR: 18.0}},
 		},
 	}
 
