@@ -122,7 +122,7 @@ Acceptance for Phase 2:
 - 2025-09-24 — Branchless straight detection + bitmask kickers/counting: sequential 49.70 ns/op (≈20.12M hands/sec), parallel 53.87 ns/op (≈18.56M hands/sec); `go test ./poker` passes.
 - 2025-09-24 — Suit mask reuse + full mask algebra for pairs/trips/quads: sequential 22.95 ns/op (≈43.58M hands/sec), parallel 57.01 ns/op (≈17.54M hands/sec); `go test ./poker` passes.
 - 2025-09-24 — Batch API prototype (32 at a time, scalar): `BenchmarkEvaluate7CardsBatch32` 555.9 ns/op total (≈17.4 ns per hand); sequential bench unchanged (22.95 ns/op) while parallel settles around 57 ns/op due to framework overhead; `go test ./poker` passes.
-- 2025-09-24 — 16-bit hand-strength encoding: sequential 31.17 ns/op (≈32.08M hands/sec), parallel 51.79 ns/op (≈19.31M hands/sec); all tests incl. race suite pass. Need follow-up profiling; high-card/flush detail conversion currently dominates.
+- 2025-09-25 — 16-bit hand-strength encoding experiment: sequential 31.17 ns/op (≈32.08M hands/sec), parallel 51.79 ns/op (≈19.31M hands/sec); combinatorial ranking dominated CPU. Reverted to 32-bit layout until lookup tables are ready (current sequential 23.19 ns/op, parallel 57.03 ns/op); `bin/gotestsum -race ./...` back to green.
 
 ### Notes 2025-09-24
 
@@ -130,7 +130,7 @@ Acceptance for Phase 2:
 - Count arrays removed in favour of suit-intersection masks (`quadsMask`, `tripsMask`, `pairsMask`); kickers sourced from shared rank mask.
 - Next profiling pass (`task profile:evaluator:top`) scheduled to confirm new hotspots before further micro-tuning.
 - Batched Go API mirrors Zig structure-of-arrays approach (no SIMD yet) and gives ~1.5× effective speedup when processing 32 hands per call; parallel harness now dominated by scheduler/cache overhead (~57 ns/op).
-- New 16-bit HandRank keeps ordering semantics but introduced heavier combinatorial mapping; next step is to profile mask-to-rank conversion and pursue table-driven detail packing to claw back the lost 8–9 ns.
+- 16-bit strength encoding without lookup tables regressed sequential perf (~+8 ns/op) because mask→rank combinatorics (`highestRank`, `rankOrdinalAsc`, `adjustFiveCardIndex`) dominate. Parked the idea until CHD/flush tables are in place.
 
 ## Notes & References
 
