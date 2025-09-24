@@ -656,6 +656,17 @@ func (b *complexBot) getPosition() int {
 	}
 
 	distance := (ourIdx - buttonIdx + len(activePlayers)) % len(activePlayers)
+
+	// Adjust position categorization based on table size
+	// In 6-max or smaller, be more aggressive with position definitions
+	if len(activePlayers) <= 6 {
+		// 6-max adjustments:
+		// 0 = button, 1 = cutoff, 2+ = early/middle (no true "early" in 6-max)
+		if distance >= 2 {
+			return 2 // Treat as middle position, not early
+		}
+	}
+
 	return distance
 }
 
