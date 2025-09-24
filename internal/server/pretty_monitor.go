@@ -177,8 +177,8 @@ func (p *PrettyPrintMonitor) OnStreetChange(handID string, street string, cards 
 	p.currentHand.board = cards
 	p.currentHand.currentStreet = strings.ToLower(street)
 
-	// Print street header
-	if street != "preflop" && !p.currentHand.printedStreets[street] {
+	// Print street header (but not for showdown, which is handled in OnHandComplete)
+	if street != "preflop" && street != "showdown" && !p.currentHand.printedStreets[street] {
 		p.currentHand.printedStreets[street] = true
 		header := formatStreetHeader(street, cards)
 		fmt.Fprintln(p.writer)
