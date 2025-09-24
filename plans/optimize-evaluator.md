@@ -105,15 +105,32 @@ Acceptance for Phase 2:
 
 ## Tasks Checklist
 
-- [ ] Implement `straightHigh` (bitwise cascade) and replace `checkStraight`
-- [ ] Reuse `straightHigh` for SF detection (single-suit mask)
-- [ ] Implement `countRanksFast` and integrate
-- [ ] Replace map-based used-rank with `uint16` mask in kicker helpers
-- [ ] Precompute suit masks and a single `rankMask` per eval and reuse
-- [ ] Verify tests; add missing edge-case tests (straights/SF)
-- [ ] Measure: benches + pprof top; record before/after
-- [ ] Phase 2: mask algebra for pairs/trips/quads; remove `[13]uint8` counts
-- [ ] Re-run tests and benches; document results here
+- [x] Implement `straightHigh` (bitwise cascade) and replace `checkStraight`
+- [x] Reuse `straightHigh` for SF detection (single-suit mask)
+- [x] Implement `countRanksFast` and integrate
+- [x] Replace map-based used-rank with `uint16` mask in kicker helpers
+- [x] Precompute suit masks and a single `rankMask` per eval and reuse
+- [x] Verify tests; add missing edge-case tests (straights/SF)
+- [x] Measure: benches + pprof top; record before/after
+- [x] Phase 2: mask algebra for pairs/trips/quads; remove `[13]uint8` counts
+- [x] Re-run tests and benches; document results here
+- [x] Add batch evaluation surface (non-SIMD) to amortize call overhead
+
+## Experiment Log
+
+- 2025-09-24 — Baseline Apple M1, Go `task bench:evaluator -- -benchtime=3s`: `BenchmarkEvaluate7Cards_LargeSample` 199.6 ns/op (≈5.01M hands/sec), parallel 69.57 ns/op (≈14.37M hands/sec); 0 B/op, 0 allocs/op.
+- 2025-09-24 — Branchless straight detection + bitmask kickers/counting: sequential 49.70 ns/op (≈20.12M hands/sec), parallel 53.87 ns/op (≈18.56M hands/sec); `go test ./poker` passes.
+- 2025-09-24 — Suit mask reuse + full mask algebra for pairs/trips/quads: sequential 22.95 ns/op (≈43.58M hands/sec), parallel 57.01 ns/op (≈17.54M hands/sec); `go test ./poker` passes.
+- 2025-09-24 — Batch API prototype (32 at a time, scalar): `BenchmarkEvaluate7CardsBatch32` 555.9 ns/op total (≈17.4 ns per hand); sequential bench unchanged (22.95 ns/op) while parallel settles around 57 ns/op due to framework overhead; `go test ./poker` passes.
+- 2025-09-25 — 16-bit hand-strength encoding experiment: sequential 31.17 ns/op (≈32.08M hands/sec), parallel 51.79 ns/op (≈19.31M hands/sec); combinatorial ranking dominated CPU. Reverted to 32-bit layout until lookup tables are ready (current sequential 23.19 ns/op, parallel 57.03 ns/op); `bin/gotestsum -race ./...` back to green.
+
+### Notes 2025-09-24
+
+- Suit masks cached at eval entry; straight-high cascade now feeds both flush and board checks directly.
+- Count arrays removed in favour of suit-intersection masks (`quadsMask`, `tripsMask`, `pairsMask`); kickers sourced from shared rank mask.
+- Next profiling pass (`task profile:evaluator:top`) scheduled to confirm new hotspots before further micro-tuning.
+- Batched Go API mirrors Zig structure-of-arrays approach (no SIMD yet) and gives ~1.5× effective speedup when processing 32 hands per call; parallel harness now dominated by scheduler/cache overhead (~57 ns/op).
+- 16-bit strength encoding without lookup tables regressed sequential perf (~+8 ns/op) because mask→rank combinatorics (`highestRank`, `rankOrdinalAsc`, `adjustFiveCardIndex`) dominate. Parked the idea until CHD/flush tables are in place.
 
 ## Notes & References
 
