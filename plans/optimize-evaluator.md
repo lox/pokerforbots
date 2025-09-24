@@ -109,16 +109,23 @@ Acceptance for Phase 2:
 - [x] Reuse `straightHigh` for SF detection (single-suit mask)
 - [x] Implement `countRanksFast` and integrate
 - [x] Replace map-based used-rank with `uint16` mask in kicker helpers
-- [ ] Precompute suit masks and a single `rankMask` per eval and reuse
+- [x] Precompute suit masks and a single `rankMask` per eval and reuse
 - [x] Verify tests; add missing edge-case tests (straights/SF)
 - [x] Measure: benches + pprof top; record before/after
-- [ ] Phase 2: mask algebra for pairs/trips/quads; remove `[13]uint8` counts
-- [ ] Re-run tests and benches; document results here
+- [x] Phase 2: mask algebra for pairs/trips/quads; remove `[13]uint8` counts
+- [x] Re-run tests and benches; document results here
 
 ## Experiment Log
 
 - 2025-09-24 — Baseline Apple M1, Go `task bench:evaluator -- -benchtime=3s`: `BenchmarkEvaluate7Cards_LargeSample` 199.6 ns/op (≈5.01M hands/sec), parallel 69.57 ns/op (≈14.37M hands/sec); 0 B/op, 0 allocs/op.
 - 2025-09-24 — Branchless straight detection + bitmask kickers/counting: sequential 49.70 ns/op (≈20.12M hands/sec), parallel 53.87 ns/op (≈18.56M hands/sec); `go test ./poker` passes.
+- 2025-09-24 — Suit mask reuse + full mask algebra for pairs/trips/quads: sequential 25.59 ns/op (≈39.06M hands/sec), parallel 51.42 ns/op (≈19.45M hands/sec); `go test ./poker` passes.
+
+### Notes 2025-09-24
+
+- Suit masks cached at eval entry; straight-high cascade now feeds both flush and board checks directly.
+- Count arrays removed in favour of suit-intersection masks (`quadsMask`, `tripsMask`, `pairsMask`); kickers sourced from shared rank mask.
+- Next profiling pass (`task profile:evaluator:top`) scheduled to confirm new hotspots before further micro-tuning.
 
 ## Notes & References
 
