@@ -17,6 +17,12 @@ func (tm *testMonitor) OnGameComplete(handsCompleted uint64, reason string) {
 	tm.completeCalls++
 }
 
+func (tm *testMonitor) OnHandStart(string, []HandPlayer, int, Blinds) {}
+
+func (tm *testMonitor) OnPlayerAction(string, int, string, int, int) {}
+
+func (tm *testMonitor) OnStreetChange(string, string, []string) {}
+
 func (tm *testMonitor) OnHandComplete(outcome HandOutcome) {
 	tm.handCallCount++
 	tm.lastHandOutcome = outcome

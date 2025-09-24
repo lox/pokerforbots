@@ -120,6 +120,18 @@ func (p *BotPool) SetHandMonitor(monitor HandMonitor) {
 	}
 }
 
+// GetHandMonitor returns the combined monitor (both progress and stats)
+func (p *BotPool) GetHandMonitor() HandMonitor {
+	monitors := []HandMonitor{}
+	if p.progressMonitor != nil {
+		monitors = append(monitors, p.progressMonitor)
+	}
+	if p.statsMonitor != nil {
+		monitors = append(monitors, p.statsMonitor)
+	}
+	return NewMultiHandMonitor(monitors...)
+}
+
 // GameID returns the identifier associated with this pool.
 func (p *BotPool) GameID() string {
 	p.mu.RLock()

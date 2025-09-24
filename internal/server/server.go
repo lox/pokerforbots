@@ -326,8 +326,11 @@ type completionMonitor struct {
 	once sync.Once
 }
 
-func (m *completionMonitor) OnHandComplete(HandOutcome)   {}
-func (m *completionMonitor) OnGameStart(handLimit uint64) {}
+func (m *completionMonitor) OnHandComplete(HandOutcome)                    {}
+func (m *completionMonitor) OnGameStart(handLimit uint64)                  {}
+func (m *completionMonitor) OnHandStart(string, []HandPlayer, int, Blinds) {}
+func (m *completionMonitor) OnPlayerAction(string, int, string, int, int)  {}
+func (m *completionMonitor) OnStreetChange(string, string, []string)       {}
 func (m *completionMonitor) OnGameComplete(handsCompleted uint64, reason string) {
 	m.once.Do(func() {
 		close(m.done)

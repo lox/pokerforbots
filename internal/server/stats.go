@@ -277,6 +277,15 @@ func (s *StatsMonitor) OnGameStart(uint64) {}
 // OnGameComplete currently performs no cleanup; stats remain available for querying.
 func (s *StatsMonitor) OnGameComplete(uint64, string) {}
 
+// OnHandStart implements HandMonitor.
+func (s *StatsMonitor) OnHandStart(string, []HandPlayer, int, Blinds) {}
+
+// OnPlayerAction implements HandMonitor.
+func (s *StatsMonitor) OnPlayerAction(string, int, string, int, int) {}
+
+// OnStreetChange implements HandMonitor.
+func (s *StatsMonitor) OnStreetChange(string, string, []string) {}
+
 // OnHandComplete records the provided outcome and updates aggregates.
 func (s *StatsMonitor) OnHandComplete(outcome HandOutcome) {
 	if outcome.Detail == nil {
