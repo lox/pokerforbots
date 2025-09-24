@@ -233,7 +233,6 @@ type BasicBotStats struct {
 	BotID          string
 	DisplayName    string
 	BotCommand     string
-	Role           string
 	ConnectOrder   int
 	Hands          int
 	NetChips       int64
@@ -314,7 +313,6 @@ func (s *StatsMonitor) OnHandComplete(outcome HandOutcome) {
 		}
 		stats.DisplayName = displayName
 		stats.BotCommand = botOutcome.Bot.BotCommand()
-		stats.Role = botOutcome.Bot.Role()
 		stats.Hands++
 		stats.NetChips += int64(botOutcome.NetChips)
 		if botOutcome.NetChips >= 0 {
@@ -386,7 +384,6 @@ func (s *StatsMonitor) GetPlayerStats() []PlayerStats {
 			GameCompletedPlayer: protocol.GameCompletedPlayer{
 				BotID:          stats.BotID,
 				DisplayName:    stats.DisplayName,
-				Role:           stats.Role,
 				Hands:          stats.Hands,
 				NetChips:       stats.NetChips,
 				AvgPerHand:     avg,
