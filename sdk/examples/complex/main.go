@@ -22,6 +22,31 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// OpponentAction tracks a single action by an opponent
+type OpponentAction struct {
+	Street   string
+	Action   string // "fold", "check", "call", "raise", "bet"
+	Amount   int
+	Position int // Their position when they acted
+}
+
+// OpponentProfile tracks an opponent's actions within the current hand
+type OpponentProfile struct {
+	Seat          int
+	Position      int    // Position relative to button (0=button, 1=cutoff, etc)
+	PreflopAction string // "open", "3bet", "call", "limp", "fold"
+	OpenPosition  int    // Position they opened from (-1 if didn't open)
+	Is3Bettor     bool
+	IsColdCaller  bool
+	IsLimper      bool
+	Actions       []OpponentAction // All actions this hand
+	VPIP          bool             // Put money in voluntarily
+	PFR           bool             // Raised preflop
+	CBet          bool             // Made continuation bet
+	FacedCBet     bool             // Faced a continuation bet
+	FoldedToCBet  bool             // Folded to continuation bet
+}
+
 // tableState holds the latest state the bot knows about.
 type tableState struct {
 	HandID       string
@@ -42,6 +67,14 @@ type tableState struct {
 	// For simple tracking
 	StartingChips int
 	HandNum       int
+
+	// Opponent tracking
+	Opponents      map[int]*OpponentProfile // Seat -> Profile
+	PreflopRaiser  int                      // Seat of preflop raiser (-1 if none)
+	OpenRaiserSeat int                      // Seat of original opener
+	NumLimpers     int                      // Count of limpers
+	Is3BetPot      bool                     // Whether this is a 3-bet pot
+	IsLimpedPot    bool                     // Whether this is a limped pot
 }
 
 // ==========================================
@@ -82,11 +115,13 @@ const (
 
 // Action constants for preflop ranges
 const (
-	ActionOpen      = "open"
-	Action3BetValue = "3bet_value"
-	Action3BetBluff = "3bet_bluff"
-	ActionDefend    = "defend"
-	Action4Bet      = "4bet"
+	ActionOpen          = "open"
+	Action3BetValue     = "3bet_value"
+	Action3BetBluff     = "3bet_bluff"
+	ActionDefend        = "defend"
+	Action4Bet          = "4bet"
+	ActionOpenHeadsUp   = "open_headsup"
+	ActionDefendHeadsUp = "defend_headsup"
 )
 
 // PreflopRange defines opening/3bet/4bet ranges by position
@@ -98,6 +133,10 @@ type PreflopRange struct {
 
 // Preflop ranges organized by position and action
 var preflopRanges = []PreflopRange{
+	// Heads-up specific ranges (much wider)
+	{PositionButton, ActionOpenHeadsUp, "22+,A2+,K2+,Q2+,J4o+,T6o+,96o+,86o+,76o+,65o+,54o,J2s+,T2s+,92s+,82s+,72s+,62s+,52s+,42s+,32s"},
+	{PositionCutoff, ActionDefendHeadsUp, "22+,A2+,K2+,Q5o+,J7o+,T7o+,97o+,87o,Q2s+,J2s+,T4s+,95s+,85s+,74s+,64s+,53s+,43s"},
+
 	// Early position (UTG/EP) opening range - tight
 	{PositionEarly, ActionOpen, "77+,AJo+,KQo,A5s+,KTs+,QTs+,JTs,T9s"},
 
@@ -389,9 +428,30 @@ func (b *complexBot) OnHandStart(state *client.GameState, start protocol.HandSta
 	}
 	b.state.ActiveCount = active
 
+	// Initialize opponent tracking for new hand
+	b.state.Opponents = make(map[int]*OpponentProfile)
+	for i, player := range start.Players {
+		if i == start.YourSeat || player.Chips <= 0 {
+			continue // Skip ourselves and eliminated players
+		}
+		b.state.Opponents[i] = &OpponentProfile{
+			Seat:          i,
+			Position:      b.calculatePlayerPosition(i, start.Button, start.Players),
+			OpenPosition:  -1,
+			Actions:       make([]OpponentAction, 0),
+			PreflopAction: "pending",
+		}
+	}
+	b.state.PreflopRaiser = -1
+	b.state.OpenRaiserSeat = -1
+	b.state.NumLimpers = 0
+	b.state.Is3BetPot = false
+	b.state.IsLimpedPot = false
+
 	b.logger.Debug().
 		Strs("holes", b.state.HoleCardsStr).
 		Int("position", b.getPosition()).
+		Int("opponents", len(b.state.Opponents)).
 		Msg("hand start")
 	return nil
 }
@@ -442,10 +502,16 @@ func (b *complexBot) OnGameUpdate(state *client.GameState, update protocol.GameU
 func (b *complexBot) OnPlayerAction(state *client.GameState, action protocol.PlayerAction) error {
 	b.state.LastAction = action
 
-	// Just track if we bet/raised for simple logic
+	// Track our own bets
 	if action.Seat == b.state.Seat && (action.Action == "raise" || action.Action == "allin") {
 		b.state.BetsThisHand++
 	}
+
+	// Track opponent actions
+	if action.Seat != b.state.Seat && action.Seat >= 0 {
+		b.trackOpponentAction(action)
+	}
+
 	return nil
 }
 
@@ -604,9 +670,10 @@ func (b *complexBot) classifyPostflopSDK() (string, float64) {
 		class = "TopPair"
 	}
 
-	// Adjust for multiway pots
+	// Adjust for multiway pots (more conservative reduction)
 	if b.state.ActiveCount > 2 {
-		equity *= (1.0 - float64(b.state.ActiveCount-2)*0.03)
+		// Only reduce by 2% per additional player instead of 3%
+		equity *= (1.0 - float64(b.state.ActiveCount-2)*0.02)
 	}
 
 	b.logger.Debug().
@@ -618,6 +685,135 @@ func (b *complexBot) classifyPostflopSDK() (string, float64) {
 		Msg("SDK postflop analysis")
 
 	return class, math.Max(equity, 0.05)
+}
+
+// trackOpponentAction tracks and categorizes opponent actions
+func (b *complexBot) trackOpponentAction(action protocol.PlayerAction) {
+	opp, exists := b.state.Opponents[action.Seat]
+	if !exists {
+		return // Not tracking this player
+	}
+
+	// Record the raw action
+	opp.Actions = append(opp.Actions, OpponentAction{
+		Street:   b.state.Street,
+		Action:   action.Action,
+		Amount:   action.AmountPaid,
+		Position: opp.Position,
+	})
+
+	// Track preflop specific patterns
+	if b.state.Street == "preflop" {
+		switch action.Action {
+		case "raise", "allin":
+			opp.PFR = true
+			opp.VPIP = true
+
+			// Check if this is the first raiser
+			if b.state.PreflopRaiser < 0 {
+				b.state.PreflopRaiser = action.Seat
+				b.state.OpenRaiserSeat = action.Seat
+				opp.PreflopAction = "open"
+				opp.OpenPosition = opp.Position
+			} else {
+				// This is a 3-bet or higher
+				b.state.Is3BetPot = true
+				opp.Is3Bettor = true
+				opp.PreflopAction = "3bet"
+			}
+
+		case "call":
+			opp.VPIP = true
+
+			// Check if calling after a raise
+			if b.state.PreflopRaiser >= 0 && b.state.PreflopRaiser != action.Seat {
+				opp.IsColdCaller = true
+				opp.PreflopAction = "call"
+			} else if b.state.PreflopRaiser < 0 {
+				// Calling without a raise = limping
+				opp.IsLimper = true
+				opp.PreflopAction = "limp"
+				b.state.NumLimpers++
+				b.state.IsLimpedPot = true
+			}
+
+		case "check":
+			// Big blind checking
+			if b.state.PreflopRaiser < 0 {
+				b.state.IsLimpedPot = true
+			}
+
+		case "fold":
+			opp.PreflopAction = "fold"
+		}
+	}
+
+	// Track postflop patterns
+	if b.state.Street != "preflop" {
+		// Track continuation betting
+		if b.state.PreflopRaiser == action.Seat && action.Action == "bet" {
+			opp.CBet = true
+		}
+
+		// Track facing and folding to c-bets
+		if b.state.PreflopRaiser >= 0 && b.state.PreflopRaiser != action.Seat {
+			if action.Action == "fold" && b.state.LastAction.Seat == b.state.PreflopRaiser {
+				opp.FacedCBet = true
+				opp.FoldedToCBet = true
+			} else if action.Action == "call" || action.Action == "raise" {
+				opp.FacedCBet = true
+			}
+		}
+	}
+
+	b.logger.Debug().
+		Int("seat", action.Seat).
+		Str("action", action.Action).
+		Int("amount", action.AmountPaid).
+		Str("street", b.state.Street).
+		Int("position", opp.Position).
+		Str("preflop_action", opp.PreflopAction).
+		Msg("tracked opponent action")
+}
+
+// calculatePlayerPosition calculates a player's position relative to button
+func (b *complexBot) calculatePlayerPosition(seat int, button int, players []protocol.Player) int {
+	if button < 0 {
+		return 2 // Default to middle if no button
+	}
+
+	activePlayers := []int{}
+	for i, p := range players {
+		if !p.Folded && p.Chips > 0 {
+			activePlayers = append(activePlayers, i)
+		}
+	}
+
+	if len(activePlayers) <= 2 {
+		// Heads-up: button = 0 (in position), other = 1 (out of position)
+		if b.state.Seat == b.state.Button {
+			return 0 // We have position
+		}
+		return 1 // We're out of position
+	}
+
+	// Find position relative to button
+	buttonIdx := -1
+	targetIdx := -1
+	for i, activeSeat := range activePlayers {
+		if activeSeat == button {
+			buttonIdx = i
+		}
+		if activeSeat == seat {
+			targetIdx = i
+		}
+	}
+
+	if buttonIdx < 0 || targetIdx < 0 {
+		return 2 // Default to middle
+	}
+
+	return (targetIdx - buttonIdx + len(activePlayers)) % len(activePlayers)
 }
 
 // Rest of the methods remain the same as the original complex bot
@@ -636,7 +832,11 @@ func (b *complexBot) getPosition() int {
 	}
 
 	if len(activePlayers) <= 2 {
-		return 0 // Heads up
+		// Heads-up: button = 0 (in position), other = 1 (out of position)
+		if b.state.Seat == b.state.Button {
+			return 0 // We have position
+		}
+		return 1 // We're out of position
 	}
 
 	// Find our position relative to button
@@ -690,6 +890,10 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 	if equity <= 0 {
 		equity = handStrength // fallback
 	}
+
+	// For now, removing equity adjustments based on opponent tracking
+	// These were causing more problems than benefits
+	// TODO: Re-implement with more sophisticated range vs range analysis
 
 	// First check fold threshold
 	if b.shouldFold(req, equity) {
@@ -848,18 +1052,31 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 	facing := req.ToCall
 	inPosition := position <= 1
 
-	// Standard bet sizes
+	// Adjust bet sizing based on table dynamics
+	limperMultiplier := 1.0 + float64(b.state.NumLimpers)*0.5
+
+	// Standard bet sizes (adjust for limpers)
 	minR := max(req.MinRaise, req.MinBet)
-	openSize := maxInt(minR, int(2.5*float64(bb)))
+	openSize := maxInt(minR, int(2.5*float64(bb)*limperMultiplier))
 	threeBetIP := maxInt(minR, int(8.5*float64(bb)))
 	threeBetOOP := maxInt(minR, int(10.0*float64(bb)))
 	fourBetSize := maxInt(minR, int(22.0*float64(bb)))
 
 	// Get relevant ranges for our position
-	openRange := getPreflopRange(position, ActionOpen)
+	// Use special heads-up ranges when appropriate
+	isHeadsUp := b.state.ActiveCount <= 2
+
+	var openRange, defendRange *analysis.Range
+	if isHeadsUp {
+		openRange = getPreflopRange(position, ActionOpenHeadsUp)
+		defendRange = getPreflopRange(position, ActionDefendHeadsUp)
+	} else {
+		openRange = getPreflopRange(position, ActionOpen)
+		defendRange = getPreflopRange(position, ActionDefend)
+	}
+
 	value3BetRange := getPreflopRange(position, Action3BetValue)
 	bluff3BetRange := getPreflopRange(position, Action3BetBluff)
-	defendRange := getPreflopRange(position, ActionDefend)
 	fourBetRange := getPreflopRange(position, Action4Bet)
 
 	// Case 1: BB can check
