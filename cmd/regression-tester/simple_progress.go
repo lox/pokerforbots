@@ -41,9 +41,18 @@ func (m *SimpleProgressMonitor) OnGameStart(handLimit uint64) {
 }
 
 // OnHandComplete is called after each hand completes
-func (m *SimpleProgressMonitor) OnHandComplete(handsCompleted uint64, handLimit uint64) {
+func (m *SimpleProgressMonitor) OnHandComplete(outcome server.HandOutcome) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	handsCompleted := outcome.HandsCompleted
+	handLimit := outcome.HandLimit
+	if handLimit == 0 {
+		handLimit = m.totalHands
+	}
+	if handLimit == 0 {
+		handLimit = 1
+	}
 
 	m.handsCompleted = handsCompleted
 

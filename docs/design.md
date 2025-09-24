@@ -157,7 +157,13 @@ game:
 pool:
   match_interval_ms: 10
   random_delay_max_ms: 50
+
+statistics:
+  enable_stats: true      # Collect detailed outcomes (optional)
+  max_hands: 10000        # Retain the most recent 10k hands by default
 ```
+
+> **Note:** When `enable_stats` is set, the server keeps a rolling window of recent hand outcomes (10,000 hands by default) to cap memory consumption. Increase `max_hands` if you need longer historical spans for analysis.
 
 ## Client Implementation
 

@@ -1,142 +1,18 @@
 package server
 
-import (
-	"testing"
-)
+import "testing"
 
-func TestNullStatsCollector(t *testing.T) {
-	collector := &NullStatsCollector{}
+func TestStatsMonitorBasicTracking(t *testing.T) {
+	monitor := NewStatsMonitor(10, false, 0)
 
-	// Test that all methods are no-ops and return expected values
-	if collector.IsEnabled() {
-		t.Error("NullStatsCollector should not be enabled")
-	}
+	bot := &Bot{ID: "bot1", done: make(chan struct{})}
+	bot.botCommand = "./bot"
+	bot.SetDisplayName("Test Bot")
 
-	// RecordHandOutcome should be a no-op
-	err := collector.RecordHandOutcome(HandOutcomeDetail{HandID: "test"})
-	if err != nil {
-		t.Errorf("RecordHandOutcome should not return error: %v", err)
-	}
-
-	// GetPlayerStats should return nil
-	if stats := collector.GetPlayerStats(); stats != nil {
-		t.Error("GetPlayerStats should return nil")
-	}
-
-	// GetDetailedStats should return nil
-	if stats := collector.GetDetailedStats("bot1"); stats != nil {
-		t.Error("GetDetailedStats should return nil")
-	}
-
-	// Reset should be a no-op
-	collector.Reset()
-}
-
-func TestDetailedStatsCollector(t *testing.T) {
-	collector := NewDetailedStatsCollector(100, 10)
-
-	// Test that it's enabled
-	if !collector.IsEnabled() {
-		t.Error("DetailedStatsCollector should be enabled")
-	}
-
-	// Create test bots
-	bot1 := &Bot{ID: "bot1", displayName: "TestBot1"}
-	bot2 := &Bot{ID: "bot2", displayName: "TestBot2"}
-
-	// Record a hand outcome
-	detail := HandOutcomeDetail{
-		HandID:         "hand1",
-		ButtonPosition: 0,
-		StreetReached:  "river",
-		Board:          []string{"As", "Kh", "Qd", "Jc", "Tc"},
-		BotOutcomes: []BotHandOutcome{
-			{
-				Bot:            bot1,
-				Position:       0,
-				ButtonDistance: 0,
-				HoleCards:      []string{"Ac", "Ad"},
-				NetChips:       50,
-				WentToShowdown: true,
-				WonAtShowdown:  true,
-				Actions: map[string]string{
-					"preflop": "raise",
-					"flop":    "bet",
-					"turn":    "check",
-					"river":   "call",
-				},
-			},
-			{
-				Bot:            bot2,
-				Position:       1,
-				ButtonDistance: 1,
-				HoleCards:      []string{"7h", "2d"},
-				NetChips:       -50,
-				WentToShowdown: false,
-				WonAtShowdown:  false,
-				Actions: map[string]string{
-					"preflop": "call",
-					"flop":    "fold",
-				},
-			},
-		},
-	}
-
-	err := collector.RecordHandOutcome(detail)
-	if err != nil {
-		t.Errorf("RecordHandOutcome failed: %v", err)
-	}
-
-	// GetPlayerStats now returns nil since basic stats are maintained by BotPool
-	playerStats := collector.GetPlayerStats()
-	if playerStats != nil {
-		t.Error("Expected GetPlayerStats to return nil for DetailedStatsCollector")
-	}
-
-	// Check detailed stats for bot1
-	detailedStats := collector.GetDetailedStats("bot1")
-	if detailedStats == nil {
-		t.Fatal("Expected detailed stats for bot1")
-	}
-
-	// BB/100 = (50/10) / 1 * 100 = 500
-	expectedBB100 := 500.0
-	if detailedStats.BB100 != expectedBB100 {
-		t.Errorf("Expected BB100 %.2f, got %.2f", expectedBB100, detailedStats.BB100)
-	}
-
-	if detailedStats.WinRate != 100.0 {
-		t.Errorf("Expected win rate 100%%, got %.2f%%", detailedStats.WinRate)
-	}
-
-	if detailedStats.ShowdownWinRate != 100.0 {
-		t.Errorf("Expected showdown win rate 100%%, got %.2f%%", detailedStats.ShowdownWinRate)
-	}
-
-	// Check that basic stats are present
-	if detailedStats.Hands != 1 {
-		t.Errorf("Expected 1 hand, got %d", detailedStats.Hands)
-	}
-
-	if detailedStats.WinningHands != 1 {
-		t.Errorf("Expected 1 winning hand, got %d", detailedStats.WinningHands)
-	}
-
-	if detailedStats.ShowdownWins != 1 {
-		t.Errorf("Expected 1 showdown win, got %d", detailedStats.ShowdownWins)
-	}
-}
-
-func TestDetailedStatsCollectorMemoryLimit(t *testing.T) {
-	// Create collector with max 2 hands
-	collector := NewDetailedStatsCollector(2, 10)
-
-	bot := &Bot{ID: "bot1", displayName: "TestBot"}
-
-	// Record 3 hands
-	for i := range 3 {
-		detail := HandOutcomeDetail{
-			HandID:         "hand" + string(rune(i)),
+	outcome := HandOutcome{
+		HandID: "hand-1",
+		Detail: &HandOutcomeDetail{
+			HandID:         "hand-1",
 			ButtonPosition: 0,
 			StreetReached:  "river",
 			BotOutcomes: []BotHandOutcome{
@@ -144,123 +20,139 @@ func TestDetailedStatsCollectorMemoryLimit(t *testing.T) {
 					Bot:            bot,
 					Position:       0,
 					ButtonDistance: 0,
-					NetChips:       10,
+					HoleCards:      []string{"Ah", "Ad"},
+					NetChips:       40,
+					WentToShowdown: true,
+					WonAtShowdown:  true,
+					TimedOut:       true,
+					InvalidActions: 2,
+					Disconnected:   true,
+					WentBroke:      true,
+				},
+			},
+		},
+	}
+
+	monitor.OnHandComplete(outcome)
+
+	players := monitor.GetPlayerStats()
+	if len(players) != 1 {
+		t.Fatalf("expected 1 player stat, got %d", len(players))
+	}
+
+	ps := players[0]
+	if ps.BotID != "bot1" {
+		t.Errorf("expected bot id bot1, got %s", ps.BotID)
+	}
+	if ps.Hands != 1 {
+		t.Errorf("expected 1 hand, got %d", ps.Hands)
+	}
+	if ps.NetChips != 40 {
+		t.Errorf("expected net chips 40, got %d", ps.NetChips)
+	}
+	if ps.Timeouts != 1 {
+		t.Errorf("expected 1 timeout, got %d", ps.Timeouts)
+	}
+	if ps.InvalidActions != 2 {
+		t.Errorf("expected 2 invalid actions, got %d", ps.InvalidActions)
+	}
+	if ps.Disconnects != 1 {
+		t.Errorf("expected 1 disconnect, got %d", ps.Disconnects)
+	}
+	if ps.Busts != 1 {
+		t.Errorf("expected 1 bust, got %d", ps.Busts)
+	}
+	if ps.DetailedStats != nil {
+		t.Errorf("expected no detailed stats when detailed disabled")
+	}
+}
+
+func TestStatsMonitorDetailedStats(t *testing.T) {
+	monitor := NewStatsMonitor(10, true, 0)
+
+	bot := &Bot{ID: "bot1", done: make(chan struct{})}
+	bot.SetDisplayName("Aggro Bot")
+
+	outcome := HandOutcome{
+		HandID: "hand-2",
+		Detail: &HandOutcomeDetail{
+			HandID:         "hand-2",
+			ButtonPosition: 1,
+			StreetReached:  "turn",
+			BotOutcomes: []BotHandOutcome{
+				{
+					Bot:            bot,
+					Position:       0,
+					ButtonDistance: 1,
+					NetChips:       30,
 					WentToShowdown: false,
 					WonAtShowdown:  false,
-				},
-			},
-		}
-
-		err := collector.RecordHandOutcome(detail)
-		if err != nil {
-			t.Errorf("RecordHandOutcome failed: %v", err)
-		}
-	}
-
-	// Check memory usage after circular buffer reset
-	currentHands, maxHands := collector.GetMemoryUsage()
-	if maxHands != 2 {
-		t.Errorf("Expected max hands 2, got %d", maxHands)
-	}
-	if currentHands != 1 { // Should have reset and now have 1 hand
-		t.Errorf("Expected current hands 1 after reset, got %d", currentHands)
-	}
-
-	// GetPlayerStats returns nil for DetailedStatsCollector
-	playerStats := collector.GetPlayerStats()
-	if playerStats != nil {
-		t.Error("Expected GetPlayerStats to return nil")
-	}
-}
-
-func TestDetailedStatsCollectorReset(t *testing.T) {
-	collector := NewDetailedStatsCollector(100, 10)
-
-	bot := &Bot{ID: "bot1", displayName: "TestBot"}
-
-	// Record a hand
-	detail := HandOutcomeDetail{
-		HandID:         "hand1",
-		ButtonPosition: 0,
-		StreetReached:  "flop",
-		BotOutcomes: []BotHandOutcome{
-			{
-				Bot:            bot,
-				Position:       0,
-				ButtonDistance: 0,
-				NetChips:       25,
-				WentToShowdown: false,
-				WonAtShowdown:  false,
-			},
-		},
-	}
-
-	err := collector.RecordHandOutcome(detail)
-	if err != nil {
-		t.Errorf("RecordHandOutcome failed: %v", err)
-	}
-
-	// Verify stats exist by checking detailed stats
-	if collector.GetDetailedStats("bot1") == nil {
-		t.Error("Expected detailed stats before reset")
-	}
-
-	// Reset
-	collector.Reset()
-
-	// Verify stats are cleared
-	if collector.GetDetailedStats("bot1") != nil {
-		t.Error("Expected no detailed stats after reset")
-	}
-
-	// Verify memory counters are reset
-	currentHands, _ := collector.GetMemoryUsage()
-	if currentHands != 0 {
-		t.Errorf("Expected 0 hands after reset, got %d", currentHands)
-	}
-}
-
-func BenchmarkStatsCollection(b *testing.B) {
-	collector := NewDetailedStatsCollector(10000, 10)
-	bot := &Bot{ID: "bot1", displayName: "TestBot"}
-
-	detail := HandOutcomeDetail{
-		HandID:         "hand1",
-		ButtonPosition: 0,
-		StreetReached:  "river",
-		Board:          []string{"As", "Kh", "Qd", "Jc", "Tc"},
-		BotOutcomes: []BotHandOutcome{
-			{
-				Bot:            bot,
-				Position:       0,
-				ButtonDistance: 0,
-				HoleCards:      []string{"Ac", "Ad"},
-				NetChips:       50,
-				WentToShowdown: true,
-				WonAtShowdown:  true,
-				Actions: map[string]string{
-					"preflop": "raise",
-					"flop":    "bet",
-					"turn":    "check",
-					"river":   "call",
+					TimedOut:       false,
+					InvalidActions: 0,
+					WentBroke:      false,
 				},
 			},
 		},
 	}
 
-	for b.Loop() {
-		_ = collector.RecordHandOutcome(detail)
+	monitor.OnHandComplete(outcome)
+
+	stats := monitor.GetDetailedStats("bot1")
+	if stats == nil {
+		t.Fatal("expected detailed stats for bot1")
+	}
+
+	expectedBB100 := 300.0
+	if stats.BB100 != expectedBB100 {
+		t.Errorf("expected BB/100 %.1f, got %.1f", expectedBB100, stats.BB100)
+	}
+	if stats.Timeouts != 0 {
+		t.Errorf("expected 0 timeouts propagated, got %d", stats.Timeouts)
+	}
+
+	players := monitor.GetPlayerStats()
+	if len(players) != 1 {
+		t.Fatalf("expected 1 player stat, got %d", len(players))
+	}
+	if players[0].DetailedStats == nil {
+		t.Fatalf("expected embedded detailed stats on player snapshot")
 	}
 }
 
-func BenchmarkNullStatsCollection(b *testing.B) {
-	collector := &NullStatsCollector{}
+func TestStatsMonitorResetsAtLimit(t *testing.T) {
+	monitor := NewStatsMonitor(10, false, 2)
 
-	detail := HandOutcomeDetail{
-		HandID: "hand1",
+	bot := &Bot{ID: "bot1", done: make(chan struct{})}
+
+	record := func(delta int) {
+		outcome := HandOutcome{
+			HandID: "hand",
+			Detail: &HandOutcomeDetail{
+				HandID:         "hand",
+				ButtonPosition: 0,
+				StreetReached:  "flop",
+				BotOutcomes: []BotHandOutcome{
+					{Bot: bot, NetChips: delta},
+				},
+			},
+		}
+		monitor.OnHandComplete(outcome)
 	}
 
-	for b.Loop() {
-		_ = collector.RecordHandOutcome(detail)
+	record(10) // hand 1
+	record(20) // hand 2
+	record(-5) // triggers reset and records as first hand
+
+	players := monitor.GetPlayerStats()
+	if len(players) != 1 {
+		t.Fatalf("expected 1 player, got %d", len(players))
+	}
+
+	ps := players[0]
+	if ps.Hands != 1 {
+		t.Errorf("expected hands reset to 1, got %d", ps.Hands)
+	}
+	if ps.NetChips != -5 {
+		t.Errorf("expected net chips -5 after reset, got %d", ps.NetChips)
 	}
 }

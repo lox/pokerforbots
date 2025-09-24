@@ -207,17 +207,26 @@ func (m *ServerProgressMonitor) OnGameStart(handLimit uint64) {
 }
 
 // OnHandComplete is called after each hand completes
-func (m *ServerProgressMonitor) OnHandComplete(handsCompleted uint64, handLimit uint64) {
+func (m *ServerProgressMonitor) OnHandComplete(outcome server.HandOutcome) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	handsCompleted := outcome.HandsCompleted
+	handLimit := outcome.HandLimit
+	if handLimit == 0 {
+		handLimit = m.totalHands
+	}
+
 	// Show dot for every 100 hands (or proportionally for smaller totals)
 	dotInterval := uint64(100)
-	if handLimit < 1000 {
+	if handLimit > 0 && handLimit < 1000 {
 		dotInterval = handLimit / 10
 		if dotInterval < 10 {
 			dotInterval = 10
 		}
+	}
+	if dotInterval == 0 {
+		dotInterval = 10
 	}
 
 	// Calculate dots to show
@@ -228,8 +237,12 @@ func (m *ServerProgressMonitor) OnHandComplete(handsCompleted uint64, handLimit 
 	for i := currentDots; i < targetDots; i++ {
 		fmt.Print(".")
 		if (i+1)%uint64(m.dotsPerLine) == 0 {
-			pct := float64(handsCompleted) * 100 / float64(handLimit)
-			fmt.Printf(" %d/%d (%.0f%%)\n", handsCompleted, handLimit, pct)
+			if handLimit > 0 {
+				pct := float64(handsCompleted) * 100 / float64(handLimit)
+				fmt.Printf(" %d/%d (%.0f%%)\n", handsCompleted, handLimit, pct)
+			} else {
+				fmt.Printf(" %d hands\n", handsCompleted)
+			}
 		}
 	}
 

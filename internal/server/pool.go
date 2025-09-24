@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"math/rand"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,16 +41,8 @@ type BotPool struct {
 	gameEndTime    time.Time
 	metricsLock    sync.RWMutex
 
-	statsMu   sync.RWMutex
-	botStats  map[string]*botStats
-	lastHand  string
-	lastStamp time.Time
-
-	// Statistics collector (optional)
-	statsCollector StatsCollector
-
-	// Hand monitor (optional)
-	handMonitor HandMonitor
+	progressMonitor HandMonitor
+	statsMonitor    *StatsMonitor
 }
 
 // WithRNG executes fn with exclusive access to the pool's RNG.
@@ -59,19 +50,6 @@ func (p *BotPool) WithRNG(fn func(*rand.Rand)) {
 	p.rngMutex.Lock()
 	defer p.rngMutex.Unlock()
 	fn(p.rng)
-}
-
-type botStats struct {
-	BotID        string
-	DisplayName  string
-	BotCommand   string // Original bot command (e.g., "./snapshots/complex-20250921")
-	ConnectOrder int    // Order in which the bot connected (1st, 2nd, etc.)
-	Hands        int
-	NetChips     int64
-	TotalWon     int64
-	TotalLost    int64
-	LastDelta    int
-	LastUpdated  time.Time
 }
 
 const reasonHandLimitReached = "hand_limit_reached"
@@ -92,39 +70,38 @@ func DefaultConfig(minPlayers, maxPlayers int) Config {
 
 // NewBotPool creates a new bot pool with explicit random source and config
 func NewBotPool(logger zerolog.Logger, rng *rand.Rand, config Config) *BotPool {
-	// Create appropriate stats collector based on config
-	var collector StatsCollector
+	maxHands := config.MaxStatsHands
+	if maxHands <= 0 {
+		maxHands = 10000 // Default retention window for statistics
+	}
+
+	statsMonitor := NewStatsMonitor(config.BigBlind, config.EnableStats, maxHands)
 	if config.EnableStats {
-		maxHands := config.MaxStatsHands
-		if maxHands <= 0 {
-			maxHands = 10000 // Default limit
-		}
-		collector = NewDetailedStatsCollector(maxHands, config.BigBlind)
 		logger.Info().
 			Int("max_hands", maxHands).
 			Msg("Statistics collection enabled")
-	} else {
-		collector = &NullStatsCollector{}
 	}
 
-	return &BotPool{
-		bots:           make(map[string]*Bot),
-		available:      make(chan *Bot, 100),
-		register:       make(chan *Bot),
-		unregister:     make(chan *Bot),
-		minPlayers:     config.MinPlayers,
-		maxPlayers:     config.MaxPlayers,
-		handLimit:      config.HandLimit,
-		stopCh:         make(chan struct{}),
-		logger:         logger.With().Str("component", "pool").Logger(),
-		rng:            rng,
-		config:         config,
-		handStartTime:  time.Time{},
-		botStats:       make(map[string]*botStats),
-		lastStamp:      time.Now(),
-		matchTrigger:   make(chan struct{}, 1),
-		statsCollector: collector,
+	pool := &BotPool{
+		bots:          make(map[string]*Bot),
+		available:     make(chan *Bot, 100),
+		register:      make(chan *Bot),
+		unregister:    make(chan *Bot),
+		minPlayers:    config.MinPlayers,
+		maxPlayers:    config.MaxPlayers,
+		handLimit:     config.HandLimit,
+		stopCh:        make(chan struct{}),
+		logger:        logger.With().Str("component", "pool").Logger(),
+		rng:           rng,
+		config:        config,
+		handStartTime: time.Time{},
+		matchTrigger:  make(chan struct{}, 1),
+		statsMonitor:  statsMonitor,
 	}
+
+	statsMonitor.OnGameStart(config.HandLimit)
+
+	return pool
 }
 
 // SetGameID stores the identifier of the game this pool manages.
@@ -136,7 +113,7 @@ func (p *BotPool) SetGameID(id string) {
 
 // SetHandMonitor sets or replaces the hand monitor
 func (p *BotPool) SetHandMonitor(monitor HandMonitor) {
-	p.handMonitor = monitor
+	p.progressMonitor = monitor
 	// Notify monitor of game start if we're starting fresh
 	if monitor != nil && atomic.LoadUint64(&p.handCounter) == 0 {
 		monitor.OnGameStart(p.handLimit)
@@ -518,6 +495,11 @@ func (p *BotPool) HandsPerSecond() float64 {
 	return handCount / elapsed
 }
 
+// NeedsDetailedData reports whether the pool requires detailed hand outcomes.
+func (p *BotPool) NeedsDetailedData() bool {
+	return p.statsMonitor != nil
+}
+
 // StartTime returns the timestamp when the first hand in the game began (min players met).
 func (p *BotPool) StartTime() time.Time {
 	p.metricsLock.RLock()
@@ -532,149 +514,25 @@ func (p *BotPool) EndTime() time.Time {
 	return p.gameEndTime
 }
 
-// RecordHandOutcome updates aggregate statistics for the bots that participated in a hand.
-func (p *BotPool) RecordHandOutcome(handID string, bots []*Bot, deltas []int) {
-	if len(bots) != len(deltas) {
-		return
+// RecordHandOutcome notifies monitors about the result of a completed hand.
+func (p *BotPool) RecordHandOutcome(outcome HandOutcome) {
+	if p.statsMonitor != nil {
+		p.statsMonitor.OnHandComplete(outcome)
 	}
 
-	now := time.Now()
-
-	p.statsMu.Lock()
-
-	if p.botStats == nil {
-		p.botStats = make(map[string]*botStats)
+	if p.progressMonitor != nil {
+		p.progressMonitor.OnHandComplete(outcome)
 	}
-
-	p.lastHand = handID
-	p.lastStamp = now
-
-	for i, bot := range bots {
-		if bot == nil {
-			continue
-		}
-
-		key := bot.ID
-		stats, exists := p.botStats[key]
-		if !exists {
-			stats = &botStats{
-				BotID:        key,
-				ConnectOrder: len(p.botStats) + 1, // Track order of connection
-			}
-			p.botStats[key] = stats
-		}
-
-		displayName := bot.DisplayName()
-		if displayName == "" {
-			displayName = bot.ID
-		}
-
-		stats.DisplayName = displayName
-		stats.BotCommand = bot.BotCommand()
-		stats.Hands++
-
-		delta := deltas[i]
-		stats.NetChips += int64(delta)
-		if delta >= 0 {
-			stats.TotalWon += int64(delta)
-		} else {
-			stats.TotalLost += int64(-delta)
-		}
-		stats.LastDelta = delta
-		stats.LastUpdated = now
-	}
-
-	p.statsMu.Unlock()
 
 	p.maybeNotifyHandLimit()
 }
 
-// RecordHandOutcomeDetailed updates both basic and detailed statistics
-func (p *BotPool) RecordHandOutcomeDetailed(detail HandOutcomeDetail) {
-	// First update basic stats (for backward compatibility)
-	if len(detail.BotOutcomes) > 0 {
-		bots := make([]*Bot, len(detail.BotOutcomes))
-		deltas := make([]int, len(detail.BotOutcomes))
-		for i, outcome := range detail.BotOutcomes {
-			bots[i] = outcome.Bot
-			deltas[i] = outcome.NetChips
-		}
-		p.RecordHandOutcome(detail.HandID, bots, deltas)
-	}
-
-	// Then update detailed stats if collector is enabled
-	if p.statsCollector != nil && p.statsCollector.IsEnabled() {
-		if err := p.statsCollector.RecordHandOutcome(detail); err != nil {
-			// Log error but don't fail - statistics should never break the game
-			p.logger.Error().Err(err).Msg("Failed to record detailed hand statistics")
-		}
-	}
-
-	// Notify hand monitor if present
-	if p.handMonitor != nil {
-		handsCompleted := atomic.LoadUint64(&p.handCounter)
-		p.handMonitor.OnHandComplete(handsCompleted, p.handLimit)
-	}
-}
-
 // PlayerStats returns a snapshot of aggregate statistics for all bots in the pool.
 func (p *BotPool) PlayerStats() []PlayerStats {
-	p.statsMu.RLock()
-	defer p.statsMu.RUnlock()
-
-	if len(p.botStats) == 0 {
-		return []PlayerStats{}
+	if p.statsMonitor == nil {
+		return nil
 	}
-
-	// Collect all stats first
-	allStats := make([]*botStats, 0, len(p.botStats))
-	for _, stats := range p.botStats {
-		allStats = append(allStats, stats)
-	}
-
-	// Sort by ConnectOrder to ensure deterministic ordering
-	// This ensures Bot A (first --bot-cmd) comes before Bot B (second --bot-cmd)
-	sort.Slice(allStats, func(i, j int) bool {
-		return allStats[i].ConnectOrder < allStats[j].ConnectOrder
-	})
-
-	players := make([]PlayerStats, 0, len(allStats))
-	for _, stats := range allStats {
-		avg := 0.0
-		if stats.Hands > 0 {
-			avg = float64(stats.NetChips) / float64(stats.Hands)
-		}
-
-		ps := PlayerStats{
-			GameCompletedPlayer: protocol.GameCompletedPlayer{
-				BotID:       stats.BotID,
-				DisplayName: stats.DisplayName,
-				Hands:       stats.Hands,
-				NetChips:    stats.NetChips,
-				AvgPerHand:  avg,
-				TotalWon:    stats.TotalWon,
-				TotalLost:   stats.TotalLost,
-				LastDelta:   stats.LastDelta,
-			},
-			LastUpdated: stats.LastUpdated,
-		}
-		// Attach detailed stats if collector is enabled
-		if p.statsCollector != nil && p.statsCollector.IsEnabled() {
-			if detailed := p.statsCollector.GetDetailedStats(stats.BotID); detailed != nil {
-				ps.DetailedStats = detailed
-			}
-		}
-		players = append(players, ps)
-	}
-
-	sort.Slice(players, func(i, j int) bool {
-		if players[i].DisplayName == players[j].DisplayName {
-			return players[i].BotID < players[j].BotID
-		}
-		return players[i].DisplayName < players[j].DisplayName
-	})
-
-	return players
+	return p.statsMonitor.GetPlayerStats()
 }
 
 // HandLimitNotified returns true if the pool has already broadcast the completion notification.
@@ -705,10 +563,14 @@ func (p *BotPool) notifyGameCompleted(reason string) {
 		Str("reason", reason).
 		Msg("Game completion triggered, signaling stop")
 
-	// Notify hand monitor if present
-	if p.handMonitor != nil {
-		handsCompleted := atomic.LoadUint64(&p.handCounter)
-		p.handMonitor.OnGameComplete(handsCompleted, reason)
+	completed := atomic.LoadUint64(&p.handCounter)
+
+	// Notify monitors if present
+	if p.progressMonitor != nil {
+		p.progressMonitor.OnGameComplete(completed, reason)
+	}
+	if p.statsMonitor != nil {
+		p.statsMonitor.OnGameComplete(completed, reason)
 	}
 
 	// Trigger shutdown asynchronously to avoid deadlock
@@ -720,19 +582,8 @@ func (p *BotPool) notifyGameCompleted(reason string) {
 	playerStats := p.PlayerStats()
 	players := make([]protocol.GameCompletedPlayer, len(playerStats))
 	for i, ps := range playerStats {
-		player := ps.GameCompletedPlayer
-
-		// Add detailed stats if available
-		if p.statsCollector != nil && p.statsCollector.IsEnabled() {
-			if detailedStats := p.statsCollector.GetDetailedStats(ps.BotID); detailedStats != nil {
-				player.DetailedStats = detailedStats
-			}
-		}
-
-		players[i] = player
+		players[i] = ps.GameCompletedPlayer
 	}
-
-	completed := atomic.LoadUint64(&p.handCounter)
 
 	msg := &protocol.GameCompleted{
 		Type:           protocol.TypeGameCompleted,

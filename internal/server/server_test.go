@@ -319,7 +319,20 @@ func TestAdminGameStatsEndpoint(t *testing.T) {
 	bot2 := NewBot(testLogger(), "bot-npc", nil, game.Pool)
 	bot2.SetDisplayName("npc-aggr")
 
-	game.Pool.RecordHandOutcome("hand-1", []*Bot{bot1, bot2}, []int{150, -150})
+	game.Pool.RecordHandOutcome(HandOutcome{
+		HandID:         "hand-1",
+		HandsCompleted: 1,
+		HandLimit:      game.Pool.HandLimit(),
+		Detail: &HandOutcomeDetail{
+			HandID:         "hand-1",
+			ButtonPosition: 0,
+			StreetReached:  "river",
+			BotOutcomes: []BotHandOutcome{
+				{Bot: bot1, NetChips: 150},
+				{Bot: bot2, NetChips: -150},
+			},
+		},
+	})
 
 	statsReq := httptest.NewRequest(http.MethodGet, "/admin/games/default/stats", nil)
 	statsRec := httptest.NewRecorder()
@@ -349,6 +362,9 @@ func TestAdminGameStatsEndpoint(t *testing.T) {
 			foundPlayer = true
 			if ps.NetChips != 150 {
 				t.Fatalf("expected complex net chips 150, got %d", ps.NetChips)
+			}
+			if ps.Timeouts != 0 || ps.InvalidActions != 0 || ps.Disconnects != 0 || ps.Busts != 0 {
+				t.Fatalf("expected zero error metrics for complex, got timeouts=%d invalid=%d disconnects=%d busts=%d", ps.Timeouts, ps.InvalidActions, ps.Disconnects, ps.Busts)
 			}
 		}
 	}
