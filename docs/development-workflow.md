@@ -1,8 +1,12 @@
 # Development Workflow Guide
 
-Quick guide for testing and improving poker bots.
+Guide for developing, testing, and improving poker bots.
 
-For detailed spawner documentation and API reference, see [spawner.md](spawner.md).
+## Key Documentation
+
+- **[Regression Tester](regression-tester.md)** - Primary tool for validating bot improvements
+- **[Spawner](spawner.md)** - Direct testing and debugging tool
+- **[Poker Rules](poker-rules.md)** - Game rules reference
 
 ## SDK Overview
 
@@ -167,6 +171,116 @@ jq '.players[] | select(.display_name == "complex") | .detailed_stats.position_s
 - **Position Stats**: Button should be most profitable
 - **Street Stats**: Track where hands end (avoid playing every hand to showdown)
 
+## Bot Development Workflow
+
+### 1. Test-First Development
+
+The recommended workflow for bot development:
+
+```bash
+# Step 1: Establish baseline performance
+task regression:heads-up HANDS=1000
+
+# Step 2: Make your changes to the bot
+vim sdk/examples/complex/main.go
+
+# Step 3: Validate improvements with regression testing
+task regression:heads-up HANDS=5000
+
+# Step 4: If regression detected, debug with spawner
+go run ./cmd/spawner --log-level debug \
+  --spec "calling-station:5" \
+  --bot-cmd "go run ./sdk/examples/complex" \
+  --hand-limit 100 --print-stats
+```
+
+### 2. Using Regression Testing
+
+Regression testing should be your primary validation tool:
+
+```bash
+# Quick check during development
+task regression:heads-up HANDS=1000
+
+# Pre-commit validation
+task regression:heads-up HANDS=5000
+
+# Comprehensive testing for major changes
+task regression:all HANDS=10000
+```
+
+See [Regression Tester Documentation](regression-tester.md) for detailed usage.
+
+### 3. Strategy Development Process
+
+#### Initial Development
+1. **Start with position play**: Button should be most profitable
+2. **Implement preflop ranges**: VPIP 15-25% for 6-max
+3. **Add postflop logic**: C-bet frequency, pot odds calculation
+4. **Tune aggression**: 3-bet ranges, bluff frequencies
+
+#### Testing Against Known Strategies
+```bash
+# Exploit passive players (should achieve +25 to +35 BB/100)
+go run ./cmd/spawner --spec "calling-station:5" \
+  --bot-cmd "go run ./sdk/examples/complex" \
+  --hand-limit 1000 --print-stats
+
+# Handle aggressive players (should achieve +5 to +15 BB/100)
+go run ./cmd/spawner --spec "aggressive:5" \
+  --bot-cmd "go run ./sdk/examples/complex" \
+  --hand-limit 1000 --print-stats
+
+# Mixed field test
+go run ./cmd/spawner --spec "calling-station:2,random:1,aggressive:2" \
+  --bot-cmd "go run ./sdk/examples/complex" \
+  --hand-limit 1000 --print-stats
+```
+
+#### Performance Benchmarks
+- vs Calling Stations: +25 to +35 BB/100
+- vs Random: +15 to +25 BB/100
+- vs Aggressive: +5 to +15 BB/100
+- vs Complex (self): ~0 BB/100
+
+### 4. Debugging with Spawner
+
+When regression tests show unexpected results, use the spawner for debugging:
+
+```bash
+# Enable debug logging to see decision-making
+go run ./cmd/spawner --log-level debug \
+  --spec "calling-station:5" \
+  --bot-cmd "go run ./sdk/examples/complex" \
+  --hand-limit 100 \
+  --seed 42 \
+  --print-stats
+
+# Trace level for complete hand histories
+go run ./cmd/spawner --log-level trace \
+  --spec "aggressive:2" \
+  --bot-cmd "go run ./sdk/examples/complex" \
+  --hand-limit 10 | tee debug.log
+```
+
+### 5. Statistical Validation
+
+For significant changes, use larger samples:
+
+```bash
+# High-confidence test (50k+ hands)
+go run ./cmd/spawner --seed 42 --hand-limit 50000 \
+  --spec "calling-station:2,random:2,aggressive:1" \
+  --bot-cmd "go run ./sdk/examples/complex" \
+  --write-stats results.json
+
+# Analyze results
+jq '.players[] | select(.display_name == "complex") | {
+  bb_per_100: .detailed_stats.bb_per_100,
+  confidence_interval: .detailed_stats.confidence_interval
+}' results.json
+```
+
 ## Creating Custom Bots
 
 ### Using the SDK
@@ -179,22 +293,37 @@ package main
 import (
     "github.com/lox/pokerforbots/sdk/client"
     "github.com/lox/pokerforbots/sdk/config"
+    "github.com/lox/pokerforbots/sdk/analysis"
     "github.com/lox/pokerforbots/protocol"
 )
 
-type MyBot struct{}
+type MyBot struct{
+    analyzer *analysis.HandAnalyzer
+}
 
-func (MyBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
-    // Your strategy logic here
+func (b MyBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
+    // Analyze hand strength
+    strength := b.analyzer.EvaluateHand(state.HoleCards, state.Board)
+
+    // Position-aware strategy
+    if state.IsButton() && strength > 0.6 {
+        return "raise", req.MinRaise, nil
+    }
+
+    // Default to checking/calling
+    if req.CanCheck {
+        return "check", 0, nil
+    }
     return "call", 0, nil
 }
 
 func main() {
-    // Parse environment configuration
     cfg, _ := config.FromEnv()
 
-    // Create and run bot
-    bot := client.New("my-bot", MyBot{}, logger)
+    bot := client.New("my-bot", MyBot{
+        analyzer: analysis.NewHandAnalyzer(),
+    }, logger)
+
     bot.Connect(cfg.ServerURL)
     bot.Run(context.Background())
 }
@@ -209,9 +338,26 @@ The spawner automatically sets these for your bot:
 - `POKERFORBOTS_BOT_ID` - Unique identifier
 - `POKERFORBOTS_GAME` - Target game (default: "default")
 
-## Regression Testing
+## Troubleshooting
 
-The regression tester compares bot performance across versions to detect improvements or regressions.
+### Common Issues
+
+| Problem | Solution |
+|---------|----------|
+| Regression test fails unexpectedly | Use `--log-level debug` with spawner to examine decisions |
+| Bot losing to calling stations | Check VPIP/PFR stats, ensure value betting |
+| High variance in results | Increase hand count or use deterministic seeds |
+| Bot timeouts | Profile with `--log-level trace`, optimize hot paths |
+
+### Debug Workflow
+
+1. **Run regression test** to detect issues
+2. **Use spawner with debug logging** to understand behavior
+3. **Analyze stats output** for strategic problems
+4. **Review specific hands** with trace logging
+5. **Fix and re-test** with regression tester
+
+For detailed troubleshooting, see [Regression Tester Documentation](regression-tester.md#troubleshooting-unexpected-results).
 
 ### Quick Start
 
