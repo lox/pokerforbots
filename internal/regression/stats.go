@@ -168,11 +168,22 @@ func AggregateNPCStats(stats *server.GameStats, isChallenger bool) map[string]fl
 	var stdDevs []float64
 	var stdWeights []float64
 
+	// Helper function to check if a bot is an NPC based on its display name
+	isNPCBot := func(name string) bool {
+		// NPCs use specific prefixes - calling, aggressive, random
+		// Check for exact NPC bot patterns (not just any bot with those words)
+		return (strings.HasPrefix(name, "calling-bot-") ||
+			strings.HasPrefix(name, "aggressive-bot-") ||
+			strings.HasPrefix(name, "random-bot-") ||
+			strings.HasPrefix(name, "npc-"))
+	}
+
 	for _, player := range stats.Players {
-		if strings.HasPrefix(player.DisplayName, "npc-") {
-			continue // Skip NPCs
+		// Skip NPC bots
+		if isNPCBot(player.DisplayName) {
+			continue
 		}
-		// This is one of our test bot instances
+		// This is one of our test bot instances (complex-* or whatever the test bot uses)
 		totalNetChips += player.NetChips
 		totalHands += player.Hands
 

@@ -317,7 +317,7 @@ type complexBot struct {
 	bigBlind int // Track the big blind amount
 }
 
-func newcomplexBot(logger zerolog.Logger) *complexBot {
+func newComplexBot(logger zerolog.Logger) *complexBot {
 	// Parse configuration from environment
 	cfg, err := config.FromEnv()
 
@@ -964,7 +964,7 @@ func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).Level(level).With().Timestamp().Logger()
 
-	complexBot := newcomplexBot(logger)
+	complexBot := newComplexBot(logger)
 	bot := client.New(complexBot.id, complexBot, logger)
 
 	if err := bot.Connect(*serverURL); err != nil {
