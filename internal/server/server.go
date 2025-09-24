@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"math/rand"
 	"net"
 	"net/http"
@@ -386,8 +387,18 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Generate unique bot ID
-	botID := s.botIDGen()
+	// Generate deterministic bot ID based on name (or auth token in future)
+	// Use a simple hash of the name for a short, consistent ID
+	var botID string
+	if connectMsg.Name != "" {
+		// Hash the name and take first 8 hex chars for a short ID
+		h := fnv.New32a()
+		h.Write([]byte(connectMsg.Name))
+		botID = fmt.Sprintf("%08x", h.Sum32())
+	} else {
+		// Fallback to generated ID if no name provided
+		botID = s.botIDGen()
+	}
 
 	// Create bot instance tied to the selected game
 	bot := NewBot(s.logger, botID, conn, game.Pool)
