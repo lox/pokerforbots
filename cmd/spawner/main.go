@@ -29,6 +29,8 @@ var cli struct {
 	BigBlind   int    `kong:"default='10',help='Big blind'"`
 	StartChips int    `kong:"default='1000',help='Starting chip stack'"`
 	TimeoutMs  int    `kong:"default='100',help='Bot decision timeout in milliseconds'"`
+	MinPlayers int    `kong:"default='2',help='Minimum players to start a hand'"`
+	MaxPlayers int    `kong:"default='9',help='Maximum players at a table'"`
 	Seed       int64  `kong:"help='Seed for deterministic testing (0 for random)'"`
 
 	// Bot specification
@@ -98,8 +100,8 @@ func main() {
 		BigBlind:      cli.BigBlind,
 		StartChips:    cli.StartChips,
 		Timeout:       time.Duration(cli.TimeoutMs) * time.Millisecond,
-		MinPlayers:    2,
-		MaxPlayers:    9,
+		MinPlayers:    cli.MinPlayers,
+		MaxPlayers:    cli.MaxPlayers,
 		Seed:          seed,
 		HandLimit:     uint64(cli.HandLimit),
 		EnableStats:   cli.WriteStats != "" || cli.PrintStats,
