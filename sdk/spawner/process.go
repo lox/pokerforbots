@@ -140,7 +140,7 @@ func (p *Process) Stop() error {
 	select {
 	case <-p.done:
 		return nil
-	case <-time.After(1 * time.Second):
+	case <-time.After(50 * time.Millisecond): // Reduced from 1s to 50ms for faster tests
 		// Force kill if not stopped
 		p.logger.Debug().Msg("Force killing process")
 		if err := p.cmd.Process.Kill(); err != nil {

@@ -161,8 +161,8 @@ func TestWebSocketConnection(t *testing.T) {
 	defer ws.Close()
 	sendConnectMessage(t, ws, "TestBot", "")
 
-	// Give the server time to register the bot
-	time.Sleep(100 * time.Millisecond)
+	// Give the server time to register the bot (reduced from 100ms to 50ms)
+	time.Sleep(50 * time.Millisecond)
 
 	// Check bot count
 	if srv.pool.BotCount() != 1 {
@@ -172,8 +172,8 @@ func TestWebSocketConnection(t *testing.T) {
 	// Close connection
 	ws.Close()
 
-	// Give the server time to unregister
-	time.Sleep(100 * time.Millisecond)
+	// Give the server time to unregister (reduced from 100ms to 50ms)
+	time.Sleep(50 * time.Millisecond)
 
 	if srv.pool.BotCount() != 0 {
 		t.Errorf("Expected 0 bots after disconnect, got %d", srv.pool.BotCount())
@@ -211,8 +211,8 @@ func TestMultipleBotConnections(t *testing.T) {
 		bots = append(bots, ws)
 	}
 
-	// Give the server time to register all bots
-	time.Sleep(100 * time.Millisecond)
+	// Give the server time to register all bots (reduced from 100ms to 50ms)
+	time.Sleep(50 * time.Millisecond)
 
 	// Check bot count
 	if srv.pool.BotCount() != 3 {
@@ -224,8 +224,8 @@ func TestMultipleBotConnections(t *testing.T) {
 		ws.Close()
 	}
 
-	// Give the server time to unregister
-	time.Sleep(100 * time.Millisecond)
+	// Give the server time to unregister (reduced from 100ms to 50ms)
+	time.Sleep(50 * time.Millisecond)
 
 	if srv.pool.BotCount() != 0 {
 		t.Errorf("Expected 0 bots after disconnect, got %d", srv.pool.BotCount())

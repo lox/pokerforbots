@@ -68,8 +68,8 @@ func TestBotActionsAreProcessed(t *testing.T) {
 	go readBotMessages(t, bot1Conn, bot1Actions)
 	go readBotMessages(t, bot2Conn, bot2Actions)
 
-	// Wait for hand to start
-	time.Sleep(100 * time.Millisecond)
+	// Wait for hand to start (reduced from 100ms to 50ms)
+	time.Sleep(50 * time.Millisecond)
 
 	// With randomized bot ordering, either bot could act first
 	// Check what Bot 1 receives - could be action request or hand result
@@ -92,12 +92,12 @@ func TestBotActionsAreProcessed(t *testing.T) {
 			return // Hand already completed, test passed
 		}
 
-	case <-time.After(2 * time.Second):
+	case <-time.After(1 * time.Second): // Reduced from 2s to 1s
 		t.Error("Bot 1 never received any message")
 	}
 
-	// Wait for hand to complete
-	time.Sleep(200 * time.Millisecond)
+	// Wait for hand to complete (reduced from 200ms to 100ms)
+	time.Sleep(100 * time.Millisecond)
 
 	// Bot 2 should NOT receive an action request if Bot 1 folded
 	// With broken implementation, Bot 2 will still get an action request because Bot 1 auto-called
@@ -108,7 +108,7 @@ func TestBotActionsAreProcessed(t *testing.T) {
 		} else if strings.Contains(action, "hand_result") {
 			t.Log("SUCCESS: Hand completed correctly - actions are being processed")
 		}
-	case <-time.After(1 * time.Second):
+	case <-time.After(500 * time.Millisecond): // Reduced from 1s to 500ms
 		t.Log("SUCCESS: Hand completed correctly - actions are being processed")
 	}
 }

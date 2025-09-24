@@ -29,8 +29,8 @@ func TestSpawnerBasic(t *testing.T) {
 		t.Fatalf("Failed to spawn bot: %v", err)
 	}
 
-	// Wait for process to complete
-	time.Sleep(100 * time.Millisecond)
+	// Wait for process to complete (reduced from 100ms to 20ms)
+	time.Sleep(20 * time.Millisecond)
 
 	// Check active count
 	if count := spawner.ActiveCount(); count != 0 {
@@ -47,10 +47,10 @@ func TestSpawnerMultiple(t *testing.T) {
 	logger := zerolog.New(zerolog.NewTestWriter(t))
 	spawner := New("ws://localhost:8080/ws", logger)
 
-	// Spawn multiple processes
+	// Spawn multiple processes with shorter sleep
 	spec := BotSpec{
 		Command: "sleep",
-		Args:    []string{"0.1"},
+		Args:    []string{"0.05"},
 		Count:   3,
 	}
 
@@ -63,8 +63,8 @@ func TestSpawnerMultiple(t *testing.T) {
 		t.Errorf("Expected 3 active processes, got %d", count)
 	}
 
-	// Wait for processes to complete
-	time.Sleep(200 * time.Millisecond)
+	// Wait for processes to complete (reduced from 200ms to 100ms)
+	time.Sleep(100 * time.Millisecond)
 
 	// Check they're done
 	if count := spawner.ActiveCount(); count != 0 {
@@ -148,8 +148,8 @@ sleep 10
 		t.Errorf("Stop error (can be ignored on some systems): %v", err)
 	}
 
-	// Wait a bit for cleanup
-	time.Sleep(100 * time.Millisecond)
+	// Wait a bit for cleanup (reduced from 100ms to 50ms)
+	time.Sleep(50 * time.Millisecond)
 
 	// Should be stopped
 	if count := spawner.ActiveCount(); count != 0 {
