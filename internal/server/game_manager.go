@@ -184,6 +184,7 @@ func (gi *GameInstance) Stats() GameStats {
 		EndTime:          end,
 		DurationSeconds:  durSec,
 		Seed:             gi.Config.Seed,
+		CompletionReason: gi.Pool.CompletionReason(),
 	}
 
 	// Map pool player stats into protocol players for admin JSON

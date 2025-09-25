@@ -58,6 +58,7 @@ type GameStats struct {
 	BotStatistics    map[string]map[string]float64 `json:"bot_statistics"`
 	ActiveBots       int                           `json:"active_bots"`
 	TotalBots        int                           `json:"total_bots"`
+	CompletionReason string                        `json:"completion_reason"`
 }
 
 // New creates a new BotSpawner.

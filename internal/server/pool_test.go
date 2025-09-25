@@ -147,6 +147,31 @@ func TestBotPoolMatching(t *testing.T) {
 	}
 }
 
+func TestBotPoolInsufficientBotsTriggersCompletion(t *testing.T) {
+	t.Parallel()
+
+	config := testPoolConfig(3, 3)
+	config.HandLimit = 10
+	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(123)), config)
+	stopPool := startTestPool(t, pool)
+	defer stopPool()
+
+	bots := newTestBots(3, pool)
+	for _, bot := range bots {
+		pool.Register(bot)
+	}
+
+	waitForCondition(t, func() bool {
+		return pool.BotCount() == 3
+	}, 200*time.Millisecond, "Expected 3 bots to be registered")
+
+	pool.Unregister(bots[0])
+
+	waitForCondition(t, func() bool {
+		return pool.HandLimitNotified()
+	}, 500*time.Millisecond, "Expected game completion after insufficient bots")
+}
+
 // TestBotPoolRequiresPlayer has been removed
 // The RequirePlayer functionality was removed along with NPC support
 // NPCs are now handled externally by the spawner package

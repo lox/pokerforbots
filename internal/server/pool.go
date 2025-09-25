@@ -37,10 +37,11 @@ type BotPool struct {
 	runOnce           sync.Once
 
 	// Metrics
-	timeoutCounter uint64
-	handStartTime  time.Time
-	gameEndTime    time.Time
-	metricsLock    sync.RWMutex
+	timeoutCounter   uint64
+	handStartTime    time.Time
+	gameEndTime      time.Time
+	metricsLock      sync.RWMutex
+	completionReason atomic.Value
 
 	progressMonitor HandMonitor
 	statsMonitor    *StatsMonitor
@@ -99,6 +100,7 @@ func NewBotPool(logger zerolog.Logger, rng *rand.Rand, config Config) *BotPool {
 		matchTrigger:  make(chan struct{}, 1),
 		statsMonitor:  statsMonitor,
 	}
+	pool.completionReason.Store("")
 
 	statsMonitor.OnGameStart(config.HandLimit)
 
@@ -119,6 +121,13 @@ func (p *BotPool) SetHandMonitor(monitor HandMonitor) {
 	if monitor != nil && atomic.LoadUint64(&p.handCounter) == 0 {
 		monitor.OnGameStart(p.handLimit)
 	}
+}
+
+func (p *BotPool) ensureMatchLoop() {
+	p.runOnce.Do(func() {
+		p.matcherWG.Add(1)
+		go p.matchLoop()
+	})
 }
 
 // RecordActionLatency forwards latency metrics to the stats monitor when enabled.
@@ -150,10 +159,7 @@ func (p *BotPool) GameID() string {
 
 // Run starts the bot pool manager
 func (p *BotPool) Run() {
-	p.runOnce.Do(func() {
-		p.matcherWG.Add(1)
-		go p.matchLoop()
-	})
+	p.ensureMatchLoop()
 
 	for {
 		select {
@@ -188,12 +194,11 @@ func (p *BotPool) Run() {
 			remainingBots := len(p.bots)
 			p.mu.Unlock()
 
-			// Check if we still have enough bots to continue (only for simulations)
-			if p.config.StopOnInsufficientBots && remainingBots < p.minPlayers && p.handLimit > 0 {
-				p.logger.Info().
+			if remainingBots < p.minPlayers {
+				p.logger.Warn().
 					Int("remaining_bots", remainingBots).
 					Int("min_players", p.minPlayers).
-					Msg("Not enough bots remaining to continue, shutting down")
+					Msg("Insufficient bots remaining, ending game early")
 				p.notifyGameCompleted("insufficient_players")
 			}
 		}
@@ -280,7 +285,7 @@ collectLoop:
 				allBots = append(allBots, bot)
 			case connected && !bot.HasChips():
 				// Bot is out of chips, remove from pool
-				p.logger.Debug().Str("bot_id", bot.ID).Msg("Bot out of chips, removing from pool")
+				p.logger.Warn().Str("bot_id", bot.ID).Msg("Bot out of chips, removing from pool")
 				p.Unregister(bot)
 			case connected:
 				// Return bot to available queue if it's valid
@@ -434,6 +439,7 @@ func (p *BotPool) Unregister(bot *Bot) {
 
 // Stop signals the pool manager to halt and prevents new registrations.
 func (p *BotPool) Stop() {
+	p.ensureMatchLoop()
 	p.stopOnce.Do(func() {
 		// Record end time if not already set
 		p.metricsLock.Lock()
@@ -522,6 +528,16 @@ func (p *BotPool) HandsPerSecond() float64 {
 	return handCount / elapsed
 }
 
+// CompletionReason returns the reason the game finished, if any.
+func (p *BotPool) CompletionReason() string {
+	if value := p.completionReason.Load(); value != nil {
+		if reason, ok := value.(string); ok {
+			return reason
+		}
+	}
+	return ""
+}
+
 // NeedsDetailedData reports whether the pool requires detailed hand outcomes.
 func (p *BotPool) NeedsDetailedData() bool {
 	return p.statsMonitor != nil
@@ -584,6 +600,7 @@ func (p *BotPool) notifyGameCompleted(reason string) {
 	if !p.handLimitNotified.CompareAndSwap(false, true) {
 		return
 	}
+	p.completionReason.Store(reason)
 
 	// Signal that the game is complete
 	p.logger.Info().
@@ -673,4 +690,5 @@ type GameStats struct {
 	DurationSeconds  float64                        `json:"duration_seconds"`
 	Seed             int64                          `json:"seed"`
 	Players          []protocol.GameCompletedPlayer `json:"players"`
+	CompletionReason string                         `json:"completion_reason"`
 }

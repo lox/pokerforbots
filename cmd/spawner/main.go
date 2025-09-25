@@ -351,15 +351,16 @@ func handleStatsOutput(addr, statsFile string, printStats bool, logger zerolog.L
 
 // GameStats represents the JSON structure from the server
 type GameStats struct {
-	ID              string   `json:"id"`
-	SmallBlind      int      `json:"small_blind"`
-	BigBlind        int      `json:"big_blind"`
-	StartChips      int      `json:"start_chips"`
-	HandsCompleted  uint64   `json:"hands_completed"`
-	HandLimit       uint64   `json:"hand_limit"`
-	HandsPerSecond  float64  `json:"hands_per_second"`
-	DurationSeconds float64  `json:"duration_seconds"`
-	Players         []Player `json:"players"`
+	ID               string   `json:"id"`
+	SmallBlind       int      `json:"small_blind"`
+	BigBlind         int      `json:"big_blind"`
+	StartChips       int      `json:"start_chips"`
+	HandsCompleted   uint64   `json:"hands_completed"`
+	HandLimit        uint64   `json:"hand_limit"`
+	HandsPerSecond   float64  `json:"hands_per_second"`
+	DurationSeconds  float64  `json:"duration_seconds"`
+	CompletionReason string   `json:"completion_reason"`
+	Players          []Player `json:"players"`
 }
 
 // Player represents a player's statistics
@@ -436,6 +437,9 @@ func printFormattedStats(data []byte, logger zerolog.Logger) {
 		fmt.Printf(" / %d (%.1f%%)", stats.HandLimit, float64(stats.HandsCompleted)/float64(stats.HandLimit)*100)
 	}
 	fmt.Println()
+	if stats.CompletionReason != "" {
+		fmt.Printf("Completion reason: %s\n", stats.CompletionReason)
+	}
 
 	if stats.DurationSeconds > 0 {
 		fmt.Printf("Duration: %.1f seconds\n", stats.DurationSeconds)
