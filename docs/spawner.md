@@ -61,6 +61,22 @@ go run ./cmd/spawner --spec "calling-station:2" --bot-cmd "./my-bot" --count 2
 - `--write-stats` - Write statistics to file on exit
 - `--print-stats` - Print statistics to console on exit
 
+### Latency Metrics
+
+When the server runs with statistics enabled (the default for the spawner tool),
+each player's detailed stats now include response-time telemetry:
+
+- `responses_tracked` — number of action requests that produced a valid response.
+- `avg_response_ms`, `p95_response_ms`, `max_response_ms` — mean, 95th percentile,
+  and worst-case latencies measured in milliseconds.
+- `response_std_ms` — standard deviation of response times.
+- `response_timeouts`, `response_disconnects` — counts of timeouts or disconnects
+  that occurred while waiting for an action.
+
+These fields are printed in the console summary (when `--print-stats` is used) and
+are written to JSON files produced by `--write-stats`. Use them to verify bots stay
+comfortably below the 100 ms action deadline during long regression runs.
+
 ### Bot Specifications
 
 The `--spec` format supports these built-in bot types:

@@ -374,26 +374,34 @@ type Player struct {
 
 // DetailedStats contains detailed player statistics
 type DetailedStats struct {
-	Hands             int                     `json:"hands"`
-	NetBB             float64                 `json:"net_bb"`
-	BBPer100          float64                 `json:"bb_per_100"`
-	Mean              float64                 `json:"mean"`
-	Median            float64                 `json:"median"`
-	StdDev            float64                 `json:"std_dev"`
-	CI95Low           float64                 `json:"ci_95_low"`
-	CI95High          float64                 `json:"ci_95_high"`
-	WinningHands      int                     `json:"winning_hands"`
-	WinRate           float64                 `json:"win_rate"`
-	ShowdownWins      int                     `json:"showdown_wins"`
-	NonShowdownWins   int                     `json:"non_showdown_wins"`
-	ShowdownWinRate   float64                 `json:"showdown_win_rate"`
-	ShowdownBB        float64                 `json:"showdown_bb"`
-	NonShowdownBB     float64                 `json:"non_showdown_bb"`
-	VPIP              float64                 `json:"vpip"`
-	PFR               float64                 `json:"pfr"`
-	PositionStats     map[string]PositionStat `json:"position_stats"`
-	StreetStats       map[string]StreetStat   `json:"street_stats"`
-	HandCategoryStats map[string]CategoryStat `json:"hand_category_stats"`
+	Hands               int                     `json:"hands"`
+	NetBB               float64                 `json:"net_bb"`
+	BBPer100            float64                 `json:"bb_per_100"`
+	Mean                float64                 `json:"mean"`
+	Median              float64                 `json:"median"`
+	StdDev              float64                 `json:"std_dev"`
+	CI95Low             float64                 `json:"ci_95_low"`
+	CI95High            float64                 `json:"ci_95_high"`
+	WinningHands        int                     `json:"winning_hands"`
+	WinRate             float64                 `json:"win_rate"`
+	ShowdownWins        int                     `json:"showdown_wins"`
+	NonShowdownWins     int                     `json:"non_showdown_wins"`
+	ShowdownWinRate     float64                 `json:"showdown_win_rate"`
+	ShowdownBB          float64                 `json:"showdown_bb"`
+	NonShowdownBB       float64                 `json:"non_showdown_bb"`
+	VPIP                float64                 `json:"vpip"`
+	PFR                 float64                 `json:"pfr"`
+	ResponsesTracked    int                     `json:"responses_tracked"`
+	AvgResponseMs       float64                 `json:"avg_response_ms"`
+	P95ResponseMs       float64                 `json:"p95_response_ms"`
+	MaxResponseMs       float64                 `json:"max_response_ms"`
+	MinResponseMs       float64                 `json:"min_response_ms"`
+	ResponseStdMs       float64                 `json:"response_std_ms"`
+	ResponseTimeouts    int                     `json:"response_timeouts"`
+	ResponseDisconnects int                     `json:"response_disconnects"`
+	PositionStats       map[string]PositionStat `json:"position_stats"`
+	StreetStats         map[string]StreetStat   `json:"street_stats"`
+	HandCategoryStats   map[string]CategoryStat `json:"hand_category_stats"`
 }
 
 type PositionStat struct {
@@ -477,6 +485,15 @@ func printPlayerDetails(name string, stats *DetailedStats) {
 	losingHands := stats.Hands - stats.WinningHands
 	fmt.Printf("  Losing hands: %d (%.1f%%)\n", losingHands, 100-stats.WinRate)
 	fmt.Printf("  VPIP: %.1f%% | PFR: %.1f%%\n", stats.VPIP, stats.PFR)
+	if stats.ResponsesTracked > 0 {
+		fmt.Printf("  Latency: avg %.1f ms | p95 %.1f ms | max %.1f ms | samples %d | timeouts %d | disconnects %d\n",
+			stats.AvgResponseMs,
+			stats.P95ResponseMs,
+			stats.MaxResponseMs,
+			stats.ResponsesTracked,
+			stats.ResponseTimeouts,
+			stats.ResponseDisconnects)
+	}
 	fmt.Println()
 
 	// Showdown analysis

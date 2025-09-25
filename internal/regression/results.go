@@ -50,14 +50,22 @@ type AggregateResults struct {
 
 // BotResults contains statistical results for a bot
 type BotResults struct {
-	BBPer100         float64 `json:"bb_per_100"`
-	CI95Low          float64 `json:"ci_95_low"`
-	CI95High         float64 `json:"ci_95_high"`
-	VPIP             float64 `json:"vpip"`
-	PFR              float64 `json:"pfr"`
-	AggressionFactor float64 `json:"aggression_factor"`
-	BustRate         float64 `json:"bust_rate"`
-	EffectSize       float64 `json:"effect_size,omitempty"`
+	BBPer100            float64 `json:"bb_per_100"`
+	CI95Low             float64 `json:"ci_95_low"`
+	CI95High            float64 `json:"ci_95_high"`
+	VPIP                float64 `json:"vpip"`
+	PFR                 float64 `json:"pfr"`
+	AggressionFactor    float64 `json:"aggression_factor"`
+	BustRate            float64 `json:"bust_rate"`
+	EffectSize          float64 `json:"effect_size,omitempty"`
+	AvgResponseMs       float64 `json:"avg_response_ms,omitempty"`
+	P95ResponseMs       float64 `json:"p95_response_ms,omitempty"`
+	MaxResponseMs       float64 `json:"max_response_ms,omitempty"`
+	MinResponseMs       float64 `json:"min_response_ms,omitempty"`
+	ResponseStdMs       float64 `json:"response_std_ms,omitempty"`
+	ResponsesTracked    float64 `json:"responses_tracked,omitempty"`
+	ResponseTimeouts    float64 `json:"response_timeouts,omitempty"`
+	ResponseDisconnects float64 `json:"response_disconnects,omitempty"`
 }
 
 // PerformanceMetrics contains performance data

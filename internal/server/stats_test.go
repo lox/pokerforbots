@@ -1,6 +1,10 @@
 package server
 
-import "testing"
+import (
+	"math"
+	"testing"
+	"time"
+)
 
 func TestStatsMonitorBasicTracking(t *testing.T) {
 	monitor := NewStatsMonitor(10, false, 0)
@@ -154,5 +158,46 @@ func TestStatsMonitorResetsAtLimit(t *testing.T) {
 	}
 	if ps.NetChips != -5 {
 		t.Errorf("expected net chips -5 after reset, got %d", ps.NetChips)
+	}
+}
+
+func TestBotStatisticsRecordResponse(t *testing.T) {
+	stats := NewBotStatistics(10)
+
+	stats.RecordResponse(50*time.Millisecond, ResponseOutcomeSuccess)
+	stats.RecordResponse(100*time.Millisecond, ResponseOutcomeSuccess)
+	stats.RecordResponse(200*time.Millisecond, ResponseOutcomeSuccess)
+	stats.RecordResponse(0, ResponseOutcomeTimeout)
+	stats.RecordResponse(0, ResponseOutcomeDisconnect)
+	stats.AddResult(0, false, false)
+
+	proto := stats.ToProtocolStats()
+	if proto == nil {
+		t.Fatalf("expected protocol stats with latency data")
+	}
+
+	if proto.ResponsesTracked != 3 {
+		t.Fatalf("expected 3 responses tracked, got %d", proto.ResponsesTracked)
+	}
+	if proto.ResponseTimeouts != 1 {
+		t.Errorf("expected 1 response timeout, got %d", proto.ResponseTimeouts)
+	}
+	if proto.ResponseDisconnects != 1 {
+		t.Errorf("expected 1 response disconnect, got %d", proto.ResponseDisconnects)
+	}
+	if proto.MaxResponseMs != 200 {
+		t.Errorf("expected max response 200 ms, got %.1f", proto.MaxResponseMs)
+	}
+	if proto.MinResponseMs != 50 {
+		t.Errorf("expected min response 50 ms, got %.1f", proto.MinResponseMs)
+	}
+	if math.Abs(proto.AvgResponseMs-116.6667) > 0.1 {
+		t.Errorf("expected average latency ~116.67 ms, got %.2f", proto.AvgResponseMs)
+	}
+	if math.Abs(proto.P95ResponseMs-200) > 0.01 {
+		t.Errorf("expected p95 latency 200 ms, got %.2f", proto.P95ResponseMs)
+	}
+	if math.Abs(proto.ResponseStdMs-62.360) > 0.5 {
+		t.Errorf("expected stddev ~62.36 ms, got %.2f", proto.ResponseStdMs)
 	}
 }

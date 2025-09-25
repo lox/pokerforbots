@@ -201,6 +201,16 @@ type PlayerDetailedStats struct {
 	Timeouts int `msg:"timeouts" json:"timeouts"`
 	Busts    int `msg:"busts" json:"busts"` // Times went broke
 
+	// Response latency
+	ResponsesTracked    int     `msg:"responses_tracked" json:"responses_tracked"`
+	AvgResponseMs       float64 `msg:"avg_response_ms" json:"avg_response_ms"`
+	P95ResponseMs       float64 `msg:"p95_response_ms" json:"p95_response_ms"`
+	MaxResponseMs       float64 `msg:"max_response_ms" json:"max_response_ms"`
+	MinResponseMs       float64 `msg:"min_response_ms" json:"min_response_ms"`
+	ResponseStdMs       float64 `msg:"response_std_ms" json:"response_std_ms"`
+	ResponseTimeouts    int     `msg:"response_timeouts" json:"response_timeouts"`
+	ResponseDisconnects int     `msg:"response_disconnects" json:"response_disconnects"`
+
 	// Breakdown (optional by depth)
 	PositionStats     map[string]PositionStatSummary `msg:"position_stats,omitempty" json:"position_stats,omitempty"`
 	StreetStats       map[string]StreetStatSummary   `msg:"street_stats,omitempty" json:"street_stats,omitempty"`

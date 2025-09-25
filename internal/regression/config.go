@@ -39,16 +39,17 @@ type Config struct {
 	InfiniteBankroll bool
 
 	// Statistical
-	SignificanceLevel      float64
-	EffectSizeThreshold    float64
-	MultipleTestCorrection bool
-	EarlyStopping          bool
-	MinHands               int
-	MaxHands               int
-	CheckInterval          int
-	StdDevClampMin         float64
-	StdDevClampFallback    float64
-	WarnOnStdDevClamp      bool
+	SignificanceLevel         float64
+	EffectSizeThreshold       float64
+	MultipleTestCorrection    bool
+	EarlyStopping             bool
+	MinHands                  int
+	MaxHands                  int
+	CheckInterval             int
+	StdDevClampMin            float64
+	StdDevClampFallback       float64
+	WarnOnStdDevClamp         bool
+	LatencyWarningThresholdMs float64
 
 	// Performance
 	TimeoutMs           int

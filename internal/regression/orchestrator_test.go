@@ -104,18 +104,34 @@ func TestAggregateHeadsUpStats(t *testing.T) {
 				Hands:    100,
 				NetChips: -1000,
 				DetailedStats: &protocol.PlayerDetailedStats{
-					BB100: -10.0,
-					VPIP:  25.0,
-					PFR:   15.0,
+					BB100:               -10.0,
+					VPIP:                25.0,
+					PFR:                 15.0,
+					ResponsesTracked:    80,
+					AvgResponseMs:       90.0,
+					P95ResponseMs:       130.0,
+					MaxResponseMs:       180.0,
+					MinResponseMs:       70.0,
+					ResponseStdMs:       20.0,
+					ResponseTimeouts:    2,
+					ResponseDisconnects: 1,
 				},
 			},
 			{
 				Hands:    100,
 				NetChips: 1000,
 				DetailedStats: &protocol.PlayerDetailedStats{
-					BB100: 10.0,
-					VPIP:  30.0,
-					PFR:   18.0,
+					BB100:               10.0,
+					VPIP:                30.0,
+					PFR:                 18.0,
+					ResponsesTracked:    75,
+					AvgResponseMs:       85.0,
+					P95ResponseMs:       125.0,
+					MaxResponseMs:       150.0,
+					MinResponseMs:       65.0,
+					ResponseStdMs:       15.0,
+					ResponseTimeouts:    1,
+					ResponseDisconnects: 0,
 				},
 			},
 		},
@@ -136,6 +152,15 @@ func TestAggregateHeadsUpStats(t *testing.T) {
 	if results["challenger_pfr"] != 15.0 {
 		t.Errorf("Expected challenger_pfr = 15.0, got %f", results["challenger_pfr"])
 	}
+	if results["challenger_avg_response_ms"] != 90.0 {
+		t.Errorf("Expected challenger_avg_response_ms = 90.0, got %f", results["challenger_avg_response_ms"])
+	}
+	if results["challenger_p95_response_ms"] != 130.0 {
+		t.Errorf("Expected challenger_p95_response_ms = 130.0, got %f", results["challenger_p95_response_ms"])
+	}
+	if results["challenger_responses_tracked"] != 80 {
+		t.Errorf("Expected challenger_responses_tracked = 80, got %f", results["challenger_responses_tracked"])
+	}
 
 	// Check Baseline (second player)
 	if results["baseline_bb_per_100"] != 10.0 {
@@ -146,6 +171,15 @@ func TestAggregateHeadsUpStats(t *testing.T) {
 	}
 	if results["baseline_pfr"] != 18.0 {
 		t.Errorf("Expected baseline_pfr = 18.0, got %f", results["baseline_pfr"])
+	}
+	if results["baseline_avg_response_ms"] != 85.0 {
+		t.Errorf("Expected baseline_avg_response_ms = 85.0, got %f", results["baseline_avg_response_ms"])
+	}
+	if results["baseline_p95_response_ms"] != 125.0 {
+		t.Errorf("Expected baseline_p95_response_ms = 125.0, got %f", results["baseline_p95_response_ms"])
+	}
+	if results["baseline_responses_tracked"] != 75 {
+		t.Errorf("Expected baseline_responses_tracked = 75, got %f", results["baseline_responses_tracked"])
 	}
 }
 

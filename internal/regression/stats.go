@@ -34,6 +34,16 @@ func AggregateHeadsUpStats(stats *server.GameStats) (map[string]float64, error) 
 			results["challenger_busts"] = float64(challenger.DetailedStats.Busts) / float64(challenger.Hands)
 		}
 		results["challenger_std_dev"] = challenger.DetailedStats.StdDev
+		results["challenger_responses_tracked"] = float64(challenger.DetailedStats.ResponsesTracked)
+		results["challenger_response_timeouts"] = float64(challenger.DetailedStats.ResponseTimeouts)
+		results["challenger_response_disconnects"] = float64(challenger.DetailedStats.ResponseDisconnects)
+		if challenger.DetailedStats.ResponsesTracked > 0 {
+			results["challenger_avg_response_ms"] = challenger.DetailedStats.AvgResponseMs
+			results["challenger_response_std_ms"] = challenger.DetailedStats.ResponseStdMs
+			results["challenger_max_response_ms"] = challenger.DetailedStats.MaxResponseMs
+			results["challenger_min_response_ms"] = challenger.DetailedStats.MinResponseMs
+			results["challenger_p95_response_ms"] = challenger.DetailedStats.P95ResponseMs
+		}
 	} else if challenger.Hands > 0 && stats.BigBlind > 0 {
 		// Calculate BB/100 from basic stats if detailed stats not available
 		results["challenger_bb_per_100"] = (float64(challenger.NetChips) / float64(stats.BigBlind)) / float64(challenger.Hands) * 100
@@ -51,6 +61,16 @@ func AggregateHeadsUpStats(stats *server.GameStats) (map[string]float64, error) 
 			results["baseline_busts"] = float64(baseline.DetailedStats.Busts) / float64(baseline.Hands)
 		}
 		results["baseline_std_dev"] = baseline.DetailedStats.StdDev
+		results["baseline_responses_tracked"] = float64(baseline.DetailedStats.ResponsesTracked)
+		results["baseline_response_timeouts"] = float64(baseline.DetailedStats.ResponseTimeouts)
+		results["baseline_response_disconnects"] = float64(baseline.DetailedStats.ResponseDisconnects)
+		if baseline.DetailedStats.ResponsesTracked > 0 {
+			results["baseline_avg_response_ms"] = baseline.DetailedStats.AvgResponseMs
+			results["baseline_response_std_ms"] = baseline.DetailedStats.ResponseStdMs
+			results["baseline_max_response_ms"] = baseline.DetailedStats.MaxResponseMs
+			results["baseline_min_response_ms"] = baseline.DetailedStats.MinResponseMs
+			results["baseline_p95_response_ms"] = baseline.DetailedStats.P95ResponseMs
+		}
 	} else if baseline.Hands > 0 && stats.BigBlind > 0 {
 		// Calculate BB/100 from basic stats if detailed stats not available
 		results["baseline_bb_per_100"] = (float64(baseline.NetChips) / float64(stats.BigBlind)) / float64(baseline.Hands) * 100
@@ -70,6 +90,14 @@ func AggregatePopulationStats(stats *server.GameStats, challengerSeats, baseline
 	var challengerTimeouts, challengerBusts int
 	var challengerStdDevs []float64
 	var challengerStdWeights []float64
+	var challengerResponseCount int
+	var challengerResponseSum float64
+	var challengerResponseSumSquares float64
+	var challengerResponseMax float64
+	challengerResponseMin := math.MaxFloat64
+	var challengerResponseP95 float64
+	var challengerResponseTimeouts int
+	var challengerResponseDisconnects int
 
 	// Aggregate stats for baseline bots (next M seats)
 	var baselineNetChips int64
@@ -78,6 +106,14 @@ func AggregatePopulationStats(stats *server.GameStats, challengerSeats, baseline
 	var baselineTimeouts, baselineBusts int
 	var baselineStdDevs []float64
 	var baselineStdWeights []float64
+	var baselineResponseCount int
+	var baselineResponseSum float64
+	var baselineResponseSumSquares float64
+	var baselineResponseMax float64
+	baselineResponseMin := math.MaxFloat64
+	var baselineResponseP95 float64
+	var baselineResponseTimeouts int
+	var baselineResponseDisconnects int
 
 	for i, player := range stats.Players {
 		if i < challengerSeats {
@@ -90,9 +126,28 @@ func AggregatePopulationStats(stats *server.GameStats, challengerSeats, baseline
 				challengerPFRWeighted += player.DetailedStats.PFR * hands
 				challengerTimeouts += player.DetailedStats.Timeouts
 				challengerBusts += player.DetailedStats.Busts
+				challengerResponseTimeouts += player.DetailedStats.ResponseTimeouts
+				challengerResponseDisconnects += player.DetailedStats.ResponseDisconnects
 				if player.Hands > 1 && player.DetailedStats.StdDev > 0 {
 					challengerStdDevs = append(challengerStdDevs, player.DetailedStats.StdDev)
 					challengerStdWeights = append(challengerStdWeights, hands)
+				}
+				if player.DetailedStats.ResponsesTracked > 0 {
+					n := float64(player.DetailedStats.ResponsesTracked)
+					challengerResponseCount += player.DetailedStats.ResponsesTracked
+					avg := player.DetailedStats.AvgResponseMs
+					std := player.DetailedStats.ResponseStdMs
+					challengerResponseSum += avg * n
+					challengerResponseSumSquares += n * (std*std + avg*avg)
+					if player.DetailedStats.MaxResponseMs > challengerResponseMax {
+						challengerResponseMax = player.DetailedStats.MaxResponseMs
+					}
+					if player.DetailedStats.MinResponseMs >= 0 && player.DetailedStats.MinResponseMs < challengerResponseMin {
+						challengerResponseMin = player.DetailedStats.MinResponseMs
+					}
+					if player.DetailedStats.P95ResponseMs > challengerResponseP95 {
+						challengerResponseP95 = player.DetailedStats.P95ResponseMs
+					}
 				}
 			}
 		} else if i < challengerSeats+baselineSeats {
@@ -105,9 +160,28 @@ func AggregatePopulationStats(stats *server.GameStats, challengerSeats, baseline
 				baselinePFRWeighted += player.DetailedStats.PFR * hands
 				baselineTimeouts += player.DetailedStats.Timeouts
 				baselineBusts += player.DetailedStats.Busts
+				baselineResponseTimeouts += player.DetailedStats.ResponseTimeouts
+				baselineResponseDisconnects += player.DetailedStats.ResponseDisconnects
 				if player.Hands > 1 && player.DetailedStats.StdDev > 0 {
 					baselineStdDevs = append(baselineStdDevs, player.DetailedStats.StdDev)
 					baselineStdWeights = append(baselineStdWeights, hands)
+				}
+				if player.DetailedStats.ResponsesTracked > 0 {
+					n := float64(player.DetailedStats.ResponsesTracked)
+					baselineResponseCount += player.DetailedStats.ResponsesTracked
+					avg := player.DetailedStats.AvgResponseMs
+					std := player.DetailedStats.ResponseStdMs
+					baselineResponseSum += avg * n
+					baselineResponseSumSquares += n * (std*std + avg*avg)
+					if player.DetailedStats.MaxResponseMs > baselineResponseMax {
+						baselineResponseMax = player.DetailedStats.MaxResponseMs
+					}
+					if player.DetailedStats.MinResponseMs >= 0 && player.DetailedStats.MinResponseMs < baselineResponseMin {
+						baselineResponseMin = player.DetailedStats.MinResponseMs
+					}
+					if player.DetailedStats.P95ResponseMs > baselineResponseP95 {
+						baselineResponseP95 = player.DetailedStats.P95ResponseMs
+					}
 				}
 			}
 		}
@@ -135,6 +209,44 @@ func AggregatePopulationStats(stats *server.GameStats, challengerSeats, baseline
 		results["baseline_timeouts"] = float64(baselineTimeouts) / float64(baselineHands)
 		results["baseline_busts"] = float64(baselineBusts) / float64(baselineHands)
 	}
+
+	if challengerResponseCount > 0 {
+		total := float64(challengerResponseCount)
+		avg := challengerResponseSum / total
+		results["challenger_avg_response_ms"] = avg
+		variance := challengerResponseSumSquares/total - avg*avg
+		if variance < 0 {
+			variance = 0
+		}
+		results["challenger_response_std_ms"] = math.Sqrt(variance)
+		results["challenger_max_response_ms"] = challengerResponseMax
+		if challengerResponseMin != math.MaxFloat64 {
+			results["challenger_min_response_ms"] = challengerResponseMin
+		}
+		results["challenger_p95_response_ms"] = challengerResponseP95
+	}
+	if baselineResponseCount > 0 {
+		total := float64(baselineResponseCount)
+		avg := baselineResponseSum / total
+		results["baseline_avg_response_ms"] = avg
+		variance := baselineResponseSumSquares/total - avg*avg
+		if variance < 0 {
+			variance = 0
+		}
+		results["baseline_response_std_ms"] = math.Sqrt(variance)
+		results["baseline_max_response_ms"] = baselineResponseMax
+		if baselineResponseMin != math.MaxFloat64 {
+			results["baseline_min_response_ms"] = baselineResponseMin
+		}
+		results["baseline_p95_response_ms"] = baselineResponseP95
+	}
+
+	results["challenger_responses_tracked"] = float64(challengerResponseCount)
+	results["baseline_responses_tracked"] = float64(baselineResponseCount)
+	results["challenger_response_timeouts"] = float64(challengerResponseTimeouts)
+	results["baseline_response_timeouts"] = float64(baselineResponseTimeouts)
+	results["challenger_response_disconnects"] = float64(challengerResponseDisconnects)
+	results["baseline_response_disconnects"] = float64(baselineResponseDisconnects)
 
 	if len(challengerStdDevs) > 0 {
 		results["challenger_std_dev"] = calculatePooledStdDevWeighted(challengerStdDevs, challengerStdWeights)
@@ -167,6 +279,14 @@ func AggregateNPCStats(stats *server.GameStats, isChallenger bool) map[string]fl
 	var totalTimeouts, totalBusts int
 	var stdDevs []float64
 	var stdWeights []float64
+	var totalResponses int
+	var responseSum float64
+	var responseSumSquares float64
+	var responseMax float64
+	responseMin := math.MaxFloat64
+	var responseP95 float64
+	var responseTimeouts int
+	var responseDisconnects int
 
 	// Helper function to check if a bot is an NPC based on its display name
 	isNPCBot := func(name string) bool {
@@ -194,9 +314,28 @@ func AggregateNPCStats(stats *server.GameStats, isChallenger bool) map[string]fl
 			totalPFRWeighted += player.DetailedStats.PFR * hands
 			totalTimeouts += player.DetailedStats.Timeouts
 			totalBusts += player.DetailedStats.Busts
+			responseTimeouts += player.DetailedStats.ResponseTimeouts
+			responseDisconnects += player.DetailedStats.ResponseDisconnects
 			if player.Hands > 1 && player.DetailedStats.StdDev > 0 {
 				stdDevs = append(stdDevs, player.DetailedStats.StdDev)
 				stdWeights = append(stdWeights, hands)
+			}
+			if player.DetailedStats.ResponsesTracked > 0 {
+				n := float64(player.DetailedStats.ResponsesTracked)
+				totalResponses += player.DetailedStats.ResponsesTracked
+				avg := player.DetailedStats.AvgResponseMs
+				std := player.DetailedStats.ResponseStdMs
+				responseSum += avg * n
+				responseSumSquares += n * (std*std + avg*avg)
+				if player.DetailedStats.MaxResponseMs > responseMax {
+					responseMax = player.DetailedStats.MaxResponseMs
+				}
+				if player.DetailedStats.MinResponseMs >= 0 && player.DetailedStats.MinResponseMs < responseMin {
+					responseMin = player.DetailedStats.MinResponseMs
+				}
+				if player.DetailedStats.P95ResponseMs > responseP95 {
+					responseP95 = player.DetailedStats.P95ResponseMs
+				}
 			}
 		}
 	}
@@ -214,6 +353,25 @@ func AggregateNPCStats(stats *server.GameStats, isChallenger bool) map[string]fl
 		results[prefix+"_timeouts"] = float64(totalTimeouts) / float64(totalHands)
 		results[prefix+"_busts"] = float64(totalBusts) / float64(totalHands)
 	}
+
+	if totalResponses > 0 {
+		total := float64(totalResponses)
+		avg := responseSum / total
+		results[prefix+"_avg_response_ms"] = avg
+		variance := responseSumSquares/total - avg*avg
+		if variance < 0 {
+			variance = 0
+		}
+		results[prefix+"_response_std_ms"] = math.Sqrt(variance)
+		results[prefix+"_max_response_ms"] = responseMax
+		if responseMin != math.MaxFloat64 {
+			results[prefix+"_min_response_ms"] = responseMin
+		}
+		results[prefix+"_p95_response_ms"] = responseP95
+	}
+	results[prefix+"_responses_tracked"] = float64(totalResponses)
+	results[prefix+"_response_timeouts"] = float64(responseTimeouts)
+	results[prefix+"_response_disconnects"] = float64(responseDisconnects)
 
 	// Store hands for weighting
 	results[prefix+"_hands"] = float64(totalHands)
@@ -235,6 +393,14 @@ func AggregateSelfPlayStats(stats *server.GameStats) map[string]float64 {
 	var sumVPIP, sumPFR float64
 	var maxBB100, minBB100 float64
 	first := true
+	var totalResponses int
+	var responseSum float64
+	var responseSumSquares float64
+	var responseMax float64
+	responseMin := math.MaxFloat64
+	var responseP95 float64
+	var responseTimeouts int
+	var responseDisconnects int
 
 	bigBlind := float64(stats.BigBlind)
 
@@ -255,6 +421,25 @@ func AggregateSelfPlayStats(stats *server.GameStats) map[string]float64 {
 			if player.DetailedStats != nil {
 				sumVPIP += player.DetailedStats.VPIP * float64(player.Hands)
 				sumPFR += player.DetailedStats.PFR * float64(player.Hands)
+				responseTimeouts += player.DetailedStats.ResponseTimeouts
+				responseDisconnects += player.DetailedStats.ResponseDisconnects
+				if player.DetailedStats.ResponsesTracked > 0 {
+					n := float64(player.DetailedStats.ResponsesTracked)
+					totalResponses += player.DetailedStats.ResponsesTracked
+					avg := player.DetailedStats.AvgResponseMs
+					std := player.DetailedStats.ResponseStdMs
+					responseSum += avg * n
+					responseSumSquares += n * (std*std + avg*avg)
+					if player.DetailedStats.MaxResponseMs > responseMax {
+						responseMax = player.DetailedStats.MaxResponseMs
+					}
+					if player.DetailedStats.MinResponseMs >= 0 && player.DetailedStats.MinResponseMs < responseMin {
+						responseMin = player.DetailedStats.MinResponseMs
+					}
+					if player.DetailedStats.P95ResponseMs > responseP95 {
+						responseP95 = player.DetailedStats.P95ResponseMs
+					}
+				}
 			}
 
 			if first {
@@ -283,6 +468,25 @@ func AggregateSelfPlayStats(stats *server.GameStats) map[string]float64 {
 	results["min_bb_per_100"] = minBB100
 	results["actual_hands"] = float64(stats.HandsCompleted)
 	results["total_hands"] = float64(totalHands)
+
+	if totalResponses > 0 {
+		total := float64(totalResponses)
+		avg := responseSum / total
+		results["avg_response_ms"] = avg
+		variance := responseSumSquares/total - avg*avg
+		if variance < 0 {
+			variance = 0
+		}
+		results["response_std_ms"] = math.Sqrt(variance)
+		results["max_response_ms"] = responseMax
+		if responseMin != math.MaxFloat64 {
+			results["min_response_ms"] = responseMin
+		}
+		results["p95_response_ms"] = responseP95
+	}
+	results["responses_tracked"] = float64(totalResponses)
+	results["response_timeouts"] = float64(responseTimeouts)
+	results["response_disconnects"] = float64(responseDisconnects)
 
 	return results
 }
@@ -334,6 +538,112 @@ func WeightedAverage(batches []BatchResult, metricKey string, handsKey string) f
 	return 0.0
 }
 
+// WeightedAverageWithWeights calculates weighted average for a metric using an arbitrary weight key.
+func WeightedAverageWithWeights(batches []BatchResult, metricKey string, weightKey string) (float64, float64) {
+	var totalValue float64
+	var totalWeight float64
+
+	for _, batch := range batches {
+		weight, exists := batch.Results[weightKey]
+		if !exists || weight <= 0 {
+			continue
+		}
+		if value, ok := batch.Results[metricKey]; ok {
+			totalValue += value * weight
+			totalWeight += weight
+		}
+	}
+
+	if totalWeight == 0 {
+		return 0, 0
+	}
+
+	return totalValue / totalWeight, totalWeight
+}
+
+// WeightedStdDevWithWeights calculates pooled standard deviation given per-batch means and stddevs.
+func WeightedStdDevWithWeights(batches []BatchResult, meanKey, stdKey, weightKey string, overallMean float64) float64 {
+	var totalWeight float64
+	var sumSquares float64
+
+	for _, batch := range batches {
+		weight, exists := batch.Results[weightKey]
+		if !exists || weight <= 0 {
+			continue
+		}
+		mean, meanExists := batch.Results[meanKey]
+		if !meanExists {
+			continue
+		}
+		std, stdExists := batch.Results[stdKey]
+		if stdExists && std >= 0 {
+			sumSquares += weight * (std*std + mean*mean)
+		} else {
+			// Fallback: use deviation from overall mean if std not available
+			deviation := mean - overallMean
+			sumSquares += weight * deviation * deviation
+		}
+		totalWeight += weight
+	}
+
+	if totalWeight == 0 {
+		return 0
+	}
+
+	variance := sumSquares/totalWeight - (overallMean * overallMean)
+	if variance < 0 {
+		variance = 0
+	}
+	return math.Sqrt(variance)
+}
+
+// SumMetric sums a metric across batches.
+func SumMetric(batches []BatchResult, metricKey string) float64 {
+	var total float64
+	for _, batch := range batches {
+		if value, ok := batch.Results[metricKey]; ok {
+			total += value
+		}
+	}
+	return total
+}
+
+// MaxMetric returns the maximum value of a metric across batches.
+func MaxMetric(batches []BatchResult, metricKey string) float64 {
+	var max float64
+	found := false
+	for _, batch := range batches {
+		if value, ok := batch.Results[metricKey]; ok {
+			if !found || value > max {
+				max = value
+				found = true
+			}
+		}
+	}
+	if !found {
+		return 0
+	}
+	return max
+}
+
+// MinMetric returns the minimum value of a metric across batches, ignoring missing values.
+func MinMetric(batches []BatchResult, metricKey string) float64 {
+	min := math.MaxFloat64
+	found := false
+	for _, batch := range batches {
+		if value, ok := batch.Results[metricKey]; ok {
+			if !found || value < min {
+				min = value
+				found = true
+			}
+		}
+	}
+	if !found {
+		return 0
+	}
+	return min
+}
+
 // ExtractActualHands gets the actual hands played from batch results
 func ExtractActualHands(batch BatchResult, handsKey string) int {
 	if handsFromStats, exists := batch.Results[handsKey]; exists {
@@ -344,12 +654,20 @@ func ExtractActualHands(batch BatchResult, handsKey string) int {
 
 // CombinedStats holds aggregated statistics from multiple batches
 type CombinedStats struct {
-	BB100      float64
-	VPIP       float64
-	PFR        float64
-	TotalHands int
-	Timeouts   float64
-	Busts      float64
+	BB100               float64
+	VPIP                float64
+	PFR                 float64
+	TotalHands          int
+	Timeouts            float64
+	Busts               float64
+	AvgResponseMs       float64
+	ResponseStdMs       float64
+	MaxResponseMs       float64
+	MinResponseMs       float64
+	P95ResponseMs       float64
+	ResponsesTracked    float64
+	ResponseTimeouts    float64
+	ResponseDisconnects float64
 }
 
 // CombineBatches aggregates batch results for a specific bot type
@@ -363,6 +681,14 @@ func CombineBatches(batches []BatchResult, prefix string) CombinedStats {
 	handsKey := prefix + "_hands"
 	timeoutsKey := prefix + "_timeouts"
 	bustsKey := prefix + "_busts"
+	responsesKey := prefix + "_responses_tracked"
+	avgResponseKey := prefix + "_avg_response_ms"
+	responseStdKey := prefix + "_response_std_ms"
+	maxResponseKey := prefix + "_max_response_ms"
+	minResponseKey := prefix + "_min_response_ms"
+	p95ResponseKey := prefix + "_p95_response_ms"
+	responseTimeoutsKey := prefix + "_response_timeouts"
+	responseDisconnectsKey := prefix + "_response_disconnects"
 
 	// Calculate weighted BB/100
 	result.BB100, result.TotalHands = WeightedBB100(batches, bb100Key, handsKey)
@@ -372,6 +698,18 @@ func CombineBatches(batches []BatchResult, prefix string) CombinedStats {
 	result.PFR = WeightedAverage(batches, pfrKey, handsKey)
 	result.Timeouts = WeightedAverage(batches, timeoutsKey, handsKey)
 	result.Busts = WeightedAverage(batches, bustsKey, handsKey)
+
+	avgResponse, totalResponses := WeightedAverageWithWeights(batches, avgResponseKey, responsesKey)
+	result.ResponsesTracked = totalResponses
+	if totalResponses > 0 {
+		result.AvgResponseMs = avgResponse
+		result.ResponseStdMs = WeightedStdDevWithWeights(batches, avgResponseKey, responseStdKey, responsesKey, avgResponse)
+		result.MaxResponseMs = MaxMetric(batches, maxResponseKey)
+		result.MinResponseMs = MinMetric(batches, minResponseKey)
+		result.P95ResponseMs = MaxMetric(batches, p95ResponseKey)
+	}
+	result.ResponseTimeouts = SumMetric(batches, responseTimeoutsKey)
+	result.ResponseDisconnects = SumMetric(batches, responseDisconnectsKey)
 
 	return result
 }

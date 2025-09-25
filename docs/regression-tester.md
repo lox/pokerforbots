@@ -36,8 +36,10 @@ Results
 -------
 Challenger: +12.3 BB/100 [95% CI: +8.1 to +16.5]
   VPIP: 15.2%, PFR: 12.8%, Busts: 0.0%
+  Latency: p95 108.0 ms (avg 64.2 ms, max 182.0 ms, samples 5000, timeouts 3)
 Baseline: -12.3 BB/100 [95% CI: -16.5 to -8.1]
   VPIP: 14.8%, PFR: 11.9%, Busts: 0.0%
+  Latency: p95 96.0 ms (avg 58.7 ms, max 140.0 ms, samples 5000, timeouts 1)
 Effect Size: 0.45 (medium)
 P-Value: 0.002
 Hands/sec: 793
@@ -52,6 +54,9 @@ Verdict: IMPROVEMENT (95% confidence)
 - **VPIP/PFR**: Voluntarily put money in pot / Pre-flop raise percentages
 - **Effect Size**: Magnitude of difference (>0.2 = small, >0.5 = medium, >0.8 = large)
 - **P-Value**: Statistical significance (<0.05 = significant)
+- **Latency**: Response-time metrics highlight whether bots are approaching the
+  100 ms decision budget. The tester emits a warning when the p95 latency
+  exceeds the `--latency-warn-ms` threshold (default 100 ms).
 
 ### Interpreting Verdicts
 
@@ -195,6 +200,9 @@ go run ./cmd/regression-tester \
 go run ./cmd/regression-tester \
   --output both \
   --output-file results.json
+
+# Adjust latency warning threshold (default 100 ms)
+go run ./cmd/regression-tester --latency-warn-ms 80
 ```
 
 ## Troubleshooting Unexpected Results

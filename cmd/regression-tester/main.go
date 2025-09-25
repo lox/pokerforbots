@@ -46,6 +46,7 @@ type CLI struct {
 	StdDevClampMin         float64 `kong:"default='5',help='Minimum per-batch standard deviation (BB/100) before clamping'"`
 	StdDevClampFallback    float64 `kong:"default='50',help='Fallback standard deviation (BB/100) applied after clamping'"`
 	WarnStdDevClamp        bool    `kong:"help='Emit warnings when standard deviation clamping occurs'"`
+	LatencyWarnMs          float64 `kong:"default='100',help='Warn when p95 response time exceeds this many milliseconds'"`
 
 	// Server configuration
 	ServerAddr string `kong:"default='localhost:8080',help='Poker server address'"`
@@ -160,17 +161,18 @@ func main() {
 		NPCs:            npcs,
 
 		// Statistical
-		InfiniteBankroll:       cli.InfiniteBankroll,
-		SignificanceLevel:      cli.SignificanceLevel,
-		EffectSizeThreshold:    cli.EffectSizeThreshold,
-		MultipleTestCorrection: cli.MultipleTestCorrection,
-		EarlyStopping:          cli.EarlyStopping,
-		MinHands:               cli.MinHands,
-		MaxHands:               cli.MaxHands,
-		CheckInterval:          cli.CheckInterval,
-		StdDevClampMin:         cli.StdDevClampMin,
-		StdDevClampFallback:    cli.StdDevClampFallback,
-		WarnOnStdDevClamp:      cli.WarnStdDevClamp,
+		InfiniteBankroll:          cli.InfiniteBankroll,
+		SignificanceLevel:         cli.SignificanceLevel,
+		EffectSizeThreshold:       cli.EffectSizeThreshold,
+		MultipleTestCorrection:    cli.MultipleTestCorrection,
+		EarlyStopping:             cli.EarlyStopping,
+		MinHands:                  cli.MinHands,
+		MaxHands:                  cli.MaxHands,
+		CheckInterval:             cli.CheckInterval,
+		StdDevClampMin:            cli.StdDevClampMin,
+		StdDevClampFallback:       cli.StdDevClampFallback,
+		WarnOnStdDevClamp:         cli.WarnStdDevClamp,
+		LatencyWarningThresholdMs: cli.LatencyWarnMs,
 
 		// Server
 		ServerAddr: cli.ServerAddr,

@@ -83,18 +83,27 @@ type ReportStatistics struct {
 
 	// Sample size analysis
 	SampleSizeWarning string `json:"sample_size_warning,omitempty"`
+	LatencyWarning    string `json:"latency_warning,omitempty"`
 }
 
 // BotStatistics contains per-bot performance metrics
 type BotStatistics struct {
-	BB100    float64 `json:"bb_per_100"`
-	CI95Low  float64 `json:"ci_95_low"`
-	CI95High float64 `json:"ci_95_high"`
-	VPIP     float64 `json:"vpip"`
-	PFR      float64 `json:"pfr"`
-	Hands    int     `json:"hands"`
-	Timeouts float64 `json:"timeouts"`
-	Busts    float64 `json:"busts"`
+	BB100               float64 `json:"bb_per_100"`
+	CI95Low             float64 `json:"ci_95_low"`
+	CI95High            float64 `json:"ci_95_high"`
+	VPIP                float64 `json:"vpip"`
+	PFR                 float64 `json:"pfr"`
+	Hands               int     `json:"hands"`
+	Timeouts            float64 `json:"timeouts"`
+	Busts               float64 `json:"busts"`
+	AvgResponseMs       float64 `json:"avg_response_ms,omitempty"`
+	P95ResponseMs       float64 `json:"p95_response_ms,omitempty"`
+	MaxResponseMs       float64 `json:"max_response_ms,omitempty"`
+	MinResponseMs       float64 `json:"min_response_ms,omitempty"`
+	ResponseStdMs       float64 `json:"response_std_ms,omitempty"`
+	ResponsesTracked    float64 `json:"responses_tracked,omitempty"`
+	ResponseTimeouts    float64 `json:"response_timeouts,omitempty"`
+	ResponseDisconnects float64 `json:"response_disconnects,omitempty"`
 }
 
 // GenerateReport creates a comprehensive test report
@@ -155,6 +164,25 @@ func (r *Reporter) GenerateReport(result *TestResult) (*ReportResult, error) {
 		stats.SampleSizeWarning = "Note: More hands needed for small effect sizes"
 	}
 
+	latencyThreshold := r.config.LatencyWarningThresholdMs
+	if latencyThreshold <= 0 {
+		latencyThreshold = 100
+	}
+	var latencyWarnings []string
+	if stats.ChallengerStats != nil && stats.ChallengerStats.P95ResponseMs > latencyThreshold {
+		latencyWarnings = append(latencyWarnings,
+			fmt.Sprintf("⚠️ Challenger p95 response %.1f ms exceeds %.1f ms threshold",
+				stats.ChallengerStats.P95ResponseMs, latencyThreshold))
+	}
+	if stats.BaselineStats != nil && stats.BaselineStats.P95ResponseMs > latencyThreshold {
+		latencyWarnings = append(latencyWarnings,
+			fmt.Sprintf("⚠️ Baseline p95 response %.1f ms exceeds %.1f ms threshold",
+				stats.BaselineStats.P95ResponseMs, latencyThreshold))
+	}
+	if len(latencyWarnings) > 0 {
+		stats.LatencyWarning = strings.Join(latencyWarnings, "\n")
+	}
+
 	testID := result.TestID
 	if testID == "" {
 		testID = fmt.Sprintf("regression-%s-%s", string(result.Mode), startTime.Format("20060102-150405"))
@@ -193,24 +221,40 @@ func (r *Reporter) aggregateStatistics(result *TestResult) ReportStatistics {
 		}
 
 		stats.ChallengerStats = &BotStatistics{
-			BB100:    challengerStats.Mean,
-			CI95Low:  challengerStats.CI95Low,
-			CI95High: challengerStats.CI95High,
-			VPIP:     challengerCombined.VPIP,
-			PFR:      challengerCombined.PFR,
-			Hands:    challengerHands,
-			Timeouts: challengerCombined.Timeouts * float64(challengerHands),
-			Busts:    challengerCombined.Busts * float64(challengerHands),
+			BB100:               challengerStats.Mean,
+			CI95Low:             challengerStats.CI95Low,
+			CI95High:            challengerStats.CI95High,
+			VPIP:                challengerCombined.VPIP,
+			PFR:                 challengerCombined.PFR,
+			Hands:               challengerHands,
+			Timeouts:            challengerCombined.Timeouts * float64(challengerHands),
+			Busts:               challengerCombined.Busts * float64(challengerHands),
+			AvgResponseMs:       challengerCombined.AvgResponseMs,
+			P95ResponseMs:       challengerCombined.P95ResponseMs,
+			MaxResponseMs:       challengerCombined.MaxResponseMs,
+			MinResponseMs:       challengerCombined.MinResponseMs,
+			ResponseStdMs:       challengerCombined.ResponseStdMs,
+			ResponsesTracked:    challengerCombined.ResponsesTracked,
+			ResponseTimeouts:    challengerCombined.ResponseTimeouts,
+			ResponseDisconnects: challengerCombined.ResponseDisconnects,
 		}
 		stats.BaselineStats = &BotStatistics{
-			BB100:    baselineStats.Mean,
-			CI95Low:  baselineStats.CI95Low,
-			CI95High: baselineStats.CI95High,
-			VPIP:     baselineCombined.VPIP,
-			PFR:      baselineCombined.PFR,
-			Hands:    baselineHands,
-			Timeouts: baselineCombined.Timeouts * float64(baselineHands),
-			Busts:    baselineCombined.Busts * float64(baselineHands),
+			BB100:               baselineStats.Mean,
+			CI95Low:             baselineStats.CI95Low,
+			CI95High:            baselineStats.CI95High,
+			VPIP:                baselineCombined.VPIP,
+			PFR:                 baselineCombined.PFR,
+			Hands:               baselineHands,
+			Timeouts:            baselineCombined.Timeouts * float64(baselineHands),
+			Busts:               baselineCombined.Busts * float64(baselineHands),
+			AvgResponseMs:       baselineCombined.AvgResponseMs,
+			P95ResponseMs:       baselineCombined.P95ResponseMs,
+			MaxResponseMs:       baselineCombined.MaxResponseMs,
+			MinResponseMs:       baselineCombined.MinResponseMs,
+			ResponseStdMs:       baselineCombined.ResponseStdMs,
+			ResponsesTracked:    baselineCombined.ResponsesTracked,
+			ResponseTimeouts:    baselineCombined.ResponseTimeouts,
+			ResponseDisconnects: baselineCombined.ResponseDisconnects,
 		}
 
 	case ModeSelfPlay:
@@ -222,16 +266,31 @@ func (r *Reporter) aggregateStatistics(result *TestResult) ReportStatistics {
 
 		avgVPIP := WeightedAverage(batches, "avg_vpip", "actual_hands")
 		avgPFR := WeightedAverage(batches, "avg_pfr", "actual_hands")
+		avgResponse, totalResponses := WeightedAverageWithWeights(batches, "avg_response_ms", "responses_tracked")
+		responseStd := WeightedStdDevWithWeights(batches, "avg_response_ms", "response_std_ms", "responses_tracked", avgResponse)
+		maxResponse := MaxMetric(batches, "max_response_ms")
+		minResponse := MinMetric(batches, "min_response_ms")
+		p95Response := MaxMetric(batches, "p95_response_ms")
+		responseTimeouts := SumMetric(batches, "response_timeouts")
+		responseDisconnects := SumMetric(batches, "response_disconnects")
 
 		stats.ChallengerStats = &BotStatistics{
-			BB100:    selfStats.Mean,
-			CI95Low:  selfStats.CI95Low,
-			CI95High: selfStats.CI95High,
-			VPIP:     avgVPIP,
-			PFR:      avgPFR,
-			Hands:    totalHands,
-			Timeouts: 0,
-			Busts:    0,
+			BB100:               selfStats.Mean,
+			CI95Low:             selfStats.CI95Low,
+			CI95High:            selfStats.CI95High,
+			VPIP:                avgVPIP,
+			PFR:                 avgPFR,
+			Hands:               totalHands,
+			Timeouts:            0,
+			Busts:               0,
+			AvgResponseMs:       avgResponse,
+			P95ResponseMs:       p95Response,
+			MaxResponseMs:       maxResponse,
+			MinResponseMs:       minResponse,
+			ResponseStdMs:       responseStd,
+			ResponsesTracked:    totalResponses,
+			ResponseTimeouts:    responseTimeouts,
+			ResponseDisconnects: responseDisconnects,
 		}
 		stats.BaselineStats = stats.ChallengerStats
 	}
@@ -303,6 +362,30 @@ func (r *Reporter) WriteSummary(report *ReportResult) error {
 			report.Results.BaselineStats.PFR))
 	}
 
+	if report.Results.ChallengerStats != nil && report.Results.ChallengerStats.ResponsesTracked > 0 {
+		label := "Challenger"
+		if report.Mode == string(ModeSelfPlay) {
+			label = "Bot"
+		}
+		sb.WriteString(fmt.Sprintf("%s latency p95: %.1f ms (avg %.1f, max %.1f, std %.1f, samples %.0f, timeouts %.0f)\n",
+			label,
+			report.Results.ChallengerStats.P95ResponseMs,
+			report.Results.ChallengerStats.AvgResponseMs,
+			report.Results.ChallengerStats.MaxResponseMs,
+			report.Results.ChallengerStats.ResponseStdMs,
+			report.Results.ChallengerStats.ResponsesTracked,
+			report.Results.ChallengerStats.ResponseTimeouts))
+	}
+	if report.Results.BaselineStats != nil && report.Mode != string(ModeSelfPlay) && report.Results.BaselineStats.ResponsesTracked > 0 {
+		sb.WriteString(fmt.Sprintf("Baseline latency p95: %.1f ms (avg %.1f, max %.1f, std %.1f, samples %.0f, timeouts %.0f)\n",
+			report.Results.BaselineStats.P95ResponseMs,
+			report.Results.BaselineStats.AvgResponseMs,
+			report.Results.BaselineStats.MaxResponseMs,
+			report.Results.BaselineStats.ResponseStdMs,
+			report.Results.BaselineStats.ResponsesTracked,
+			report.Results.BaselineStats.ResponseTimeouts))
+	}
+
 	// Statistical analysis
 	sb.WriteString(fmt.Sprintf("Effect Size: %.2f (%s)\n",
 		report.Results.EffectSize,
@@ -315,6 +398,11 @@ func (r *Reporter) WriteSummary(report *ReportResult) error {
 	// Sample size warning if present
 	if report.Results.SampleSizeWarning != "" {
 		sb.WriteString(fmt.Sprintf("\n%s\n", report.Results.SampleSizeWarning))
+	}
+
+	// Latency warning if present
+	if report.Results.LatencyWarning != "" {
+		sb.WriteString(fmt.Sprintf("\n%s\n", report.Results.LatencyWarning))
 	}
 
 	// Verdict

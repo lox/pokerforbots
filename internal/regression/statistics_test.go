@@ -198,6 +198,70 @@ func TestCompareStatistics(t *testing.T) {
 	}
 }
 
+func TestCombineBatchesLatency(t *testing.T) {
+	batches := []BatchResult{
+		{
+			Seed:  1,
+			Hands: 1000,
+			Results: map[string]float64{
+				"challenger_bb_per_100":           5,
+				"challenger_hands":                1000,
+				"challenger_avg_response_ms":      80,
+				"challenger_response_std_ms":      10,
+				"challenger_max_response_ms":      120,
+				"challenger_min_response_ms":      60,
+				"challenger_p95_response_ms":      110,
+				"challenger_responses_tracked":    10,
+				"challenger_response_timeouts":    1,
+				"challenger_response_disconnects": 0,
+			},
+		},
+		{
+			Seed:  2,
+			Hands: 1000,
+			Results: map[string]float64{
+				"challenger_bb_per_100":           -2,
+				"challenger_hands":                1000,
+				"challenger_avg_response_ms":      100,
+				"challenger_response_std_ms":      20,
+				"challenger_max_response_ms":      150,
+				"challenger_min_response_ms":      70,
+				"challenger_p95_response_ms":      140,
+				"challenger_responses_tracked":    5,
+				"challenger_response_timeouts":    2,
+				"challenger_response_disconnects": 1,
+			},
+		},
+	}
+
+	combined := CombineBatches(batches, "challenger")
+
+	if combined.ResponsesTracked != 15 {
+		t.Fatalf("expected 15 responses, got %.0f", combined.ResponsesTracked)
+	}
+	if math.Abs(combined.AvgResponseMs-86.6667) > 0.1 {
+		t.Errorf("expected avg response ~86.67 ms, got %.2f", combined.AvgResponseMs)
+	}
+	if math.Abs(combined.ResponseStdMs-17.0) > 0.5 {
+		t.Errorf("expected stddev ~17.0 ms, got %.2f", combined.ResponseStdMs)
+	}
+	if combined.MaxResponseMs != 150 {
+		t.Errorf("expected max response 150 ms, got %.2f", combined.MaxResponseMs)
+	}
+	if combined.MinResponseMs != 60 {
+		t.Errorf("expected min response 60 ms, got %.2f", combined.MinResponseMs)
+	}
+	if combined.P95ResponseMs != 140 {
+		t.Errorf("expected p95 140 ms, got %.2f", combined.P95ResponseMs)
+	}
+	if combined.ResponseTimeouts != 3 {
+		t.Errorf("expected 3 response timeouts, got %.0f", combined.ResponseTimeouts)
+	}
+	if combined.ResponseDisconnects != 1 {
+		t.Errorf("expected 1 response disconnect, got %.0f", combined.ResponseDisconnects)
+	}
+}
+
 // TestPValueAccuracy tests p-value calculation against known values
 func TestPValueAccuracy(t *testing.T) {
 	tests := []struct {

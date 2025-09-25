@@ -10,6 +10,17 @@ import (
 	"github.com/lox/pokerforbots/protocol"
 )
 
+const responseReservoirSize = 128
+
+// ResponseOutcome categorizes how an action request completed from the server's perspective.
+type ResponseOutcome int
+
+const (
+	ResponseOutcomeSuccess ResponseOutcome = iota
+	ResponseOutcomeTimeout
+	ResponseOutcomeDisconnect
+)
+
 // BotStatistics tracks statistics for a single bot
 type BotStatistics struct {
 	mu              sync.RWMutex
@@ -31,6 +42,16 @@ type BotStatistics struct {
 	bustCount       int
 	lastVPIPHand    string // Track last hand where VPIP was counted
 	lastPFRHand     string // Track last hand where PFR was counted
+
+	responseCount       int
+	responseSum         float64
+	responseSumSquares  float64
+	responseMin         float64
+	responseMax         float64
+	responseSamples     []float64
+	responseSampleIndex int
+	responseTimeouts    int
+	responseDisconnects int
 }
 
 // NewBotStatistics creates a new BotStatistics instance
@@ -38,6 +59,8 @@ func NewBotStatistics(bigBlind int) *BotStatistics {
 	return &BotStatistics{
 		bigBlind: bigBlind,
 		values:   make([]float64, 0),
+		// Initialise min so the first observation always wins the comparison.
+		responseMin: math.MaxFloat64,
 	}
 }
 
@@ -114,6 +137,42 @@ func (b *BotStatistics) RecordBust() {
 	b.bustCount++
 }
 
+// RecordResponse records latency information for an action request.
+func (b *BotStatistics) RecordResponse(duration time.Duration, outcome ResponseOutcome) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	switch outcome {
+	case ResponseOutcomeSuccess:
+		ms := float64(duration) / float64(time.Millisecond)
+		if ms < 0 {
+			ms = 0
+		}
+		b.responseCount++
+		b.responseSum += ms
+		b.responseSumSquares += ms * ms
+		if b.responseMin == math.MaxFloat64 || ms < b.responseMin {
+			b.responseMin = ms
+		}
+		if ms > b.responseMax {
+			b.responseMax = ms
+		}
+		if b.responseSamples == nil {
+			b.responseSamples = make([]float64, 0, responseReservoirSize)
+		}
+		if len(b.responseSamples) < responseReservoirSize {
+			b.responseSamples = append(b.responseSamples, ms)
+		} else {
+			b.responseSamples[b.responseSampleIndex] = ms
+			b.responseSampleIndex = (b.responseSampleIndex + 1) % responseReservoirSize
+		}
+	case ResponseOutcomeTimeout:
+		b.responseTimeouts++
+	case ResponseOutcomeDisconnect:
+		b.responseDisconnects++
+	}
+}
+
 // ToProtocolStats converts to protocol.PlayerDetailedStats
 func (b *BotStatistics) ToProtocolStats() *protocol.PlayerDetailedStats {
 	b.mu.RLock()
@@ -164,6 +223,31 @@ func (b *BotStatistics) ToProtocolStats() *protocol.PlayerDetailedStats {
 		result.ShowdownWinRate = float64(b.showdownWins) / float64(showdownsTotal) * 100
 	}
 
+	result.ResponseTimeouts = b.responseTimeouts
+	result.ResponseDisconnects = b.responseDisconnects
+	result.ResponsesTracked = b.responseCount
+
+	if b.responseCount > 0 {
+		avg := b.responseSum / float64(b.responseCount)
+		result.AvgResponseMs = avg
+		if b.responseCount > 1 {
+			variance := b.responseSumSquares/float64(b.responseCount) - (avg * avg)
+			if variance < 0 {
+				variance = 0
+			}
+			result.ResponseStdMs = math.Sqrt(variance)
+		}
+		if b.responseMax > 0 {
+			result.MaxResponseMs = b.responseMax
+		}
+		if b.responseMin != math.MaxFloat64 {
+			result.MinResponseMs = b.responseMin
+		}
+		if p95 := b.responsePercentileLocked(0.95); p95 > 0 {
+			result.P95ResponseMs = p95
+		}
+	}
+
 	return result
 }
 
@@ -203,6 +287,24 @@ func (b *BotStatistics) median() float64 {
 		return (sorted[n/2-1] + sorted[n/2]) / 2
 	}
 	return sorted[n/2]
+}
+
+// responsePercentileLocked returns the percentile of recorded response samples. Caller must hold the lock.
+func (b *BotStatistics) responsePercentileLocked(p float64) float64 {
+	if len(b.responseSamples) == 0 {
+		return 0
+	}
+	samples := make([]float64, len(b.responseSamples))
+	copy(samples, b.responseSamples)
+	sort.Float64s(samples)
+	idx := int(math.Ceil(p*float64(len(samples)))) - 1
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(samples) {
+		idx = len(samples) - 1
+	}
+	return samples[idx]
 }
 
 // variance returns the sample variance (internal, called with lock held)
@@ -590,4 +692,21 @@ func (s *StatsMonitor) resetLocked() {
 	if s.enableDetailed {
 		s.detailedStats = make(map[string]*BotStatistics)
 	}
+}
+
+// RecordResponse captures latency metrics for a bot response.
+func (s *StatsMonitor) RecordResponse(botID string, duration time.Duration, outcome ResponseOutcome) {
+	if !s.enableDetailed {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	detailed := s.detailedStats[botID]
+	if detailed == nil {
+		detailed = NewBotStatistics(s.bigBlind)
+		s.detailedStats[botID] = detailed
+	}
+	detailed.RecordResponse(duration, outcome)
 }

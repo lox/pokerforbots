@@ -121,6 +121,14 @@ func (p *BotPool) SetHandMonitor(monitor HandMonitor) {
 	}
 }
 
+// RecordActionLatency forwards latency metrics to the stats monitor when enabled.
+func (p *BotPool) RecordActionLatency(botID string, duration time.Duration, outcome ResponseOutcome) {
+	if p == nil || p.statsMonitor == nil {
+		return
+	}
+	p.statsMonitor.RecordResponse(botID, duration, outcome)
+}
+
 // GetHandMonitor returns the combined monitor (both progress and stats)
 func (p *BotPool) GetHandMonitor() HandMonitor {
 	monitors := []HandMonitor{}

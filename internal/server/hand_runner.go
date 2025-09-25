@@ -47,6 +47,7 @@ type HandRunner struct {
 	botTimeouts       []bool              // Track which bots timed out
 	botInvalidActions []int               // Count invalid actions per bot
 	botDisconnects    []bool              // Track bots that disconnected mid-hand
+	actionStartTimes  []time.Time         // Track when the latest action request was sent per seat
 }
 
 // ActionEnvelope wraps an action with the sender's bot ID for verification
@@ -88,15 +89,16 @@ func NewHandRunnerWithConfig(logger zerolog.Logger, bots []*Bot, handID string, 
 	}
 
 	return &HandRunner{
-		bots:          bots,
-		handID:        handID,
-		button:        button,
-		actions:       make(chan BotAction, 1),
-		botActionChan: actionChan,
-		lastStreet:    game.Preflop,
-		logger:        logger.With().Str("component", "hand_runner").Str("hand_id", handID).Logger(),
-		rng:           rng,
-		config:        config,
+		bots:             bots,
+		handID:           handID,
+		button:           button,
+		actions:          make(chan BotAction, 1),
+		botActionChan:    actionChan,
+		lastStreet:       game.Preflop,
+		logger:           logger.With().Str("component", "hand_runner").Str("hand_id", handID).Logger(),
+		rng:              rng,
+		config:           config,
+		actionStartTimes: make([]time.Time, len(bots)),
 	}
 }
 
@@ -114,6 +116,21 @@ func (hr *HandRunner) SetPool(pool *BotPool) {
 		hr.botTimeouts = make([]bool, len(hr.bots))
 		hr.botInvalidActions = make([]int, len(hr.bots))
 		hr.botDisconnects = make([]bool, len(hr.bots))
+	}
+}
+
+func (hr *HandRunner) recordResponseLatency(botIndex int, outcome ResponseOutcome) {
+	if botIndex < 0 || botIndex >= len(hr.actionStartTimes) {
+		return
+	}
+	start := hr.actionStartTimes[botIndex]
+	hr.actionStartTimes[botIndex] = time.Time{}
+	if start.IsZero() {
+		return
+	}
+	duration := time.Since(start)
+	if hr.pool != nil {
+		hr.pool.RecordActionLatency(hr.bots[botIndex].ID, duration, outcome)
 	}
 }
 
@@ -360,7 +377,14 @@ func (hr *HandRunner) sendActionRequest(bot *Bot, seat int, validActions []game.
 		TimeRemaining: int(hr.config.Timeout.Milliseconds()),
 	}
 
-	return bot.SendMessage(msg)
+	hr.actionStartTimes[seat] = time.Now()
+
+	if err := bot.SendMessage(msg); err != nil {
+		hr.actionStartTimes[seat] = time.Time{}
+		return err
+	}
+
+	return nil
 }
 
 // waitForAction waits for a bot to send an action or times out
@@ -378,12 +402,15 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 	select {
 	case action := <-hr.actions:
 		if action.botIndex == botIndex {
+			hr.recordResponseLatency(botIndex, ResponseOutcomeSuccess)
 			return hr.convertAction(action.action)
 		}
 		// Wrong bot sent action, auto-fold
+		hr.recordResponseLatency(botIndex, ResponseOutcomeSuccess)
 		return game.Fold, 0
 
 	case <-hr.bots[botIndex].Done():
+		hr.recordResponseLatency(botIndex, ResponseOutcomeDisconnect)
 		hr.logger.Warn().Str("bot_id", hr.bots[botIndex].ID).Msg("Bot disconnected during action window")
 		if hr.botDisconnects != nil && botIndex < len(hr.botDisconnects) {
 			hr.botDisconnects[botIndex] = true
@@ -392,6 +419,7 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 
 	case <-timer.C:
 		// Timeout - auto fold
+		hr.recordResponseLatency(botIndex, ResponseOutcomeTimeout)
 		hr.logger.Warn().Str("bot_id", hr.bots[botIndex].ID).Msg("Bot timed out")
 		if hr.pool != nil {
 			hr.pool.IncrementTimeoutCounter()
