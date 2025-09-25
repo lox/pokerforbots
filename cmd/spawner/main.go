@@ -24,14 +24,15 @@ import (
 
 var cli struct {
 	// Server configuration
-	Addr       string `kong:"default='localhost:0',help='Server address, defaults to random port on localhost'"`
-	SmallBlind int    `kong:"default='5',help='Small blind'"`
-	BigBlind   int    `kong:"default='10',help='Big blind'"`
-	StartChips int    `kong:"default='1000',help='Starting chip stack'"`
-	TimeoutMs  int    `kong:"default='100',help='Bot decision timeout in milliseconds'"`
-	MinPlayers int    `kong:"default='0',help='Minimum players to start a hand (0 = auto, matches bot count)'"`
-	MaxPlayers int    `kong:"default='9',help='Maximum players at a table'"`
-	Seed       int64  `kong:"help='Seed for deterministic testing (0 for random)'"`
+	Addr            string `kong:"default='localhost:0',help='Server address, defaults to random port on localhost'"`
+	SmallBlind      int    `kong:"default='5',help='Small blind'"`
+	BigBlind        int    `kong:"default='10',help='Big blind'"`
+	StartChips      int    `kong:"default='1000',help='Starting chip stack'"`
+	TimeoutMs       int    `kong:"default='100',help='Bot decision timeout in milliseconds'"`
+	MinPlayers      int    `kong:"default='0',help='Minimum players to start a hand (0 = auto, matches bot count)'"`
+	MaxPlayers      int    `kong:"default='9',help='Maximum players at a table'"`
+	Seed            int64  `kong:"help='Seed for deterministic testing (0 for random)'"`
+	LatencyTracking bool   `kong:"help='Collect per-action latency metrics (adds overhead)'"`
 
 	// Bot specification
 	Spec   string   `kong:"default='calling-station:6',help='Bot specification (e.g. calling-station:2,random:1,aggressive:3)'"`
@@ -134,16 +135,17 @@ func main() {
 	}
 
 	serverCfg := server.Config{
-		SmallBlind:    cli.SmallBlind,
-		BigBlind:      cli.BigBlind,
-		StartChips:    cli.StartChips,
-		Timeout:       time.Duration(cli.TimeoutMs) * time.Millisecond,
-		MinPlayers:    cli.MinPlayers,
-		MaxPlayers:    cli.MaxPlayers,
-		Seed:          seed,
-		HandLimit:     uint64(cli.HandLimit),
-		EnableStats:   cli.WriteStats != "" || cli.PrintStats,
-		MaxStatsHands: 10000,
+		SmallBlind:            cli.SmallBlind,
+		BigBlind:              cli.BigBlind,
+		StartChips:            cli.StartChips,
+		Timeout:               time.Duration(cli.TimeoutMs) * time.Millisecond,
+		MinPlayers:            cli.MinPlayers,
+		MaxPlayers:            cli.MaxPlayers,
+		Seed:                  seed,
+		HandLimit:             uint64(cli.HandLimit),
+		EnableStats:           cli.WriteStats != "" || cli.PrintStats,
+		MaxStatsHands:         10000,
+		EnableLatencyTracking: cli.LatencyTracking,
 	}
 
 	// Start embedded server

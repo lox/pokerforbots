@@ -48,6 +48,7 @@ type HandRunner struct {
 	botInvalidActions []int               // Count invalid actions per bot
 	botDisconnects    []bool              // Track bots that disconnected mid-hand
 	actionStartTimes  []time.Time         // Track when the latest action request was sent per seat
+	latencyEnabled    bool
 }
 
 // ActionEnvelope wraps an action with the sender's bot ID for verification
@@ -88,23 +89,38 @@ func NewHandRunnerWithConfig(logger zerolog.Logger, bots []*Bot, handID string, 
 		bot.SetActionChannel(actionChan)
 	}
 
-	return &HandRunner{
-		bots:             bots,
-		handID:           handID,
-		button:           button,
-		actions:          make(chan BotAction, 1),
-		botActionChan:    actionChan,
-		lastStreet:       game.Preflop,
-		logger:           logger.With().Str("component", "hand_runner").Str("hand_id", handID).Logger(),
-		rng:              rng,
-		config:           config,
-		actionStartTimes: make([]time.Time, len(bots)),
+	hr := &HandRunner{
+		bots:           bots,
+		handID:         handID,
+		button:         button,
+		actions:        make(chan BotAction, 1),
+		botActionChan:  actionChan,
+		lastStreet:     game.Preflop,
+		logger:         logger.With().Str("component", "hand_runner").Str("hand_id", handID).Logger(),
+		rng:            rng,
+		config:         config,
+		latencyEnabled: config.EnableLatencyTracking,
 	}
+	if hr.latencyEnabled {
+		hr.actionStartTimes = make([]time.Time, len(bots))
+	}
+	return hr
 }
 
 // SetPool sets the pool reference for metrics tracking
 func (hr *HandRunner) SetPool(pool *BotPool) {
 	hr.pool = pool
+	if pool != nil {
+		hr.latencyEnabled = pool.config.EnableLatencyTracking
+	} else {
+		hr.latencyEnabled = false
+	}
+	if !hr.latencyEnabled {
+		hr.actionStartTimes = nil
+	}
+	if hr.latencyEnabled && hr.actionStartTimes == nil {
+		hr.actionStartTimes = make([]time.Time, len(hr.bots))
+	}
 
 	// Check if we should track actions for statistics
 	if pool != nil && pool.NeedsDetailedData() {
@@ -120,6 +136,9 @@ func (hr *HandRunner) SetPool(pool *BotPool) {
 }
 
 func (hr *HandRunner) recordResponseLatency(botIndex int, outcome ResponseOutcome) {
+	if !hr.latencyEnabled {
+		return
+	}
 	if botIndex < 0 || botIndex >= len(hr.actionStartTimes) {
 		return
 	}
@@ -377,10 +396,14 @@ func (hr *HandRunner) sendActionRequest(bot *Bot, seat int, validActions []game.
 		TimeRemaining: int(hr.config.Timeout.Milliseconds()),
 	}
 
-	hr.actionStartTimes[seat] = time.Now()
+	if hr.latencyEnabled && seat < len(hr.actionStartTimes) {
+		hr.actionStartTimes[seat] = time.Now()
+	}
 
 	if err := bot.SendMessage(msg); err != nil {
-		hr.actionStartTimes[seat] = time.Time{}
+		if hr.latencyEnabled && seat < len(hr.actionStartTimes) {
+			hr.actionStartTimes[seat] = time.Time{}
+		}
 		return err
 	}
 

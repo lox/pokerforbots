@@ -132,7 +132,7 @@ func (p *BotPool) ensureMatchLoop() {
 
 // RecordActionLatency forwards latency metrics to the stats monitor when enabled.
 func (p *BotPool) RecordActionLatency(botID string, duration time.Duration, outcome ResponseOutcome) {
-	if p == nil || p.statsMonitor == nil {
+	if p == nil || !p.config.EnableLatencyTracking || p.statsMonitor == nil {
 		return
 	}
 	p.statsMonitor.RecordResponse(botID, duration, outcome)

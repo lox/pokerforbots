@@ -50,6 +50,7 @@ type Config struct {
 	StdDevClampFallback       float64
 	WarnOnStdDevClamp         bool
 	LatencyWarningThresholdMs float64
+	EnableLatencyTracking     bool
 
 	// Performance
 	TimeoutMs           int

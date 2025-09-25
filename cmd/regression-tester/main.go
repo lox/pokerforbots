@@ -46,6 +46,7 @@ type CLI struct {
 	StdDevClampMin         float64 `kong:"default='5',help='Minimum per-batch standard deviation (BB/100) before clamping'"`
 	StdDevClampFallback    float64 `kong:"default='50',help='Fallback standard deviation (BB/100) applied after clamping'"`
 	WarnStdDevClamp        bool    `kong:"help='Emit warnings when standard deviation clamping occurs'"`
+	LatencyTracking        bool    `kong:"default='true',help='Collect per-action latency metrics'"`
 	LatencyWarnMs          float64 `kong:"default='100',help='Warn when p95 response time exceeds this many milliseconds'"`
 
 	// Server configuration
@@ -172,6 +173,7 @@ func main() {
 		StdDevClampMin:            cli.StdDevClampMin,
 		StdDevClampFallback:       cli.StdDevClampFallback,
 		WarnOnStdDevClamp:         cli.WarnStdDevClamp,
+		EnableLatencyTracking:     cli.LatencyTracking,
 		LatencyWarningThresholdMs: cli.LatencyWarnMs,
 
 		// Server

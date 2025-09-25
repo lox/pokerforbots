@@ -17,17 +17,18 @@ import (
 
 // SimpleCLI contains only core server configuration
 type CLI struct {
-	Addr          string `kong:"default=':8080',help='Server address'"`
-	Debug         bool   `kong:"help='Enable debug logging'"`
-	SmallBlind    int    `kong:"default='5',help='Small blind amount'"`
-	BigBlind      int    `kong:"default='10',help='Big blind amount'"`
-	StartChips    int    `kong:"default='1000',help='Starting chip count'"`
-	TimeoutMs     int    `kong:"default='100',help='Decision timeout in milliseconds'"`
-	MinPlayers    int    `kong:"default='2',help='Minimum players per hand'"`
-	MaxPlayers    int    `kong:"default='9',help='Maximum players per hand'"`
-	Seed          *int64 `kong:"help='Deterministic RNG seed for the server (optional)'"`
-	EnableStats   bool   `kong:"help='Enable statistics collection'"`
-	MaxStatsHands int    `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
+	Addr            string `kong:"default=':8080',help='Server address'"`
+	Debug           bool   `kong:"help='Enable debug logging'"`
+	SmallBlind      int    `kong:"default='5',help='Small blind amount'"`
+	BigBlind        int    `kong:"default='10',help='Big blind amount'"`
+	StartChips      int    `kong:"default='1000',help='Starting chip count'"`
+	TimeoutMs       int    `kong:"default='100',help='Decision timeout in milliseconds'"`
+	MinPlayers      int    `kong:"default='2',help='Minimum players per hand'"`
+	MaxPlayers      int    `kong:"default='9',help='Maximum players per hand'"`
+	Seed            *int64 `kong:"help='Deterministic RNG seed for the server (optional)'"`
+	EnableStats     bool   `kong:"help='Enable statistics collection'"`
+	MaxStatsHands   int    `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
+	LatencyTracking bool   `kong:"help='Collect per-action latency metrics'"`
 }
 
 func main() {
@@ -58,14 +59,15 @@ func main() {
 
 	// Create server configuration
 	config := server.Config{
-		SmallBlind:    cli.SmallBlind,
-		BigBlind:      cli.BigBlind,
-		StartChips:    cli.StartChips,
-		Timeout:       time.Duration(cli.TimeoutMs) * time.Millisecond,
-		MinPlayers:    cli.MinPlayers,
-		MaxPlayers:    cli.MaxPlayers,
-		EnableStats:   cli.EnableStats,
-		MaxStatsHands: cli.MaxStatsHands,
+		SmallBlind:            cli.SmallBlind,
+		BigBlind:              cli.BigBlind,
+		StartChips:            cli.StartChips,
+		Timeout:               time.Duration(cli.TimeoutMs) * time.Millisecond,
+		MinPlayers:            cli.MinPlayers,
+		MaxPlayers:            cli.MaxPlayers,
+		EnableStats:           cli.EnableStats,
+		MaxStatsHands:         cli.MaxStatsHands,
+		EnableLatencyTracking: cli.LatencyTracking,
 	}
 
 	// Create RNG instance for server
@@ -91,6 +93,7 @@ func main() {
 			Int("max_players", cli.MaxPlayers).
 			Int64("seed", seed).
 			Bool("enable_stats", cli.EnableStats).
+			Bool("enable_latency_tracking", cli.LatencyTracking).
 			Msg("Server starting")
 		serverErr <- srv.Start(cli.Addr)
 	}()

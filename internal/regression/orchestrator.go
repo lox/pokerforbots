@@ -310,14 +310,15 @@ func (o *Orchestrator) startEmbeddedServer(ctx context.Context, serverConfig *Se
 
 	// Create server configuration
 	srvConfig := server.Config{
-		SmallBlind:  5,
-		BigBlind:    10,
-		StartChips:  o.config.StartingChips,
-		Timeout:     time.Duration(o.config.TimeoutMs) * time.Millisecond,
-		MinPlayers:  2,
-		MaxPlayers:  9,
-		HandLimit:   uint64(serverConfig.Hands),
-		EnableStats: true,
+		SmallBlind:            5,
+		BigBlind:              10,
+		StartChips:            o.config.StartingChips,
+		Timeout:               time.Duration(o.config.TimeoutMs) * time.Millisecond,
+		MinPlayers:            2,
+		MaxPlayers:            9,
+		HandLimit:             uint64(serverConfig.Hands),
+		EnableStats:           true,
+		EnableLatencyTracking: o.config.EnableLatencyTracking,
 	}
 
 	// Create embedded server

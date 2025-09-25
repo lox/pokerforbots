@@ -38,15 +38,16 @@ var (
 
 // Config holds server configuration
 type Config struct {
-	SmallBlind    int
-	BigBlind      int
-	StartChips    int
-	Timeout       time.Duration
-	MinPlayers    int
-	MaxPlayers    int
-	Seed          int64
-	EnableStats   bool // Collect detailed statistics
-	MaxStatsHands int  // Maximum hands to track for stats (default 10000)
+	SmallBlind            int
+	BigBlind              int
+	StartChips            int
+	Timeout               time.Duration
+	MinPlayers            int
+	MaxPlayers            int
+	Seed                  int64
+	EnableStats           bool // Collect detailed statistics
+	MaxStatsHands         int  // Maximum hands to track for stats (default 10000)
+	EnableLatencyTracking bool // Collect per-action response latency
 
 	// Legacy fields (deprecated - will be removed)
 	HandLimit              uint64 // Deprecated: Use spawner for hand limits
