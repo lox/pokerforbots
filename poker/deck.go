@@ -1,7 +1,7 @@
 package poker
 
 import (
-	"math/rand"
+	rand "math/rand/v2"
 )
 
 // Deck represents a standard 52-card deck
@@ -38,9 +38,9 @@ func (d *Deck) Shuffle() {
 	for i := len(d.cards) - 1; i > 0; i-- {
 		var j int
 		if d.rng != nil {
-			j = d.rng.Intn(i + 1)
+			j = d.rng.IntN(i + 1)
 		} else {
-			j = rand.Intn(i + 1)
+			j = rand.IntN(i + 1)
 		}
 		d.cards[i], d.cards[j] = d.cards[j], d.cards[i]
 	}

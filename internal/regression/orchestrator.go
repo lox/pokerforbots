@@ -1,11 +1,12 @@
 package regression
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -306,7 +307,7 @@ func (o *Orchestrator) startEmbeddedServer(ctx context.Context, serverConfig *Se
 	o.logger.Info().Msg("Starting embedded server with spawner library")
 
 	// Create RNG with seed
-	rng := rand.New(rand.NewSource(serverConfig.Seed))
+	rng := randutil.New(serverConfig.Seed)
 
 	// Create server configuration
 	srvConfig := server.Config{

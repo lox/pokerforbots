@@ -1,9 +1,11 @@
 package solver
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"context"
 	"fmt"
-	"math/rand"
+	rand "math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,8 +38,8 @@ type Trainer struct {
 	statsMu         sync.Mutex
 	stats           TraversalStats
 	rngSeed         int64
-	rngInt63        int64
-	rngIntn         int64
+	rngInt64        int64
+	rngIntN         int64
 	checkpointPath  string
 	checkpointEvery int
 	adaptiveMu      sync.Mutex
@@ -78,7 +80,7 @@ func NewTrainer(absCfg AbstractionConfig, trainCfg TrainingConfig) (*Trainer, er
 		trainCfg:    trainCfg,
 		bucket:      mapper,
 		regrets:     NewRegretTable(),
-		rng:         rand.New(rand.NewSource(seed)),
+		rng:         randutil.New(seed),
 		playerNames: names,
 		rngSeed:     seed,
 	}
@@ -176,12 +178,12 @@ func (t *Trainer) singleIteration() (TraversalStats, error) {
 
 	seeds := make([]tableSeeds, parallel)
 	for i := 0; i < parallel; i++ {
-		seeds[i].deck = t.rng.Int63()
-		t.rngInt63++
-		seeds[i].sample = t.rng.Int63()
-		t.rngInt63++
-		seeds[i].button = t.rng.Intn(t.trainCfg.Players)
-		t.rngIntn++
+		seeds[i].deck = t.rng.Int64()
+		t.rngInt64++
+		seeds[i].sample = t.rng.Int64()
+		t.rngInt64++
+		seeds[i].button = t.rng.IntN(t.trainCfg.Players)
+		t.rngIntN++
 	}
 
 	var wg sync.WaitGroup
@@ -199,7 +201,7 @@ func (t *Trainer) singleIteration() (TraversalStats, error) {
 				button:      seeds[idx].button,
 				playerNames: t.playerNames,
 				stats:       &statsSlice[idx],
-				sampler:     rand.New(rand.NewSource(seeds[idx].sample)),
+				sampler:     randutil.New(seeds[idx].sample),
 				fastRNG:     PCG32{state: uint64(seeds[idx].deck)*2 + 1}, // Initialize embedded RNG
 			}
 

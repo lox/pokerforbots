@@ -1,9 +1,10 @@
 package main
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"context"
 	"errors"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -76,7 +77,7 @@ func main() {
 		seed = *cli.Seed
 	}
 
-	rng := rand.New(rand.NewSource(seed))
+	rng := randutil.New(seed)
 	config.Seed = seed
 	srv := server.NewServer(logger, rng, server.WithConfig(config))
 

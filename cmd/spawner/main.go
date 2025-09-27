@@ -1,11 +1,12 @@
 package main
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -149,7 +150,7 @@ func main() {
 	}
 
 	// Start embedded server
-	srv := server.NewServer(logger, rand.New(rand.NewSource(seed)), server.WithConfig(serverCfg))
+	srv := server.NewServer(logger, randutil.New(seed), server.WithConfig(serverCfg))
 	listener, err := net.Listen("tcp", cli.Addr)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("Failed to listen")

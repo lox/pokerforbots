@@ -1,12 +1,14 @@
 package main
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"context"
 	"flag"
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
+	rand "math/rand/v2"
 	"os"
 	"os/signal"
 	"slices"
@@ -371,7 +373,7 @@ func newComplexBot(logger zerolog.Logger) *complexBot {
 	}
 
 	// Create deterministic RNG for decision-making using the provided seed
-	rng := rand.New(rand.NewSource(seed))
+	rng := randutil.New(seed)
 
 	// Check if bot ID is provided by server, otherwise generate one
 	var id string
@@ -380,7 +382,7 @@ func newComplexBot(logger zerolog.Logger) *complexBot {
 		id = fmt.Sprintf("complex-%s", cfg.BotID)
 	} else {
 		// Generate our own ID if not provided (e.g., when run standalone)
-		id = fmt.Sprintf("complex-improved-%04d", rng.Intn(10000))
+		id = fmt.Sprintf("complex-improved-%04d", rng.IntN(10000))
 	}
 
 	logger.Debug().Int64("seed", seed).Str("bot_id", id).Msg("Bot initialized with seed")
@@ -603,7 +605,7 @@ func sampleWeightedIndex(weights []float64, rng *rand.Rand) int {
 		}
 	}
 	if total <= 0 {
-		return rng.Intn(len(weights))
+		return rng.IntN(len(weights))
 	}
 	r := rng.Float64() * total
 	acc := 0.0

@@ -1,7 +1,8 @@
 package solver
 
 import (
-	"math/rand"
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"testing"
 
 	"github.com/lox/pokerforbots/internal/game"
@@ -17,7 +18,7 @@ func mustParseHand(t *testing.T, cards ...string) poker.Hand {
 }
 
 func TestUtilityForPlayerSidePot(t *testing.T) {
-	rng := rand.New(rand.NewSource(7))
+	rng := randutil.New(7)
 	hand := game.NewHandState(rng, []string{"Alice", "Bob", "Cara"}, 0, 5, 10, game.WithChips(1000))
 
 	hand.Board = mustParseHand(t, "2h", "7d", "9c", "Jd", "Qs")
@@ -81,7 +82,7 @@ func TestRaiseAmountsRespectsConstraints(t *testing.T) {
 		t.Fatalf("new trainer: %v", err)
 	}
 
-	hand := game.NewHandState(rand.New(rand.NewSource(3)), []string{"A", "B"}, 0, cfg.SmallBlind, cfg.BigBlind, game.WithChips(cfg.StartingStack))
+	hand := game.NewHandState(randutil.New(3), []string{"A", "B"}, 0, cfg.SmallBlind, cfg.BigBlind, game.WithChips(cfg.StartingStack))
 
 	hand.Betting.CurrentBet = cfg.BigBlind
 	hand.Betting.MinRaise = cfg.BigBlind
@@ -129,7 +130,7 @@ func TestFilterRaisesPrunesToLimit(t *testing.T) {
 		t.Fatalf("new trainer: %v", err)
 	}
 
-	hand := game.NewHandState(rand.New(rand.NewSource(17)), []string{"A", "B"}, 0, cfg.SmallBlind, cfg.BigBlind, game.WithChips(cfg.StartingStack))
+	hand := game.NewHandState(randutil.New(17), []string{"A", "B"}, 0, cfg.SmallBlind, cfg.BigBlind, game.WithChips(cfg.StartingStack))
 	hand.ActivePlayer = 0
 	hand.Betting.CurrentBet = cfg.BigBlind * 2
 	hand.Betting.MinRaise = cfg.BigBlind

@@ -7,7 +7,7 @@ package analysis
 
 import (
 	"math"
-	"math/rand"
+	rand "math/rand/v2"
 
 	"github.com/lox/pokerforbots/poker"
 )

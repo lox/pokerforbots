@@ -108,7 +108,7 @@ WithoutDealing() HandOption
 h := NewHandState(players, 0, 5, 10, 1000)
 
 // With RNG
-rng := rand.New(rand.NewSource(42))
+rng := randutil.New(42)
 h := NewHandStateWithRNG(players, 0, 5, 10, 1000, rng)
 
 // With individual chips

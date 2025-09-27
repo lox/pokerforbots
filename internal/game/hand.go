@@ -2,7 +2,7 @@ package game
 
 import (
 	"fmt"
-	"math/rand"
+	rand "math/rand/v2"
 
 	"github.com/lox/pokerforbots/poker"
 )
@@ -35,11 +35,11 @@ type handConfig struct {
 // Example usage:
 //
 //	// Production - time-seeded RNG
-//	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+//	rng := randutil.New(time.Now().UnixNano())
 //	h := NewHandState(rng, []string{"Alice", "Bob"}, 0, 5, 10)
 //
 //	// Testing - deterministic RNG
-//	rng := rand.New(rand.NewSource(42))
+//	rng := randutil.New(42)
 //	h := NewHandState(rng, []string{"Alice", "Bob"}, 0, 5, 10)
 //
 //	// With options

@@ -1,9 +1,10 @@
 package server
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,7 +19,7 @@ import (
 
 func TestServerHealth(t *testing.T) {
 	t.Parallel()
-	rng := rand.New(rand.NewSource(42))
+	rng := randutil.New(42)
 	srv := NewServer(testLogger(), rng)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -36,7 +37,7 @@ func TestServerHealth(t *testing.T) {
 func TestStatsEndpoint(t *testing.T) {
 	t.Parallel()
 	logger := testLogger()
-	rng := rand.New(rand.NewSource(12345))
+	rng := randutil.New(12345)
 
 	t.Run("stats with no hand limit", func(t *testing.T) {
 		// Create server with unlimited hands
@@ -134,7 +135,7 @@ func TestStatsEndpoint(t *testing.T) {
 
 func TestWebSocketConnection(t *testing.T) {
 	t.Parallel()
-	rng := rand.New(rand.NewSource(42))
+	rng := randutil.New(42)
 	srv := NewServer(testLogger(), rng)
 	srv.pool.minPlayers = 10
 	var poolWg sync.WaitGroup
@@ -182,7 +183,7 @@ func TestWebSocketConnection(t *testing.T) {
 
 func TestMultipleBotConnections(t *testing.T) {
 	t.Parallel()
-	rng := rand.New(rand.NewSource(42))
+	rng := randutil.New(42)
 	srv := NewServer(testLogger(), rng)
 	srv.pool.minPlayers = 10
 	var poolWg sync.WaitGroup
@@ -234,7 +235,7 @@ func TestMultipleBotConnections(t *testing.T) {
 
 func TestGamesEndpoint(t *testing.T) {
 	t.Parallel()
-	rng := rand.New(rand.NewSource(77))
+	rng := randutil.New(77)
 	srv := NewServer(testLogger(), rng)
 	req := httptest.NewRequest(http.MethodGet, "/games", nil)
 	rec := httptest.NewRecorder()
@@ -261,7 +262,7 @@ func TestGamesEndpoint(t *testing.T) {
 
 func TestAdminCreateAndDeleteGame(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testLogger(), rand.New(rand.NewSource(99)))
+	srv := NewServer(testLogger(), randutil.New(99))
 
 	createPayload := `{
 		"id": "test",
@@ -306,7 +307,7 @@ func TestAdminCreateAndDeleteGame(t *testing.T) {
 
 func TestAdminGameStatsEndpoint(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testLogger(), rand.New(rand.NewSource(7)))
+	srv := NewServer(testLogger(), randutil.New(7))
 
 	game, ok := srv.manager.GetGame("default")
 	if !ok {
@@ -388,7 +389,7 @@ func TestAdminGameStatsEndpoint(t *testing.T) {
 func TestHandLimitLogic(t *testing.T) {
 	t.Parallel()
 	logger := testLogger()
-	rng := rand.New(rand.NewSource(42))
+	rng := randutil.New(42)
 	handLimit := uint64(2) // Allow exactly 2 hands
 
 	// Create pool with hand limit
@@ -499,7 +500,7 @@ func TestHandLimitLogic(t *testing.T) {
 func TestUnlimitedHandsWithZeroLimit(t *testing.T) {
 	t.Parallel()
 	logger := testLogger()
-	rng := rand.New(rand.NewSource(456))
+	rng := randutil.New(456)
 
 	// Create pool with no hand limit (0 = unlimited)
 	config := DefaultConfig(2, 4)

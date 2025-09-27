@@ -1,7 +1,8 @@
 package game
 
 import (
-	"math/rand"
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"slices"
 	"testing"
 
@@ -20,7 +21,7 @@ func parseCards(strs ...string) poker.Hand {
 func TestHandStateCreation(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(1000))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(1000))
 
 	if len(h.Players) != 3 {
 		t.Errorf("Expected 3 players, got %d", len(h.Players))
@@ -58,7 +59,7 @@ func TestHandStateCreation(t *testing.T) {
 func TestGetValidActions(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(1000))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(1000))
 
 	// First player to act (Alice, UTG)
 	actions := h.GetValidActions()
@@ -81,7 +82,7 @@ func TestGetValidActions(t *testing.T) {
 func TestProcessAction(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(1000))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(1000))
 
 	// Initial state: Bob posted SB (5), Charlie posted BB (10)
 	// Alice is first to act (UTG)
@@ -143,7 +144,7 @@ func TestProcessAction(t *testing.T) {
 func TestSidePots(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(100))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(100))
 
 	// After blinds:
 	// Alice: 100 chips
@@ -201,7 +202,7 @@ func TestSidePots(t *testing.T) {
 func TestHandCompletion(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(1000))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(1000))
 
 	// Alice folds
 	err := h.ProcessAction(Fold, 0)
@@ -224,7 +225,7 @@ func TestHandCompletion(t *testing.T) {
 func TestGetWinners(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(1000))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(1000))
 
 	// Give specific cards for testing
 	h.Players[0].HoleCards = parseCards("As", "Ah") // Alice has pocket aces
@@ -254,7 +255,7 @@ func TestGetWinners(t *testing.T) {
 func TestAllInWithSidePots(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie", "Dave"}
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(1000))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(1000))
 
 	// Set specific stacks
 	h.Players[0].Chips = 100
@@ -304,7 +305,7 @@ func TestAllInWithSidePots(t *testing.T) {
 func TestMinimumRaiseValidation(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(1000))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(1000))
 
 	// Alice raises to 30 (raise of 20 over BB)
 	err := h.ProcessAction(Raise, 30)
@@ -329,7 +330,7 @@ func TestMinimumRaiseValidation(t *testing.T) {
 func TestAllPlayersFoldExceptOne(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(1000))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(1000))
 
 	// Alice folds
 	if err := h.ProcessAction(Fold, 0); err != nil {
@@ -356,7 +357,7 @@ func TestAllPlayersFoldExceptOne(t *testing.T) {
 func TestSplitPot(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob"}
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(1000))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(1000))
 
 	// Give both players same hand (pocket aces)
 	h.Players[0].HoleCards = parseCards("As", "Ah")
@@ -376,7 +377,7 @@ func TestSplitPot(t *testing.T) {
 func TestHeadsUpBlinds(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob"}
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(1000))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(1000))
 
 	// In heads-up with button=0:
 	// Alice (button) should post SB
@@ -436,7 +437,7 @@ func TestShortStackCantCoverBlinds(t *testing.T) {
 	players := []string{"Alice", "Bob", "Charlie"}
 
 	// Create hand state
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(100))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(100))
 
 	// Manually set a player to have less than blind
 	h.Players[1].Chips = 3
@@ -481,7 +482,7 @@ func TestAceLowStraight(t *testing.T) {
 func TestComplexSidePots(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie", "Dave"}
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(1000))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(1000))
 
 	// Set different chip stacks
 	h.Players[0].Chips = 50  // Alice: 50
@@ -537,7 +538,7 @@ func TestSidePotWithFoldedPlayerRegression(t *testing.T) {
 	playerNames := []string{"Alice", "Bob", "Charlie"}
 	chipCounts := []int{100, 30, 100} // Bob is short-stacked
 
-	h := NewHandState(rand.New(rand.NewSource(42)), playerNames, 0, 5, 10, WithChipsByPlayer(chipCounts))
+	h := NewHandState(randutil.New(42), playerNames, 0, 5, 10, WithChipsByPlayer(chipCounts))
 
 	// Manually set up a situation where everyone has contributed
 	// This simulates a preflop where everyone called 30
@@ -582,7 +583,7 @@ func TestPostAllInBetsToCorrectPot(t *testing.T) {
 	playerNames := []string{"Alice", "Bob", "Charlie"}
 	chipCounts := []int{100, 30, 100} // Bob is short-stacked
 
-	h := NewHandState(rand.New(rand.NewSource(42)), playerNames, 0, 5, 10, WithChipsByPlayer(chipCounts))
+	h := NewHandState(randutil.New(42), playerNames, 0, 5, 10, WithChipsByPlayer(chipCounts))
 
 	// Set up initial state: everyone has bet 30, Bob is all-in
 	h.Players[0].Chips = 70
@@ -647,7 +648,7 @@ func TestPostAllInBetsToCorrectPot(t *testing.T) {
 func TestReraiseLimits(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}
-	h := NewHandState(rand.New(rand.NewSource(42)), players, 0, 5, 10, WithChips(1000))
+	h := NewHandState(randutil.New(42), players, 0, 5, 10, WithChips(1000))
 
 	// Track number of raises
 	raiseCount := 0
@@ -704,7 +705,7 @@ func TestNewHandStateOptions(t *testing.T) {
 	t.Parallel()
 
 	t.Run("basic construction", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 		h := NewHandState(rng, []string{"Alice", "Bob", "Charlie"}, 0, 5, 10)
 
 		if len(h.Players) != 3 {
@@ -746,7 +747,7 @@ func TestNewHandStateOptions(t *testing.T) {
 				t.Error("Expected panic for < 2 players")
 			}
 		}()
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 		NewHandState(rng, []string{"Alice"}, 0, 5, 10)
 	})
 
@@ -756,7 +757,7 @@ func TestNewHandStateOptions(t *testing.T) {
 				t.Error("Expected panic for invalid button")
 			}
 		}()
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 		NewHandState(rng, []string{"Alice", "Bob"}, 5, 5, 10) // button out of range
 	})
 }
@@ -765,7 +766,7 @@ func TestHandOptions(t *testing.T) {
 	t.Parallel()
 
 	t.Run("WithChips", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 		h := NewHandState(rng, []string{"Alice", "Bob", "Charlie"}, 0, 5, 10, WithChips(500))
 
 		// Check chips after blinds
@@ -781,7 +782,7 @@ func TestHandOptions(t *testing.T) {
 	})
 
 	t.Run("WithChipsByPlayer individual counts", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 		chips := []int{1000, 800, 1200}
 		h := NewHandState(rng, []string{"Alice", "Bob", "Charlie"}, 0, 5, 10, WithChipsByPlayer(chips))
 
@@ -802,14 +803,14 @@ func TestHandOptions(t *testing.T) {
 				t.Error("Expected panic for mismatched chip counts")
 			}
 		}()
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 		chips := []int{1000, 800} // Only 2, but 3 players
 		NewHandState(rng, []string{"Alice", "Bob", "Charlie"}, 0, 5, 10, WithChipsByPlayer(chips))
 	})
 
 	t.Run("WithDeck uses provided deck", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
-		deck := poker.NewDeck(rand.New(rand.NewSource(99))) // Different seed
+		rng := randutil.New(42)
+		deck := poker.NewDeck(randutil.New(99)) // Different seed
 		h := NewHandState(rng, []string{"Alice", "Bob"}, 0, 5, 10, WithDeck(deck))
 
 		if h.Deck != deck {
@@ -818,8 +819,8 @@ func TestHandOptions(t *testing.T) {
 	})
 
 	t.Run("multiple options compose", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
-		deck := poker.NewDeck(rand.New(rand.NewSource(99)))
+		rng := randutil.New(42)
+		deck := poker.NewDeck(randutil.New(99))
 		chips := []int{500, 600}
 
 		h := NewHandState(rng, []string{"Alice", "Bob"}, 0, 5, 10,
@@ -838,7 +839,7 @@ func TestHandOptions(t *testing.T) {
 	})
 
 	t.Run("WithChips overrides WithChips", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 		chips := []int{500, 600, 700}
 
 		h := NewHandState(rng, []string{"Alice", "Bob", "Charlie"}, 0, 5, 10,
@@ -865,10 +866,10 @@ func TestNewHandStateDeterministic(t *testing.T) {
 	seed := int64(12345)
 	players := []string{"Alice", "Bob", "Charlie"}
 
-	rng1 := rand.New(rand.NewSource(seed))
+	rng1 := randutil.New(seed)
 	h1 := NewHandState(rng1, players, 0, 5, 10)
 
-	rng2 := rand.New(rand.NewSource(seed))
+	rng2 := randutil.New(seed)
 	h2 := NewHandState(rng2, players, 0, 5, 10)
 
 	// Check that hole cards are the same
