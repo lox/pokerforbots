@@ -21,6 +21,9 @@ const (
 
 	// EnvGame specifies the target game ID (defaults to "default")
 	EnvGame = "POKERFORBOTS_GAME"
+
+	// EnvBlueprint specifies the optional path to a solver blueprint pack.
+	EnvBlueprint = "POKERFORBOTS_BLUEPRINT"
 )
 
 // BotConfig holds configuration parsed from environment variables
@@ -36,6 +39,9 @@ type BotConfig struct {
 
 	// GameID is the target game to join (defaults to "default")
 	GameID string
+
+	// BlueprintPath optionally points to a solver blueprint to load at runtime.
+	BlueprintPath string
 }
 
 // FromEnv parses configuration from environment variables.
@@ -67,6 +73,8 @@ func FromEnv() (*BotConfig, error) {
 	if gameID := os.Getenv(EnvGame); gameID != "" {
 		cfg.GameID = gameID
 	}
+
+	cfg.BlueprintPath = os.Getenv(EnvBlueprint)
 
 	return cfg, nil
 }

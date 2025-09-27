@@ -19,6 +19,8 @@ import (
 	"github.com/lox/pokerforbots/sdk/classification"
 	"github.com/lox/pokerforbots/sdk/client"
 	"github.com/lox/pokerforbots/sdk/config"
+	"github.com/lox/pokerforbots/sdk/solver"
+	solverRuntime "github.com/lox/pokerforbots/sdk/solver/runtime"
 	"github.com/rs/zerolog"
 )
 
@@ -354,6 +356,8 @@ type complexBot struct {
 	rng      *rand.Rand
 	handNum  int
 	bigBlind int // Track the big blind amount
+	policy   *solverRuntime.Policy
+	buckets  *solver.BucketMapper
 }
 
 func newComplexBot(logger zerolog.Logger) *complexBot {
@@ -381,12 +385,32 @@ func newComplexBot(logger zerolog.Logger) *complexBot {
 
 	logger.Debug().Int64("seed", seed).Str("bot_id", id).Msg("Bot initialized with seed")
 
+	var policy *solverRuntime.Policy
+	var buckets *solver.BucketMapper
+	if err == nil && cfg.BlueprintPath != "" {
+		loaded, loadErr := solverRuntime.Load(cfg.BlueprintPath)
+		if loadErr != nil {
+			logger.Error().Err(loadErr).Str("blueprint", cfg.BlueprintPath).Msg("failed to load blueprint")
+		} else {
+			mapper, mapErr := solver.NewBucketMapper(loaded.Blueprint().Abstraction)
+			if mapErr != nil {
+				logger.Error().Err(mapErr).Str("blueprint", cfg.BlueprintPath).Msg("blueprint abstraction invalid")
+			} else {
+				policy = loaded
+				buckets = mapper
+				logger.Info().Str("blueprint", cfg.BlueprintPath).Int("infosets", len(loaded.Blueprint().Strategies)).Int("iterations", loaded.Blueprint().Iterations).Msg("loaded solver blueprint")
+			}
+		}
+	}
+
 	return &complexBot{
 		id:       id,
 		logger:   logger.With().Str("bot_id", id).Logger(),
 		rng:      rng,
 		handNum:  0,
 		bigBlind: 10, // Default big blind
+		policy:   policy,
+		buckets:  buckets,
 	}
 }
 
@@ -457,6 +481,11 @@ func (b *complexBot) OnHandStart(state *client.GameState, start protocol.HandSta
 }
 
 func (b *complexBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
+	if action, amount, ok := b.blueprintDecision(req); ok {
+		b.logger.Debug().Str("decision_source", "blueprint").Str("action", action).Int("amount", amount).Msg("decision")
+		return action, amount, nil
+	}
+
 	// Calculate hand strength using SDK components
 	handStrength := b.evaluateHandStrength()
 	if b.state.Street != "preflop" {
@@ -479,6 +508,132 @@ func (b *complexBot) OnActionRequest(state *client.GameState, req protocol.Actio
 		Msg("decision")
 
 	return action, amount, nil
+}
+
+func (b *complexBot) blueprintDecision(req protocol.ActionRequest) (string, int, bool) {
+	if b.policy == nil || b.buckets == nil {
+		return "", 0, false
+	}
+
+	key := b.infoSetKey(req)
+	weights, err := b.policy.ActionWeights(key, len(req.ValidActions))
+	if err != nil {
+		b.logger.Error().Err(err).Msg("blueprint action weights failed")
+		return "", 0, false
+	}
+
+	idx := sampleWeightedIndex(weights, b.rng)
+	if idx < 0 || idx >= len(req.ValidActions) {
+		return "", 0, false
+	}
+
+	action := req.ValidActions[idx]
+	amount := 0
+	switch action {
+	case "raise", "bet":
+		amount = b.raiseAmount(req)
+	case "allin":
+		amount = b.state.Chips
+	}
+
+	return action, min(amount, b.state.Chips), true
+}
+
+func (b *complexBot) infoSetKey(req protocol.ActionRequest) solver.InfoSetKey {
+	boardBucket := 0
+	if b.state.Board != 0 && b.state.Board.CountCards() >= 3 {
+		boardBucket = b.buckets.BoardBucket(b.state.Board)
+	}
+
+	return solver.InfoSetKey{
+		Street:       streetFromString(b.state.Street),
+		Player:       b.state.Seat,
+		HoleBucket:   b.buckets.HoleBucket(b.state.HoleCards),
+		BoardBucket:  boardBucket,
+		PotBucket:    b.potBucket(req.Pot),
+		ToCallBucket: b.toCallBucket(req.ToCall),
+	}
+}
+
+func streetFromString(street string) solver.Street {
+	switch street {
+	case "preflop":
+		return solver.StreetPreflop
+	case "flop":
+		return solver.StreetFlop
+	case "turn":
+		return solver.StreetTurn
+	case "river":
+		return solver.StreetRiver
+	default:
+		return solver.StreetPreflop
+	}
+}
+
+func (b *complexBot) potBucket(pot int) int {
+	bb := max(b.bigBlind, 1)
+	thresholds := []int{bb, bb * 3, bb * 6, bb * 12}
+	for i, boundary := range thresholds {
+		if pot <= boundary {
+			return i
+		}
+	}
+	return len(thresholds)
+}
+
+func (b *complexBot) toCallBucket(toCall int) int {
+	bb := max(b.bigBlind, 1)
+	thresholds := []int{0, bb, bb * 2, bb * 4}
+	for i, boundary := range thresholds {
+		if toCall <= boundary {
+			return i
+		}
+	}
+	return len(thresholds)
+}
+
+func sampleWeightedIndex(weights []float64, rng *rand.Rand) int {
+	if len(weights) == 0 {
+		return -1
+	}
+	total := 0.0
+	for _, w := range weights {
+		if w > 0 {
+			total += w
+		}
+	}
+	if total <= 0 {
+		return rng.Intn(len(weights))
+	}
+	r := rng.Float64() * total
+	acc := 0.0
+	for i, w := range weights {
+		if w <= 0 {
+			continue
+		}
+		acc += w
+		if r <= acc {
+			return i
+		}
+	}
+	return len(weights) - 1
+}
+
+func (b *complexBot) raiseAmount(req protocol.ActionRequest) int {
+	if req.MinBet > 0 {
+		return req.MinBet
+	}
+	if req.MinRaise > 0 {
+		playerBet := 0
+		if b.state.Seat >= 0 && b.state.Seat < len(b.state.Players) {
+			playerBet = b.state.Players[b.state.Seat].Bet
+		}
+		currentBet := req.ToCall + playerBet
+		if currentBet > 0 {
+			return currentBet + req.MinRaise
+		}
+	}
+	return max(b.bigBlind*2, b.bigBlind)
 }
 
 func (b *complexBot) OnGameUpdate(state *client.GameState, update protocol.GameUpdate) error {

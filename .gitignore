@@ -41,6 +41,7 @@ logs/
 
 # Results
 /*.json
+/out
 
 # Snapshots (local artifacts, not tracked)
 snapshots/
