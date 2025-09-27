@@ -1,9 +1,11 @@
 package server
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"errors"
 	"fmt"
-	"math/rand"
+	rand "math/rand/v2"
 	"sort"
 	"strings"
 	"time"
@@ -191,7 +193,7 @@ func (hr *HandRunner) Run() {
 
 	// Initialize hand state with individual chip counts and deterministic deck
 	// Clone the RNG to avoid concurrent access issues
-	deckRNG := rand.New(rand.NewSource(hr.rng.Int63()))
+	deckRNG := randutil.New(hr.rng.Int64())
 	deck := poker.NewDeck(deckRNG)
 	hr.handState = game.NewHandState(
 		deckRNG,

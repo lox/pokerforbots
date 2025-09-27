@@ -1,8 +1,9 @@
 package server
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"fmt"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -22,7 +23,7 @@ func BenchmarkHandRunnerHeadsUpFold(b *testing.B) {
 	b.ReportAllocs()
 	logger := testLogger()
 
-	masterRNG := rand.New(rand.NewSource(2024))
+	masterRNG := randutil.New(2024)
 
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()

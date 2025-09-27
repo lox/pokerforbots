@@ -1,11 +1,12 @@
 package solver
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"path/filepath"
 )
@@ -16,8 +17,8 @@ type checkpointSnapshot struct {
 	Version     int                       `json:"version"`
 	Iteration   int64                     `json:"iteration"`
 	RNGSeed     int64                     `json:"rng_seed"`
-	RNGInt63    int64                     `json:"rng_int63_calls"`
-	RNGIntn     int64                     `json:"rng_intn_calls"`
+	RNGInt64    int64                     `json:"rng_int63_calls"`
+	RNGIntN     int64                     `json:"rng_intn_calls"`
 	Training    TrainingConfig            `json:"training"`
 	Abstraction AbstractionConfig         `json:"abstraction"`
 	Regrets     map[string]regretSnapshot `json:"regrets"`
@@ -93,16 +94,16 @@ func LoadTrainerFromCheckpoint(path string) (*Trainer, error) {
 	trainer.iteration.Store(snap.Iteration)
 	trainer.stats = snap.Stats
 	trainer.rngSeed = snap.RNGSeed
-	trainer.rng = rand.New(rand.NewSource(snap.RNGSeed))
-	trainer.rngInt63 = snap.RNGInt63
-	trainer.rngIntn = snap.RNGIntn
+	trainer.rng = randutil.New(snap.RNGSeed)
+	trainer.rngInt64 = snap.RNGInt64
+	trainer.rngIntN = snap.RNGIntN
 
 	// Advance RNG to stored position.
-	for i := int64(0); i < snap.RNGInt63; i++ {
-		trainer.rng.Int63()
+	for i := int64(0); i < snap.RNGInt64; i++ {
+		trainer.rng.Int64()
 	}
-	for i := int64(0); i < snap.RNGIntn; i++ {
-		trainer.rng.Intn(trainer.trainCfg.Players)
+	for i := int64(0); i < snap.RNGIntN; i++ {
+		trainer.rng.IntN(trainer.trainCfg.Players)
 	}
 
 	trainer.regrets = restoreRegretTable(snap.Regrets)
@@ -115,8 +116,8 @@ func (t *Trainer) buildCheckpoint() (*checkpointSnapshot, error) {
 		Version:     checkpointFileVersion,
 		Iteration:   t.iteration.Load(),
 		RNGSeed:     t.rngSeed,
-		RNGInt63:    t.rngInt63,
-		RNGIntn:     t.rngIntn,
+		RNGInt64:    t.rngInt64,
+		RNGIntN:     t.rngIntN,
 		Training:    t.trainCfg,
 		Abstraction: t.absCfg,
 		Regrets:     make(map[string]regretSnapshot),

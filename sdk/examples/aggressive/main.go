@@ -1,10 +1,12 @@
 package main
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"context"
 	"flag"
 	"fmt"
-	"math/rand"
+	rand "math/rand/v2"
 	"os"
 	"os/signal"
 	"slices"
@@ -38,7 +40,7 @@ func (a aggressiveBot) OnActionRequest(state *client.GameState, req protocol.Act
 
 				// Sometimes bet pot-sized or more
 				if req.Pot > 0 {
-					amount = req.Pot * (2 + a.rng.Intn(2))
+					amount = req.Pot * (2 + a.rng.IntN(2))
 				}
 
 				// Ensure amount meets minimum requirements
@@ -103,10 +105,10 @@ func main() {
 	if cfg != nil && cfg.Seed != 0 {
 		seed = cfg.Seed
 	}
-	rng := rand.New(rand.NewSource(seed))
+	rng := randutil.New(seed)
 
 	// Create bot with aggressive strategy
-	id := fmt.Sprintf("aggressive-%04d", rng.Intn(10000))
+	id := fmt.Sprintf("aggressive-%04d", rng.IntN(10000))
 	if cfg != nil && cfg.BotID != "" {
 		id = fmt.Sprintf("aggressive-%s", cfg.BotID)
 	}

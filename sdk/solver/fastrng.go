@@ -1,6 +1,6 @@
 package solver
 
-import "math/rand"
+import rand "math/rand/v2"
 
 // PCG32 is a fast, small, statistically good RNG
 // Based on PCG-XSH-RR with 64-bit state and 32-bit output
@@ -27,22 +27,20 @@ func (r *PCG32) Uint32() uint32 {
 	return (xorshifted >> rot) | (xorshifted << ((-rot) & 31))
 }
 
-// Intn returns a random int in [0, n)
-func (r *PCG32) Intn(n int) int {
+// IntN returns a random int in [0, n)
+func (r *PCG32) IntN(n int) int {
 	return int(r.Uint32() % uint32(n))
 }
 
-// wrapperRand wraps our fast RNG to implement rand.Source
+// wrapperSource adapts PCG32 to the rand/v2 Source interface.
 type wrapperSource struct {
 	rng *PCG32
 }
 
-func (w *wrapperSource) Int63() int64 {
-	return int64(w.rng.Uint32())<<31 | int64(w.rng.Uint32())
-}
-
-func (w *wrapperSource) Seed(seed int64) {
-	w.rng = NewPCG32(seed)
+func (w *wrapperSource) Uint64() uint64 {
+	hi := uint64(w.rng.Uint32())
+	lo := uint64(w.rng.Uint32())
+	return hi<<32 | lo
 }
 
 // NewFastRand creates a math/rand.Rand using our fast PCG32

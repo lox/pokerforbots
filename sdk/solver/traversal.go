@@ -1,8 +1,10 @@
 package solver
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"math"
-	"math/rand"
+	rand "math/rand/v2"
 	"sort"
 
 	"github.com/lox/pokerforbots/internal/game"
@@ -408,7 +410,7 @@ func sampleStrategyIndex(strategy []float64, rng *rand.Rand) (int, float64) {
 		return 0, 0
 	}
 	if rng == nil {
-		rng = rand.New(rand.NewSource(42))
+		rng = randutil.New(42)
 	}
 	total := 0.0
 	for _, v := range strategy {
@@ -417,7 +419,7 @@ func sampleStrategyIndex(strategy []float64, rng *rand.Rand) (int, float64) {
 		}
 	}
 	if total <= 0 {
-		idx := rng.Intn(len(strategy))
+		idx := rng.IntN(len(strategy))
 		return idx, 1.0 / float64(len(strategy))
 	}
 	r := rng.Float64() * total

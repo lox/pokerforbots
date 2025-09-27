@@ -1,8 +1,9 @@
 package analysis
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"math"
-	"math/rand"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -82,7 +83,7 @@ func TestConfidenceInterval(t *testing.T) {
 
 func TestCalculateEquity(t *testing.T) {
 	t.Run("pocket aces vs random", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 
 		// AA vs random opponent on dry board
 		heroHand, _ := poker.ParseHand("As", "Ad")
@@ -102,7 +103,7 @@ func TestCalculateEquity(t *testing.T) {
 	})
 
 	t.Run("weak hand vs random", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 
 		// 23 offsuit vs random opponent
 		heroHand, _ := poker.ParseHand("2c", "3h")
@@ -118,7 +119,7 @@ func TestCalculateEquity(t *testing.T) {
 	})
 
 	t.Run("insufficient cards", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 
 		// Hero hand with only 1 card
 		heroHand, _ := poker.ParseHand("As")
@@ -133,7 +134,7 @@ func TestCalculateEquity(t *testing.T) {
 	})
 
 	t.Run("negative simulations", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 		heroHand, _ := poker.ParseHand("As", "Ad")
 		board, _ := poker.ParseHand("2c", "7h", "Kd")
 
@@ -146,7 +147,7 @@ func TestCalculateEquity(t *testing.T) {
 	})
 
 	t.Run("zero simulations", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 		heroHand, _ := poker.ParseHand("As", "Ad")
 		board, _ := poker.ParseHand("2c", "7h", "Kd")
 
@@ -159,7 +160,7 @@ func TestCalculateEquity(t *testing.T) {
 	})
 
 	t.Run("overlapping hero and board cards", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 		heroHand, _ := poker.ParseHand("As", "Ad")
 		board, _ := poker.ParseHand("As", "7h", "Kd") // As overlaps with hero
 
@@ -172,7 +173,7 @@ func TestCalculateEquity(t *testing.T) {
 	})
 
 	t.Run("too many opponents", func(t *testing.T) {
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 		heroHand, _ := poker.ParseHand("As", "Ad")
 		board, _ := poker.ParseHand("2c", "7h", "Kd", "Ts", "9h") // Full board
 
@@ -190,7 +191,7 @@ func TestEquityCalculatorWithProperEvaluator(t *testing.T) {
 	t.Run("uses poker.Evaluate7Cards", func(t *testing.T) {
 		// This test verifies that we're using the proper hand evaluator
 		// The actual evaluation correctness is tested in the poker package
-		rng := rand.New(rand.NewSource(42))
+		rng := randutil.New(42)
 		heroHand, _ := poker.ParseHand("As", "Ad")
 		board, _ := poker.ParseHand("2c", "7h", "Kd")
 
@@ -212,7 +213,7 @@ func TestEquityCalculatorWithProperEvaluator(t *testing.T) {
 func BenchmarkCalculateEquity(b *testing.B) {
 	heroHand, _ := poker.ParseHand("As", "Ad")
 	board, _ := poker.ParseHand("2c", "7h", "Kd")
-	rng := rand.New(rand.NewSource(42))
+	rng := randutil.New(42)
 
 	for b.Loop() {
 		CalculateEquity(heroHand, board, 1, 10000, rng)
@@ -227,7 +228,7 @@ func generateRandomEquityScenarios(n int, seed int64) []struct {
 	board     poker.Hand
 	opponents int
 } {
-	rng := rand.New(rand.NewSource(seed))
+	rng := randutil.New(seed)
 	deck := poker.NewDeck(rng)
 	scenarios := make([]struct {
 		heroHand  poker.Hand
@@ -246,12 +247,12 @@ func generateRandomEquityScenarios(n int, seed int64) []struct {
 		heroHand := poker.NewHand(heroCards...)
 
 		// Deal board (3-5 cards)
-		boardSize := 3 + rng.Intn(3) // 3, 4, or 5 cards
+		boardSize := 3 + rng.IntN(3) // 3, 4, or 5 cards
 		boardCards := deck.Deal(boardSize)
 		board := poker.NewHand(boardCards...)
 
 		// Random opponent count (1-3)
-		opponents := 1 + rng.Intn(3)
+		opponents := 1 + rng.IntN(3)
 
 		scenarios[i] = struct {
 			heroHand  poker.Hand
@@ -267,7 +268,7 @@ func BenchmarkCalculateEquity_LargeSample(b *testing.B) {
 	const sampleSize = 1000
 	const simulations = 1000
 	scenarios := generateRandomEquityScenarios(sampleSize, 42)
-	rng := rand.New(rand.NewSource(1337))
+	rng := randutil.New(1337)
 
 	b.ReportAllocs()
 
@@ -293,7 +294,7 @@ func BenchmarkCalculateEquity_HighSims(b *testing.B) {
 	board, _ := poker.ParseHand("2c", "7h", "Kd")
 
 	const simulations = 50000
-	rng := rand.New(rand.NewSource(42))
+	rng := randutil.New(42)
 
 	b.ReportAllocs()
 
@@ -318,7 +319,7 @@ func BenchmarkCalculateEquity_MultiWay(b *testing.B) {
 	board, _ := poker.ParseHand("2c", "7h", "Kd")
 
 	const simulations = 10000
-	rng := rand.New(rand.NewSource(42))
+	rng := randutil.New(42)
 
 	testCases := []struct {
 		name      string
@@ -356,7 +357,7 @@ func BenchmarkCalculateEquity_BoardTextures(b *testing.B) {
 	heroHand, _ := poker.ParseHand("As", "Ad")
 
 	const simulations = 10000
-	rng := rand.New(rand.NewSource(42))
+	rng := randutil.New(42)
 
 	testCases := []struct {
 		name  string
@@ -406,7 +407,7 @@ func BenchmarkCalculateEquity_Realistic(b *testing.B) {
 	const sampleSize = 1000
 	const simulations = 10000
 	scenarios := generateRandomEquityScenarios(sampleSize, 1337)
-	rng := rand.New(rand.NewSource(42))
+	rng := randutil.New(42)
 
 	b.ReportAllocs()
 
@@ -438,7 +439,7 @@ func BenchmarkCalculateEquity_Parallel(b *testing.B) {
 	start := time.Now()
 
 	b.RunParallel(func(pb *testing.PB) {
-		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+		rng := randutil.New(time.Now().UnixNano())
 		for pb.Next() {
 			i := atomic.AddUint64(&idx, 1) - 1
 			scenario := scenarios[i%uint64(len(scenarios))]

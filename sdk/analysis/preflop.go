@@ -3,8 +3,10 @@ package analysis
 //go:generate go run ../../cmd/gen-preflop/main.go -simulations=10000 -output=preflop_gen.go
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"fmt"
-	"math/rand"
+	rand "math/rand/v2"
 	"sort"
 	"strings"
 	"time"
@@ -47,7 +49,7 @@ func GeneratePreflopTable(simulations int) *PreflopTable {
 	}
 
 	// Use fixed seed for reproducible results
-	rng := rand.New(rand.NewSource(42))
+	rng := randutil.New(42)
 
 	// Generate all unique starting hands
 	// Ranks go from 2 (deuce) to 14 (ace)

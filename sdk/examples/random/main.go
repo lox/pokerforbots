@@ -1,10 +1,12 @@
 package main
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"context"
 	"flag"
 	"fmt"
-	"math/rand"
+	rand "math/rand/v2"
 	"os"
 	"os/signal"
 	"syscall"
@@ -32,7 +34,7 @@ func (r randomBot) OnActionRequest(state *client.GameState, req protocol.ActionR
 		return "fold", 0, nil
 	}
 
-	choice := req.ValidActions[r.rng.Intn(len(req.ValidActions))]
+	choice := req.ValidActions[r.rng.IntN(len(req.ValidActions))]
 	if choice == "raise" {
 		amount := req.MinBet
 		if req.ToCall > 0 {
@@ -64,10 +66,10 @@ func main() {
 	if cfg != nil && cfg.Seed != 0 {
 		seed = cfg.Seed
 	}
-	rng := rand.New(rand.NewSource(seed)) // Create local RNG (Go 1.20+ compatible)
+	rng := randutil.New(seed) // Create local RNG (Go 1.20+ compatible)
 
 	// Create bot with random strategy
-	id := fmt.Sprintf("random-%04d", rng.Intn(10000))
+	id := fmt.Sprintf("random-%04d", rng.IntN(10000))
 	if cfg != nil && cfg.BotID != "" {
 		id = fmt.Sprintf("random-%s", cfg.BotID)
 	}

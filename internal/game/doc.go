@@ -7,7 +7,7 @@
 //
 // Create and run a simple hand with required RNG:
 //
-//	rng := rand.New(rand.NewSource(time.Now().UnixNano())) // Random
+//	rng := randutil.New(time.Now().UnixNano()) // Random
 //	h := game.NewHandState(rng, []string{"Alice", "Bob", "Charlie"}, 0, 5, 10)
 //	// Process actions...
 //	h.ProcessAction(game.Call, 0)
@@ -20,7 +20,7 @@
 //
 // For deterministic testing, provide a seeded RNG:
 //
-//	rng := rand.New(rand.NewSource(42)) // Fixed seed
+//	rng := randutil.New(42) // Fixed seed
 //	h := game.NewHandState(rng, players, button, sb, bb)
 //
 // # Configuration Options

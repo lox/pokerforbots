@@ -1,10 +1,11 @@
 package main
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net"
 	"net/http"
 	"time"
@@ -73,7 +74,7 @@ func runEvaluation(ctx context.Context, logger zerolog.Logger, opts evaluationOp
 		EnableStats: true,
 	}
 
-	srv := server.NewServer(logger, rand.New(rand.NewSource(seed)), server.WithConfig(srvCfg))
+	srv := server.NewServer(logger, randutil.New(seed), server.WithConfig(srvCfg))
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

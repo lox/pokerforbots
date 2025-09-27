@@ -1,10 +1,11 @@
 package main
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"context"
 	"flag"
 	"fmt"
-	"math/rand"
 	"os"
 	"os/signal"
 	"slices"
@@ -55,10 +56,10 @@ func main() {
 	if cfg != nil && cfg.Seed != 0 {
 		seed = cfg.Seed
 	}
-	rng := rand.New(rand.NewSource(seed))
+	rng := randutil.New(seed)
 
 	// Create bot with calling station strategy
-	id := fmt.Sprintf("calling-%04d", rng.Intn(10000))
+	id := fmt.Sprintf("calling-%04d", rng.IntN(10000))
 	if cfg != nil && cfg.BotID != "" {
 		id = fmt.Sprintf("calling-%s", cfg.BotID)
 	}
