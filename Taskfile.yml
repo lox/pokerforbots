@@ -84,6 +84,11 @@ tasks:
     cmds:
       - go run ./cmd/pokerforbots regression {{.CLI_ARGS}}
 
+  solver:
+    desc: Run the solver CLI
+    cmds:
+      - go run ./cmd/pokerforbots solver {{.CLI_ARGS}}
+
   test:
     desc: Run all tests with race detector
     cmds:
