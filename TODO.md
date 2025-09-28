@@ -187,6 +187,16 @@ A successful demo should:
 4. Create simple test bots
 5. Run demo and iterate on performance
 
+### Solver Roadmap – September 2025
+
+- [ ] **Linear CFR (CFR+)**: replace the current regret averaging with linear weighting to accelerate convergence; guard behind a CLI flag for comparisons.
+- [ ] **Variance reduction**: integrate outcome sampling / stratified sampling to cut high-variance nodes while preserving correctness.
+- [ ] **Smarter evaluation harness** (mirror/seat rotation) — optional, revisit once solver beats baseline.
+- [ ] **Smarter adaptive raises**: revisit expansion using regret thresholds (e.g., expand when cumulative positive regret on pruned actions exceeds a bound) and cap the percentage of expanded infosets.
+- [ ] **Parallel scalability**: profile mutex contention in the regret table and introduce sharded/buffered updates so `--parallel=N` scales closer to linear on 8+ cores.
+- [ ] **Abstraction refinement**: experiment with stage-specific bucket counts (e.g., richer turn/river, leaner preflop) and opponent mixes once algorithmic changes land.
+- [ ] **Routine deep runs**: schedule ≥10 M iteration smoke jobs (now ~22 h) after algorithmic changes to benchmark progress against calling-station.
+
 ## Phase 4: Multi-Game & Simulation Harness (Planned)
 
 ### 13. Game Manager & Lobby ✅
@@ -257,4 +267,3 @@ See [plans/optimize-evaluator.md](plans/optimize-evaluator.md) for planned hand 
 - 20-30% reduction in evaluation latency
 - Elimination of map/hash overhead in kicker selection
 - Branchless straight detection with bitwise operations
-
