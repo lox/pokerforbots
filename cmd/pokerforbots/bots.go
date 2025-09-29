@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/lox/pokerforbots/sdk/bot/aggressive"
 	"github.com/lox/pokerforbots/sdk/bot/callingstation"
@@ -26,10 +25,6 @@ type CallingStationCmd struct {
 }
 
 func (c *CallingStationCmd) Run() error {
-	// Set POKERFORBOTS_SEED from parent if available
-	if seed := os.Getenv("POKERFORBOTS_SEED"); seed != "" {
-		// The bot will pick this up automatically
-	}
 	return callingstation.Run(c.Server, c.Name, c.Game)
 }
 
@@ -41,9 +36,6 @@ type RandomCmd struct {
 }
 
 func (c *RandomCmd) Run() error {
-	if seed := os.Getenv("POKERFORBOTS_SEED"); seed != "" {
-		// The bot will pick this up automatically
-	}
 	return random.Run(c.Server, c.Name, c.Game)
 }
 
@@ -55,9 +47,6 @@ type AggressiveCmd struct {
 }
 
 func (c *AggressiveCmd) Run() error {
-	if seed := os.Getenv("POKERFORBOTS_SEED"); seed != "" {
-		// The bot will pick this up automatically
-	}
 	return aggressive.Run(c.Server, c.Name, c.Game)
 }
 
@@ -69,9 +58,6 @@ type ComplexCmd struct {
 }
 
 func (c *ComplexCmd) Run() error {
-	if seed := os.Getenv("POKERFORBOTS_SEED"); seed != "" {
-		// The bot will pick this up automatically
-	}
 	return complex.Run(c.Server, c.Name, c.Game)
 }
 

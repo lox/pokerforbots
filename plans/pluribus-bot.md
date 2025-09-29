@@ -4,7 +4,7 @@
 - Status: draft
 - Updated: 2025-09-25
 - Tags: bot, solver, research
-- Scope: sdk/pluribus, sdk/examples/complex, cmd/solver, docs
+- Scope: sdk/pluribus, sdk/examples/complex, cmd/pokerforbots, docs
 - Risk: high
 - Effort: L
 
@@ -74,4 +74,3 @@ bin/task bench:evaluator -- -benchtime=3s
 cmd/tools/pluribus-train --iterations=100000 --seed=1
 cmd/tools/pluribus-eval --hands=5000 --mirror --seed=2
 ```
-

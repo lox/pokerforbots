@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lox/pokerforbots/cmd/pokerforbots/shared"
+	"github.com/lox/pokerforbots/internal/randutil"
 	"github.com/lox/pokerforbots/internal/server"
 	"github.com/lox/pokerforbots/sdk/spawner"
 	"github.com/rs/zerolog"
@@ -81,7 +81,7 @@ func (c *SpawnCmd) Run() error {
 	if seed == 0 {
 		seed = time.Now().UnixNano()
 	}
-	rng := rand.New(rand.NewSource(seed))
+	rng := randutil.New(seed)
 
 	// First, start the server to get the WebSocket URL
 	// Start server on random port
@@ -303,7 +303,7 @@ func waitForHealthy(ctx context.Context, baseURL string) error {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
 		if err != nil {
 			return err
 		}

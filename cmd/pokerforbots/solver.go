@@ -15,14 +15,20 @@ import (
 	"github.com/lox/pokerforbots/sdk/solver"
 )
 
-var cli struct {
-	Debug bool `help:"enable debug logging"`
-
-	Train TrainCmd `cmd:"" help:"run MCCFR training and emit a blueprint"`
-	Eval  EvalCmd  `cmd:"" help:"evaluate an existing blueprint"`
+// SolverCmd hosts solver-related subcommands under the consolidated CLI.
+type SolverCmd struct {
+	Debug bool           `help:"enable debug logging"`
+	Train SolverTrainCmd `cmd:"" help:"run MCCFR training and emit a blueprint"`
+	Eval  SolverEvalCmd  `cmd:"" help:"evaluate an existing blueprint"`
 }
 
-type TrainCmd struct {
+func (c *SolverCmd) BeforeApply(*kong.Context) error {
+	setupSolverLogger(c.Debug)
+	return nil
+}
+
+// SolverTrainCmd mirrors the original solver train CLI.
+type SolverTrainCmd struct {
 	Out                 string `help:"path to write the blueprint pack" required:""`
 	Iterations          int    `help:"number of MCCFR iterations" default:"100000"`
 	Players             int    `help:"number of players in self-play" default:"2"`
@@ -45,37 +51,15 @@ type TrainCmd struct {
 	Sampling            string `help:"sampling mode (external|full)" enum:"external,full" default:"external"`
 }
 
-type EvalCmd struct {
+// SolverEvalCmd mirrors the original solver eval CLI.
+type SolverEvalCmd struct {
 	Blueprint string `help:"path to blueprint pack" required:""`
 	Hands     int    `help:"number of hands to simulate" default:"10000"`
 	Mirror    bool   `help:"enable mirror mode to reduce variance"`
 	Seed      int64  `help:"random seed; 0 uses time seed" default:"0"`
 }
 
-func main() {
-	ctx := kong.Parse(&cli,
-		kong.Name("solver"),
-		kong.Description("PokerForBots solver tooling"),
-		kong.UsageOnError(),
-	)
-
-	setupLogger(cli.Debug)
-
-	switch ctx.Command() {
-	case "train":
-		if err := cli.Train.Run(context.Background()); err != nil {
-			log.Fatal().Err(err).Msg("training failed")
-		}
-	case "eval":
-		if err := cli.Eval.Run(context.Background()); err != nil {
-			log.Fatal().Err(err).Msg("evaluation failed")
-		}
-	default:
-		log.Fatal().Msgf("unknown command: %s", ctx.Command())
-	}
-}
-
-func setupLogger(debug bool) {
+func setupSolverLogger(debug bool) {
 	level := zerolog.InfoLevel
 	if debug {
 		level = zerolog.DebugLevel
@@ -84,13 +68,12 @@ func setupLogger(debug bool) {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).Level(level)
 }
 
-func (cmd *TrainCmd) Run(ctx context.Context) error {
+func (cmd *SolverTrainCmd) Run(ctx context.Context) error {
 	mode, err := parseSamplingMode(cmd.Sampling)
 	if err != nil {
 		return err
 	}
 
-	// Set up CPU profiling if requested
 	if cmd.CPUProfile != "" {
 		f, err := os.Create(cmd.CPUProfile)
 		if err != nil {
@@ -151,7 +134,7 @@ func (cmd *TrainCmd) Run(ctx context.Context) error {
 			train.StartingStack = 50
 			abs.MaxRaisesPerBucket = 2
 			train.MaxRaisesPerBucket = 2
-			train.AdaptiveRaiseVisits = 0 // Disable adaptive for smoke runs
+			train.AdaptiveRaiseVisits = 0
 			log.Info().Msg("applying smoke preset (stack=50, small_blind=1, big_blind=2, max_raises=2, adaptive_disabled)")
 		}
 
@@ -244,18 +227,7 @@ func (cmd *TrainCmd) Run(ctx context.Context) error {
 	return nil
 }
 
-func parseSamplingMode(input string) (solver.SamplingMode, error) {
-	switch strings.ToLower(strings.TrimSpace(input)) {
-	case "", "external":
-		return solver.SamplingModeExternal, nil
-	case "full":
-		return solver.SamplingModeFullTraversal, nil
-	default:
-		return solver.SamplingModeExternal, fmt.Errorf("unknown sampling mode %q", input)
-	}
-}
-
-func (cmd *EvalCmd) Run(ctx context.Context) error {
+func (cmd *SolverEvalCmd) Run(ctx context.Context) error {
 	if cmd.Hands <= 0 {
 		return fmt.Errorf("hands must be positive (got %d)", cmd.Hands)
 	}
@@ -301,4 +273,15 @@ func (cmd *EvalCmd) Run(ctx context.Context) error {
 			Msg("player summary")
 	}
 	return nil
+}
+
+func parseSamplingMode(input string) (solver.SamplingMode, error) {
+	switch strings.ToLower(strings.TrimSpace(input)) {
+	case "", "external":
+		return solver.SamplingModeExternal, nil
+	case "full":
+		return solver.SamplingModeFullTraversal, nil
+	default:
+		return solver.SamplingModeExternal, fmt.Errorf("unknown sampling mode %q", input)
+	}
 }

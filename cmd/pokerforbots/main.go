@@ -10,6 +10,7 @@ type CLI struct {
 	Spawn      SpawnCmd      `cmd:"" help:"Spawn server with bots for testing/demos"`
 	Regression RegressionCmd `cmd:"" help:"Run regression tests between bot versions"`
 	Bots       BotsCmd       `cmd:"" help:"Run built-in example bots"`
+	Solver     SolverCmd     `cmd:"" help:"Run solver training and evaluation tooling"`
 }
 
 func main() {

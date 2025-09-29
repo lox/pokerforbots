@@ -91,6 +91,7 @@ func Run(serverURL, name, game string) error {
 
 	// Handle shutdown gracefully
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 

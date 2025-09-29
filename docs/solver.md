@@ -6,24 +6,24 @@ The solver toolkit provides plumbing for building Pluribus-style strategies in G
 
 - `sdk/solver`: core types, abstractions, MCCFR trainer, blueprint serialization.
 - `sdk/solver/runtime`: read-only runtime loader for consuming blueprint packs inside bots.
-- `cmd/solver`: command-line entry point with `train` and `eval` subcommands (evaluation is a stub for now).
+- `cmd/pokerforbots`: consolidated command-line entry point with `solver` subcommands for training and evaluation.
 
 ## Quick Start
 
 ```bash
 # Run a smoke training run with the preset (short stack + pruned raises)
-cmd/solver train --smoke --iterations=5000 --out=out/blueprint-smoke.json --progress-every=100
+cmd/pokerforbots solver train --smoke --iterations=5000 --out=out/blueprint-smoke.json --progress-every=100
 
 # Verify the preset on a tiny loop
-cmd/solver train --smoke --iterations=10 --progress-every=1 --out=/tmp/smoke.json
+cmd/pokerforbots solver train --smoke --iterations=10 --progress-every=1 --out=/tmp/smoke.json
 
 # Inspect metadata using the eval command (full evaluation TBD)
-cmd/solver eval --blueprint=out/blueprint-smoke.json
+cmd/pokerforbots solver eval --blueprint=out/blueprint-smoke.json
 ```
 
-- Add `--cfr-plus` to `cmd/solver train` to enable CFR+ (positive regret matching with linear strategy averaging).
+- Add `--cfr-plus` to `cmd/pokerforbots solver train` to enable CFR+ (positive regret matching with linear strategy averaging).
 - Use `--sampling=full` to disable external sampling when debugging traversal math; the default `external` keeps Monte Carlo variance low.
-- Pass `--mirror` to `cmd/solver eval` to run a seat-rotated evaluation (two back-to-back matches with bots swapping seats) before aggregating BB/100.
+- Pass `--mirror` to `cmd/pokerforbots solver eval` to run a seat-rotated evaluation (two back-to-back matches with bots swapping seats) before aggregating BB/100.
 
 Long-run CFR+ smoke baseline (EPYC 8-core preset):
 
