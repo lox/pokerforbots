@@ -5,6 +5,7 @@
 - Updated: 2025-09-28
 - Tags: solver, research, infra
 - Scope: sdk/solver, cmd/pokerforbots, sdk/examples/complex, docs
+- Default regret update: Discounted CFR (α=3/2, β=0, γ=2) for faster convergence.
 - Risk: high
 - Effort: L
 ---
@@ -52,7 +53,7 @@
 - Initial MCCFR traversal integrated with `internal/game`; trainer iterations update real regrets, record traversal stats, and emit blueprint outputs with bet-sizing raises (sdk/solver/trainer.go:33, sdk/solver/traversal.go:1).
 - Runtime policy loader and complex bot integration support optional blueprint-driven decisions behind an environment flag, now backed by targeted runtime tests (sdk/solver/runtime/policy.go:1, sdk/solver/runtime/policy_test.go:1, sdk/examples/complex/main.go:352).
 - Solver documentation drafted to capture current workflows and status; blueprint load failures (version/metadata/corruption) are covered via unit tests (docs/solver.md:1, sdk/solver/blueprint_test.go:1).
-- CFR toggles added: `cmd/pokerforbots solver train` now exposes `--cfr-plus` and `--sampling` to switch between positive-regret/linear averaging and full traversal debugging paths, and `cmd/pokerforbots solver eval --mirror` runs seat-rotated matches via the spawner for lower-variance BB/100 estimates (cmd/pokerforbots/solver.go:1, cmd/pokerforbots/solver_eval.go:1).
+- Regret updates support both CFR+ (positive regret clamping + linear averaging) and DCFR(3/2,0,2); make DCFR the recommended default for blueprint production (cmd/pokerforbots/solver.go:1).
 
 ## Acceptance Criteria
 
@@ -154,7 +155,7 @@ cmd/pokerforbots solver eval --blueprint=out/blueprint-smoke.pb --hands=2000 --m
 
 ### Upcoming Experiments
 
-- [ ] CFR+ 10M smoke baseline (EPYC 8c):
-  - `task solver -- train --smoke --iterations=10000000 --parallel=8 --cfr-plus --sampling=external --checkpoint-path=out/cfrp-smoke.ckpt --checkpoint-every=500000 --progress-every=50000 --seed=42 --out=out/cfrp-smoke.json`
+- [ ] DCFR 10M smoke baseline (EPYC 8c):
+  - `task solver -- train --smoke --iterations=10000000 --parallel=8 --dcfr --sampling=external --checkpoint-path=out/cfrp-smoke.ckpt --checkpoint-every=500000 --progress-every=50000 --seed=42 --out=out/cfrp-smoke.json`
   - After completion run `task solver -- eval --blueprint=out/cfrp-smoke.json --hands=20000 --mirror --seed=42` and log BB/100 vs calling-station.
   - Record results in docs/solver.md and TODO.md once the job finishes.

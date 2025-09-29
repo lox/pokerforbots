@@ -21,6 +21,8 @@ cmd/pokerforbots solver train --smoke --iterations=10 --progress-every=1 --out=/
 cmd/pokerforbots solver eval --blueprint=out/blueprint-smoke.json
 ```
 
+- Training uses Discounted CFR (α=3/2, β=0, γ=2) by default—pass `--dcfr=false` to fall back to classic regrets if needed.
+- Add `--dcfr` explicitly to guarantee Discounted CFR when running older checkpoints or scripts.
 - Add `--cfr-plus` to `cmd/pokerforbots solver train` to enable CFR+ (positive regret matching with linear strategy averaging).
 - Use `--sampling=full` to disable external sampling when debugging traversal math; the default `external` keeps Monte Carlo variance low.
 - Pass `--mirror` to `cmd/pokerforbots solver eval` to run a seat-rotated evaluation (two back-to-back matches with bots swapping seats) before aggregating BB/100.
@@ -32,7 +34,7 @@ task solver -- train \
   --smoke \
   --iterations=10000000 \
   --parallel=8 \
-  --cfr-plus \
+  --dcfr \
   --sampling=external \
   --checkpoint-path=out/cfrp-smoke.ckpt \
   --checkpoint-every=500000 \
