@@ -21,6 +21,32 @@ cmd/solver train --smoke --iterations=10 --progress-every=1 --out=/tmp/smoke.jso
 cmd/solver eval --blueprint=out/blueprint-smoke.json
 ```
 
+- Add `--cfr-plus` to `cmd/solver train` to enable CFR+ (positive regret matching with linear strategy averaging).
+- Use `--sampling=full` to disable external sampling when debugging traversal math; the default `external` keeps Monte Carlo variance low.
+- Pass `--mirror` to `cmd/solver eval` to run a seat-rotated evaluation (two back-to-back matches with bots swapping seats) before aggregating BB/100.
+
+Long-run CFR+ smoke baseline (EPYC 8-core preset):
+
+```bash
+task solver -- train \
+  --smoke \
+  --iterations=10000000 \
+  --parallel=8 \
+  --cfr-plus \
+  --sampling=external \
+  --checkpoint-path=out/cfrp-smoke.ckpt \
+  --checkpoint-every=500000 \
+  --progress-every=50000 \
+  --seed=42 \
+  --out=out/cfrp-smoke.json
+
+task solver -- eval \
+  --blueprint=out/cfrp-smoke.json \
+  --hands=20000 \
+  --mirror \
+  --seed=42
+```
+
 ## Environment Integration
 
 Bots can load a blueprint by setting `POKERFORBOTS_BLUEPRINT` to the generated pack path. The complex example bot will automatically fall back to heuristic logic if the blueprint fails to load.

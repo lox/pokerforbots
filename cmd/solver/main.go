@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"runtime/pprof"
+	"strings"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -40,6 +41,8 @@ type TrainCmd struct {
 	Smoke               bool   `help:"apply smoke preset (stack=50, small blind=1, big blind=2, max raises=2)"`
 	ResumeFrom          string `help:"resume training from checkpoint file"`
 	CPUProfile          string `help:"write CPU profile to file"`
+	CFRPlus             bool   `help:"enable CFR+ (positive regret matching with linear averaging)"`
+	Sampling            string `help:"sampling mode (external|full)" enum:"external,full" default:"external"`
 }
 
 type EvalCmd struct {
@@ -82,6 +85,11 @@ func setupLogger(debug bool) {
 }
 
 func (cmd *TrainCmd) Run(ctx context.Context) error {
+	mode, err := parseSamplingMode(cmd.Sampling)
+	if err != nil {
+		return err
+	}
+
 	// Set up CPU profiling if requested
 	if cmd.CPUProfile != "" {
 		f, err := os.Create(cmd.CPUProfile)
@@ -96,10 +104,7 @@ func (cmd *TrainCmd) Run(ctx context.Context) error {
 		log.Info().Str("path", cmd.CPUProfile).Msg("CPU profiling enabled")
 	}
 
-	var (
-		trainer *solver.Trainer
-		err     error
-	)
+	var trainer *solver.Trainer
 
 	if cmd.ResumeFrom != "" {
 		trainer, err = solver.LoadTrainerFromCheckpoint(cmd.ResumeFrom)
@@ -127,7 +132,15 @@ func (cmd *TrainCmd) Run(ctx context.Context) error {
 			log.Warn().Msg("cannot apply smoke preset when resuming from checkpoint; keeping original abstraction")
 		}
 		trainCfg := trainer.TrainingConfig()
-		log.Info().Int("iterations", trainCfg.Iterations).Int("resume_iteration", int(trainer.Iteration())).Int("max_raises", trainCfg.MaxRaisesPerBucket).Int("parallel", trainCfg.ParallelTables).Str("checkpoint", cmd.ResumeFrom).Msg("resuming training run")
+		if mode != trainCfg.Sampling {
+			log.Warn().Str("requested", mode.String()).Str("checkpoint", trainCfg.Sampling.String()).Msg("cannot change sampling mode when resuming from checkpoint; keeping original")
+		}
+		if cmd.CFRPlus && !trainCfg.UseCFRPlus {
+			log.Warn().Msg("cannot enable CFR+ when resuming from checkpoint; keeping original regret mode")
+		} else if !cmd.CFRPlus && trainCfg.UseCFRPlus {
+			log.Warn().Msg("checkpoint was trained with CFR+; continuing with CFR+ mode")
+		}
+		log.Info().Int("iterations", trainCfg.Iterations).Int("resume_iteration", int(trainer.Iteration())).Int("max_raises", trainCfg.MaxRaisesPerBucket).Int("parallel", trainCfg.ParallelTables).Str("sampling", trainCfg.Sampling.String()).Str("checkpoint", cmd.ResumeFrom).Msg("resuming training run")
 	} else {
 		abs := solver.DefaultAbstraction()
 		train := solver.DefaultTrainingConfig()
@@ -169,6 +182,9 @@ func (cmd *TrainCmd) Run(ctx context.Context) error {
 		if cmd.ProgressEvery > 0 {
 			train.ProgressEvery = cmd.ProgressEvery
 		}
+		if cmd.AdaptiveRaiseVisits >= 0 {
+			train.AdaptiveRaiseVisits = cmd.AdaptiveRaiseVisits
+		}
 		if cmd.DisableRaises {
 			train.EnableRaises = false
 			abs.EnableRaises = false
@@ -183,6 +199,9 @@ func (cmd *TrainCmd) Run(ctx context.Context) error {
 			train.MaxRaisesPerBucket = cmd.MaxRaises
 		}
 
+		train.UseCFRPlus = cmd.CFRPlus
+		train.Sampling = mode
+
 		trainer, err = solver.NewTrainer(abs, train)
 		if err != nil {
 			return err
@@ -196,7 +215,7 @@ func (cmd *TrainCmd) Run(ctx context.Context) error {
 		if cmd.DisableRaises {
 			trainer.SetRaisesEnabled(false)
 		}
-		log.Info().Int("iterations", train.Iterations).Int("players", train.Players).Int("max_raises", abs.MaxRaisesPerBucket).Int("parallel", train.ParallelTables).Msg("starting training run")
+		log.Info().Int("iterations", train.Iterations).Int("players", train.Players).Int("max_raises", abs.MaxRaisesPerBucket).Int("parallel", train.ParallelTables).Bool("cfr_plus", train.UseCFRPlus).Str("sampling", train.Sampling.String()).Msg("starting training run")
 	}
 
 	start := time.Now()
@@ -225,6 +244,17 @@ func (cmd *TrainCmd) Run(ctx context.Context) error {
 	return nil
 }
 
+func parseSamplingMode(input string) (solver.SamplingMode, error) {
+	switch strings.ToLower(strings.TrimSpace(input)) {
+	case "", "external":
+		return solver.SamplingModeExternal, nil
+	case "full":
+		return solver.SamplingModeFullTraversal, nil
+	default:
+		return solver.SamplingModeExternal, fmt.Errorf("unknown sampling mode %q", input)
+	}
+}
+
 func (cmd *EvalCmd) Run(ctx context.Context) error {
 	if cmd.Hands <= 0 {
 		return fmt.Errorf("hands must be positive (got %d)", cmd.Hands)
@@ -248,6 +278,7 @@ func (cmd *EvalCmd) Run(ctx context.Context) error {
 		BigBlind:      10,
 		StartChips:    1000,
 		TimeoutMs:     100,
+		Mirror:        cmd.Mirror,
 	}
 
 	res, err := runEvaluation(ctx, log.Logger, opts)

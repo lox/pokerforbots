@@ -136,3 +136,51 @@ func TestTrainerCheckpointRoundTrip(t *testing.T) {
 		t.Fatalf("resumed run: %v", err)
 	}
 }
+
+func TestTrainerSamplingModesAffectTraversal(t *testing.T) {
+	abs := solver.DefaultAbstraction()
+	abs.MaxActionsPerNode = 3
+
+	base := solver.DefaultTrainingConfig()
+	base.Iterations = 1
+	base.Seed = 123
+	base.SmallBlind = 1
+	base.BigBlind = 2
+	base.StartingStack = 10
+	base.ParallelTables = 1
+	base.AdaptiveRaiseVisits = 0
+
+	fullCfg := base
+	fullCfg.Sampling = solver.SamplingModeFullTraversal
+
+	fullTrainer, err := solver.NewTrainer(abs, fullCfg)
+	if err != nil {
+		t.Fatalf("new trainer (full): %v", err)
+	}
+	if err := fullTrainer.Run(context.Background(), nil); err != nil {
+		t.Fatalf("run trainer (full): %v", err)
+	}
+	fullStats := fullTrainer.Stats()
+	if fullStats.NodesVisited == 0 {
+		t.Fatalf("expected nodes visited > 0, got %+v", fullStats)
+	}
+
+	externalCfg := base
+	externalCfg.Sampling = solver.SamplingModeExternal
+
+	externalTrainer, err := solver.NewTrainer(abs, externalCfg)
+	if err != nil {
+		t.Fatalf("new trainer (external): %v", err)
+	}
+	if err := externalTrainer.Run(context.Background(), nil); err != nil {
+		t.Fatalf("run trainer (external): %v", err)
+	}
+	externalStats := externalTrainer.Stats()
+	if externalStats.NodesVisited == 0 {
+		t.Fatalf("expected nodes visited > 0, got %+v", externalStats)
+	}
+
+	if fullStats.NodesVisited <= externalStats.NodesVisited {
+		t.Fatalf("expected full traversal to visit more nodes (full=%d, external=%d)", fullStats.NodesVisited, externalStats.NodesVisited)
+	}
+}

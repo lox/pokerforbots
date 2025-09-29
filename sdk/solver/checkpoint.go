@@ -150,11 +150,11 @@ func decodeCheckpoint(r io.Reader) (*checkpointSnapshot, error) {
 
 func restoreRegretTable(snaps map[string]regretSnapshot) *RegretTable {
 	table := NewRegretTable()
-	table.mu.Lock()
-	defer table.mu.Unlock()
-	table.entries = make(map[string]*RegretEntry, len(snaps))
 	for key, snap := range snaps {
-		table.entries[key] = newRegretEntryFromSnapshot(snap)
+		shard := table.shardFor(key)
+		shard.mu.Lock()
+		shard.entries[key] = newRegretEntryFromSnapshot(snap)
+		shard.mu.Unlock()
 	}
 	return table
 }

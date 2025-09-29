@@ -56,6 +56,13 @@ type RegretEntry struct {
 	mutex       sync.Mutex
 }
 
+// RegretUpdateOptions configures how regrets and strategy sums are accumulated.
+type RegretUpdateOptions struct {
+	ClampNegativeRegrets bool
+	LinearAveraging      bool
+	Iteration            int
+}
+
 // ensureSize grows the regret entry to accommodate n actions.
 func (e *RegretEntry) ensureSize(n int) {
 	e.mutex.Lock()
@@ -96,13 +103,29 @@ func (e *RegretEntry) Strategy() []float64 {
 }
 
 // Update accumulates regrets and strategy sums for the node.
-func (e *RegretEntry) Update(regret []float64, strategy []float64, reachWeight float64) {
+func (e *RegretEntry) Update(regret []float64, strategy []float64, reachWeight float64, opts RegretUpdateOptions) {
 	e.mutex.Lock()
-	for i := range regret {
-		e.RegretSum[i] += regret[i]
-		e.StrategySum[i] += reachWeight * strategy[i]
+	iterWeight := 1.0
+	if opts.LinearAveraging {
+		iter := opts.Iteration
+		if iter <= 0 {
+			iter = 1
+		}
+		iterWeight = float64(iter)
 	}
-	e.Normalising += reachWeight
+	weight := reachWeight * iterWeight
+	for i := range regret {
+		if opts.ClampNegativeRegrets {
+			e.RegretSum[i] += regret[i]
+			if e.RegretSum[i] < 0 {
+				e.RegretSum[i] = 0
+			}
+		} else {
+			e.RegretSum[i] += regret[i]
+		}
+		e.StrategySum[i] += weight * strategy[i]
+	}
+	e.Normalising += weight
 	e.mutex.Unlock()
 }
 
@@ -125,57 +148,83 @@ func (e *RegretEntry) AverageStrategy() []float64 {
 }
 
 // RegretTable maintains thread-safe entries keyed by info set.
-type RegretTable struct {
-	entries map[string]*RegretEntry
+const regretTableShardCount = 64
+const regretTableShardMask = regretTableShardCount - 1
+
+type regretShard struct {
 	mu      sync.RWMutex
+	entries map[string]*RegretEntry
+}
+
+// RegretTable maintains thread-safe entries keyed by info set using sharded maps.
+type RegretTable struct {
+	shards [regretTableShardCount]regretShard
 }
 
 // NewRegretTable returns an empty regret table ready for use.
 func NewRegretTable() *RegretTable {
-	return &RegretTable{entries: make(map[string]*RegretEntry)}
+	table := &RegretTable{}
+	for i := 0; i < regretTableShardCount; i++ {
+		table.shards[i].entries = make(map[string]*RegretEntry)
+	}
+	return table
 }
 
 // Get returns the entry for the given key, creating it if missing.
 func (t *RegretTable) Get(key InfoSetKey, actionCount int) *RegretEntry {
 	k := key.String()
+	shard := t.shardFor(k)
 
-	t.mu.RLock()
-	entry, ok := t.entries[k]
-	t.mu.RUnlock()
+	shard.mu.RLock()
+	entry, ok := shard.entries[k]
+	shard.mu.RUnlock()
 	if ok {
 		entry.ensureSize(actionCount)
 		return entry
 	}
 
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if entry, ok = t.entries[k]; ok {
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
+	if entry, ok = shard.entries[k]; ok {
 		entry.ensureSize(actionCount)
 		return entry
 	}
 
 	entry = &RegretEntry{}
 	entry.ensureSize(actionCount)
-	t.entries[k] = entry
+	shard.entries[k] = entry
 	return entry
 }
 
 // Entries exposes a snapshot of the underlying table for serialisation.
 func (t *RegretTable) Entries() map[string]*RegretEntry {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	out := make(map[string]*RegretEntry, len(t.entries))
-	for k, v := range t.entries {
-		out[k] = v
+	out := make(map[string]*RegretEntry)
+	for i := 0; i < regretTableShardCount; i++ {
+		shard := &t.shards[i]
+		shard.mu.RLock()
+		for k, v := range shard.entries {
+			out[k] = v
+		}
+		shard.mu.RUnlock()
 	}
 	return out
 }
 
 // Size returns the number of info sets tracked.
 func (t *RegretTable) Size() int {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return len(t.entries)
+	total := 0
+	for i := 0; i < regretTableShardCount; i++ {
+		shard := &t.shards[i]
+		shard.mu.RLock()
+		total += len(shard.entries)
+		shard.mu.RUnlock()
+	}
+	return total
+}
+
+func (t *RegretTable) shardFor(key string) *regretShard {
+	h := hashKey(key)
+	return &t.shards[h&regretTableShardMask]
 }
 
 func (e *RegretEntry) snapshot() regretSnapshot {
@@ -198,4 +247,15 @@ func newRegretEntryFromSnapshot(snap regretSnapshot) *RegretEntry {
 		Normalising: snap.Normalising,
 	}
 	return entry
+}
+
+func hashKey(key string) uint32 {
+	const offset32 = 2166136261
+	const prime32 = 16777619
+	var hash uint32 = offset32
+	for i := 0; i < len(key); i++ {
+		hash ^= uint32(key[i])
+		hash *= prime32
+	}
+	return hash
 }

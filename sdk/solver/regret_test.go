@@ -43,7 +43,7 @@ func TestRegretEntryUpdateAndAverage(t *testing.T) {
 
 	regrets := []float64{1, -1}
 	strategy := []float64{0.6, 0.4}
-	entry.Update(regrets, strategy, 2.0)
+	entry.Update(regrets, strategy, 2.0, RegretUpdateOptions{})
 
 	if entry.RegretSum[0] != 1 || entry.RegretSum[1] != -1 {
 		t.Fatalf("unexpected regret sums: %+v", entry.RegretSum)
@@ -58,6 +58,44 @@ func TestRegretEntryUpdateAndAverage(t *testing.T) {
 	avg := entry.AverageStrategy()
 	if abs(avg[0]-0.6) > 1e-9 || abs(avg[1]-0.4) > 1e-9 {
 		t.Fatalf("expected average strategy [0.6,0.4], got %v", avg)
+	}
+}
+
+func TestRegretEntryUpdateCFRPlus(t *testing.T) {
+	var entry RegretEntry
+	entry.ensureSize(2)
+
+	opts := RegretUpdateOptions{ClampNegativeRegrets: true, LinearAveraging: true, Iteration: 3}
+
+	regrets := []float64{-2, 5}
+	strategy := []float64{0.5, 0.5}
+	entry.Update(regrets, strategy, 1.0, opts)
+
+	if entry.RegretSum[0] != 0 {
+		t.Fatalf("negative regret should clamp to zero, got %v", entry.RegretSum[0])
+	}
+	if entry.RegretSum[1] != 5 {
+		t.Fatalf("positive regret should accumulate, got %v", entry.RegretSum[1])
+	}
+
+	entry.Update([]float64{-1, -1}, strategy, 1.0, opts)
+
+	if entry.RegretSum[0] != 0 {
+		t.Fatalf("clamped regret should remain zero, got %v", entry.RegretSum[0])
+	}
+	if entry.RegretSum[1] != 4 {
+		t.Fatalf("expected regret sum 4 after clamp, got %v", entry.RegretSum[1])
+	}
+
+	expectedStrategy := 3.0
+	if abs(entry.StrategySum[0]-expectedStrategy) > 1e-9 {
+		t.Fatalf("expected linear-weighted strategy sum %v, got %v", expectedStrategy, entry.StrategySum[0])
+	}
+	if abs(entry.StrategySum[1]-expectedStrategy) > 1e-9 {
+		t.Fatalf("expected linear-weighted strategy sum %v, got %v", expectedStrategy, entry.StrategySum[1])
+	}
+	if abs(entry.Normalising-6) > 1e-9 {
+		t.Fatalf("expected normalising weight 6, got %v", entry.Normalising)
 	}
 }
 
@@ -104,7 +142,7 @@ func TestRegretTableConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < updates; j++ {
 				entry := table.Get(key, len(regrets))
-				entry.Update(regrets, strategy, 1.0)
+				entry.Update(regrets, strategy, 1.0, RegretUpdateOptions{})
 			}
 		}()
 	}

@@ -196,6 +196,7 @@ A successful demo should:
 - [ ] **Parallel scalability**: profile mutex contention in the regret table and introduce sharded/buffered updates so `--parallel=N` scales closer to linear on 8+ cores.
 - [ ] **Abstraction refinement**: experiment with stage-specific bucket counts (e.g., richer turn/river, leaner preflop) and opponent mixes once algorithmic changes land.
 - [ ] **Routine deep runs**: schedule ≥10 M iteration smoke jobs (now ~22 h) after algorithmic changes to benchmark progress against calling-station.
+- [ ] **CFR+ baseline run**: execute the 10 M-iteration smoke job with `--cfr-plus --sampling=external --parallel=8` (see plans/solver.md) and capture mirror-mode evaluation results vs calling-station.
 
 ## Phase 4: Multi-Game & Simulation Harness (Planned)
 

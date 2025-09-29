@@ -6,6 +6,25 @@ import (
 	"time"
 )
 
+// SamplingMode controls how opponent actions are handled during traversal.
+type SamplingMode uint8
+
+const (
+	SamplingModeExternal SamplingMode = iota
+	SamplingModeFullTraversal
+)
+
+func (m SamplingMode) String() string {
+	switch m {
+	case SamplingModeExternal:
+		return "external"
+	case SamplingModeFullTraversal:
+		return "full"
+	default:
+		return "unknown"
+	}
+}
+
 // AbstractionConfig captures the coarse representation used by the solver when
 // clustering hands and actions. Values here should align with the abstraction
 // used during blueprint generation and runtime consumption.
@@ -86,6 +105,8 @@ type TrainingConfig struct {
 	EnableRaises        bool
 	MaxRaisesPerBucket  int
 	AdaptiveRaiseVisits int
+	UseCFRPlus          bool
+	Sampling            SamplingMode
 }
 
 // Validate ensures the training parameters are safe to use.
@@ -120,6 +141,9 @@ func (c TrainingConfig) Validate() error {
 	if c.AdaptiveRaiseVisits < 0 {
 		return errors.New("adaptive raise visits cannot be negative")
 	}
+	if c.Sampling > SamplingModeFullTraversal {
+		return errors.New("invalid sampling mode")
+	}
 	return nil
 }
 
@@ -150,5 +174,7 @@ func DefaultTrainingConfig() TrainingConfig {
 		EnableRaises:        true,
 		MaxRaisesPerBucket:  3,
 		AdaptiveRaiseVisits: 500,
+		UseCFRPlus:          false,
+		Sampling:            SamplingModeExternal,
 	}
 }

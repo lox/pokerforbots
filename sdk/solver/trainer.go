@@ -169,6 +169,12 @@ func (t *Trainer) singleIteration() (TraversalStats, error) {
 	}
 
 	statsSlice := make([]TraversalStats, parallel)
+	iterationNumber := int(t.iteration.Load()) + 1
+	updateOpts := RegretUpdateOptions{Iteration: iterationNumber}
+	if t.trainCfg.UseCFRPlus {
+		updateOpts.ClampNegativeRegrets = true
+		updateOpts.LinearAveraging = true
+	}
 
 	type tableSeeds struct {
 		deck   int64
@@ -203,6 +209,7 @@ func (t *Trainer) singleIteration() (TraversalStats, error) {
 				stats:       &statsSlice[idx],
 				sampler:     randutil.New(seeds[idx].sample),
 				fastRNG:     PCG32{state: uint64(seeds[idx].deck)*2 + 1}, // Initialize embedded RNG
+				updateOpts:  updateOpts,
 			}
 
 			for player := 0; player < t.trainCfg.Players; player++ {

@@ -24,6 +24,7 @@ type iterationContext struct {
 	sampler     *rand.Rand
 	deckRNG     *rand.Rand // Reusable RNG for deck operations
 	fastRNG     PCG32      // Embedded PCG32 to avoid allocations
+	updateOpts  RegretUpdateOptions
 }
 
 func (t *Trainer) traverse(ctx *iterationContext, path []solverAction, target int, depth int, reachPlayer, reachOthers float64) (float64, error) {
@@ -85,8 +86,38 @@ func (t *Trainer) traverse(ctx *iterationContext, path []solverAction, target in
 		for i := range actions {
 			regrets[i] = (util[i] - nodeUtil) * reachOthers
 		}
-		entry.Update(regrets, strategy, reachPlayer)
+		entry.Update(regrets, strategy, reachPlayer, ctx.updateOpts)
 		t.recordVisit(key)
+		return nodeUtil, nil
+	}
+
+	if t.trainCfg.Sampling == SamplingModeFullTraversal {
+		nodeUtil := 0.0
+		total := 0.0
+		for i, act := range actions {
+			prob := strategy[i]
+			if prob <= 0 {
+				continue
+			}
+			nextPath := appendPath(path, act)
+			u, err := t.traverse(ctx, nextPath, target, depth+1, reachPlayer, reachOthers*prob)
+			if err != nil {
+				return 0, err
+			}
+			nodeUtil += prob * u
+			total += prob
+		}
+		if total <= 0 && len(actions) > 0 {
+			fallback := 1.0 / float64(len(actions))
+			for _, act := range actions {
+				nextPath := appendPath(path, act)
+				u, err := t.traverse(ctx, nextPath, target, depth+1, reachPlayer, reachOthers*fallback)
+				if err != nil {
+					return 0, err
+				}
+				nodeUtil += fallback * u
+			}
+		}
 		return nodeUtil, nil
 	}
 

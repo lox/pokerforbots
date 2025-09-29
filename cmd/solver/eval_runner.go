@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/lox/pokerforbots/internal/server"
@@ -23,6 +24,7 @@ type evaluationOptions struct {
 	BigBlind      int
 	StartChips    int
 	TimeoutMs     int
+	Mirror        bool
 }
 
 type evalResult struct {
@@ -57,6 +59,39 @@ type gameStatsDTO struct {
 }
 
 func runEvaluation(ctx context.Context, logger zerolog.Logger, opts evaluationOptions) (*evalResult, error) {
+	if !opts.Mirror {
+		return runSingleEvaluation(ctx, logger, opts, false)
+	}
+
+	if opts.Hands < 2 {
+		return nil, fmt.Errorf("mirror mode requires at least 2 hands (got %d)", opts.Hands)
+	}
+
+	firstHands := opts.Hands / 2
+	secondHands := opts.Hands - firstHands
+
+	firstOpts := opts
+	firstOpts.Hands = firstHands
+	firstOpts.Mirror = false
+
+	secondOpts := opts
+	secondOpts.Hands = secondHands
+	secondOpts.Mirror = false
+
+	primary, err := runSingleEvaluation(ctx, logger, firstOpts, false)
+	if err != nil {
+		return nil, err
+	}
+
+	secondary, err := runSingleEvaluation(ctx, logger, secondOpts, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return combineEvalResults(opts.BigBlind, primary, secondary), nil
+}
+
+func runSingleEvaluation(ctx context.Context, logger zerolog.Logger, opts evaluationOptions, swapSeats bool) (*evalResult, error) {
 	seed := opts.Seed
 	if seed == 0 {
 		seed = time.Now().UnixNano()
@@ -93,22 +128,7 @@ func runEvaluation(ctx context.Context, logger zerolog.Logger, opts evaluationOp
 	botSpawner := spawner.NewWithSeed(wsURL, logger, seed)
 	defer botSpawner.StopAll()
 
-	specs := []spawner.BotSpec{
-		{
-			Command: "go",
-			Args:    []string{"run", "./sdk/examples/calling-station"},
-			Count:   1,
-		},
-		{
-			Command: "go",
-			Args:    []string{"run", "./sdk/examples/complex"},
-			Count:   1,
-			Env: map[string]string{
-				"POKERFORBOTS_BLUEPRINT":           opts.BlueprintPath,
-				"POKERFORBOTS_BLUEPRINT_FAIL_HARD": "1",
-			},
-		},
-	}
+	specs := buildEvalSpecs(opts, swapSeats)
 
 	if err := botSpawner.Spawn(specs...); err != nil {
 		srv.Shutdown(ctx)
@@ -123,7 +143,6 @@ func runEvaluation(ctx context.Context, logger zerolog.Logger, opts evaluationOp
 	case <-done:
 	}
 
-	// Stop bots first since they don't exit automatically when the game ends
 	if err := botSpawner.StopAll(); err != nil {
 		logger.Warn().Err(err).Msg("bot stop warning")
 	}
@@ -172,6 +191,84 @@ func runEvaluation(ctx context.Context, logger zerolog.Logger, opts evaluationOp
 		Duration:       duration,
 		Players:        players,
 	}, nil
+}
+
+func buildEvalSpecs(opts evaluationOptions, swap bool) []spawner.BotSpec {
+	blueprintEnv := map[string]string{
+		"POKERFORBOTS_BLUEPRINT":           opts.BlueprintPath,
+		"POKERFORBOTS_BLUEPRINT_FAIL_HARD": "1",
+	}
+
+	baseline := spawner.BotSpec{
+		Command: "go",
+		Args:    []string{"run", "./sdk/examples/calling-station"},
+		Count:   1,
+	}
+
+	blueprint := spawner.BotSpec{
+		Command: "go",
+		Args:    []string{"run", "./sdk/examples/complex"},
+		Count:   1,
+		Env:     blueprintEnv,
+	}
+
+	if swap {
+		return []spawner.BotSpec{blueprint, baseline}
+	}
+	return []spawner.BotSpec{baseline, blueprint}
+}
+
+func combineEvalResults(bigBlind int, results ...*evalResult) *evalResult {
+	combined := &evalResult{}
+	if len(results) == 0 {
+		return combined
+	}
+
+	type playerAgg struct {
+		netChips int
+		hands    int
+	}
+
+	agg := make(map[string]playerAgg)
+	for _, res := range results {
+		if res == nil {
+			continue
+		}
+		combined.HandsCompleted += res.HandsCompleted
+		combined.Duration += res.Duration
+		for _, p := range res.Players {
+			hands := p.Hands
+			if hands == 0 {
+				hands = int(res.HandsCompleted)
+			}
+			entry := agg[p.Name]
+			entry.netChips += p.NetChips
+			entry.hands += hands
+			agg[p.Name] = entry
+		}
+	}
+
+	players := make([]evalPlayer, 0, len(agg))
+	for name, entry := range agg {
+		player := evalPlayer{
+			Name:     name,
+			NetChips: entry.netChips,
+			Hands:    entry.hands,
+		}
+		if entry.hands > 0 && bigBlind > 0 {
+			totalBB := float64(entry.netChips) / float64(bigBlind)
+			player.BBPerHand = totalBB / float64(entry.hands)
+			player.BBPer100 = player.BBPerHand * 100
+		}
+		players = append(players, player)
+	}
+
+	sort.Slice(players, func(i, j int) bool {
+		return players[i].Name < players[j].Name
+	})
+
+	combined.Players = players
+	return combined
 }
 
 func fetchGameStats(baseURL string) (*gameStatsDTO, error) {
