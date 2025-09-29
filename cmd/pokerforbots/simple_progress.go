@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lox/pokerforbots/internal/regression"
 	"github.com/lox/pokerforbots/internal/server"
 )
 
@@ -102,52 +101,44 @@ func (m *SimpleProgressMonitor) OnHandStart(string, []server.HandPlayer, int, se
 // OnPlayerAction is called when a player takes an action
 func (m *SimpleProgressMonitor) OnPlayerAction(string, int, string, int, int) {}
 
-// OnStreetChange is called when the street changes
+// OnStreetChange is called when the game advances to a new street
 func (m *SimpleProgressMonitor) OnStreetChange(string, string, []string) {}
 
-// startBatch marks the beginning of a new batch
-func (m *SimpleProgressMonitor) startBatch(batchNum int, totalBatches int) {
+// OnBatchStart is called when a new batch begins (ProgressReporter interface)
+func (m *SimpleProgressMonitor) OnBatchStart(batch int, totalBatches int, totalHands int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.currentBatch = batchNum
+	m.currentBatch = batch
 	m.totalBatches = totalBatches
 	m.batchStartTime = time.Now()
-	m.dotsPrinted = 0
 
-	fmt.Printf("Batch %d/%d: ", batchNum, totalBatches)
+	// Print batch header
+	fmt.Printf("Batch %d/%d: ", batch, totalBatches)
 }
 
-// completeBatch marks the completion of a batch
-func (m *SimpleProgressMonitor) completeBatch(batchNum int, totalHandsCompleted int) {
+// OnBatchComplete is called when a batch completes (ProgressReporter interface)
+func (m *SimpleProgressMonitor) OnBatchComplete(batch int, total int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Don't print anything - OnHandComplete handles the completion message
+	// Completion handled by OnHandComplete
+}
+
+// OnHandsProgress is called periodically during hand execution (ProgressReporter interface)
+func (m *SimpleProgressMonitor) OnHandsProgress(handsCompleted int, handsTotal int) {
+	// Progress is already handled by OnHandComplete
 }
 
 // PrintSummary prints the final summary
 func (m *SimpleProgressMonitor) PrintSummary(totalHands int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	duration := time.Since(m.startTime)
-	handsPerSec := float64(totalHands) / duration.Seconds()
+	totalSec := duration.Seconds()
+	handsPerSec := float64(totalHands) / totalSec
 
-	fmt.Printf("\n✅ Completed %d hands in %.1fs (%.0f hands/sec)\n\n",
-		totalHands, duration.Seconds(), handsPerSec)
+	fmt.Printf("\n")
+	fmt.Printf("Completed %d hands in %.1f seconds (%.0f hands/sec)\n", totalHands, totalSec, handsPerSec)
 }
-
-// ProgressReporter interface implementation
-func (m *SimpleProgressMonitor) OnBatchStart(batchNum int, totalBatches int, handsInBatch int) {
-	m.startBatch(batchNum, totalBatches)
-}
-
-func (m *SimpleProgressMonitor) OnBatchComplete(batchNum int, handsCompleted int) {
-	m.completeBatch(batchNum, handsCompleted)
-}
-
-func (m *SimpleProgressMonitor) OnHandsProgress(handsCompleted int, totalHands int) {
-	// This is handled by OnHandComplete from the server
-}
-
-// Ensure interface compliance
-var _ server.HandMonitor = (*SimpleProgressMonitor)(nil)
-var _ regression.ProgressReporter = (*SimpleProgressMonitor)(nil)

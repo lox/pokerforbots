@@ -61,21 +61,17 @@ Example payload:
   "timeout_ms": 100,
   "min_players": 2,
   "max_players": 6,
-  "require_player": true,
+  "infinite_bankroll": false,
   "hands": 500,
-  "seed": 1337,
-  "npcs": [
-    {"strategy": "calling", "count": 2},
-    {"strategy": "aggressive", "count": 1},
-    {"strategy": "random", "count": 2}
-  ]
+  "seed": 1337
 }
 ```
 
+- `infinite_bankroll` (optional) when true, players never bust out and always have chips to continue playing.
 - `hands` (optional) caps how many hands the game will run before idling.
 - `seed` (optional) seeds the game-specific RNG so shuffles and seatings are reproducible.
 
-Strategies supported for NPCs: `calling` (calling-station), `aggressive`, `random`. Count values of `0` are ignored.
+Note: NPC spawning has been moved out of the server. To add bots to a game, use the `pokerforbots spawn` command or connect bots separately using the `pokerforbots bots` commands.
 
 ### Example Stats Response
 
