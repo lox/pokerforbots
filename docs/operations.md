@@ -2,57 +2,73 @@
 
 ## Running the Server
 
-### Basic Server
+### Quick Start: Spawn Command (Recommended)
+
+For most use cases, use the `spawn` command which manages both server and bots:
+
 ```bash
-# Default port 8080
-task server
+# Quick demo with bots
+pokerforbots spawn --spec "calling-station:3,random:3"
 
-# Custom port (set in environment or modify Taskfile.yml)
-PORT=9090 task server
+# Test your bot
+pokerforbots spawn --bot-cmd "./my-bot" --spec "aggressive:5"
 
-# Spawn NPC opponents in the default game (auto distribute strategies)
-go run ./cmd/server --npc-bots 6
-
-# Explicit NPC mix
-go run ./cmd/server --npc-calling 2 --npc-random 3 --npc-aggro 1
-
-# Deterministic simulation run (fixed seed, auto-shutdown after 500 hands)
-go run ./cmd/server --seed 1337 --hands 500 --npc-bots 3
-
-# Collect detailed server-side statistics for development (impacts performance)
-# Basic per-bot chip deltas are always tracked; this flag enables rich stats
-go run ./cmd/server --collect-detailed-stats --max-stats-hands=10000
-
-# Production mode (detailed stats disabled for maximum performance)
-go run ./cmd/server --npc-bots 6  # Default: detailed stats disabled
+# Deterministic testing
+pokerforbots spawn --seed 42 --hand-limit 1000 --spec "random:6"
 ```
 
-### Demo with Test Bots
-Create a sandbox game with NPC opponents via the admin API, then connect your bot:
+### Standalone Server
+
+For production deployments or custom integrations:
 
 ```bash
+# Basic server on default port
+pokerforbots server
+
+# Custom configuration
+pokerforbots server --addr :9090 \
+  --small-blind 25 --big-blind 50 \
+  --start-chips 5000
+
+# With statistics collection
+pokerforbots server --enable-stats --max-stats-hands 50000
+
+# Deterministic testing mode
+pokerforbots server --seed 1337 --hand-limit 500
+
+# For human players (longer timeout)
+pokerforbots server --timeout-ms 10000
+```
+
+Note: The standalone server no longer includes built-in NPC bots. Use the `spawn` command for testing with bots, or connect bots separately using the `bots` command.
+
+### Multi-Game Setup
+
+Create additional games via the admin API:
+
+```bash
+# Start the server
+pokerforbots server
+
+# Create a custom game
 curl -X POST http://localhost:8080/admin/games \
      -H "Content-Type: application/json" \
      -d '{
-           "id": "sandbox",
-           "small_blind": 5,
-           "big_blind": 10,
-           "start_chips": 1000,
+           "id": "high-stakes",
+           "small_blind": 50,
+           "big_blind": 100,
+           "start_chips": 10000,
            "timeout_ms": 100,
            "min_players": 2,
-           "max_players": 6,
-           "require_player": true,
-           "npcs": [
-             {"strategy": "calling", "count": 2},
-             {"strategy": "random", "count": 3}
-           ]
+           "max_players": 6
          }'
 
-# Run your development bot
-go run ./sdk/examples/random --server ws://localhost:8080/ws --game sandbox
+# Connect bots to the custom game
+pokerforbots bots random ws://localhost:8080/ws --game high-stakes
+pokerforbots bots aggressive ws://localhost:8080/ws --game high-stakes
 
-# OR launch the complex bot skeleton (for custom logic)
-go run ./sdk/examples/complex --server ws://localhost:8080/ws --game sandbox --debug
+# Or connect your custom bot
+./my-bot --server ws://localhost:8080/ws --game high-stakes
 ```
 
 ## Monitoring
@@ -64,7 +80,6 @@ The server exposes HTTP endpoints for monitoring and discovery:
 - `GET /games` - JSON list of configured games with blinds, seat limits, and player requirements
 - `GET /admin/games/{id}/stats` - Detailed per-game stats including bot win/loss deltas and remaining hand budget
 - `POST /admin/games` / `DELETE /admin/games/{id}` - create or remove tables (authentication TBD; restrict to trusted environments)
-  - Payload may include an `npcs` array to automatically spawn built-in opponents (strategies: `calling`, `aggressive`, `random`).
 - Bots connected over WebSocket receive a `game_completed` message (with the per-bot stats snapshot) whenever a game exhausts its configured hand budget.
 
 ## Architecture Notes

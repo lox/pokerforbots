@@ -35,16 +35,14 @@ tasks:
     desc: Build all binaries
     cmds:
       - mkdir -p dist
-      - go build -o dist/server ./cmd/server
-      - go build -o dist/client ./cmd/client
-      - go build -o dist/spawner ./cmd/spawner
+      - go build -o dist/pokerforbots ./cmd/pokerforbots
+      - go build -o dist/gen-preflop ./cmd/gen-preflop
       - go build -o dist/complex-bot ./sdk/examples/complex
     sources:
       - '**/*.go'
     generates:
-      - dist/server
-      - dist/client
-      - dist/spawner
+      - dist/pokerforbots
+      - dist/gen-preflop
       - dist/complex-bot
 
   snapshot:
@@ -69,12 +67,22 @@ tasks:
   server:
     desc: Run the poker server
     cmds:
-      - go run ./cmd/server {{.CLI_ARGS}}
+      - go run ./cmd/pokerforbots server {{.CLI_ARGS}}
 
   client:
     desc: Run the poker client
     cmds:
-      - go run ./cmd/client {{.CLI_ARGS}}
+      - go run ./cmd/pokerforbots client {{.CLI_ARGS}}
+
+  spawn:
+    desc: Spawn server with bots
+    cmds:
+      - go run ./cmd/pokerforbots spawn {{.CLI_ARGS}}
+
+  regression:
+    desc: Run regression tests
+    cmds:
+      - go run ./cmd/pokerforbots regression {{.CLI_ARGS}}
 
   test:
     desc: Run all tests with race detector
@@ -128,7 +136,7 @@ tasks:
   bench:
     desc: Run performance benchmark using spawner
     cmds:
-      - go run ./cmd/spawner --demo=simple --num-bots=6 --hand-limit=1000 {{.CLI_ARGS}}
+      - go run ./cmd/pokerforbots spawn --spec="calling-station:6" --hand-limit=1000 {{.CLI_ARGS}}
     silent: false
 
   bench:go:
@@ -136,16 +144,13 @@ tasks:
     cmds:
       - go test -bench=. -benchmem {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}-benchtime=100ms{{end}} ./...
 
-  regression:
-    desc: Run regression tests between bot versions
-    cmds:
-      - go run ./cmd/regression-tester {{.CLI_ARGS}}
+  # Removing duplicate regression task (already defined above)
 
   regression:heads-up:
     desc: Run heads-up regression test
     cmds:
       - |
-        go run ./cmd/regression-tester --mode heads-up \
+        go run ./cmd/pokerforbots regression --mode heads-up \
           --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
           --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
           --hands {{.HANDS | default "50000"}} \
@@ -156,7 +161,7 @@ tasks:
     desc: Run population regression test
     cmds:
       - |
-        go run ./cmd/regression-tester --mode population \
+        go run ./cmd/pokerforbots regression --mode population \
           --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
           --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
           --hands {{.HANDS | default "50000"}} \
@@ -167,7 +172,7 @@ tasks:
     desc: Run NPC benchmark regression test
     cmds:
       - |
-        go run ./cmd/regression-tester --mode npc-benchmark \
+        go run ./cmd/pokerforbots regression --mode npc-benchmark \
           --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
           --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
           --hands {{.HANDS | default "50000"}} \
@@ -178,7 +183,7 @@ tasks:
     desc: Run self-play regression test
     cmds:
       - |
-        go run ./cmd/regression-tester --mode self-play \
+        go run ./cmd/pokerforbots regression --mode self-play \
           --challenger "{{.CHALLENGER | default "./snapshots/complex-latest"}}" \
           --baseline "{{.BASELINE | default "go run ./sdk/examples/complex"}}" \
           --hands {{.HANDS | default "50000"}} \

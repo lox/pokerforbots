@@ -1,21 +1,18 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 
-	"github.com/alecthomas/kong"
+	"github.com/lox/pokerforbots/cmd/pokerforbots/shared"
 	"github.com/lox/pokerforbots/internal/regression"
 	"github.com/rs/zerolog"
 )
 
-type CLI struct {
+type RegressionCmd struct {
 	// Test modes
 	Mode string `kong:"default='heads-up',enum='heads-up,population,npc-benchmark,self-play,all',help='Test mode to run'"`
 
@@ -51,7 +48,7 @@ type CLI struct {
 
 	// Server configuration
 	ServerAddr string `kong:"default='localhost:8080',help='Poker server address'"`
-	ServerCmd  string `kong:"default='go run ./cmd/server',help='Command to run the poker server'"`
+	ServerCmd  string `kong:"default='go run ./cmd/pokerforbots server',help='Command to run the poker server'"`
 	TimeoutMs  int    `kong:"default='100',help='Bot decision timeout in milliseconds'"`
 
 	// Health monitoring
@@ -70,20 +67,10 @@ type CLI struct {
 	ValidateBinaries bool `kong:"help='Validate bot binaries and exit'"`
 }
 
-func main() {
-	var cli CLI
-	ctx := kong.Parse(&cli,
-		kong.Name("regression-tester"),
-		kong.Description("Regression testing framework for poker bot snapshots"),
-		kong.UsageOnError(),
-		kong.ConfigureHelp(kong.HelpOptions{
-			Compact: true,
-		}),
-	)
-
+func (c *RegressionCmd) Run() error {
 	// Configure logging
 	var logger zerolog.Logger
-	if cli.Quiet {
+	if c.Quiet {
 		// In quiet mode, disable most logging
 		logger = zerolog.New(zerolog.ConsoleWriter{Out: io.Discard}).
 			Level(zerolog.ErrorLevel).
@@ -92,7 +79,7 @@ func main() {
 			Logger()
 	} else {
 		level := zerolog.InfoLevel
-		if cli.Debug {
+		if c.Debug {
 			level = zerolog.DebugLevel
 		}
 		logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
@@ -104,13 +91,12 @@ func main() {
 
 	// Parse seeds
 	var seeds []int64
-	seedParts := strings.SplitSeq(cli.Seeds, ",")
-	for s := range seedParts {
+	for _, s := range strings.Split(c.Seeds, ",") {
 		s = strings.TrimSpace(s)
 		if s != "" {
 			seed, err := strconv.ParseInt(s, 10, 64)
 			if err != nil {
-				ctx.Fatalf("Invalid seed value '%s': %v", s, err)
+				return fmt.Errorf("invalid seed value '%s': %v", s, err)
 			}
 			seeds = append(seeds, seed)
 		}
@@ -118,25 +104,24 @@ func main() {
 
 	// Parse NPCs configuration
 	npcs := make(map[string]int)
-	if cli.NPCs != "" {
-		npcParts := strings.SplitSeq(cli.NPCs, ",")
-		for npc := range npcParts {
+	if c.NPCs != "" {
+		for _, npc := range strings.Split(c.NPCs, ",") {
 			parts := strings.Split(npc, ":")
 			if len(parts) != 2 {
-				ctx.Fatalf("Invalid NPC format '%s': expected 'type:count'", npc)
+				return fmt.Errorf("invalid NPC format '%s': expected 'type:count'", npc)
 			}
 
 			count, err := strconv.Atoi(strings.TrimSpace(parts[1]))
 			if err != nil {
-				ctx.Fatalf("Invalid NPC count in '%s': %v", npc, err)
+				return fmt.Errorf("invalid NPC count in '%s': %v", npc, err)
 			}
 			if count <= 0 {
-				ctx.Fatalf("NPC count must be positive in '%s'", npc)
+				return fmt.Errorf("NPC count must be positive in '%s'", npc)
 			}
 
 			npcType := strings.TrimSpace(parts[0])
 			if npcType == "" {
-				ctx.Fatalf("Empty NPC type in '%s'", npc)
+				return fmt.Errorf("empty NPC type in '%s'", npc)
 			}
 			npcs[npcType] = count
 		}
@@ -144,55 +129,55 @@ func main() {
 
 	// Build config from CLI
 	config := &regression.Config{
-		Mode: regression.TestMode(cli.Mode),
+		Mode: regression.TestMode(c.Mode),
 
 		// Bot binaries - unified
-		Challenger: cli.Challenger,
-		Baseline:   cli.Baseline,
+		Challenger: c.Challenger,
+		Baseline:   c.Baseline,
 
 		// Test configuration
-		HandsTotal:    cli.Hands,
-		BatchSize:     cli.BatchSize,
+		HandsTotal:    c.Hands,
+		BatchSize:     c.BatchSize,
 		Seeds:         seeds,
-		StartingChips: cli.StartingChips,
+		StartingChips: c.StartingChips,
 
 		// Table configuration
-		ChallengerSeats: cli.ChallengerSeats,
-		BaselineSeats:   cli.BaselineSeats,
+		ChallengerSeats: c.ChallengerSeats,
+		BaselineSeats:   c.BaselineSeats,
 		NPCs:            npcs,
 
 		// Statistical
-		InfiniteBankroll:          cli.InfiniteBankroll,
-		SignificanceLevel:         cli.SignificanceLevel,
-		EffectSizeThreshold:       cli.EffectSizeThreshold,
-		MultipleTestCorrection:    cli.MultipleTestCorrection,
-		EarlyStopping:             cli.EarlyStopping,
-		MinHands:                  cli.MinHands,
-		MaxHands:                  cli.MaxHands,
-		CheckInterval:             cli.CheckInterval,
-		StdDevClampMin:            cli.StdDevClampMin,
-		StdDevClampFallback:       cli.StdDevClampFallback,
-		WarnOnStdDevClamp:         cli.WarnStdDevClamp,
-		EnableLatencyTracking:     cli.LatencyTracking,
-		LatencyWarningThresholdMs: cli.LatencyWarnMs,
+		InfiniteBankroll:          c.InfiniteBankroll,
+		SignificanceLevel:         c.SignificanceLevel,
+		EffectSizeThreshold:       c.EffectSizeThreshold,
+		MultipleTestCorrection:    c.MultipleTestCorrection,
+		EarlyStopping:             c.EarlyStopping,
+		MinHands:                  c.MinHands,
+		MaxHands:                  c.MaxHands,
+		CheckInterval:             c.CheckInterval,
+		StdDevClampMin:            c.StdDevClampMin,
+		StdDevClampFallback:       c.StdDevClampFallback,
+		WarnOnStdDevClamp:         c.WarnStdDevClamp,
+		EnableLatencyTracking:     c.LatencyTracking,
+		LatencyWarningThresholdMs: c.LatencyWarnMs,
 
 		// Server
-		ServerAddr: cli.ServerAddr,
-		ServerCmd:  cli.ServerCmd,
-		TimeoutMs:  cli.TimeoutMs,
+		ServerAddr: c.ServerAddr,
+		ServerCmd:  c.ServerCmd,
+		TimeoutMs:  c.TimeoutMs,
 
 		// Health
-		MaxCrashesPerBot:  cli.MaxCrashes,
-		MaxTimeoutsPerBot: cli.MaxTimeouts,
-		RestartDelayMs:    cli.RestartDelayMs,
+		MaxCrashesPerBot:  c.MaxCrashes,
+		MaxTimeoutsPerBot: c.MaxTimeouts,
+		RestartDelayMs:    c.RestartDelayMs,
 
 		// Output
-		OutputFormat: cli.Output,
-		OutputFile:   cli.OutputFile,
-		Verbose:      cli.Verbose,
+		OutputFormat: c.Output,
+		OutputFile:   c.OutputFile,
+		Verbose:      c.Verbose,
 
 		// Special commands
-		ValidateOnly: cli.ValidateBinaries,
+		ValidateOnly: c.ValidateBinaries,
 
 		Logger: logger,
 	}
@@ -206,16 +191,15 @@ func main() {
 	})
 
 	// Set up signal handling
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	ctx := shared.SetupSignalHandlerWithLogger(logger)
 
 	// Create runner with options
 	var opts []regression.RunnerOption
 	var simpleMonitor *SimpleProgressMonitor
 
-	if cli.Quiet {
+	if c.Quiet {
 		// Calculate total batches
-		totalBatches := (cli.Hands + cli.BatchSize - 1) / cli.BatchSize
+		totalBatches := (c.Hands + c.BatchSize - 1) / c.BatchSize
 
 		// Use simple unified progress monitor
 		simpleMonitor = NewSimpleProgressMonitor(totalBatches)
@@ -228,29 +212,21 @@ func main() {
 	// Handle special commands
 	if config.ValidateOnly {
 		if err := runner.ValidateBinaries(); err != nil {
-			ctx.Fatalf("Binary validation failed: %v", err)
+			return fmt.Errorf("binary validation failed: %v", err)
 		}
 		fmt.Println("All binaries validated successfully")
-		return
+		return nil
 	}
 
-	// Run tests with signal handling
-	runCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go func() {
-		<-sigChan
-		logger.Info().Msg("Received interrupt signal, shutting down...")
-		cancel()
-	}()
-
 	// Run the regression tests
-	if err := runner.Run(runCtx); err != nil {
-		ctx.Fatalf("Test failed: %v", err)
+	if err := runner.Run(ctx); err != nil {
+		return fmt.Errorf("test failed: %v", err)
 	}
 
 	// Print final summary if in quiet mode
 	if simpleMonitor != nil {
-		simpleMonitor.PrintSummary(cli.Hands)
+		simpleMonitor.PrintSummary(c.Hands)
 	}
+
+	return nil
 }
