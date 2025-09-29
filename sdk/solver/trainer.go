@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/lox/pokerforbots/poker"
 )
 
 // TraversalStats captures instrumentation metrics for a single MCCFR iteration.
@@ -217,6 +219,11 @@ func (t *Trainer) singleIteration() (TraversalStats, error) {
 				fastRNG:     PCG32{state: uint64(seeds[idx].deck)*2 + 1}, // Initialize embedded RNG
 				updateOpts:  updateOpts,
 			}
+
+			wrapper := &wrapperSource{rng: &ctx.fastRNG}
+			ctx.deckRNG = rand.New(wrapper)
+			baseDeck := poker.NewDeck(ctx.deckRNG)
+			ctx.deckTemplate = *baseDeck
 
 			for player := 0; player < t.trainCfg.Players; player++ {
 				errMu.Lock()

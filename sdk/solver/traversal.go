@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/lox/pokerforbots/internal/game"
+	"github.com/lox/pokerforbots/poker"
 )
 
 type solverAction struct {
@@ -16,15 +17,16 @@ type solverAction struct {
 }
 
 type iterationContext struct {
-	trainer     *Trainer
-	deckSeed    int64
-	button      int
-	playerNames []string
-	stats       *TraversalStats
-	sampler     *rand.Rand
-	deckRNG     *rand.Rand // Reusable RNG for deck operations
-	fastRNG     PCG32      // Embedded PCG32 to avoid allocations
-	updateOpts  RegretUpdateOptions
+	trainer      *Trainer
+	deckSeed     int64
+	button       int
+	playerNames  []string
+	stats        *TraversalStats
+	sampler      *rand.Rand
+	deckRNG      *rand.Rand // Reusable RNG for deck operations
+	fastRNG      PCG32      // Embedded PCG32 to avoid allocations
+	updateOpts   RegretUpdateOptions
+	deckTemplate poker.Deck
 }
 
 func (t *Trainer) traverse(ctx *iterationContext, path []solverAction, target int, depth int, reachPlayer, reachOthers float64) (float64, error) {
@@ -135,12 +137,8 @@ func (t *Trainer) traverse(ctx *iterationContext, path []solverAction, target in
 }
 
 func (t *Trainer) simulatePath(ctx *iterationContext, path []solverAction) (*game.HandState, error) {
-	// Reuse embedded PCG32 - just reset seed, no allocation
-	ctx.fastRNG.InitSeed(ctx.deckSeed)
-	if ctx.deckRNG == nil {
-		ctx.deckRNG = rand.New(&wrapperSource{rng: &ctx.fastRNG})
-	}
-	hand := game.NewHandState(ctx.deckRNG, ctx.playerNames, ctx.button, t.trainCfg.SmallBlind, t.trainCfg.BigBlind, game.WithChips(t.trainCfg.StartingStack))
+	deck := cloneDeck(&ctx.deckTemplate)
+	hand := game.NewHandState(ctx.deckRNG, ctx.playerNames, ctx.button, t.trainCfg.SmallBlind, t.trainCfg.BigBlind, game.WithChips(t.trainCfg.StartingStack), game.WithDeck(deck))
 
 	for _, step := range path {
 		if hand.IsComplete() {
@@ -166,6 +164,11 @@ func appendPath(path []solverAction, act solverAction) []solverAction {
 	copy(next, path)
 	next[len(path)] = act
 	return next
+}
+
+func cloneDeck(src *poker.Deck) *poker.Deck {
+	clone := *src
+	return &clone
 }
 
 func (t *Trainer) legalActions(hand *game.HandState, expandRaises bool) []solverAction {
