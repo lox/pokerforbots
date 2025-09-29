@@ -48,6 +48,7 @@ type SolverTrainCmd struct {
 	ResumeFrom          string `help:"resume training from checkpoint file"`
 	CPUProfile          string `help:"write CPU profile to file"`
 	CFRPlus             bool   `help:"enable CFR+ (positive regret matching with linear averaging)"`
+	DCFR                bool   `help:"use Discounted CFR (α=3/2, β=0, γ=2)" default:"true"`
 	Sampling            string `help:"sampling mode (external|full)" enum:"external,full" default:"external"`
 }
 
@@ -119,12 +120,17 @@ func (cmd *SolverTrainCmd) Run() error {
 		if mode != trainCfg.Sampling {
 			log.Warn().Str("requested", mode.String()).Str("checkpoint", trainCfg.Sampling.String()).Msg("cannot change sampling mode when resuming from checkpoint; keeping original")
 		}
+		if cmd.DCFR && !trainCfg.UseDCFR {
+			log.Warn().Msg("cannot enable DCFR when resuming from checkpoint; keeping original regret mode")
+		} else if !cmd.DCFR && trainCfg.UseDCFR {
+			log.Warn().Msg("checkpoint was trained with DCFR; continuing with DCFR mode")
+		}
 		if cmd.CFRPlus && !trainCfg.UseCFRPlus {
 			log.Warn().Msg("cannot enable CFR+ when resuming from checkpoint; keeping original regret mode")
 		} else if !cmd.CFRPlus && trainCfg.UseCFRPlus {
 			log.Warn().Msg("checkpoint was trained with CFR+; continuing with CFR+ mode")
 		}
-		log.Info().Int("iterations", trainCfg.Iterations).Int("resume_iteration", int(trainer.Iteration())).Int("max_raises", trainCfg.MaxRaisesPerBucket).Int("parallel", trainCfg.ParallelTables).Str("sampling", trainCfg.Sampling.String()).Str("checkpoint", cmd.ResumeFrom).Msg("resuming training run")
+		log.Info().Int("iterations", trainCfg.Iterations).Int("resume_iteration", int(trainer.Iteration())).Int("max_raises", trainCfg.MaxRaisesPerBucket).Int("parallel", trainCfg.ParallelTables).Bool("dcfr", trainCfg.UseDCFR).Bool("cfr_plus", trainCfg.UseCFRPlus).Str("sampling", trainCfg.Sampling.String()).Str("checkpoint", cmd.ResumeFrom).Msg("resuming training run")
 	} else {
 		abs := solver.DefaultAbstraction()
 		train := solver.DefaultTrainingConfig()
@@ -184,6 +190,7 @@ func (cmd *SolverTrainCmd) Run() error {
 		}
 
 		train.UseCFRPlus = cmd.CFRPlus
+		train.UseDCFR = cmd.DCFR
 		train.Sampling = mode
 
 		trainer, err = solver.NewTrainer(abs, train)
@@ -199,7 +206,7 @@ func (cmd *SolverTrainCmd) Run() error {
 		if cmd.DisableRaises {
 			trainer.SetRaisesEnabled(false)
 		}
-		log.Info().Int("iterations", train.Iterations).Int("players", train.Players).Int("max_raises", abs.MaxRaisesPerBucket).Int("parallel", train.ParallelTables).Bool("cfr_plus", train.UseCFRPlus).Str("sampling", train.Sampling.String()).Msg("starting training run")
+		log.Info().Int("iterations", train.Iterations).Int("players", train.Players).Int("max_raises", abs.MaxRaisesPerBucket).Int("parallel", train.ParallelTables).Bool("dcfr", train.UseDCFR).Bool("cfr_plus", train.UseCFRPlus).Str("sampling", train.Sampling.String()).Msg("starting training run")
 	}
 
 	start := time.Now()

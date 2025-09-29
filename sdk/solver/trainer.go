@@ -175,6 +175,12 @@ func (t *Trainer) singleIteration() (TraversalStats, error) {
 		updateOpts.ClampNegativeRegrets = true
 		updateOpts.LinearAveraging = true
 	}
+	if t.trainCfg.UseDCFR {
+		updateOpts.UseDCFR = true
+		updateOpts.DCFRAlpha = 1.5
+		updateOpts.DCFRBeta = 0
+		updateOpts.DCFRGamma = 2
+	}
 
 	type tableSeeds struct {
 		deck   int64

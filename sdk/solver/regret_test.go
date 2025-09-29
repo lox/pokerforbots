@@ -99,6 +99,46 @@ func TestRegretEntryUpdateCFRPlus(t *testing.T) {
 	}
 }
 
+func TestRegretEntryUpdateDCFR(t *testing.T) {
+	var entry RegretEntry
+	entry.ensureSize(2)
+	entry.RegretSum[0] = 10
+	entry.RegretSum[1] = -5
+	entry.StrategySum[0] = 4
+	entry.StrategySum[1] = 6
+	entry.Normalising = 10
+
+	opts := RegretUpdateOptions{
+		UseDCFR:   true,
+		Iteration: 1,
+		DCFRAlpha: 1.5,
+		DCFRBeta:  0,
+		DCFRGamma: 2,
+	}
+
+	entry.Update([]float64{1, -2}, []float64{0.5, 0.5}, 1.0, opts)
+
+	posScale := dcfrScale(1, 1.5)
+	negScale := dcfrScale(1, 0)
+	avgScale := dcfrScale(1, 2)
+
+	if diff := abs(entry.RegretSum[0] - (10*posScale + 1)); diff > 1e-9 {
+		t.Fatalf("unexpected DCFR positive regret: diff=%v", diff)
+	}
+	if diff := abs(entry.RegretSum[1] - (-5*negScale - 2)); diff > 1e-9 {
+		t.Fatalf("unexpected DCFR negative regret: diff=%v", diff)
+	}
+	if diff := abs(entry.StrategySum[0] - (4*avgScale + 0.5)); diff > 1e-9 {
+		t.Fatalf("unexpected DCFR strategy sum0 diff=%v", diff)
+	}
+	if diff := abs(entry.StrategySum[1] - (6*avgScale + 0.5)); diff > 1e-9 {
+		t.Fatalf("unexpected DCFR strategy sum1 diff=%v", diff)
+	}
+	if diff := abs(entry.Normalising - (10*avgScale + 1)); diff > 1e-9 {
+		t.Fatalf("unexpected DCFR normalising diff=%v", diff)
+	}
+}
+
 func abs(v float64) float64 {
 	if v < 0 {
 		return -v

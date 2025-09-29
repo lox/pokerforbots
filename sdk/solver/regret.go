@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"math"
 	"sync"
 )
 
@@ -61,6 +62,10 @@ type RegretUpdateOptions struct {
 	ClampNegativeRegrets bool
 	LinearAveraging      bool
 	Iteration            int
+	UseDCFR              bool
+	DCFRAlpha            float64
+	DCFRBeta             float64
+	DCFRGamma            float64
 }
 
 // ensureSize grows the regret entry to accommodate n actions.
@@ -114,7 +119,28 @@ func (e *RegretEntry) Update(regret []float64, strategy []float64, reachWeight f
 		iterWeight = float64(iter)
 	}
 	weight := reachWeight * iterWeight
+	posScale := 1.0
+	negScale := 1.0
+	avgScale := 1.0
+	if opts.UseDCFR {
+		posScale = dcfrScale(opts.Iteration, opts.DCFRAlpha)
+		negScale = dcfrScale(opts.Iteration, opts.DCFRBeta)
+		avgScale = dcfrScale(opts.Iteration, opts.DCFRGamma)
+	}
+	if opts.UseDCFR {
+		for i := range e.StrategySum {
+			e.StrategySum[i] *= avgScale
+		}
+		e.Normalising *= avgScale
+	}
 	for i := range regret {
+		if opts.UseDCFR {
+			if e.RegretSum[i] > 0 {
+				e.RegretSum[i] *= posScale
+			} else if e.RegretSum[i] < 0 {
+				e.RegretSum[i] *= negScale
+			}
+		}
 		if opts.ClampNegativeRegrets {
 			e.RegretSum[i] += regret[i]
 			if e.RegretSum[i] < 0 {
@@ -247,6 +273,17 @@ func newRegretEntryFromSnapshot(snap regretSnapshot) *RegretEntry {
 		Normalising: snap.Normalising,
 	}
 	return entry
+}
+
+func dcfrScale(iteration int, exponent float64) float64 {
+	if exponent <= 0 {
+		return 1
+	}
+	if iteration <= 0 {
+		return 1
+	}
+	t := float64(iteration)
+	return math.Pow(t/(t+1), exponent)
 }
 
 func hashKey(key string) uint32 {

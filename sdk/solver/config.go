@@ -107,6 +107,7 @@ type TrainingConfig struct {
 	AdaptiveRaiseVisits int
 	UseCFRPlus          bool
 	Sampling            SamplingMode
+	UseDCFR             bool
 }
 
 // Validate ensures the training parameters are safe to use.
@@ -176,5 +177,6 @@ func DefaultTrainingConfig() TrainingConfig {
 		AdaptiveRaiseVisits: 500,
 		UseCFRPlus:          false,
 		Sampling:            SamplingModeExternal,
+		UseDCFR:             true,
 	}
 }
