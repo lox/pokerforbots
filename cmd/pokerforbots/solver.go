@@ -68,7 +68,8 @@ func setupSolverLogger(debug bool) {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).Level(level)
 }
 
-func (cmd *SolverTrainCmd) Run(ctx context.Context) error {
+func (cmd *SolverTrainCmd) Run() error {
+	ctx := context.Background()
 	mode, err := parseSamplingMode(cmd.Sampling)
 	if err != nil {
 		return err
@@ -227,7 +228,8 @@ func (cmd *SolverTrainCmd) Run(ctx context.Context) error {
 	return nil
 }
 
-func (cmd *SolverEvalCmd) Run(ctx context.Context) error {
+func (cmd *SolverEvalCmd) Run() error {
+	ctx := context.Background()
 	if cmd.Hands <= 0 {
 		return fmt.Errorf("hands must be positive (got %d)", cmd.Hands)
 	}
