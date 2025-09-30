@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/lox/pokerforbots/cmd/pokerforbots/shared"
+	"github.com/lox/pokerforbots/internal/fileutil"
 	"github.com/lox/pokerforbots/internal/server"
 	"github.com/lox/pokerforbots/sdk/spawner"
 	"github.com/rs/zerolog"
@@ -362,9 +363,9 @@ func handleStatsOutput(addr, statsFile string, printStats bool, logger zerolog.L
 		return
 	}
 
-	// Write to file if requested
+	// Write to file if requested (using atomic write to avoid races)
 	if statsFile != "" {
-		if err := os.WriteFile(statsFile, data, 0644); err != nil {
+		if err := fileutil.WriteFileAtomic(statsFile, data, 0644); err != nil {
 			logger.Error().Err(err).Str("file", statsFile).Msg("Failed to write stats file")
 			return
 		}

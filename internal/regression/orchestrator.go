@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lox/pokerforbots/internal/fileutil"
 	"github.com/lox/pokerforbots/internal/server"
 	"github.com/lox/pokerforbots/sdk/spawner"
 	"github.com/rs/zerolog"
@@ -609,8 +610,8 @@ func (o *Orchestrator) writeEmbeddedServerStats() error {
 		return fmt.Errorf("failed to read stats: %w", err)
 	}
 
-	// Write to file
-	if err := os.WriteFile(statsFile, data, 0644); err != nil {
+	// Write to file atomically to avoid race conditions with readers
+	if err := fileutil.WriteFileAtomic(statsFile, data, 0644); err != nil {
 		return fmt.Errorf("failed to write stats file: %w", err)
 	}
 
