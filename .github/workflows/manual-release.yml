@@ -76,17 +76,7 @@ jobs:
           echo "notes_file=release_notes.md" >> $GITHUB_OUTPUT
 
       - name: Build binaries
-        run: |
-          VERSION="v${{ steps.version.outputs.new_version }}"
-
-          # Build for multiple platforms
-          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=$VERSION" -o pokerforbots-linux-amd64 ./cmd/pokerforbots
-          GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version=$VERSION" -o pokerforbots-linux-arm64 ./cmd/pokerforbots
-          GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.version=$VERSION" -o pokerforbots-darwin-amd64 ./cmd/pokerforbots
-          GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.version=$VERSION" -o pokerforbots-darwin-arm64 ./cmd/pokerforbots
-
-          # Create checksums
-          shasum -a 256 pokerforbots-* > checksums.txt
+        run: task build:release VERSION=v${{ steps.version.outputs.new_version }}
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -97,7 +87,7 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            pokerforbots-*
-            checksums.txt
+            dist/pokerforbots-*
+            dist/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
