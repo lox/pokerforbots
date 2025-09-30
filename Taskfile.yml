@@ -30,6 +30,7 @@ tasks:
     desc: Generate preflop equity tables
     cmds:
       - go generate ./sdk/analysis
+      - gofmt -w sdk/analysis/preflop_gen.go
     sources:
       - sdk/analysis/preflop.go
       - cmd/gen-preflop/main.go
