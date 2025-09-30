@@ -87,7 +87,7 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            pokerforbots-*
-            checksums.txt
+            dist/pokerforbots-*
+            dist/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
