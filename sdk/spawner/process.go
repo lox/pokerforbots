@@ -190,6 +190,14 @@ func (p *Process) monitor() {
 	p.exitErr = err
 	p.mu.Unlock()
 
+	// Check if context is cancelled before logging (prevents race with test cleanup)
+	select {
+	case <-p.ctx.Done():
+		// Context cancelled, skip logging to avoid races with test cleanup
+		return
+	default:
+	}
+
 	if err != nil {
 		// Check for context cancellation (normal during shutdown)
 		if err.Error() == "context canceled" {
