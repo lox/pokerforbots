@@ -1,16 +1,12 @@
-package main
+package complex
 
 import (
-	"context"
-	"flag"
 	"fmt"
 	"io"
 	"math"
 	"math/rand"
 	"os"
-	"os/signal"
 	"slices"
-	"syscall"
 	"time"
 
 	"github.com/lox/pokerforbots/poker"
@@ -1173,48 +1169,25 @@ func (b *complexBot) ownWinnerName() string {
 	return candidates[0]
 }
 
-func main() {
-	serverURL := flag.String("server", "ws://localhost:8080/ws", "WebSocket server URL")
-	debug := flag.Bool("debug", false, "Enable debug logging")
-	flag.Parse()
+// Handler is an alias for complexBot to satisfy the client.Handler interface
+type Handler = complexBot
 
-	// Parse configuration from environment
-	cfg, err := config.FromEnv()
-	if err == nil {
-		// Use environment config if available
-		*serverURL = cfg.ServerURL
-	}
-
-	level := zerolog.InfoLevel
-	if *debug {
-		level = zerolog.DebugLevel
-	}
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
-	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).Level(level).With().Timestamp().Logger()
-
-	complexBot := newComplexBot(logger)
-	bot := client.New(complexBot.id, complexBot, logger)
-
-	if err := bot.Connect(*serverURL); err != nil {
-		logger.Fatal().Err(err).Msg("connect failed")
-	}
-	logger.Info().Msg("complex bot connected")
-
-	// Handle shutdown gracefully
-	ctx, cancel := context.WithCancel(context.Background())
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
-
-	runErr := make(chan error, 1)
-	go func() { runErr <- bot.Run(ctx) }()
-
-	select {
-	case <-interrupt:
-		logger.Info().Msg("shutting down")
-		cancel()
-	case err := <-runErr:
-		if err != nil {
-			logger.Error().Err(err).Msg("run error")
-		}
-	}
+// NewHandler creates a new complex bot handler
+func NewHandler() *Handler {
+	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
+	return newComplexBot(logger)
 }
+
+// NewHandlerWithLogger creates a new complex bot handler with a custom logger
+func NewHandlerWithLogger(logger zerolog.Logger) *Handler {
+	return newComplexBot(logger)
+}
+
+// NewQuietHandler creates a new complex bot handler with logging disabled
+func NewQuietHandler() *Handler {
+	logger := zerolog.New(io.Discard)
+	return newComplexBot(logger)
+}
+
+// Check it implements the client.Handler interface
+var _ client.Handler = (*Handler)(nil)

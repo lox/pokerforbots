@@ -247,8 +247,13 @@ func parseSpecString(spec string, wsURL string) ([]spawner.BotSpec, error) {
 		return nil, nil
 	}
 
-	resolver := NewBotResolver()
 	var specs []spawner.BotSpec
+
+	// Get path to our own binary for running bots
+	pokerforbotsBin, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get executable path: %w", err)
+	}
 
 	for _, part := range strings.Split(spec, ",") {
 		part = strings.TrimSpace(part)
@@ -269,22 +274,23 @@ func parseSpecString(spec string, wsURL string) ([]spawner.BotSpec, error) {
 			return nil, fmt.Errorf("invalid count for strategy %q: %q", strategy, countStr)
 		}
 
-		// Use resolver to get bot command
-		command, args, err := resolver.ResolveWithServer(strategy, wsURL)
-		if err != nil {
-			// Fallback: try as direct command if it contains path separators
-			if strings.Contains(strategy, "/") || strings.Contains(strategy, ".") {
-				fields := strings.Fields(strategy)
-				if len(fields) > 0 {
-					command = fields[0]
-					args = fields[1:]
-					args = append(args, wsURL)
-				} else {
-					return nil, fmt.Errorf("invalid command in strategy: %q", strategy)
-				}
-			} else {
-				return nil, fmt.Errorf("cannot resolve bot %q: %w", strategy, err)
+		// Check if it's a built-in bot or a custom command
+		var command string
+		var args []string
+
+		if strings.Contains(strategy, "/") || strings.Contains(strategy, ".") {
+			// Custom command (e.g., "./my-bot")
+			fields := strings.Fields(strategy)
+			if len(fields) == 0 {
+				return nil, fmt.Errorf("invalid command in strategy: %q", strategy)
 			}
+			command = fields[0]
+			args = fields[1:]
+			args = append(args, wsURL)
+		} else {
+			// Built-in bot - use pokerforbots bot subcommand
+			command = pokerforbotsBin
+			args = []string{"bot", strategy, "--server", wsURL}
 		}
 
 		specs = append(specs, spawner.BotSpec{
@@ -303,7 +309,7 @@ func waitForHealthy(ctx context.Context, baseURL string) error {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
 		if err != nil {
 			return err
 		}

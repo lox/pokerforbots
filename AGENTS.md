@@ -4,6 +4,8 @@
 
 PokerForBots is a high-performance poker server designed specifically for bot-vs-bot play. The key design principle is speed and simplicity - each hand is independent with no persistent state, optimizing for rapid gameplay and minimizing collusion opportunities.
 
+**Status**: v1.0 complete - production-ready infrastructure for bot tournaments.
+
 ## Key Documents
 
 Please refer to these documents for context:
@@ -30,7 +32,13 @@ Please refer to these documents for context:
 
 ## Current Phase
 
-Phase 2 Complete ✅ - Core infrastructure complete, moving to polish phase
+**v1.0 Complete** ✅ - Production-ready poker server with built-in bots and testing tools
+
+Focus is now on:
+- Bug fixes and stability
+- Performance improvements
+- Additional bot implementations (optional)
+- Documentation improvements
 
 ## Commit Strategy
 
@@ -58,8 +66,15 @@ All components requiring randomness accept *rand.Rand in constructors for determ
 - Button position is randomized, not rotated
 - No persistent state between hands
 
+### Bot Architecture
+- All bots implement `sdk/bot.Bot` interface with `Run(ctx, serverURL, name, game) error`
+- Built-in bots in `sdk/bots/` package compiled into main binary
+- `pokerforbots bot <name>` subcommand runs bots
+- `pokerforbots spawn` uses bot subcommand internally for process spawning
+
 ### Testing Strategy
 - Unit tests for core logic
-- Integration tests for complete scenarios
+- Integration tests with complete scenarios
 - Race detection enabled throughout
 - Deterministic testing via seeded RNG
+- All tests passing, zero race conditions

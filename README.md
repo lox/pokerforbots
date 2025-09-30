@@ -58,10 +58,10 @@ pokerforbots client --name Alice
 The `pokerforbots` CLI provides these sub-commands:
 
 - **`spawn`** - Quick testing with bots (most common)
+- **`bot`** - Run a built-in bot (calling-station, random, aggressive, range)
 - **`regression`** - Statistical bot comparison
 - **`server`** - Standalone poker server
 - **`client`** - Interactive human client
-- **`bots`** - Run built-in example bots
 
 Run `pokerforbots <command> --help` for detailed options.
 
@@ -87,11 +87,11 @@ pokerforbots regression --mode heads-up --hands 10000 \
 
 ### Running Built-in Bots
 ```bash
-# Run example bots directly
-pokerforbots bots calling-station ws://localhost:8080/ws
-pokerforbots bots random ws://localhost:8080/ws
-pokerforbots bots aggressive ws://localhost:8080/ws
-pokerforbots bots complex ws://localhost:8080/ws
+# Run built-in bots
+pokerforbots bot calling-station
+pokerforbots bot random
+pokerforbots bot aggressive
+pokerforbots bot range
 ```
 
 ## Architecture
@@ -103,8 +103,9 @@ The codebase is organized into public packages for shared types and internal pac
 - `internal/game/` - Game logic and state management
 - `internal/server/` - WebSocket server and bot management
 - `sdk/` - Go SDK for bot development
+  - `sdk/bot/` - Bot interface
+  - `sdk/bots/` - Built-in bot implementations
 - `cmd/pokerforbots/` - Unified CLI tool
-- `cmd/gen-preflop/` - Preflop table generator (development tool)
 
 ## Development
 
