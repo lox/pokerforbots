@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cashapp/activate-hermit@v1
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Format check
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Go files not formatted. Run: gofmt -w ."
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: Generate code
+        run: go generate ./...
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Run tests
+        run: go test -v -race ./...
+
+      - name: Build binary
+        run: go build -o pokerforbots ./cmd/pokerforbots
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cashapp/activate-hermit@v1
+
+      - name: Check formatting
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Go files not formatted:"
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: Run golangci-lint
+        run: golangci-lint run
+
+      - name: Check for TODO/FIXME comments
+        run: |
+          if grep -r "TODO\|FIXME" . --include="*.go" --exclude-dir=.git --exclude-dir=vendor; then
+            echo "Found TODO/FIXME comments that should be addressed or tracked as issues"
+            exit 0  # Don't fail, just warn
+          fi

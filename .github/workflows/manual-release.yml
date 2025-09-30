@@ -1,0 +1,97 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.2.3)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Manual Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: cashapp/activate-hermit@v1
+
+      - name: Run tests first
+        run: go test -race ./...
+
+      - name: Validate version
+        id: version
+        run: |
+          NEW_VERSION="${{ inputs.version }}"
+          # Remove 'v' prefix if present
+          NEW_VERSION="${NEW_VERSION#v}"
+
+          # Basic semver validation
+          if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Invalid version format. Use X.Y.Z"
+            exit 1
+          fi
+
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          NEW_VERSION="v${{ steps.version.outputs.new_version }}"
+
+          {
+            echo "## Manual Release"
+            echo ""
+            echo "This release was created manually via workflow dispatch."
+            echo ""
+
+            if [ -n "$LAST_TAG" ]; then
+              echo "### Changes since $LAST_TAG"
+              echo ""
+              git log $LAST_TAG..HEAD --pretty=format:"- %s (%h)" --reverse
+              echo ""
+              echo ""
+              echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${LAST_TAG}...$NEW_VERSION"
+            else
+              echo "### Initial Release"
+              echo ""
+              echo "First release of PokerForBots."
+            fi
+          } > release_notes.md
+
+          echo "notes_file=release_notes.md" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        run: |
+          VERSION="v${{ steps.version.outputs.new_version }}"
+
+          # Build for multiple platforms
+          GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=$VERSION" -o pokerforbots-linux-amd64 ./cmd/pokerforbots
+          GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version=$VERSION" -o pokerforbots-linux-arm64 ./cmd/pokerforbots
+          GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.version=$VERSION" -o pokerforbots-darwin-amd64 ./cmd/pokerforbots
+          GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.version=$VERSION" -o pokerforbots-darwin-arm64 ./cmd/pokerforbots
+
+          # Create checksums
+          shasum -a 256 pokerforbots-* > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.new_version }}
+          name: Release v${{ steps.version.outputs.new_version }}
+          body_path: ${{ steps.release_notes.outputs.notes_file }}
+          draft: false
+          prerelease: false
+          files: |
+            pokerforbots-*
+            checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
