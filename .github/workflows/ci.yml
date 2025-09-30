@@ -37,10 +37,8 @@ jobs:
             exit 1
           fi
 
-      - name: Install tools and generate code
-        run: |
-          task tools
-          task generate
+      - name: Install code generation tools
+        run: task tools
 
       - name: Build
         run: task build
@@ -57,10 +55,11 @@ jobs:
 
       - uses: cashapp/activate-hermit@v1
 
-      - name: Install tools and generate code
-        run: |
-          task tools
-          task generate
+      - name: Install code generation tools
+        run: task tools
+
+      - name: Generate code
+        run: task generate
 
       - name: Check formatting
         run: |
