@@ -44,7 +44,9 @@ jobs:
         run: task build
 
       - name: Run tests
-        run: gotestsum --format github-actions -- -race ./...
+        run: task test
+        env:
+          GOTESTSUM_FORMAT: github-actions
 
   lint:
     name: Lint
