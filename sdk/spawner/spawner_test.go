@@ -63,8 +63,15 @@ func TestSpawnerMultiple(t *testing.T) {
 		t.Errorf("Expected 3 active processes, got %d", count)
 	}
 
-	// Wait for processes to complete (reduced from 200ms to 100ms)
-	time.Sleep(100 * time.Millisecond)
+	// Wait for processes to complete with retry
+	// Allow up to 500ms for all processes to finish (50ms sleep + overhead)
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if spawner.ActiveCount() == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	// Check they're done
 	if count := spawner.ActiveCount(); count != 0 {
