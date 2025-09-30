@@ -6,6 +6,11 @@ tasks:
     cmds:
       - task --list
 
+  tools:
+    desc: Install code generation tools
+    cmds:
+      - go install github.com/tinylib/msgp@latest
+
   generate:
     desc: Generate all code (protocol and preflop tables)
     deps:
@@ -25,6 +30,7 @@ tasks:
     desc: Generate preflop equity tables
     cmds:
       - go generate ./sdk/analysis
+      - gofmt -w sdk/analysis/preflop_gen.go
     sources:
       - sdk/analysis/preflop.go
       - cmd/gen-preflop/main.go
@@ -33,6 +39,8 @@ tasks:
 
   build:
     desc: Build all binaries
+    deps:
+      - generate
     cmds:
       - mkdir -p dist
       - go build -o dist/pokerforbots ./cmd/pokerforbots
