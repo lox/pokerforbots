@@ -3,7 +3,7 @@ package analysis
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/lox/pokerforbots/poker"
@@ -30,8 +30,8 @@ func ParseRange(notation string) (*Range, error) {
 	r := NewRange()
 
 	// Split by commas to get individual range parts
-	parts := strings.Split(notation, ",")
-	for _, part := range parts {
+	parts := strings.SplitSeq(notation, ",")
+	for part := range parts {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
@@ -231,7 +231,7 @@ func (r *Range) addPocketPair(rank int, weight float64) error {
 	pRank := uint8(rank - 2)
 
 	// Generate all 6 combinations of pocket pairs
-	for suit1 := uint8(0); suit1 < 4; suit1++ {
+	for suit1 := range uint8(4) {
 		for suit2 := suit1 + 1; suit2 < 4; suit2++ {
 			card1 := poker.NewCard(pRank, suit1)
 			card2 := poker.NewCard(pRank, suit2)
@@ -256,7 +256,7 @@ func (r *Range) addSuitedCombos(rank1, rank2 int, weight float64) error {
 	pRank2 := uint8(rank2 - 2)
 
 	// All 4 suited combinations
-	for suit := uint8(0); suit < 4; suit++ {
+	for suit := range uint8(4) {
 		card1 := poker.NewCard(pRank1, suit)
 		card2 := poker.NewCard(pRank2, suit)
 
@@ -279,8 +279,8 @@ func (r *Range) addOffsuitCombos(rank1, rank2 int, weight float64) error {
 	pRank2 := uint8(rank2 - 2)
 
 	// All 12 offsuit combinations
-	for suit1 := uint8(0); suit1 < 4; suit1++ {
-		for suit2 := uint8(0); suit2 < 4; suit2++ {
+	for suit1 := range uint8(4) {
+		for suit2 := range uint8(4) {
 			if suit1 != suit2 {
 				card1 := poker.NewCard(pRank1, suit1)
 				card2 := poker.NewCard(pRank2, suit2)
@@ -336,9 +336,7 @@ func (r *Range) Hands() []poker.Hand {
 	}
 
 	// Sort by numeric value for consistency
-	sort.Slice(hands, func(i, j int) bool {
-		return hands[i] < hands[j]
-	})
+	slices.Sort(hands)
 
 	return hands
 }

@@ -37,32 +37,19 @@ tasks:
       - mkdir -p dist
       - go build -o dist/pokerforbots ./cmd/pokerforbots
       - go build -o dist/gen-preflop ./cmd/gen-preflop
-      - go build -o dist/complex-bot ./sdk/examples/complex
     sources:
       - '**/*.go'
     generates:
       - dist/pokerforbots
       - dist/gen-preflop
-      - dist/complex-bot
 
-  snapshot:
-    desc: Create a new snapshot of the complex bot
+  install:
+    desc: Install pokerforbots to ~/bin
     cmds:
-      - mkdir -p snapshots
-      - |
-        COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "uncommitted")
-        DATE=$(date +%Y%m%d)
-        OUTPUT="snapshots/complex-${DATE}-${COMMIT}"
-        echo "Building snapshot: ${OUTPUT}"
-        go build -o "${OUTPUT}" ./sdk/examples/complex
-        chmod +x "${OUTPUT}"
+      - mkdir -p ~/bin
+      - go build -o ~/bin/pokerforbots ./cmd/pokerforbots
+      - echo "Installed to ~/bin/pokerforbots"
 
-        # Update symlinks
-        cd snapshots
-        ln -sf $(basename "${OUTPUT}") complex-latest
-
-        echo "Snapshot created:"
-        ls -la complex-*
 
   server:
     desc: Run the poker server
@@ -100,26 +87,9 @@ tasks:
       - go test -count=1 -json ./... | gotestsum tool slowest
 
   lint:
-    desc: Run linters in parallel
-    deps:
-      - lint:golangci
-      - lint:modernize
-      - lint:unusedparams
-
-  lint:golangci:
-    desc: golangci-lint
+    desc: Run golangci-lint
     cmds:
       - bin/golangci-lint run ./...
-
-  lint:modernize:
-    desc: gopls modernize analysis
-    cmds:
-      - bin/go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test ./...
-
-  lint:unusedparams:
-    desc: gopls unusedparams analysis
-    cmds:
-      - bin/go run golang.org/x/tools/gopls/internal/analysis/unusedparams/cmd@latest -test ./...
 
   format:
     desc: Format code
@@ -130,8 +100,6 @@ tasks:
     desc: Run linters with fix
     cmds:
       - bin/golangci-lint run --fix ./...
-      - bin/go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -test -fix ./...
-      - bin/go run golang.org/x/tools/gopls/internal/analysis/unusedparams/cmd@latest -test -fix ./...
 
   bench:
     desc: Run performance benchmark using spawner
