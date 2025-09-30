@@ -20,7 +20,8 @@ tasks:
   generate:protocol:
     desc: Generate msgpack protocol code
     cmds:
-      - go generate ./protocol
+      - which msgp || echo "msgp not found in PATH"
+      - go generate -v ./protocol
     sources:
       - protocol/messages.go
     generates:
