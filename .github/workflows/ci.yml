@@ -32,22 +32,19 @@ jobs:
       - name: Format check
         run: |
           if [ -n "$(gofmt -l .)" ]; then
-            echo "Go files not formatted. Run: gofmt -w ."
+            echo "Go files not formatted. Run: task format"
             gofmt -l .
             exit 1
           fi
 
       - name: Generate code
-        run: go generate ./...
+        run: task generate
 
       - name: Build
-        run: go build -v ./...
+        run: task build
 
       - name: Run tests
         run: go test -v -race ./...
-
-      - name: Build binary
-        run: go build -o pokerforbots ./cmd/pokerforbots
 
   lint:
     name: Lint
@@ -67,7 +64,7 @@ jobs:
           fi
 
       - name: Run golangci-lint
-        run: golangci-lint run
+        run: task lint
 
       - name: Check for TODO/FIXME comments
         run: |
