@@ -1,7 +1,8 @@
 package poker
 
 import (
-	"math/rand"
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"sync/atomic"
 	"testing"
 	"time"
@@ -210,7 +211,7 @@ func BenchmarkEvaluate7CardsBatch32(b *testing.B) {
 var benchSink HandRank
 
 func generateRandomHands(n int, seed int64) []Hand {
-	rng := rand.New(rand.NewSource(seed))
+	rng := randutil.New(seed)
 	deck := NewDeck(rng)
 	hands := make([]Hand, n)
 	for i := range n {

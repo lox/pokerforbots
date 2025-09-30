@@ -2,7 +2,9 @@ package server
 
 import (
 	"fmt"
-	"math/rand"
+
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"slices"
 	"testing"
 
@@ -38,7 +40,7 @@ func BenchmarkGameEngine(b *testing.B) {
 				}
 
 				// Create hand state with deck
-				rng := rand.New(rand.NewSource(getSeed(int64(i))))
+				rng := randutil.New(getSeed(int64(i)))
 				deck := poker.NewDeck(rng)
 				hand := game.NewHandState(
 					rng,

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"context"
 	"errors"
-	"math/rand"
+	rand "math/rand/v2"
 	"net/http"
 	"time"
 
@@ -37,11 +39,11 @@ func (c *ServerCmd) Run() error {
 	if c.Seed != nil {
 		seed = *c.Seed
 		logger.Info().Int64("seed", seed).Msg("Using deterministic seed")
-		rng = rand.New(rand.NewSource(seed))
+		rng = randutil.New(seed)
 	} else {
 		seed = time.Now().UnixNano()
 		logger.Info().Int64("seed", seed).Msg("Using random seed")
-		rng = rand.New(rand.NewSource(seed))
+		rng = randutil.New(seed)
 	}
 
 	// Create server config

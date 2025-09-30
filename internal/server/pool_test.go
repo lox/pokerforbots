@@ -2,7 +2,9 @@ package server
 
 import (
 	"fmt"
-	"math/rand"
+
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"sync"
 	"testing"
 	"time"
@@ -56,7 +58,7 @@ func TestBotPoolRegistration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pool := NewBotPool(testLogger(), rand.New(rand.NewSource(42)), testPoolConfig(tt.minPlayers, tt.maxPlayers))
+			pool := NewBotPool(testLogger(), randutil.New(42), testPoolConfig(tt.minPlayers, tt.maxPlayers))
 			stopPool := startTestPool(t, pool)
 			defer stopPool()
 
@@ -85,7 +87,7 @@ func TestBotPoolRegistration(t *testing.T) {
 func TestBotPoolUnregistration(t *testing.T) {
 	t.Parallel()
 
-	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(42)), testPoolConfig(2, 4))
+	pool := NewBotPool(testLogger(), randutil.New(42), testPoolConfig(2, 4))
 	stopPool := startTestPool(t, pool)
 	defer stopPool()
 
@@ -123,7 +125,7 @@ func TestBotPoolUnregistration(t *testing.T) {
 func TestBotPoolMatching(t *testing.T) {
 	t.Parallel()
 
-	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(42)), testPoolConfig(2, 4))
+	pool := NewBotPool(testLogger(), randutil.New(42), testPoolConfig(2, 4))
 	stopPool := startTestPool(t, pool)
 	defer stopPool()
 
@@ -152,7 +154,7 @@ func TestBotPoolInsufficientBotsTriggersCompletion(t *testing.T) {
 
 	config := testPoolConfig(3, 3)
 	config.HandLimit = 10
-	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(123)), config)
+	pool := NewBotPool(testLogger(), randutil.New(123), config)
 	stopPool := startTestPool(t, pool)
 	defer stopPool()
 
@@ -182,7 +184,7 @@ func TestBotPoolHandLimit(t *testing.T) {
 	config := testPoolConfig(2, 2)
 	config.HandLimit = 3
 
-	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(789)), config)
+	pool := NewBotPool(testLogger(), randutil.New(789), config)
 	stopPool := startTestPool(t, pool)
 	defer stopPool()
 
@@ -196,7 +198,7 @@ func TestBotPoolHandLimit(t *testing.T) {
 func TestBotPoolConcurrentOperations(t *testing.T) {
 	t.Parallel()
 
-	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(999)), testPoolConfig(2, 6))
+	pool := NewBotPool(testLogger(), randutil.New(999), testPoolConfig(2, 6))
 	stopPool := startTestPool(t, pool)
 	defer stopPool()
 
@@ -270,7 +272,7 @@ func TestBotPoolStatistics(t *testing.T) {
 	config := testPoolConfig(2, 2)
 	config.EnableStats = true
 
-	pool := NewBotPool(testLogger(), rand.New(rand.NewSource(555)), config)
+	pool := NewBotPool(testLogger(), randutil.New(555), config)
 	stopPool := startTestPool(t, pool)
 	defer stopPool()
 

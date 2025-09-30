@@ -1,12 +1,14 @@
 package server
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"math/rand"
+	rand "math/rand/v2"
 	"net"
 	"net/http"
 	"strings"
@@ -143,7 +145,7 @@ func createDeterministicBotIDGen(rng *rand.Rand, withRNG func(func(*rand.Rand)))
 		var uuid [16]byte
 		withRNG(func(r *rand.Rand) {
 			for i := range 16 {
-				uuid[i] = byte(r.Intn(256))
+				uuid[i] = byte(r.IntN(256))
 			}
 		})
 
@@ -554,7 +556,7 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 	}
 
 	config.Seed = seed
-	rng := rand.New(rand.NewSource(seed))
+	rng := randutil.New(seed)
 	pool := NewBotPool(s.logger, rng, config)
 	instance := s.manager.RegisterGame(req.ID, pool, config)
 	go pool.Run()

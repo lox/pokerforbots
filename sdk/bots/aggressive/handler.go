@@ -1,7 +1,7 @@
 package aggressive
 
 import (
-	"math/rand"
+	rand "math/rand/v2"
 	"slices"
 	"time"
 
@@ -16,7 +16,7 @@ type Handler struct {
 
 func NewHandler() *Handler {
 	return &Handler{
-		rng: rand.New(rand.NewSource(time.Now().UnixNano())),
+		rng: rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0)),
 	}
 }
 

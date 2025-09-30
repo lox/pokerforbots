@@ -1,9 +1,11 @@
 package bot
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"context"
 	"fmt"
-	"math/rand"
+	rand "math/rand/v2"
 	"os"
 	"time"
 
@@ -88,13 +90,13 @@ func Run(ctx context.Context, handler client.Handler, serverURL, name, game stri
 		if envCfg != nil && envCfg.Seed != 0 {
 			seed = envCfg.Seed
 		}
-		cfg.rng = rand.New(rand.NewSource(seed))
+		cfg.rng = randutil.New(seed)
 	}
 
 	// Generate bot ID
 	id := name
 	if id == "" {
-		id = fmt.Sprintf("%s-%04d", cfg.prefix, cfg.rng.Intn(10000))
+		id = fmt.Sprintf("%s-%04d", cfg.prefix, cfg.rng.IntN(10000))
 	}
 	if envCfg != nil && envCfg.BotID != "" {
 		id = fmt.Sprintf("%s-%s", cfg.prefix, envCfg.BotID)

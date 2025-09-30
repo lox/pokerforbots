@@ -4,11 +4,12 @@ package analysis
 
 import (
 	"fmt"
-	"math/rand"
+	rand "math/rand/v2"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/lox/pokerforbots/internal/randutil"
 	"github.com/lox/pokerforbots/poker"
 )
 
@@ -47,7 +48,7 @@ func GeneratePreflopTable(simulations int) *PreflopTable {
 	}
 
 	// Use fixed seed for reproducible results
-	rng := rand.New(rand.NewSource(42))
+	rng := randutil.New(42)
 
 	// Generate all unique starting hands
 	// Ranks go from 2 (deuce) to 14 (ace)

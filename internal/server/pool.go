@@ -1,8 +1,10 @@
 package server
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"fmt"
-	"math/rand"
+	rand "math/rand/v2"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -397,12 +399,12 @@ func (p *BotPool) runHand(bots []*Bot) {
 
 	// Generate per-hand RNG to avoid concurrent access to the pool RNG
 	p.rngMutex.Lock()
-	handRNGSeed := p.rng.Int63()
+	handRNGSeed := p.rng.Int64()
 	p.rngMutex.Unlock()
 
 	button := 0 // With freshly shuffled seats, seat 0 acts as the button every hand
 
-	handRNG := rand.New(rand.NewSource(handRNGSeed))
+	handRNG := randutil.New(handRNGSeed)
 	p.logger.Debug().
 		Str("hand_id", handID).
 		Int("button_position", button).

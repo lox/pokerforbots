@@ -1,7 +1,7 @@
 package random
 
 import (
-	"math/rand"
+	rand "math/rand/v2"
 	"time"
 
 	"github.com/lox/pokerforbots/protocol"
@@ -15,7 +15,7 @@ type Handler struct {
 
 func NewHandler() *Handler {
 	return &Handler{
-		rng: rand.New(rand.NewSource(time.Now().UnixNano())),
+		rng: rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0)),
 	}
 }
 
@@ -27,7 +27,7 @@ func (*Handler) OnHandResult(*client.GameState, protocol.HandResult) error      
 func (*Handler) OnGameCompleted(*client.GameState, protocol.GameCompleted) error { return nil }
 
 func (h *Handler) OnActionRequest(_ *client.GameState, req protocol.ActionRequest) (string, int, error) {
-	action := req.ValidActions[h.rng.Intn(len(req.ValidActions))]
+	action := req.ValidActions[h.rng.IntN(len(req.ValidActions))]
 	amount := 0
 	if action == "raise" || action == "bet" {
 		amount = req.MinBet

@@ -1,11 +1,12 @@
 package main
 
 import (
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -81,7 +82,7 @@ func (c *SpawnCmd) Run() error {
 	if seed == 0 {
 		seed = time.Now().UnixNano()
 	}
-	rng := rand.New(rand.NewSource(seed))
+	rng := randutil.New(seed)
 
 	// First, start the server to get the WebSocket URL
 	// Start server on random port

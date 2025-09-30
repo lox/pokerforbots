@@ -3,7 +3,9 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"math/rand"
+
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,7 +23,7 @@ import (
 // newTestServerWithDeterministicRNG creates a server with deterministic random behavior for testing
 func newTestServerWithDeterministicRNG(t *testing.T, seed int64) *Server {
 	t.Helper()
-	rng := rand.New(rand.NewSource(seed))
+	rng := randutil.New(seed)
 	pool := NewBotPool(testLogger(), rng, DefaultConfig(2, 9))
 
 	// Deterministic bot ID generator with atomic counter for race-free access
@@ -32,7 +34,7 @@ func newTestServerWithDeterministicRNG(t *testing.T, seed int64) *Server {
 	}
 
 	// Need an RNG for the server constructor - use one from pool or create new
-	serverRNG := rand.New(rand.NewSource(time.Now().UnixNano()))
+	serverRNG := randutil.New(time.Now().UnixNano())
 	return NewServer(testLogger(), serverRNG, WithBotPool(pool), WithBotIDGen(botIDGen))
 }
 

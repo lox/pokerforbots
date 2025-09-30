@@ -1,7 +1,8 @@
 package game
 
 import (
-	"math/rand"
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"slices"
 	"testing"
 )
@@ -10,7 +11,7 @@ import (
 func TestCompleteHandFlow(t *testing.T) {
 	t.Parallel()
 	// Create a 3-player game
-	h := NewHandState(rand.New(rand.NewSource(42)), []string{"Alice", "Bob", "Charlie"}, 0, 5, 10, WithChips(100))
+	h := NewHandState(randutil.New(42), []string{"Alice", "Bob", "Charlie"}, 0, 5, 10, WithChips(100))
 
 	// Verify initial state
 	if h.Street != Preflop {
@@ -206,7 +207,7 @@ func TestCompleteHandFlow(t *testing.T) {
 func TestAllInScenarios(t *testing.T) {
 	t.Parallel()
 	t.Run("PreFlopAllIn", func(t *testing.T) {
-		h := NewHandState(rand.New(rand.NewSource(42)), []string{"Alice", "Bob", "Charlie"}, 0, 5, 10, WithChips(100))
+		h := NewHandState(randutil.New(42), []string{"Alice", "Bob", "Charlie"}, 0, 5, 10, WithChips(100))
 
 		// UTG goes all-in
 		if err := h.ProcessAction(AllIn, 0); err != nil {
@@ -247,7 +248,7 @@ func TestAllInScenarios(t *testing.T) {
 
 	t.Run("MultipleAllIns", func(t *testing.T) {
 		// Create players with different stack sizes
-		h := NewHandState(rand.New(rand.NewSource(42)),
+		h := NewHandState(randutil.New(42),
 			[]string{"Alice", "Bob", "Charlie"},
 			0, 5, 10,
 			WithChipsByPlayer([]int{50, 100, 150}), // Different stack sizes
@@ -311,7 +312,7 @@ func TestAllInScenarios(t *testing.T) {
 func TestBettingRules(t *testing.T) {
 	t.Parallel()
 	t.Run("MinimumRaise", func(t *testing.T) {
-		h := NewHandState(rand.New(rand.NewSource(42)), []string{"Alice", "Bob"}, 0, 5, 10, WithChips(1000))
+		h := NewHandState(randutil.New(42), []string{"Alice", "Bob"}, 0, 5, 10, WithChips(1000))
 
 		// Alice raises to 25 (min raise is 20)
 		if err := h.ProcessAction(Raise, 25); err != nil {
@@ -330,7 +331,7 @@ func TestBettingRules(t *testing.T) {
 	})
 
 	t.Run("CannotCheckWhenFacingBet", func(t *testing.T) {
-		h := NewHandState(rand.New(rand.NewSource(42)), []string{"Alice", "Bob"}, 0, 5, 10, WithChips(1000))
+		h := NewHandState(randutil.New(42), []string{"Alice", "Bob"}, 0, 5, 10, WithChips(1000))
 
 		// Alice raises
 		if err := h.ProcessAction(Raise, 25); err != nil {
@@ -352,7 +353,7 @@ func TestBettingRules(t *testing.T) {
 	})
 
 	t.Run("BigBlindOption", func(t *testing.T) {
-		h := NewHandState(rand.New(rand.NewSource(42)), []string{"Alice", "Bob", "Charlie"}, 0, 5, 10, WithChips(1000))
+		h := NewHandState(randutil.New(42), []string{"Alice", "Bob", "Charlie"}, 0, 5, 10, WithChips(1000))
 
 		// UTG calls
 		h.ProcessAction(Call, 0)
@@ -399,7 +400,7 @@ func TestBettingRules(t *testing.T) {
 // TestHeadsUpBlindsIntegration tests heads-up blind posting
 func TestHeadsUpBlindsIntegration(t *testing.T) {
 	t.Parallel()
-	h := NewHandState(rand.New(rand.NewSource(42)), []string{"Alice", "Bob"}, 0, 5, 10, WithChips(100))
+	h := NewHandState(randutil.New(42), []string{"Alice", "Bob"}, 0, 5, 10, WithChips(100))
 
 	// In heads-up, button posts small blind
 	if h.Players[0].Bet != 5 {
@@ -442,7 +443,7 @@ func TestHeadsUpBlindsIntegration(t *testing.T) {
 func TestSidePotCalculation(t *testing.T) {
 	t.Parallel()
 	// Create players with specific chip amounts
-	h := NewHandState(rand.New(rand.NewSource(42)),
+	h := NewHandState(randutil.New(42),
 		[]string{"ShortStack", "MidStack", "BigStack"},
 		0, 5, 10,
 		WithChipsByPlayer([]int{20, 50, 100}),

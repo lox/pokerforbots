@@ -2,7 +2,9 @@ package poker
 
 import (
 	"math/bits"
-	"math/rand"
+
+	"github.com/lox/pokerforbots/internal/randutil"
+
 	"testing"
 )
 
@@ -247,7 +249,7 @@ func TestGetSuitMask(t *testing.T) {
 
 func TestDeck(t *testing.T) {
 	t.Parallel()
-	rng := rand.New(rand.NewSource(42))
+	rng := randutil.New(42)
 	deck := NewDeck(rng)
 
 	// Deal some cards
