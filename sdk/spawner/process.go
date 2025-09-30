@@ -136,13 +136,13 @@ func (p *Process) Stop() error {
 		}
 	}
 
-	// Wait briefly for process to exit after signal
+	// Wait for process to exit gracefully after signal
 	select {
 	case <-p.done:
 		return nil
-	case <-time.After(50 * time.Millisecond): // Reduced from 1s to 50ms for faster tests
+	case <-time.After(2 * time.Second): // Allow time for bots to flush stats and exit gracefully
 		// Force kill if not stopped
-		p.logger.Debug().Msg("Force killing process")
+		p.logger.Debug().Msg("Force killing process after graceful shutdown timeout")
 		if err := p.cmd.Process.Kill(); err != nil {
 			// Check if process already exited
 			select {

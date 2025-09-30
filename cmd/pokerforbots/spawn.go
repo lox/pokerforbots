@@ -234,6 +234,10 @@ func (c *SpawnCmd) Run() error {
 		handleStatsOutput(listener.Addr().String(), c.WriteStats, c.PrintStats, logger)
 	}
 
+	// Give bots a moment to write their own stats files before stopping them
+	// This ensures external bots (like Aragorn) can flush their stats to disk
+	time.Sleep(100 * time.Millisecond)
+
 	// Stop bots (will be done by defer)
 	if !c.Pretty {
 		logger.Info().Msg("Stopping bots...")
