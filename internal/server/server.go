@@ -427,10 +427,22 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		botID = s.botIDGen()
 	}
 
+	// Determine protocol version (default to v2 if not specified)
+	protocolVersion := connectMsg.ProtocolVersion
+	if protocolVersion == "" {
+		protocolVersion = "2" // Default to v2 for new bots
+	}
+	// Validate protocol version
+	if protocolVersion != "1" && protocolVersion != "2" {
+		s.logger.Warn().Str("version", protocolVersion).Msg("Unsupported protocol version, defaulting to v2")
+		protocolVersion = "2"
+	}
+
 	// Create bot instance tied to the selected game
 	bot := NewBot(s.logger, botID, conn, game.Pool)
 	bot.SetDisplayName(connectMsg.Name)
 	bot.SetGameID(game.ID)
+	bot.ProtocolVersion = protocolVersion
 
 	// Register with game pool
 	game.Pool.Register(bot)
@@ -445,6 +457,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		Str("bot_id", botID).
 		Str("game_id", game.ID).
 		Str("name", bot.DisplayName()).
+		Str("protocol_version", protocolVersion).
 		Int64("total_bots", s.botCount.Load()).
 		Msg("Bot connected")
 }

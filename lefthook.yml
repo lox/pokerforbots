@@ -3,6 +3,8 @@
 
 pre-commit:
   parallel: true
+  env:
+    PRE_COMMIT_ALLOW_NO_CONFIG: "1"  # Silence pre-commit warnings
   commands:
     # Run all Go tests with race detector - MUST PASS
     go-test:

@@ -511,22 +511,56 @@ func (hr *HandRunner) listenForAction(botIndex int, done <-chan struct{}) {
 	}
 }
 
-// convertAction converts a protocol action to a game action
-func (hr *HandRunner) convertAction(action protocol.Action) (game.Action, int) {
-	switch action.Action {
+// normalizeAction converts simplified protocol v2 actions (fold, call, raise, allin)
+// to semantic game actions (fold, check, call, bet, raise, allin) based on game state.
+// This allows bots to use a simple 4-action vocabulary while the server maintains
+// semantic precision in logs and hand histories.
+func normalizeAction(clientAction string, clientAmount int, player *game.Player, betting *game.BettingRound) (game.Action, int) {
+	toCall := betting.CurrentBet - player.Bet
+
+	switch clientAction {
 	case "fold":
 		return game.Fold, 0
-	case "check":
-		return game.Check, 0
+
 	case "call":
+		// Protocol v2: "call" is universal
+		// - When to_call=0, normalize to Check for game engine
+		// - When to_call>0, use Call
+		if toCall == 0 {
+			return game.Check, 0
+		}
 		return game.Call, 0
+
 	case "raise":
-		return game.Raise, action.Amount
+		// Protocol v2: "raise" is universal for betting/raising
+		// - When amount >= stack, normalize to AllIn
+		// - Game engine will determine if it's a bet or raise based on context
+		if clientAmount >= player.Chips+player.Bet {
+			return game.AllIn, clientAmount
+		}
+		return game.Raise, clientAmount
+
 	case "allin":
 		return game.AllIn, 0
+
+	// Old protocol v1 actions - explicitly reject
+	case "check":
+		// Return fold to indicate error (will be caught by validation)
+		return game.Fold, 0
+	case "bet":
+		// Return fold to indicate error (will be caught by validation)
+		return game.Fold, 0
+
 	default:
 		return game.Fold, 0 // Invalid action = fold
 	}
+}
+
+// convertAction converts a protocol action to a game action using normalization
+func (hr *HandRunner) convertAction(action protocol.Action) (game.Action, int) {
+	seat := hr.handState.ActivePlayer
+	player := hr.handState.Players[seat]
+	return normalizeAction(action.Action, action.Amount, player, hr.handState.Betting)
 }
 
 // processAction processes a bot's action and broadcasts it

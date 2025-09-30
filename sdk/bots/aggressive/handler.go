@@ -29,18 +29,14 @@ func (*Handler) OnGameCompleted(*client.GameState, protocol.GameCompleted) error
 
 func (h *Handler) OnActionRequest(_ *client.GameState, req protocol.ActionRequest) (string, int, error) {
 	// Raise 70% of the time when possible
-	if (slices.Contains(req.ValidActions, "raise") || slices.Contains(req.ValidActions, "bet")) && h.rng.Float64() < 0.7 {
+	// Protocol v2: Only "raise" exists (no "bet" in simplified protocol)
+	if slices.Contains(req.ValidActions, "raise") && h.rng.Float64() < 0.7 {
 		// MinBet is the minimum total bet/raise amount (not the increment)
-		if slices.Contains(req.ValidActions, "raise") {
-			return "raise", req.MinBet, nil
-		}
-		return "bet", req.MinBet, nil
+		return "raise", req.MinBet, nil
 	}
+	// Protocol v2: "call" is universal for both checking and calling
 	if slices.Contains(req.ValidActions, "call") {
 		return "call", 0, nil
-	}
-	if slices.Contains(req.ValidActions, "check") {
-		return "check", 0, nil
 	}
 	return "fold", 0, nil
 }

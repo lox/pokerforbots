@@ -269,8 +269,8 @@ func TestValidActionsGeneration(t *testing.T) {
 				hr.handState.ActivePlayer = 1 // BB to act
 				return hr
 			},
-			expectedValid: []string{"fold", "check", "raise"},
-			description:   "BB should be able to check or raise after SB calls",
+			expectedValid: []string{"fold", "call", "raise"}, // Protocol v2: call not check
+			description:   "BB should be able to call (check) or raise after SB calls",
 		},
 		{
 			name: "flop_first_to_act",
@@ -287,8 +287,8 @@ func TestValidActionsGeneration(t *testing.T) {
 				hr.handState.ActivePlayer = 1 // In heads-up, BB acts first post-flop
 				return hr
 			},
-			expectedValid: []string{"fold", "check", "raise"},
-			description:   "First to act on flop should be able to check or bet",
+			expectedValid: []string{"fold", "call", "raise"}, // Protocol v2: call not check
+			description:   "First to act on flop should be able to call (check) or raise (bet)",
 		},
 		{
 			name: "facing_all_in",

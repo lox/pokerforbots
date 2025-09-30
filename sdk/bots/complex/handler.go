@@ -477,7 +477,8 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handClass
 	}
 
 	// Postflop: use table-driven decision making
-	canCheck := slices.Contains(req.ValidActions, "check")
+	// Protocol v2: "call" is used for checking (to_call=0)
+	canCheck := slices.Contains(req.ValidActions, "call") && req.ToCall == 0
 	if equity <= 0 {
 		var eq float64
 		handClass, eq = b.classifyPostflopSDK()
@@ -493,7 +494,7 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handClass
 	// First check fold threshold
 	if b.shouldFold(req, equity) {
 		if canCheck {
-			return "check", 0
+			return "call", 0 // Protocol v2: call for checking
 		}
 		return "fold", 0
 	}
@@ -521,7 +522,7 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handClass
 			sizePct = b.strategy.BetSize(b.state.Street, boardTexture.String(), getHandStrengthCategory(equity))
 			return b.raiseOrJam(req, b.betSize(req, sizePct))
 		}
-		return "check", 0 // Can't bet if we can't check
+		return "call", 0 // Protocol v2: call for checking
 
 	case "raise":
 		if slices.Contains(req.ValidActions, "raise") {
@@ -536,21 +537,22 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handClass
 		return "fold", 0 // Fold if can't call
 
 	case "check":
+		// Protocol v2: check action from strategy becomes call
 		if canCheck {
-			return "check", 0
+			return "call", 0
 		}
 		return "fold", 0 // Fold if can't check
 
 	case "fold":
 		if canCheck {
-			return "check", 0 // Check if it's free
+			return "call", 0 // Protocol v2: call for checking
 		}
 		return "fold", 0
 	}
 
 	// Fallback
 	if canCheck {
-		return "check", 0
+		return "call", 0 // Protocol v2: call for checking
 	}
 	return "fold", 0
 }
@@ -582,8 +584,9 @@ func (b *complexBot) raiseOrJam(req protocol.ActionRequest, amt int) (string, in
 		if slices.Contains(req.ValidActions, "call") {
 			return "call", 0
 		}
-		if slices.Contains(req.ValidActions, "check") {
-			return "check", 0
+		// Protocol v2: check uses call with to_call=0
+		if slices.Contains(req.ValidActions, "call") && req.ToCall == 0 {
+			return "call", 0
 		}
 		return "fold", 0
 	}
@@ -638,8 +641,9 @@ func maxInt(a, b int) int {
 func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (string, int) {
 	// Validate hole cards
 	if len(b.state.HoleCardsStr) != 2 {
-		if hasAction(req.ValidActions, "check") {
-			return "check", 0
+		// Protocol v2: check uses call with to_call=0
+		if hasAction(req.ValidActions, "call") && req.ToCall == 0 {
+			return "call", 0
 		}
 		return "fold", 0
 	}
@@ -675,13 +679,14 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 	bluff3BetRange := b.strategy.PreflopRangeFor(position, Action3BetBluff)
 	fourBetRange := b.strategy.PreflopRangeFor(position, Action4Bet)
 
-	// Case 1: BB can check
-	if facing == 0 && hasAction(req.ValidActions, "check") {
+	// Case 1: BB can check (to_call==0)
+	// Protocol v2: use "call" for checking
+	if facing == 0 && hasAction(req.ValidActions, "call") {
 		// Optional BB iso-raise with strong hands
 		if b.handInRange(openRange) && hasAction(req.ValidActions, "raise") {
 			return b.raiseOrJam(req, openSize)
 		}
-		return "check", 0
+		return "call", 0
 	}
 
 	// Case 2: Unopened / limped pot
@@ -689,9 +694,10 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 		if hasAction(req.ValidActions, "raise") && b.handInRange(openRange) {
 			return b.raiseOrJam(req, openSize)
 		}
-		// No limping - check if possible, else fold
-		if hasAction(req.ValidActions, "check") {
-			return "check", 0
+		// No limping - check if possible (to_call==0), else fold
+		// Protocol v2: use "call" for checking
+		if hasAction(req.ValidActions, "call") && facing == 0 {
+			return "call", 0
 		}
 		return "fold", 0
 	}
