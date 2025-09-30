@@ -30,7 +30,7 @@ jobs:
         run: task generate
 
       - name: Run tests first
-        run: go test -race ./...
+        run: task test
 
       - name: Validate version
         id: version
