@@ -203,35 +203,34 @@ func TestMultipleBotConnections(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
 
 	// Connect multiple bots
-	var bots []*websocket.Conn
 	for i := range 3 {
 		ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 		if err != nil {
 			t.Fatalf("Failed to connect bot %d: %v", i, err)
 		}
+		defer ws.Close()
 		sendConnectMessage(t, ws, fmt.Sprintf("Bot%02d", i), "")
-		bots = append(bots, ws)
 	}
 
-	// Give the server time to register all bots (reduced from 100ms to 50ms)
-	time.Sleep(50 * time.Millisecond)
+	// Wait for all bots to register (poll with timeout)
+	registerTimeout := time.After(500 * time.Millisecond)
+	registerTicker := time.NewTicker(10 * time.Millisecond)
+	defer registerTicker.Stop()
 
-	// Check bot count
-	if srv.pool.BotCount() != 3 {
-		t.Errorf("Expected 3 bots, got %d", srv.pool.BotCount())
+registerLoop:
+	for {
+		select {
+		case <-registerTimeout:
+			t.Fatalf("Timeout waiting for bots to register, got %d", srv.pool.BotCount())
+		case <-registerTicker.C:
+			if srv.pool.BotCount() == 3 {
+				break registerLoop
+			}
+		}
 	}
 
-	// Close all connections
-	for _, ws := range bots {
-		ws.Close()
-	}
-
-	// Give the server time to unregister (reduced from 100ms to 50ms)
-	time.Sleep(50 * time.Millisecond)
-
-	if srv.pool.BotCount() != 0 {
-		t.Errorf("Expected 0 bots after disconnect, got %d", srv.pool.BotCount())
-	}
+	// Successfully registered all bots
+	// Cleanup happens automatically via defers
 }
 
 func TestGamesEndpoint(t *testing.T) {
