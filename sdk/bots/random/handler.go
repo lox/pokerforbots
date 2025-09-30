@@ -29,6 +29,7 @@ func (*Handler) OnGameCompleted(*client.GameState, protocol.GameCompleted) error
 func (h *Handler) OnActionRequest(_ *client.GameState, req protocol.ActionRequest) (string, int, error) {
 	action := req.ValidActions[h.rng.IntN(len(req.ValidActions))]
 	amount := 0
+	// MinBet is the minimum total bet/raise amount for both "bet" and "raise" actions
 	if action == "raise" || action == "bet" {
 		amount = req.MinBet
 	}

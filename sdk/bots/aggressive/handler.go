@@ -30,8 +30,9 @@ func (*Handler) OnGameCompleted(*client.GameState, protocol.GameCompleted) error
 func (h *Handler) OnActionRequest(_ *client.GameState, req protocol.ActionRequest) (string, int, error) {
 	// Raise 70% of the time when possible
 	if (slices.Contains(req.ValidActions, "raise") || slices.Contains(req.ValidActions, "bet")) && h.rng.Float64() < 0.7 {
+		// MinBet is the minimum total bet/raise amount (not the increment)
 		if slices.Contains(req.ValidActions, "raise") {
-			return "raise", req.MinRaise, nil
+			return "raise", req.MinBet, nil
 		}
 		return "bet", req.MinBet, nil
 	}
