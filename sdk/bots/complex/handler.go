@@ -18,31 +18,6 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// OpponentAction tracks a single action by an opponent
-type OpponentAction struct {
-	Street   string
-	Action   string // "fold", "check", "call", "raise", "bet"
-	Amount   int
-	Position int // Their position when they acted
-}
-
-// OpponentProfile tracks an opponent's actions within the current hand
-type OpponentProfile struct {
-	Seat          int
-	Position      int    // Position relative to button (0=button, 1=cutoff, etc)
-	PreflopAction string // "open", "3bet", "call", "limp", "fold"
-	OpenPosition  int    // Position they opened from (-1 if didn't open)
-	Is3Bettor     bool
-	IsColdCaller  bool
-	IsLimper      bool
-	Actions       []OpponentAction // All actions this hand
-	VPIP          bool             // Put money in voluntarily
-	PFR           bool             // Raised preflop
-	CBet          bool             // Made continuation bet
-	FacedCBet     bool             // Faced a continuation bet
-	FoldedToCBet  bool             // Folded to continuation bet
-}
-
 // tableState holds the latest state the bot knows about.
 type tableState struct {
 	HandID       string
@@ -65,281 +40,20 @@ type tableState struct {
 	HandNum       int
 
 	// Opponent tracking
-	Opponents      map[int]*OpponentProfile // Seat -> Profile
-	PreflopRaiser  int                      // Seat of preflop raiser (-1 if none)
-	OpenRaiserSeat int                      // Seat of original opener
-	NumLimpers     int                      // Count of limpers
-	Is3BetPot      bool                     // Whether this is a 3-bet pot
-	IsLimpedPot    bool                     // Whether this is a limped pot
+	NumLimpers int  // Count of limpers before any raise
+	raiseSeen  bool // Whether a preflop raise has occurred this hand
+
+	// Cached equity snapshot to avoid repeated calculations within a street
+	equity equitySnapshot
 }
 
-// ==========================================
-// TABLE-DRIVEN STRATEGY DEFINITIONS
-// ==========================================
-
-// FoldThreshold defines minimum equity needed to continue at different bet sizes
-type FoldThreshold struct {
-	Street    string
-	MaxBetPct float64 // Maximum bet/pot ratio this threshold applies to
-	MinEquity float64 // Minimum equity needed to continue
-}
-
-// Sorted fold thresholds by street and bet size
-var foldThresholds = []FoldThreshold{
-	// Flop thresholds
-	{StreetFlop, 0.33, 0.15},
-	{StreetFlop, 0.66, 0.35},
-	{StreetFlop, 999, 0.50},
-	// Turn thresholds
-	{StreetTurn, 0.50, 0.30},
-	{StreetTurn, 1.00, 0.50},
-	{StreetTurn, 999, 0.60},
-	// River thresholds
-	{StreetRiver, 0.25, 0.30},
-	{StreetRiver, 0.50, 0.45},
-	{StreetRiver, 999, 0.60},
-}
-
-// Position constants for preflop ranges
-const (
-	PositionButton = 0
-	PositionCutoff = 1
-	PositionMiddle = 2
-	PositionEarly  = 3  // 3+ is treated as early position
-	PositionAny    = -1 // Applies to any position
-)
-
-// Action constants for preflop ranges
-const (
-	ActionOpen          = "open"
-	Action3BetValue     = "3bet_value"
-	Action3BetBluff     = "3bet_bluff"
-	ActionDefend        = "defend"
-	Action4Bet          = "4bet"
-	ActionOpenHeadsUp   = "open_headsup"
-	ActionDefendHeadsUp = "defend_headsup"
-)
-
-// PreflopRange defines opening/3bet/4bet ranges by position
-type PreflopRange struct {
-	Position int    // Use Position* constants
-	Action   string // Use Action* constants
-	Range    string // Range notation like "AA,KK,AKs"
-}
-
-// Preflop ranges organized by position and action
-var preflopRanges = []PreflopRange{
-	// Heads-up specific ranges (much wider)
-	{PositionButton, ActionOpenHeadsUp, "22+,A2+,K2+,Q2+,J4o+,T6o+,96o+,86o+,76o+,65o+,54o,J2s+,T2s+,92s+,82s+,72s+,62s+,52s+,42s+,32s"},
-	{PositionCutoff, ActionDefendHeadsUp, "22+,A2+,K2+,Q5o+,J7o+,T7o+,97o+,87o,Q2s+,J2s+,T4s+,95s+,85s+,74s+,64s+,53s+,43s"},
-
-	// Early position (UTG/EP) opening range - tight
-	{PositionEarly, ActionOpen, "77+,AJo+,KQo,A5s+,KTs+,QTs+,JTs,T9s"},
-
-	// Middle position (MP/HJ) - slightly wider
-	{PositionMiddle, ActionOpen, "55+,ATo+,KJo+,A2s+,K9s+,Q9s+,J9s+,T9s,98s,87s,76s"},
-
-	// Cutoff - much wider
-	{PositionCutoff, ActionOpen, "22+,A2+,K8o+,Q9o+,J9o+,T9o,K2s+,Q4s+,J7s+,T7s+,97s+,86s+,75s+,65s,54s"},
-
-	// Button - widest opening range
-	{PositionButton, ActionOpen, "22+,A2+,K5o+,Q8o+,J8o+,T8o+,98o,K2s+,Q2s+,J4s+,T6s+,96s+,85s+,74s+,64s+,53s+,43s"},
-
-	// 3-bet value range (position-independent)
-	{PositionAny, Action3BetValue, "TT+,AQs+,AKo"},
-
-	// 3-bet bluff range (only from late position)
-	{PositionButton, Action3BetBluff, "A5s-A2s,K9s,K8s,QTs,JTs,T9s,98s,87s,76s,65s"},
-	{PositionCutoff, Action3BetBluff, "A5s-A2s,KTs,K9s,QTs,JTs"},
-
-	// Defend vs 3-bet (call range)
-	{PositionAny, ActionDefend, "99-22,AJs,KQs,QJs,JTs,T9s,98s,87s,76s"},
-
-	// 4-bet range
-	{PositionAny, Action4Bet, "QQ+,AK"},
-}
-
-// PostflopAction defines actions based on hand classification and situation
-type PostflopAction struct {
-	HandClass string  // "TripsPlus", "TwoPair", "TopPair", etc.
-	CanCheck  bool    // Whether we have the option to check
-	MaxSPR    float64 // Maximum SPR for this action
-	Multiway  bool    // Whether pot has 3+ players
-	Action    string  // "bet", "check", "call", "raise", "fold"
-	SizePct   float64 // Bet size as percentage of pot
-}
-
-// Postflop action matrix
-var postflopMatrix = []PostflopAction{
-	// Strong hands - always bet/raise for value
-	{"TripsPlus", true, 999, false, "bet", 0.50},
-	{"TripsPlus", true, 999, true, "bet", 0.75}, // Size up multiway
-	{"TripsPlus", false, 999, false, "raise", 0.50},
-	{"TripsPlus", false, 999, true, "call", 0}, // Just call multiway when facing bet
-
-	// Two pair
-	{"TwoPair", true, 999, false, "bet", 0.50},
-	{"TwoPair", true, 999, true, "check", 0}, // Pot control multiway
-	{"TwoPair", false, 999, false, "call", 0},
-	{"TwoPair", false, 999, true, "call", 0},
-
-	// Top pair good kicker
-	{"TPTK", true, 8.0, false, "bet", 0.33},
-	{"TPTK", true, 999, false, "check", 0}, // High SPR pot control
-	{"TPTK", true, 999, true, "check", 0},  // Multiway pot control
-	{"TPTK", false, 999, false, "call", 0},
-	{"TPTK", false, 999, true, "fold", 0}, // Fold multiway to aggression
-
-	// Top pair weak kicker
-	{"TopPair", true, 5.0, false, "bet", 0.25},
-	{"TopPair", true, 999, false, "check", 0},
-	{"TopPair", true, 999, true, "check", 0},
-	{"TopPair", false, 999, false, "call", 0},
-	{"TopPair", false, 999, true, "fold", 0},
-
-	// Strong draws
-	{"ComboDraw", true, 8.0, false, "bet", 0.33},
-	{"ComboDraw", true, 999, false, "check", 0},
-	{"ComboDraw", false, 999, false, "call", 0},
-	{"ComboDraw", false, 999, true, "call", 0},
-
-	{"StrongDraw", true, 5.0, false, "bet", 0.25},
-	{"StrongDraw", true, 999, false, "check", 0},
-	{"StrongDraw", false, 999, false, "call", 0},
-	{"StrongDraw", false, 999, true, "fold", 0},
-
-	// Weak draws and air
-	{"WeakDraw", true, 999, false, "check", 0},
-	{"WeakDraw", false, 999, false, "fold", 0},
-	{"WeakDraw", false, 999, true, "fold", 0},
-
-	{"Air", true, 999, false, "check", 0},
-	{"Air", false, 999, false, "fold", 0},
-	{"Air", false, 999, true, "fold", 0},
-}
-
-// Street constants for bet sizing
-const (
-	StreetFlop  = "flop"
-	StreetTurn  = "turn"
-	StreetRiver = "river"
-)
-
-// HandStrength categories for bet sizing
-const (
-	HandStrengthStrong = "strong"
-	HandStrengthMedium = "medium"
-	HandStrengthDraw   = "draw"
-	HandStrengthAny    = "*"
-)
-
-// BoardTextureString constants matching classification.BoardTexture.String() output
-const (
-	BoardTextureDry     = "dry"
-	BoardTextureSemiWet = "semi-wet"
-	BoardTextureWet     = "wet"
-	BoardTextureVeryWet = "very wet"
-	BoardTextureAny     = "*"
-)
-
-// BetSizing defines bet sizes for different situations
-type BetSizing struct {
-	Street       string
-	BoardTexture string // Use BoardTexture* constants
-	HandStrength string // Use HandStrength* constants
-	SizePct      float64
-}
-
-// Bet sizing table
-var betSizingTable = []BetSizing{
-	// Flop sizing based on board texture
-	{StreetFlop, BoardTextureDry, HandStrengthAny, 0.33},
-	{StreetFlop, BoardTextureSemiWet, HandStrengthAny, 0.50},
-	{StreetFlop, BoardTextureWet, HandStrengthAny, 0.66},
-	{StreetFlop, BoardTextureVeryWet, HandStrengthAny, 0.75},
-
-	// Turn standard sizing
-	{StreetTurn, BoardTextureAny, HandStrengthStrong, 0.66},
-	{StreetTurn, BoardTextureAny, HandStrengthMedium, 0.50},
-	{StreetTurn, BoardTextureAny, HandStrengthDraw, 0.50},
-
-	// River sizing based on hand strength
-	{StreetRiver, BoardTextureAny, HandStrengthStrong, 1.00},
-	{StreetRiver, BoardTextureAny, HandStrengthMedium, 0.50},
-	{StreetRiver, BoardTextureAny, HandStrengthDraw, 0.75}, // Bluff sizing
-}
-
-// ==========================================
-// TABLE LOOKUP FUNCTIONS
-// ==========================================
-
-// lookupFoldThreshold finds the minimum equity needed to continue
-func lookupFoldThreshold(street string, betPct float64) float64 {
-	for _, threshold := range foldThresholds {
-		if threshold.Street == street && betPct <= threshold.MaxBetPct {
-			return threshold.MinEquity
-		}
-	}
-	return 0.50 // Default threshold
-}
-
-// getPreflopRange returns the range for a given position and action
-func getPreflopRange(position int, action string) *analysis.Range {
-	for _, pr := range preflopRanges {
-		// PositionAny means any position
-		// PositionEarly applies to all positions >= 3
-		positionMatches := pr.Position == PositionAny ||
-			pr.Position == position ||
-			(pr.Position == PositionEarly && position >= PositionEarly)
-
-		if positionMatches && pr.Action == action {
-			if r, err := analysis.ParseRange(pr.Range); err == nil {
-				return r
-			}
-		}
-	}
-	return nil
-}
-
-// lookupPostflopAction finds the best action for current situation
-func lookupPostflopAction(handClass string, canCheck bool, spr float64, multiway bool) (string, float64) {
-	for _, action := range postflopMatrix {
-		if action.HandClass != handClass {
-			continue
-		}
-		if action.CanCheck != canCheck {
-			continue
-		}
-		if spr > action.MaxSPR {
-			continue
-		}
-		if action.Multiway != multiway {
-			continue
-		}
-		return action.Action, action.SizePct
-	}
-	// Default fallback
-	if canCheck {
-		return "check", 0
-	}
-	return "fold", 0
-}
-
-// lookupBetSizing returns the bet size for a situation
-func lookupBetSizing(street, boardTexture, handStrength string) float64 {
-	for _, sizing := range betSizingTable {
-		if sizing.Street != street {
-			continue
-		}
-		if sizing.BoardTexture != BoardTextureAny && sizing.BoardTexture != boardTexture {
-			continue
-		}
-		if sizing.HandStrength != HandStrengthAny && sizing.HandStrength != handStrength {
-			continue
-		}
-		return sizing.SizePct
-	}
-	return 0.50 // Default sizing
+type equitySnapshot struct {
+	valid       bool
+	street      string
+	boardCards  int
+	activeCount int
+	class       string
+	equity      float64
 }
 
 // complexBot implements advanced poker strategy with SDK components.
@@ -350,6 +64,7 @@ type complexBot struct {
 	rng      *rand.Rand
 	handNum  int
 	bigBlind int // Track the big blind amount
+	strategy *StrategyConfig
 }
 
 func newComplexBot(logger zerolog.Logger) *complexBot {
@@ -383,6 +98,7 @@ func newComplexBot(logger zerolog.Logger) *complexBot {
 		rng:      rng,
 		handNum:  0,
 		bigBlind: 10, // Default big blind
+		strategy: defaultStrategy,
 	}
 }
 
@@ -424,50 +140,28 @@ func (b *complexBot) OnHandStart(state *client.GameState, start protocol.HandSta
 	}
 	b.state.ActiveCount = active
 
-	// Initialize opponent tracking for new hand
-	b.state.Opponents = make(map[int]*OpponentProfile)
-	for i, player := range start.Players {
-		if i == start.YourSeat || player.Chips <= 0 {
-			continue // Skip ourselves and eliminated players
-		}
-		b.state.Opponents[i] = &OpponentProfile{
-			Seat:          i,
-			Position:      b.calculatePlayerPosition(i, start.Button, start.Players),
-			OpenPosition:  -1,
-			Actions:       make([]OpponentAction, 0),
-			PreflopAction: "pending",
-		}
-	}
-	b.state.PreflopRaiser = -1
-	b.state.OpenRaiserSeat = -1
 	b.state.NumLimpers = 0
-	b.state.Is3BetPot = false
-	b.state.IsLimpedPot = false
+	b.state.raiseSeen = false
+	b.state.equity = equitySnapshot{}
 
 	b.logger.Debug().
 		Strs("holes", b.state.HoleCardsStr).
 		Int("position", b.getPosition()).
-		Int("opponents", len(b.state.Opponents)).
+		Int("active_players", b.state.ActiveCount).
 		Msg("hand start")
 	return nil
 }
 
 func (b *complexBot) OnActionRequest(state *client.GameState, req protocol.ActionRequest) (string, int, error) {
-	// Calculate hand strength using SDK components
-	handStrength := b.evaluateHandStrength()
-	if b.state.Street != "preflop" {
-		_, eq := b.classifyPostflopSDK()
-		if eq > 0 {
-			handStrength = eq
-		}
-	}
+	// Calculate hand equity once per action decision
+	class, equity := b.computeEquity()
 	position := b.getPosition()
 	potOdds := b.calculatePotOdds(req)
 
-	action, amount := b.makeStrategicDecision(req, handStrength, position, potOdds)
+	action, amount := b.makeStrategicDecision(req, class, equity, position, potOdds)
 
 	b.logger.Debug().
-		Float64("hand_strength", handStrength).
+		Float64("equity", equity).
 		Int("position", position).
 		Float64("pot_odds", potOdds).
 		Str("action", action).
@@ -503,9 +197,9 @@ func (b *complexBot) OnPlayerAction(state *client.GameState, action protocol.Pla
 		b.state.BetsThisHand++
 	}
 
-	// Track opponent actions
-	if action.Seat != b.state.Seat && action.Seat >= 0 {
-		b.trackOpponentAction(action)
+	// Maintain simple preflop counters
+	if b.state.Street == "preflop" {
+		b.updatePreflopCounters(action)
 	}
 
 	return nil
@@ -554,49 +248,68 @@ func (b *complexBot) OnGameCompleted(state *client.GameState, completed protocol
 	return io.EOF
 }
 
-func (b *complexBot) evaluateHandStrength() float64 {
+func (b *complexBot) computeEquity() (string, float64) {
+	street := b.state.Street
+	boardCards := b.state.Board.CountCards()
+	active := b.state.ActiveCount
+
+	cache := b.state.equity
+	if cache.valid && cache.street == street && cache.boardCards == boardCards && cache.activeCount == active {
+		return cache.class, cache.equity
+	}
+
+	var (
+		class  string
+		equity float64
+	)
+
+	if street == "preflop" {
+		class = "preflop"
+		equity = b.preflopEquity()
+	} else {
+		class, equity = b.classifyPostflopSDK()
+	}
+
+	if equity <= 0 {
+		equity = 0.3
+	}
+
+	b.state.equity = equitySnapshot{
+		valid:       true,
+		street:      street,
+		boardCards:  boardCards,
+		activeCount: active,
+		class:       class,
+		equity:      equity,
+	}
+
+	return class, equity
+}
+
+func (b *complexBot) preflopEquity() float64 {
 	if b.state.HoleCards.CountCards() != 2 {
 		return 0.5
 	}
-
-	// Use string format for preflop calculations
 	if len(b.state.HoleCardsStr) != 2 {
 		return 0.5
 	}
 
-	// Pre-flop: Use accurate Monte Carlo equity table
-	if b.state.Street == "preflop" {
-		// Get hand category (e.g., "AA", "AKs", "72o")
-		category := analysis.GetHandCategory(b.state.HoleCardsStr[0], b.state.HoleCardsStr[1])
-		if category == "" {
-			return 0.5 // Default if can't categorize
-		}
-
-		// Get equity based on number of active opponents
-		opponents := max(b.state.ActiveCount-1, 1)
-
-		equity := analysis.GetPreflopEquity(category, opponents)
-		if equity == 0 {
-			// Fallback to basic estimate if not in table
-			return 0.3
-		}
-
-		return equity
+	category := analysis.GetHandCategory(b.state.HoleCardsStr[0], b.state.HoleCardsStr[1])
+	if category == "" {
+		return 0.5
 	}
 
-	// Post-flop: Use SDK equity calculator for accurate strength evaluation
-	if b.state.Board.CountCards() >= 3 {
-		// Use pre-parsed cards for equity calculation
-		if b.state.HoleCards == 0 || b.state.Board == 0 {
-			return 0.3 // Default strength if parsing failed
-		}
-
-		equityResult := analysis.CalculateEquity(b.state.HoleCards, b.state.Board, b.state.ActiveCount-1, 1000, b.rng)
-		return equityResult.Equity()
+	opponents := b.state.ActiveCount - 1
+	if opponents < 1 {
+		opponents = 1
 	}
 
-	// Should not reach here but return default
-	return 0.3
+	equity := analysis.GetPreflopEquity(category, opponents)
+	if equity == 0 {
+		return 0.3
+	}
+
+	return equity
 }
 
 // classifyPostflopSDK uses the SDK for advanced postflop analysis
@@ -683,133 +396,16 @@ func (b *complexBot) classifyPostflopSDK() (string, float64) {
 	return class, math.Max(equity, 0.05)
 }
 
-// trackOpponentAction tracks and categorizes opponent actions
-func (b *complexBot) trackOpponentAction(action protocol.PlayerAction) {
-	opp, exists := b.state.Opponents[action.Seat]
-	if !exists {
-		return // Not tracking this player
-	}
-
-	// Record the raw action
-	opp.Actions = append(opp.Actions, OpponentAction{
-		Street:   b.state.Street,
-		Action:   action.Action,
-		Amount:   action.AmountPaid,
-		Position: opp.Position,
-	})
-
-	// Track preflop specific patterns
-	if b.state.Street == "preflop" {
-		switch action.Action {
-		case "raise", "allin":
-			opp.PFR = true
-			opp.VPIP = true
-
-			// Check if this is the first raiser
-			if b.state.PreflopRaiser < 0 {
-				b.state.PreflopRaiser = action.Seat
-				b.state.OpenRaiserSeat = action.Seat
-				opp.PreflopAction = "open"
-				opp.OpenPosition = opp.Position
-			} else {
-				// This is a 3-bet or higher
-				b.state.Is3BetPot = true
-				opp.Is3Bettor = true
-				opp.PreflopAction = "3bet"
-			}
-
-		case "call":
-			opp.VPIP = true
-
-			// Check if calling after a raise
-			if b.state.PreflopRaiser >= 0 && b.state.PreflopRaiser != action.Seat {
-				opp.IsColdCaller = true
-				opp.PreflopAction = "call"
-			} else if b.state.PreflopRaiser < 0 {
-				// Calling without a raise = limping
-				opp.IsLimper = true
-				opp.PreflopAction = "limp"
-				b.state.NumLimpers++
-				b.state.IsLimpedPot = true
-			}
-
-		case "check":
-			// Big blind checking
-			if b.state.PreflopRaiser < 0 {
-				b.state.IsLimpedPot = true
-			}
-
-		case "fold":
-			opp.PreflopAction = "fold"
+// updatePreflopCounters maintains lightweight stats needed for simplified strategy.
+func (b *complexBot) updatePreflopCounters(action protocol.PlayerAction) {
+	switch action.Action {
+	case "raise", "allin":
+		b.state.raiseSeen = true
+	case "call":
+		if !b.state.raiseSeen {
+			b.state.NumLimpers++
 		}
 	}
-
-	// Track postflop patterns
-	if b.state.Street != "preflop" {
-		// Track continuation betting
-		if b.state.PreflopRaiser == action.Seat && action.Action == "bet" {
-			opp.CBet = true
-		}
-
-		// Track facing and folding to c-bets
-		if b.state.PreflopRaiser >= 0 && b.state.PreflopRaiser != action.Seat {
-			if action.Action == "fold" && b.state.LastAction.Seat == b.state.PreflopRaiser {
-				opp.FacedCBet = true
-				opp.FoldedToCBet = true
-			} else if action.Action == "call" || action.Action == "raise" {
-				opp.FacedCBet = true
-			}
-		}
-	}
-
-	b.logger.Debug().
-		Int("seat", action.Seat).
-		Str("action", action.Action).
-		Int("amount", action.AmountPaid).
-		Str("street", b.state.Street).
-		Int("position", opp.Position).
-		Str("preflop_action", opp.PreflopAction).
-		Msg("tracked opponent action")
-}
-
-// calculatePlayerPosition calculates a player's position relative to button
-func (b *complexBot) calculatePlayerPosition(seat int, button int, players []protocol.Player) int {
-	if button < 0 {
-		return 2 // Default to middle if no button
-	}
-
-	activePlayers := []int{}
-	for i, p := range players {
-		if !p.Folded && p.Chips > 0 {
-			activePlayers = append(activePlayers, i)
-		}
-	}
-
-	if len(activePlayers) <= 2 {
-		// Heads-up: button = 0 (in position), other = 1 (out of position)
-		if b.state.Seat == b.state.Button {
-			return 0 // We have position
-		}
-		return 1 // We're out of position
-	}
-
-	// Find position relative to button
-	buttonIdx := -1
-	targetIdx := -1
-	for i, activeSeat := range activePlayers {
-		if activeSeat == button {
-			buttonIdx = i
-		}
-		if activeSeat == seat {
-			targetIdx = i
-		}
-	}
-
-	if buttonIdx < 0 || targetIdx < 0 {
-		return 2 // Default to middle
-	}
-
-	return (targetIdx - buttonIdx + len(activePlayers)) % len(activePlayers)
 }
 
 // Rest of the methods remain the same as the original complex bot
@@ -874,7 +470,7 @@ func (b *complexBot) calculatePotOdds(req protocol.ActionRequest) float64 {
 	return float64(potAfterCall) / float64(req.ToCall)
 }
 
-func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStrength float64, position int, _ float64) (string, int) {
+func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handClass string, equity float64, position int, _ float64) (string, int) {
 	// Preflop handled by a dedicated policy
 	if b.state.Street == "preflop" {
 		return b.preflopDecision(req, position)
@@ -882,9 +478,12 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 
 	// Postflop: use table-driven decision making
 	canCheck := slices.Contains(req.ValidActions, "check")
-	class, equity := b.classifyPostflopSDK()
 	if equity <= 0 {
-		equity = handStrength // fallback
+		var eq float64
+		handClass, eq = b.classifyPostflopSDK()
+		if eq > 0 {
+			equity = eq
+		}
 	}
 
 	// For now, removing equity adjustments based on opponent tracking
@@ -911,7 +510,7 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 	}
 
 	// Look up action from postflop matrix
-	action, sizePct := lookupPostflopAction(class, canCheck, spr, multiway)
+	action, sizePct := b.strategy.PostflopDecision(handClass, canCheck, spr, multiway)
 
 	// Handle the action from the table
 	switch action {
@@ -919,7 +518,7 @@ func (b *complexBot) makeStrategicDecision(req protocol.ActionRequest, handStren
 		if canCheck {
 			// Get board texture for sizing
 			boardTexture := classification.AnalyzeBoardTexture(b.state.Board)
-			sizePct = lookupBetSizing(b.state.Street, boardTexture.String(), getHandStrengthCategory(equity))
+			sizePct = b.strategy.BetSize(b.state.Street, boardTexture.String(), getHandStrengthCategory(equity))
 			return b.raiseOrJam(req, b.betSize(req, sizePct))
 		}
 		return "check", 0 // Can't bet if we can't check
@@ -1003,15 +602,16 @@ func (b *complexBot) shouldFold(req protocol.ActionRequest, equity float64) bool
 	if pot <= 0 {
 		pot = 1
 	}
+	if req.ToCall <= 0 {
+		return false
+	}
 	betPct := float64(req.ToCall) / float64(pot)
 
-	// Fallback guard
 	if equity < 0.20 && betPct > 0.60 {
 		return true
 	}
 
-	// Use table lookup instead of switch
-	minEquity := lookupFoldThreshold(b.state.Street, betPct)
+	minEquity := b.strategy.FoldThresholdValue(b.state.Street, betPct)
 	return equity < minEquity
 }
 
@@ -1064,16 +664,16 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 
 	var openRange, defendRange *analysis.Range
 	if isHeadsUp {
-		openRange = getPreflopRange(position, ActionOpenHeadsUp)
-		defendRange = getPreflopRange(position, ActionDefendHeadsUp)
+		openRange = b.strategy.PreflopRangeFor(position, ActionOpenHeadsUp)
+		defendRange = b.strategy.PreflopRangeFor(position, ActionDefendHeadsUp)
 	} else {
-		openRange = getPreflopRange(position, ActionOpen)
-		defendRange = getPreflopRange(position, ActionDefend)
+		openRange = b.strategy.PreflopRangeFor(position, ActionOpen)
+		defendRange = b.strategy.PreflopRangeFor(position, ActionDefend)
 	}
 
-	value3BetRange := getPreflopRange(position, Action3BetValue)
-	bluff3BetRange := getPreflopRange(position, Action3BetBluff)
-	fourBetRange := getPreflopRange(position, Action4Bet)
+	value3BetRange := b.strategy.PreflopRangeFor(position, Action3BetValue)
+	bluff3BetRange := b.strategy.PreflopRangeFor(position, Action3BetBluff)
+	fourBetRange := b.strategy.PreflopRangeFor(position, Action4Bet)
 
 	// Case 1: BB can check
 	if facing == 0 && hasAction(req.ValidActions, "check") {
@@ -1140,8 +740,7 @@ func (b *complexBot) preflopDecision(req protocol.ActionRequest, position int) (
 
 		// Sometimes flat strong hands in position (simplified to TT-JJ)
 		if hasAction(req.ValidActions, "call") && inPosition {
-			// Check if we have TT or JJ
-			flatRange, _ := analysis.ParseRange("TT,JJ")
+			flatRange := b.strategy.FlatTrapRange
 			if flatRange != nil && b.handInRange(flatRange) {
 				return "call", 0
 			}

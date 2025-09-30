@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -69,41 +70,62 @@ func NewRunner(config *Config, opts ...RunnerOption) *Runner {
 func (r *Runner) ValidateBinaries() error {
 	binaries := r.collectBinaries()
 
-	for _, binary := range binaries {
-		// Skip validation for go run commands
-		if strings.HasPrefix(binary, "go run ") {
+	for _, command := range binaries {
+		parts := strings.Fields(command)
+		if len(parts) == 0 {
+			continue
+		}
+
+		executable := parts[0]
+		if executable == "go" && len(parts) > 1 && parts[1] == "run" {
 			r.config.Logger.Debug().
-				Str("command", binary).
+				Str("command", command).
 				Msg("Skipping validation for go run command")
 			continue
 		}
 
-		// Check if file exists
-		if _, err := os.Stat(binary); os.IsNotExist(err) {
-			return fmt.Errorf("binary not found: %s", binary)
+		resolvedPath, err := r.resolveExecutablePath(executable)
+		if err != nil {
+			return fmt.Errorf("binary not found: %s (%v)", executable, err)
 		}
 
-		// Check if executable
-		fileInfo, err := os.Stat(binary)
+		fileInfo, err := os.Stat(resolvedPath)
 		if err != nil {
-			return fmt.Errorf("cannot stat binary %s: %v", binary, err)
+			return fmt.Errorf("cannot stat binary %s: %v", resolvedPath, err)
 		}
 
 		if fileInfo.Mode()&0111 == 0 {
-			return fmt.Errorf("binary is not executable: %s", binary)
+			return fmt.Errorf("binary is not executable: %s", resolvedPath)
 		}
 
-		// Try to run with --help to validate it starts
-		if err := r.validateBinaryExecution(binary); err != nil {
+		if err := r.validateBinaryExecution(resolvedPath); err != nil {
 			return err
 		}
 
 		r.config.Logger.Debug().
-			Str("binary", binary).
+			Str("binary", resolvedPath).
 			Msg("Binary validation passed")
 	}
 
 	return nil
+}
+
+// resolveExecutablePath resolves an executable path, using PATH lookup for bare commands.
+func (r *Runner) resolveExecutablePath(executable string) (string, error) {
+	if filepath.IsAbs(executable) {
+		return executable, nil
+	}
+
+	if strings.HasPrefix(executable, "./") || strings.HasPrefix(executable, "../") {
+		return executable, nil
+	}
+
+	resolved, err := exec.LookPath(executable)
+	if err != nil {
+		return executable, err
+	}
+
+	return resolved, nil
 }
 
 // validateBinaryExecution tries to run a binary with --help to validate it starts
