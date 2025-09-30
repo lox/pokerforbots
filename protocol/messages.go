@@ -1,6 +1,6 @@
 package protocol
 
-//go:generate go tool github.com/tinylib/msgp
+//go:generate msgp
 
 // MessageType identifies the type of message
 type MessageType string
