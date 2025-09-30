@@ -23,6 +23,12 @@ jobs:
 
       - uses: cashapp/activate-hermit@v1
 
+      - name: Install code generation tools
+        run: task tools
+
+      - name: Generate code
+        run: task generate
+
       - name: Run tests first
         run: go test -race ./...
 
