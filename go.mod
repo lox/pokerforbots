@@ -20,3 +20,5 @@ require (
 	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/tools v0.26.0 // indirect
 )
+
+tool github.com/tinylib/msgp

@@ -37,11 +37,10 @@ jobs:
             exit 1
           fi
 
-      - name: Install code generation tools
-        run: go install github.com/tinylib/msgp
-
-      - name: Generate code
-        run: task generate
+      - name: Install tools and generate code
+        run: |
+          task tools
+          task generate
 
       - name: Build
         run: task build
@@ -58,11 +57,10 @@ jobs:
 
       - uses: cashapp/activate-hermit@v1
 
-      - name: Install code generation tools
-        run: go install github.com/tinylib/msgp
-
-      - name: Generate code
-        run: task generate
+      - name: Install tools and generate code
+        run: |
+          task tools
+          task generate
 
       - name: Check formatting
         run: |

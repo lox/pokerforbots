@@ -6,6 +6,11 @@ tasks:
     cmds:
       - task --list
 
+  tools:
+    desc: Install code generation tools
+    cmds:
+      - go get -tool github.com/tinylib/msgp
+
   generate:
     desc: Generate all code (protocol and preflop tables)
     deps:
