@@ -247,7 +247,7 @@ See built-in bots in `sdk/bots/` for examples.
 - `calling-station` - Always calls/checks (simplest)
 - `random` - Random valid actions
 - `aggressive` - Raises often
-- `range` - Uses hand ranges (most complex)
+- `complex` - Uses hand ranges and position (most complex)
 
 View source: [sdk/bots/bots.go](../sdk/bots/bots.go)
 

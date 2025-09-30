@@ -58,7 +58,7 @@ pokerforbots client --name Alice
 The `pokerforbots` CLI provides these sub-commands:
 
 - **`spawn`** - Quick testing with bots (most common)
-- **`bot`** - Run a built-in bot (calling-station, random, aggressive, range)
+- **`bot`** - Run a built-in bot (calling-station, random, aggressive, complex)
 - **`regression`** - Statistical bot comparison
 - **`server`** - Standalone poker server
 - **`client`** - Interactive human client
@@ -91,7 +91,7 @@ pokerforbots regression --mode heads-up --hands 10000 \
 pokerforbots bot calling-station
 pokerforbots bot random
 pokerforbots bot aggressive
-pokerforbots bot range
+pokerforbots bot complex
 ```
 
 ## Architecture

@@ -17,7 +17,7 @@ PokerForBots is a complete, production-ready poker server for bot-vs-bot play.
 
 ### Bot Framework ✅
 - Clean `sdk/bot.Bot` interface for building bots
-- Built-in bots: calling-station, random, aggressive, range
+- Built-in bots: calling-station, random, aggressive, complex
 - Simple WebSocket protocol (msgpack binary)
 - Go SDK with handlers for all game events
 
@@ -81,7 +81,7 @@ pokerforbots regression --mode heads-up --hands 10000 \
 pokerforbots server --addr :8080
 
 # Connect a bot
-pokerforbots bot range --server ws://localhost:8080/ws
+pokerforbots bot complex --server ws://localhost:8080/ws
 ```
 
 ## Future Possibilities
@@ -89,7 +89,7 @@ pokerforbots bot range --server ws://localhost:8080/ws
 Not planned for near-term, but possible:
 
 - Mirror mode (replay hands with seat rotation for evaluation)
-- More sophisticated range bot implementation
+- More sophisticated complex bot implementation
 - Example bots in other languages (Python, JS)
 - Tournament brackets
 - Hand history export
