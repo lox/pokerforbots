@@ -62,20 +62,73 @@
 
 ## Tasks
 
+### ✅ Phase 1: Core Protocol Implementation (Completed)
 - [x] Update plan to reflect v2 protocol breaking change and address Codex feedback
-- [ ] Write failing tests for GetValidActions() returning simplified vocabulary
-- [ ] Update GetValidActions() in internal/game/betting.go to pass tests
-- [ ] Write failing tests for normalizeAction() covering all edge cases
-- [ ] Implement normalizeAction() in internal/server/hand_runner.go to pass tests
-- [ ] Update convertAction() to use normalization and handle semantic actions
-- [ ] Update sdk/bots/callingstation to use call/raise
-- [ ] Update sdk/bots/random to use call/raise
-- [ ] Update sdk/bots/aggressive to use call/raise
-- [ ] Update sdk/bots/complex to use call/raise
-- [ ] Update CLI client (internal/client/client.go) validation and shortcuts
-- [ ] Update docs/websocket-protocol.md with v2 protocol and migration guide
+- [x] Write failing tests for GetValidActions() returning simplified vocabulary
+- [x] Update GetValidActions() in internal/game/betting.go to pass tests
+- [x] Write failing tests for normalizeAction() covering all edge cases
+- [x] Implement normalizeAction() in internal/server/hand_runner.go to pass tests
+- [x] Update convertAction() to use normalization and handle semantic actions
+- [x] Update sdk/bots/callingstation to use call/raise
+- [x] Update sdk/bots/random to use call/raise
+- [x] Update sdk/bots/aggressive to use call/raise
+- [x] Update sdk/bots/complex to use call/raise
+
+### ✅ Phase 2: Version Negotiation Infrastructure (Completed)
+- [x] Add protocol_version field to Connect message (protocol/messages.go)
+- [x] Update Bot struct to store ProtocolVersion (internal/server/bot.go)
+- [x] Server validates and stores protocol version on connect (internal/server/server.go)
+- [x] Default to v2 if protocol_version omitted
+
+### 🚧 Phase 3: Dual Protocol Support (In Progress)
+- [ ] Implement normalizeActionV1() for legacy bots
+  - Accept old vocabulary: check, bet, call, raise, fold, allin
+  - Direct 1:1 mapping to game.Action
+  - Location: internal/server/hand_runner.go
+
+- [ ] Implement normalizeActionV2() (rename current normalizeAction)
+  - Current implementation already correct
+  - Handles call→check, raise→bet normalization
+
+- [ ] Update convertAction() to dispatch based on bot.ProtocolVersion
+  ```go
+  func (hr *HandRunner) convertAction(action protocol.Action) (game.Action, int) {
+      seat := hr.handState.ActivePlayer
+      bot := hr.bots[seat]
+      if bot.ProtocolVersion == "1" {
+          return normalizeActionV1(...)
+      }
+      return normalizeActionV2(...)
+  }
+  ```
+
+- [ ] Update sendActionRequest() to convert valid_actions by protocol version
+  - For v2 bots: Send simplified vocabulary as-is
+  - For v1 bots: Convert call→check when to_call=0
+  - Helper: convertActionsForProtocol(actions, toCall, version)
+
+- [ ] Add tests for version negotiation
+  - v1 bot connects and uses old actions
+  - v2 bot connects and uses new actions
+  - Mixed v1/v2 game works correctly
+  - Invalid version falls back to v2
+
+### 📝 Phase 4: Documentation & Client Updates
+- [ ] Update SDK client to send protocol_version: "2" (sdk/client/client.go)
+- [ ] Update CLI client to use protocol v2 (internal/client/client.go)
+  - Send protocol_version in connect
+  - Update keyboard shortcuts if needed
+- [ ] Update docs/websocket-protocol.md
+  - Document protocol_version field
+  - Explain version negotiation
+  - Add migration guide (v1→v2 differences)
+  - Document v1 deprecation timeline
+
+### ✅ Phase 5: Testing & Validation
 - [ ] Run full test suite: task test
 - [ ] Run regression test: pokerforbots spawn --hand-limit 10000
+- [ ] Test v1 bot compatibility (optional - we control all bots)
+- [ ] Test mixed v1/v2 game (optional)
 
 ## References
 
