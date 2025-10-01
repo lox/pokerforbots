@@ -20,8 +20,9 @@ vendor/
 # Build cache
 .task/
 
-# Generated code
+# Generated code (protocol generation is committed for CI/tooling)
 *_gen.go
+!protocol/*_gen.go
 *_gen_test.go
 
 # IDE
