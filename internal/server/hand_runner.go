@@ -377,8 +377,13 @@ func convertActionsForProtocol(actions []game.Action, toCall int, version string
 
 	if version == "1" {
 		// Protocol v1: Use semantic names (check/bet/call/raise)
+		// Must distinguish bet (to_call=0) from raise (to_call>0)
 		for _, a := range actions {
-			result = append(result, a.String())
+			if a == game.Raise && toCall == 0 {
+				result = append(result, "bet") // First bet when no one has bet yet
+			} else {
+				result = append(result, a.String())
+			}
 		}
 	} else {
 		// Protocol v2: Use simplified vocabulary (call/raise instead of check/bet)

@@ -231,18 +231,18 @@ func TestConvertActionsForProtocol(t *testing.T) {
 		want    []string
 	}{
 		{
-			name:    "v1 check available",
+			name:    "v1 check and bet available (to_call=0)",
 			actions: []game.Action{game.Fold, game.Check, game.Raise},
 			toCall:  0,
 			version: "1",
-			want:    []string{"fold", "check", "raise"},
+			want:    []string{"fold", "check", "bet"}, // Raise→bet when to_call=0
 		},
 		{
-			name:    "v1 call available",
+			name:    "v1 call and raise available (to_call>0)",
 			actions: []game.Action{game.Fold, game.Call, game.Raise},
 			toCall:  20,
 			version: "1",
-			want:    []string{"fold", "call", "raise"},
+			want:    []string{"fold", "call", "raise"}, // Raise→raise when to_call>0
 		},
 		{
 			name:    "v2 check becomes call",
