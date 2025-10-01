@@ -9,12 +9,12 @@ import (
 	"slices"
 	"time"
 
-	"github.com/lox/pokerforbots/poker"
-	"github.com/lox/pokerforbots/protocol"
-	"github.com/lox/pokerforbots/sdk/analysis"
-	"github.com/lox/pokerforbots/sdk/classification"
-	"github.com/lox/pokerforbots/sdk/client"
-	"github.com/lox/pokerforbots/sdk/config"
+	"github.com/lox/pokerforbots/v2/poker"
+	"github.com/lox/pokerforbots/v2/protocol"
+	"github.com/lox/pokerforbots/v2/sdk/analysis"
+	"github.com/lox/pokerforbots/v2/sdk/classification"
+	"github.com/lox/pokerforbots/v2/sdk/client"
+	"github.com/lox/pokerforbots/v2/sdk/config"
 	"github.com/rs/zerolog"
 )
 

@@ -5,8 +5,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/lox/pokerforbots/protocol"
-	"github.com/lox/pokerforbots/sdk/client"
+	"github.com/lox/pokerforbots/v2/protocol"
+	"github.com/lox/pokerforbots/v2/sdk/client"
 )
 
 // Handler implements an aggressive strategy that raises 70% of the time when possible

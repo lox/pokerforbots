@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lox/pokerforbots/cmd/pokerforbots/shared"
-	"github.com/lox/pokerforbots/internal/regression"
+	"github.com/lox/pokerforbots/v2/cmd/pokerforbots/shared"
+	"github.com/lox/pokerforbots/v2/internal/regression"
 	"github.com/rs/zerolog"
 )
 

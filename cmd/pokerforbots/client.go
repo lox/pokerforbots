@@ -3,7 +3,7 @@ package main
 import (
 	"strings"
 
-	"github.com/lox/pokerforbots/internal/client"
+	"github.com/lox/pokerforbots/v2/internal/client"
 )
 
 type ClientCmd struct {

@@ -1,14 +1,14 @@
 package server
 
 import (
-	"github.com/lox/pokerforbots/internal/randutil"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
 
 	"slices"
 	"testing"
 	"time"
 
-	"github.com/lox/pokerforbots/internal/game"
-	"github.com/lox/pokerforbots/protocol"
+	"github.com/lox/pokerforbots/v2/internal/game"
+	"github.com/lox/pokerforbots/v2/protocol"
 )
 
 func TestHandRunner(t *testing.T) {

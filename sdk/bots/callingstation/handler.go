@@ -3,8 +3,8 @@ package callingstation
 import (
 	"slices"
 
-	"github.com/lox/pokerforbots/protocol"
-	"github.com/lox/pokerforbots/sdk/client"
+	"github.com/lox/pokerforbots/v2/protocol"
+	"github.com/lox/pokerforbots/v2/sdk/client"
 )
 
 // Handler implements a calling station strategy that always calls or checks

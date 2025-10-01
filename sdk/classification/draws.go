@@ -8,7 +8,7 @@ import (
 	"math/bits"
 	"slices"
 
-	"github.com/lox/pokerforbots/poker"
+	"github.com/lox/pokerforbots/v2/poker"
 )
 
 // DrawType represents the types of draws a hand can have

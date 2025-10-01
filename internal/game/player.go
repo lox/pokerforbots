@@ -1,7 +1,7 @@
 package game
 
 import (
-	"github.com/lox/pokerforbots/poker"
+	"github.com/lox/pokerforbots/v2/poker"
 )
 
 // Player represents a player in a hand

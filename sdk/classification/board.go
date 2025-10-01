@@ -8,7 +8,7 @@ package classification
 import (
 	"math/bits"
 
-	"github.com/lox/pokerforbots/poker"
+	"github.com/lox/pokerforbots/v2/poker"
 )
 
 // BoardTexture represents the "wetness" of a poker board from dry to very wet

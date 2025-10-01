@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lox/pokerforbots/internal/server"
+	"github.com/lox/pokerforbots/v2/internal/server"
 )
 
 // Runner orchestrates regression tests

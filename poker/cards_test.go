@@ -3,7 +3,7 @@ package poker
 import (
 	"math/bits"
 
-	"github.com/lox/pokerforbots/internal/randutil"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
 
 	"testing"
 )

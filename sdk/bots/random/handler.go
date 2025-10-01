@@ -4,8 +4,8 @@ import (
 	rand "math/rand/v2"
 	"time"
 
-	"github.com/lox/pokerforbots/protocol"
-	"github.com/lox/pokerforbots/sdk/client"
+	"github.com/lox/pokerforbots/v2/protocol"
+	"github.com/lox/pokerforbots/v2/sdk/client"
 )
 
 // Handler implements a random strategy that makes random valid actions

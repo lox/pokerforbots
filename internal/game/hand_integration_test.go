@@ -1,7 +1,7 @@
 package game
 
 import (
-	"github.com/lox/pokerforbots/internal/randutil"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
 
 	"slices"
 	"testing"

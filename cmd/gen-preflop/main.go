@@ -4,7 +4,7 @@ import (
 	"flag"
 	"os"
 
-	"github.com/lox/pokerforbots/sdk/analysis"
+	"github.com/lox/pokerforbots/v2/sdk/analysis"
 )
 
 func main() {

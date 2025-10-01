@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"github.com/lox/pokerforbots/internal/game"
+	"github.com/lox/pokerforbots/v2/internal/game"
 )
 
 // TestNormalizeActionProtocolV2 verifies that the server correctly normalizes

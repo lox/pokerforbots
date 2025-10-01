@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/lox/pokerforbots/internal/server"
+	"github.com/lox/pokerforbots/v2/internal/server"
 )
 
 // AggregationResult holds both results and standard deviations from aggregation
