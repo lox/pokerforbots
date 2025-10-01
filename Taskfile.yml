@@ -99,11 +99,15 @@ tasks:
 
   test:
     desc: Run all tests with race detector
+    deps:
+      - generate
     cmds:
       - bin/gotestsum -f pkgname-and-test-fails --format-icons hivis -- -race -parallel 12 ./...
 
   test:uncached:
     desc: Run all tests without caching
+    deps:
+      - generate
     cmds:
       - bin/gotestsum -f pkgname-and-test-fails --format-icons hivis -- -count=1 -race -parallel 12 ./...
 

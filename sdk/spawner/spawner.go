@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lox/pokerforbots/sdk/config"
+	"github.com/lox/pokerforbots/v2/sdk/config"
 	"github.com/rs/zerolog"
 )
 

@@ -3,7 +3,7 @@ package analysis
 import (
 	"testing"
 
-	"github.com/lox/pokerforbots/poker"
+	"github.com/lox/pokerforbots/v2/poker"
 )
 
 func TestParseRange(t *testing.T) {

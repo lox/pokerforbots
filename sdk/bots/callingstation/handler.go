@@ -3,8 +3,8 @@ package callingstation
 import (
 	"slices"
 
-	"github.com/lox/pokerforbots/protocol"
-	"github.com/lox/pokerforbots/sdk/client"
+	"github.com/lox/pokerforbots/v2/protocol"
+	"github.com/lox/pokerforbots/v2/sdk/client"
 )
 
 // Handler implements a calling station strategy that always calls or checks
@@ -18,10 +18,8 @@ func (Handler) OnHandResult(*client.GameState, protocol.HandResult) error       
 func (Handler) OnGameCompleted(*client.GameState, protocol.GameCompleted) error { return nil }
 
 func (Handler) OnActionRequest(_ *client.GameState, req protocol.ActionRequest) (string, int, error) {
-	// Calling station strategy: always check or call, never raise
-	if slices.Contains(req.ValidActions, "check") {
-		return "check", 0, nil
-	}
+	// Calling station strategy: always call (check or match bet), never raise
+	// Protocol v2: "call" is universal for both checking and calling
 	if slices.Contains(req.ValidActions, "call") {
 		return "call", 0, nil
 	}

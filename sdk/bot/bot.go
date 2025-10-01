@@ -1,7 +1,7 @@
 package bot
 
 import (
-	"github.com/lox/pokerforbots/internal/randutil"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
 
 	"context"
 	"fmt"
@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/lox/pokerforbots/sdk/client"
-	"github.com/lox/pokerforbots/sdk/config"
+	"github.com/lox/pokerforbots/v2/sdk/client"
+	"github.com/lox/pokerforbots/v2/sdk/config"
 	"github.com/rs/zerolog"
 )
 

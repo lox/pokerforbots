@@ -5,28 +5,29 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/lox/pokerforbots/protocol"
+	"github.com/lox/pokerforbots/v2/protocol"
 	"github.com/rs/zerolog"
 )
 
 // Bot represents a connected bot client
 type Bot struct {
-	ID           string
-	conn         *websocket.Conn
-	send         chan []byte
-	pool         *BotPool
-	inHand       bool
-	mu           sync.RWMutex
-	lastPing     time.Time
-	closed       bool                // Track if bot is closed
-	done         chan struct{}       // Signal channel closure
-	actionChan   chan ActionEnvelope // Channel to send actions to hand runner with bot ID
-	handRunnerMu sync.RWMutex
-	bankroll     int // Total chips the bot has
-	logger       zerolog.Logger
-	displayName  string
-	gameID       string
-	botCommand   string // Original bot command for tracking
+	ID              string
+	conn            *websocket.Conn
+	send            chan []byte
+	pool            *BotPool
+	inHand          bool
+	mu              sync.RWMutex
+	lastPing        time.Time
+	closed          bool                // Track if bot is closed
+	done            chan struct{}       // Signal channel closure
+	actionChan      chan ActionEnvelope // Channel to send actions to hand runner with bot ID
+	handRunnerMu    sync.RWMutex
+	bankroll        int // Total chips the bot has
+	logger          zerolog.Logger
+	displayName     string
+	gameID          string
+	botCommand      string // Original bot command for tracking
+	ProtocolVersion string // "1" or "2" - which protocol version this bot speaks
 }
 
 func (b *Bot) close() {

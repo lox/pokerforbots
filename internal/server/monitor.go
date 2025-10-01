@@ -1,6 +1,6 @@
 package server
 
-import "github.com/lox/pokerforbots/protocol"
+import "github.com/lox/pokerforbots/v2/protocol"
 
 // HandMonitor receives notifications about hand progress and outcomes.
 type HandMonitor interface {

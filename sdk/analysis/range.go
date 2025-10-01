@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lox/pokerforbots/poker"
+	"github.com/lox/pokerforbots/v2/poker"
 )
 
 // Range represents a collection of poker hands with associated weights.

@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lox/pokerforbots/internal/game"
-	"github.com/lox/pokerforbots/internal/randutil"
-	"github.com/lox/pokerforbots/protocol"
+	"github.com/lox/pokerforbots/v2/internal/game"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
+	"github.com/lox/pokerforbots/v2/protocol"
 )
 
 // TestActionRequestExactStackEqualsCall verifies the exact ActionRequest values sent

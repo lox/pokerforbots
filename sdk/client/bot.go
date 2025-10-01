@@ -10,7 +10,7 @@ import (
 	"slices"
 
 	"github.com/gorilla/websocket"
-	"github.com/lox/pokerforbots/protocol"
+	"github.com/lox/pokerforbots/v2/protocol"
 	"github.com/rs/zerolog"
 )
 
@@ -87,8 +87,9 @@ func (b *Bot) Connect(serverURL string) error {
 	b.conn = conn
 
 	connect := &protocol.Connect{
-		Type: protocol.TypeConnect,
-		Name: b.id,
+		Type:            protocol.TypeConnect,
+		Name:            b.id,
+		ProtocolVersion: "2", // Use protocol v2 (simplified 4-action system)
 	}
 	// Allow environment override for game when launched by server
 	if game := os.Getenv("POKERFORBOTS_GAME"); game != "" {

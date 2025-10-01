@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/lox/pokerforbots/internal/randutil"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
 
 	"context"
 	"encoding/json"
@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lox/pokerforbots/cmd/pokerforbots/shared"
-	"github.com/lox/pokerforbots/internal/fileutil"
-	"github.com/lox/pokerforbots/internal/server"
-	"github.com/lox/pokerforbots/sdk/spawner"
+	"github.com/lox/pokerforbots/v2/cmd/pokerforbots/shared"
+	"github.com/lox/pokerforbots/v2/internal/fileutil"
+	"github.com/lox/pokerforbots/v2/internal/server"
+	"github.com/lox/pokerforbots/v2/sdk/spawner"
 	"github.com/rs/zerolog"
 )
 

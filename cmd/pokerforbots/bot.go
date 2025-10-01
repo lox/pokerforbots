@@ -7,14 +7,14 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/lox/pokerforbots/sdk/bot"
-	"github.com/lox/pokerforbots/sdk/client"
+	"github.com/lox/pokerforbots/v2/sdk/bot"
+	"github.com/lox/pokerforbots/v2/sdk/client"
 
 	// Bots
-	"github.com/lox/pokerforbots/sdk/bots/aggressive"
-	"github.com/lox/pokerforbots/sdk/bots/callingstation"
-	"github.com/lox/pokerforbots/sdk/bots/complex"
-	"github.com/lox/pokerforbots/sdk/bots/random"
+	"github.com/lox/pokerforbots/v2/sdk/bots/aggressive"
+	"github.com/lox/pokerforbots/v2/sdk/bots/callingstation"
+	"github.com/lox/pokerforbots/v2/sdk/bots/complex"
+	"github.com/lox/pokerforbots/v2/sdk/bots/random"
 )
 
 type BotCmd struct {

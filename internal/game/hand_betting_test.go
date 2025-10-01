@@ -2,6 +2,7 @@ package game
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -84,7 +85,7 @@ func TestGetValidActionsScenarios(t *testing.T) {
 				10,
 				0,
 			),
-			expect: []Action{Fold, Check, Raise},
+			expect: []Action{Fold, Call, Raise}, // Protocol v2: Call not Check
 		},
 		{
 			name: "short stack can only shove over free check",
@@ -98,7 +99,7 @@ func TestGetValidActionsScenarios(t *testing.T) {
 				12,
 				0,
 			),
-			expect: []Action{Fold, Check, AllIn},
+			expect: []Action{Fold, Call, AllIn}, // Protocol v2: Call not Check
 		},
 		{
 			name: "player with no chips can only fold or check",
@@ -112,7 +113,7 @@ func TestGetValidActionsScenarios(t *testing.T) {
 				10,
 				0,
 			),
-			expect: []Action{Fold, Check},
+			expect: []Action{Fold, Call}, // Protocol v2: Call not Check
 		},
 		{
 			name: "facing a bet with enough chips to raise",
@@ -380,5 +381,87 @@ func TestForceFoldActiveSeat(t *testing.T) {
 	}
 	if state.ActivePlayer == 1 {
 		t.Fatal("active player should advance after folding active seat")
+	}
+}
+
+// TestGetValidActionsSimplifiedVocabulary verifies that GetValidActions returns
+// only the simplified 4-action vocabulary (fold, call, raise, allin) and never
+// returns the old semantic names (check, bet).
+func TestGetValidActionsSimplifiedVocabulary(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		chips      int
+		playerBet  int
+		currentBet int
+		minRaise   int
+		want       []Action
+	}{
+		{
+			name:       "no bet - can check (returns call)",
+			chips:      100,
+			playerBet:  0,
+			currentBet: 0,
+			minRaise:   10,
+			want:       []Action{Fold, Call, Raise}, // NOT Check!
+		},
+		{
+			name:       "no bet - short stack (returns call+allin)",
+			chips:      5,
+			playerBet:  0,
+			currentBet: 0,
+			minRaise:   10,
+			want:       []Action{Fold, Call, AllIn}, // NOT Check!
+		},
+		{
+			name:       "facing bet - can call and raise",
+			chips:      100,
+			playerBet:  0,
+			currentBet: 20,
+			minRaise:   20,
+			want:       []Action{Fold, Call, Raise},
+		},
+		{
+			name:       "facing bet - exact stack to call",
+			chips:      20,
+			playerBet:  0,
+			currentBet: 20,
+			minRaise:   20,
+			want:       []Action{Fold, AllIn},
+		},
+		{
+			name:       "facing bet - can call but not raise",
+			chips:      25,
+			playerBet:  0,
+			currentBet: 20,
+			minRaise:   20,
+			want:       []Action{Fold, Call, AllIn},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			player := &Player{
+				Chips: tt.chips,
+				Bet:   tt.playerBet,
+			}
+			br := &BettingRound{
+				CurrentBet: tt.currentBet,
+				MinRaise:   tt.minRaise,
+			}
+
+			got := br.GetValidActions(player)
+
+			// Verify we NEVER get Check in the result (protocol v2 uses Call universally)
+			if slices.Contains(got, Check) {
+				t.Errorf("GetValidActions() returned Check - should return Call instead")
+			}
+
+			// Verify we got the expected actions
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetValidActions() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

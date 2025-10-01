@@ -4,8 +4,8 @@ import (
 	rand "math/rand/v2"
 	"time"
 
-	"github.com/lox/pokerforbots/protocol"
-	"github.com/lox/pokerforbots/sdk/client"
+	"github.com/lox/pokerforbots/v2/protocol"
+	"github.com/lox/pokerforbots/v2/sdk/client"
 )
 
 // Handler implements a random strategy that makes random valid actions
@@ -29,8 +29,8 @@ func (*Handler) OnGameCompleted(*client.GameState, protocol.GameCompleted) error
 func (h *Handler) OnActionRequest(_ *client.GameState, req protocol.ActionRequest) (string, int, error) {
 	action := req.ValidActions[h.rng.IntN(len(req.ValidActions))]
 	amount := 0
-	// MinBet is the minimum total bet/raise amount for both "bet" and "raise" actions
-	if action == "raise" || action == "bet" {
+	// Protocol v2: Only "raise" exists (no "bet" in simplified protocol)
+	if action == "raise" {
 		amount = req.MinBet
 	}
 	return action, amount, nil

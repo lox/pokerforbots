@@ -1,11 +1,11 @@
 package game
 
 import (
-	"github.com/lox/pokerforbots/internal/randutil"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
 
 	"testing"
 
-	"github.com/lox/pokerforbots/poker"
+	"github.com/lox/pokerforbots/v2/poker"
 )
 
 // TestBasicHandFlow tests a simple hand with minimal actions

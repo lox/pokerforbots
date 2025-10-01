@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/lox/pokerforbots/internal/server"
+	"github.com/lox/pokerforbots/v2/internal/server"
 )
 
 // BatchStrategy defines the interface for different test mode strategies

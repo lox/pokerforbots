@@ -3,7 +3,7 @@ package game
 import (
 	"testing"
 
-	"github.com/lox/pokerforbots/internal/randutil"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
 )
 
 // TestExactStackMatchesCall tests the scenario where player's stack exactly equals the amount to call.

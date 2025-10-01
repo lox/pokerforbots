@@ -24,11 +24,18 @@ Sent immediately after WebSocket connection established.
   "type": "connect",
   "name": "BotName",          // Bot identifier (max 32 chars)
   "game": "default",          // Preferred game/table identifier (optional, defaults to server's default game)
-  "auth_token": "..."         // (optional/TODO) Authentication credential
+  "auth_token": "...",        // (optional/TODO) Authentication credential
+  "protocol_version": "2"     // Protocol version: "1" (legacy) or "2" (simplified, default)
 }
 ```
 
 If `game` is omitted the server will place the bot in the default game (until the lobby/listing flow ships). `auth_token` is ignored today but reserved for future authentication.
+
+**Protocol Version**: The server supports two protocol versions for backwards compatibility:
+- **Version 2** (recommended): Simplified 4-action protocol (`fold`, `call`, `raise`, `allin`). The server handles context-dependent normalization (e.g., `call` with `to_call=0` becomes `check` internally).
+- **Version 1** (default, legacy): Full 6-action protocol (`fold`, `check`, `call`, `bet`, `raise`, `allin`). Used for backward compatibility with existing bots.
+
+If `protocol_version` is omitted, the server defaults to version 1 for backward compatibility. New bots should explicitly set `"protocol_version": "2"`.
 
 ### Game Discovery & Selection *(TODO)*
 Planned additions to allow bots to list, join, and leave named game instances:
@@ -43,16 +50,29 @@ Until these messages are implemented, bots are matched in the single default gam
 
 ### Action
 Response to action_request from server. Must be sent within timeout window.
+
+**Protocol v2 (recommended)**:
 ```
 {
   "type": "action",
-  "action": "fold|call|check|raise|allin",
+  "action": "fold|call|raise|allin",
   "amount": 0              // For "raise" this is the *total* bet size (raise-to value). 0 for other actions.
 }
 ```
 
+**Protocol v1 (legacy)**:
+```
+{
+  "type": "action",
+  "action": "fold|check|call|bet|raise|allin",
+  "amount": 0              // For "bet" or "raise" this is the *total* bet size. 0 for other actions.
+}
+```
+
 Notes:
-- When sending `"raise"`, set `amount` to the final total bet (call amount + raise increment). This mirrors the server’s `player_bet` field.
+- **Protocol v2**: Simplified to 4 actions. Use `call` when you want to match the current bet (even when `to_call=0`). Use `raise` when you want to increase the bet (even when there's no prior bet).
+- **Protocol v1**: Full 6 actions with explicit `check` (when `to_call=0`) and `bet` (when no prior bet exists).
+- When sending `"raise"` or `"bet"`, set `amount` to the final total bet (call amount + raise increment). This mirrors the server's `player_bet` field.
 - For `"allin"` the `amount` field is ignored; the server deduces the wager from the stack size.
 
 ## Server → Client Messages
@@ -97,7 +117,9 @@ Field semantics:
 - `to_call` – amount that must be invested to call. When `0`, checking is legal.
 - `min_bet` – the smallest total bet the player may declare if they choose to bet or raise. When no bet exists this equals the big blind; otherwise it is the current highest bet plus the minimum raise increment.
 - `min_raise` – the minimum *additional* chips that must be added beyond the call to make a legal raise. When `to_call == 0`, this matches the opening bet size.
-- `valid_actions` – subset of `fold`, `check`, `call`, `bet`, `raise`, `allin` that are legal in the current state.
+- `valid_actions` – subset of legal actions based on protocol version:
+  - **Protocol v2**: `fold`, `call`, `raise`, `allin` (simplified vocabulary)
+  - **Protocol v1**: `fold`, `check`, `call`, `bet`, `raise`, `allin` (semantic vocabulary)
 - `time_remaining` – deadline in milliseconds. Missing it causes the server to fold the hand automatically.
 
 ### Player Action
@@ -287,6 +309,46 @@ Cards use string format: rank + suit
 - Ranks: 2, 3, 4, 5, 6, 7, 8, 9, T, J, Q, K, A
 - Suits: s (spades), h (hearts), d (diamonds), c (clubs)
 - Examples: "As" (ace of spades), "Th" (ten of hearts)
+
+## Migration Guide: Protocol v1 → v2
+
+**Why migrate?** Protocol v2 simplifies bot development by eliminating context-dependent action selection. Bots no longer need to track whether to send `check` vs `call` or `bet` vs `raise`.
+
+**Breaking changes:**
+- `valid_actions` now returns `call` instead of `check` (even when `to_call=0`)
+- `valid_actions` now returns `raise` instead of `bet` (even when there's no prior bet)
+- Server rejects `check` and `bet` actions from v2 bots (will auto-fold)
+
+**Migration steps:**
+
+1. **Update Connect message**: Add `"protocol_version": "2"` to your connect message
+   ```diff
+   {
+     "type": "connect",
+     "name": "MyBot",
+   + "protocol_version": "2"
+   }
+   ```
+
+2. **Simplify action logic**: Replace context-aware selection with simple mapping
+   ```diff
+   - action = "check" if to_call == 0 else "call"
+   + action = "call"
+
+   - action = "bet" if current_bet == 0 else "raise"
+   + action = "raise"
+   ```
+
+3. **Update valid_actions parsing**: Expect simplified vocabulary
+   ```diff
+   - if "check" in valid_actions or "call" in valid_actions:
+   + if "call" in valid_actions:
+
+   - if "bet" in valid_actions or "raise" in valid_actions:
+   + if "raise" in valid_actions:
+   ```
+
+**Backward compatibility:** The server still supports v1 bots (omit `protocol_version` or send `"1"`), but v2 is recommended for all new implementations.
 
 ## Game Rules
 

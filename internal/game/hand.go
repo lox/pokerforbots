@@ -4,7 +4,7 @@ import (
 	"fmt"
 	rand "math/rand/v2"
 
-	"github.com/lox/pokerforbots/poker"
+	"github.com/lox/pokerforbots/v2/poker"
 )
 
 // HandState represents the state of a poker hand

@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/lox/pokerforbots/internal/randutil"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
 
 	"context"
 	"encoding/json"
@@ -18,7 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/lox/pokerforbots/protocol"
+	"github.com/lox/pokerforbots/v2/protocol"
 	"github.com/rs/zerolog"
 )
 
@@ -427,10 +427,22 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		botID = s.botIDGen()
 	}
 
+	// Determine protocol version (default to v1 for backward compatibility)
+	protocolVersion := connectMsg.ProtocolVersion
+	if protocolVersion == "" {
+		protocolVersion = "1" // Default to v1 for backward compatibility with old bots
+	}
+	// Validate protocol version
+	if protocolVersion != "1" && protocolVersion != "2" {
+		s.logger.Warn().Str("version", protocolVersion).Msg("Unsupported protocol version, defaulting to v1")
+		protocolVersion = "1"
+	}
+
 	// Create bot instance tied to the selected game
 	bot := NewBot(s.logger, botID, conn, game.Pool)
 	bot.SetDisplayName(connectMsg.Name)
 	bot.SetGameID(game.ID)
+	bot.ProtocolVersion = protocolVersion
 
 	// Register with game pool
 	game.Pool.Register(bot)
@@ -445,6 +457,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		Str("bot_id", botID).
 		Str("game_id", game.ID).
 		Str("name", bot.DisplayName()).
+		Str("protocol_version", protocolVersion).
 		Int64("total_bots", s.botCount.Load()).
 		Msg("Bot connected")
 }

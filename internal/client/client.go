@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/lox/pokerforbots/protocol"
+	"github.com/lox/pokerforbots/v2/protocol"
 )
 
 const (
@@ -85,7 +85,12 @@ func (c *client) connect(server string) error {
 
 	c.conn = conn
 
-	connectMsg := &protocol.Connect{Type: protocol.TypeConnect, Name: c.name, Game: c.game}
+	connectMsg := &protocol.Connect{
+		Type:            protocol.TypeConnect,
+		Name:            c.name,
+		Game:            c.game,
+		ProtocolVersion: "2", // Use protocol v2 (simplified 4-action system)
+	}
 	payload, err := protocol.Marshal(connectMsg)
 	if err != nil {
 		return fmt.Errorf("failed to encode connect message: %w", err)
@@ -663,12 +668,12 @@ func (c *client) parseAction(input string, req *protocol.ActionRequest, heroStac
 	}
 
 	switch action {
-	case "fold", "call", "check", "allin":
+	case "fold", "call", "allin":
 		if len(fields) > 1 {
 			return "", 0, "", fmt.Errorf("action '%s' does not take an amount", action)
 		}
 		return action, 0, "", nil
-	case "raise", "bet":
+	case "raise":
 		if len(fields) < 2 {
 			return "", 0, "", fmt.Errorf("%s requires an amount (total bet)", action)
 		}
@@ -1103,14 +1108,10 @@ func normalizeAction(action string) string {
 	switch action {
 	case "f":
 		return "fold"
-	case "c":
+	case "c", "k": // Both 'c' and 'k' map to call (protocol v2)
 		return "call"
-	case "k":
-		return "check"
-	case "r":
+	case "r", "b": // Both 'r' and 'b' map to raise (protocol v2)
 		return "raise"
-	case "b":
-		return "bet"
 	case "a":
 		return "allin"
 	default:

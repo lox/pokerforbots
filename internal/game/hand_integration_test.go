@@ -1,7 +1,7 @@
 package game
 
 import (
-	"github.com/lox/pokerforbots/internal/randutil"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
 
 	"slices"
 	"testing"
@@ -360,21 +360,21 @@ func TestBettingRules(t *testing.T) {
 		// SB calls
 		h.ProcessAction(Call, 0)
 
-		// BB should have option to check or raise
+		// BB should have option to call (check) or raise
 		actions := h.GetValidActions()
-		hasCheck := false
+		hasCall := false
 		hasRaise := false
 		for _, action := range actions {
-			if action == Check {
-				hasCheck = true
+			if action == Call { // Protocol v2: Call not Check
+				hasCall = true
 			}
 			if action == Raise {
 				hasRaise = true
 			}
 		}
 
-		if !hasCheck {
-			t.Error("BB should have check option when everyone limps")
+		if !hasCall {
+			t.Error("BB should have call (check) option when everyone limps")
 		}
 		if !hasRaise {
 			t.Error("BB should have raise option when everyone limps")

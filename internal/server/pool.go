@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/lox/pokerforbots/internal/randutil"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
 
 	"fmt"
 	rand "math/rand/v2"
@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lox/pokerforbots/protocol"
+	"github.com/lox/pokerforbots/v2/protocol"
 	"github.com/rs/zerolog"
 )
 

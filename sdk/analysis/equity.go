@@ -9,7 +9,7 @@ import (
 	"math"
 	rand "math/rand/v2"
 
-	"github.com/lox/pokerforbots/poker"
+	"github.com/lox/pokerforbots/v2/poker"
 )
 
 // EquityResult represents the result of an equity calculation

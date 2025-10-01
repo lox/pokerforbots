@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/lox/pokerforbots/internal/randutil"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
 
 	"errors"
 	"fmt"
@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lox/pokerforbots/internal/game"
-	"github.com/lox/pokerforbots/poker"
-	"github.com/lox/pokerforbots/protocol"
+	"github.com/lox/pokerforbots/v2/internal/game"
+	"github.com/lox/pokerforbots/v2/poker"
+	"github.com/lox/pokerforbots/v2/protocol"
 	"github.com/rs/zerolog"
 )
 
@@ -371,14 +371,47 @@ func (hr *HandRunner) broadcastHandStart() {
 	}
 }
 
-// sendActionRequest sends an action request to the active bot
-func (hr *HandRunner) sendActionRequest(bot *Bot, seat int, validActions []game.Action) error {
-	// Convert game actions to protocol actions
-	actions := make([]string, len(validActions))
-	for i, a := range validActions {
-		actions[i] = a.String()
+// convertActionsForProtocol converts valid_actions based on protocol version
+func convertActionsForProtocol(actions []game.Action, toCall int, version string) []string {
+	result := make([]string, 0, len(actions))
+
+	if version == "1" {
+		// Protocol v1: Use semantic names (check/bet/call/raise)
+		// Must distinguish check (to_call=0) from call (to_call>0)
+		// and bet (to_call=0) from raise (to_call>0)
+		for _, a := range actions {
+			switch {
+			case a == game.Call && toCall == 0:
+				result = append(result, "check") // Check when no bet to call
+			case a == game.Raise && toCall == 0:
+				result = append(result, "bet") // First bet when no one has bet yet
+			default:
+				result = append(result, a.String())
+			}
+		}
+	} else {
+		// Protocol v2: Use simplified vocabulary (call/raise instead of check/bet)
+		for _, a := range actions {
+			switch a {
+			case game.Check:
+				result = append(result, "call") // v2 bots use "call" when to_call=0
+			case game.Fold:
+				result = append(result, "fold")
+			case game.Call:
+				result = append(result, "call")
+			case game.Raise:
+				result = append(result, "raise") // v2 doesn't distinguish bet vs raise
+			case game.AllIn:
+				result = append(result, "allin")
+			}
+		}
 	}
 
+	return result
+}
+
+// sendActionRequest sends an action request to the active bot
+func (hr *HandRunner) sendActionRequest(bot *Bot, seat int, validActions []game.Action) error {
 	// Calculate pot and amounts to call
 	pot := 0
 	for _, p := range hr.handState.GetPots() {
@@ -386,6 +419,9 @@ func (hr *HandRunner) sendActionRequest(bot *Bot, seat int, validActions []game.
 	}
 
 	toCall := hr.handState.Betting.CurrentBet - hr.handState.Players[seat].Bet
+
+	// Convert game actions to protocol actions based on bot's protocol version
+	actions := convertActionsForProtocol(validActions, toCall, bot.ProtocolVersion)
 
 	msg := &protocol.ActionRequest{
 		Type:          "action_request",
@@ -511,22 +547,81 @@ func (hr *HandRunner) listenForAction(botIndex int, done <-chan struct{}) {
 	}
 }
 
-// convertAction converts a protocol action to a game action
-func (hr *HandRunner) convertAction(action protocol.Action) (game.Action, int) {
-	switch action.Action {
+// normalizeActionV1 handles protocol v1 actions (legacy support)
+// Accepts old vocabulary: check, bet, call, raise, fold, allin
+// Direct 1:1 mapping to game actions - no normalization needed
+func normalizeActionV1(clientAction string, clientAmount int) (game.Action, int) {
+	switch clientAction {
 	case "fold":
 		return game.Fold, 0
 	case "check":
 		return game.Check, 0
 	case "call":
 		return game.Call, 0
+	case "bet":
+		return game.Raise, clientAmount // "bet" maps to Raise (game engine doesn't distinguish)
 	case "raise":
-		return game.Raise, action.Amount
+		return game.Raise, clientAmount
 	case "allin":
 		return game.AllIn, 0
 	default:
 		return game.Fold, 0 // Invalid action = fold
 	}
+}
+
+// normalizeActionV2 converts simplified protocol v2 actions (fold, call, raise, allin)
+// to semantic game actions (fold, check, call, bet, raise, allin) based on game state.
+// This allows bots to use a simple 4-action vocabulary while the server maintains
+// semantic precision in logs and hand histories.
+func normalizeActionV2(clientAction string, clientAmount int, player *game.Player, betting *game.BettingRound) (game.Action, int) {
+	toCall := betting.CurrentBet - player.Bet
+
+	switch clientAction {
+	case "fold":
+		return game.Fold, 0
+
+	case "call":
+		// Protocol v2: "call" is universal
+		// - When to_call=0, normalize to Check for game engine
+		// - When to_call>0, use Call
+		if toCall == 0 {
+			return game.Check, 0
+		}
+		return game.Call, 0
+
+	case "raise":
+		// Protocol v2: "raise" is universal for betting/raising
+		// - When amount >= stack, normalize to AllIn
+		// - Game engine will determine if it's a bet or raise based on context
+		if clientAmount >= player.Chips+player.Bet {
+			return game.AllIn, clientAmount
+		}
+		return game.Raise, clientAmount
+
+	case "allin":
+		return game.AllIn, 0
+
+	// Old protocol v1 actions - explicitly reject in v2
+	case "check", "bet":
+		// Return fold to indicate error (will be caught by validation)
+		return game.Fold, 0
+
+	default:
+		return game.Fold, 0 // Invalid action = fold
+	}
+}
+
+// convertAction converts a protocol action to a game action using version-specific normalization
+func (hr *HandRunner) convertAction(action protocol.Action) (game.Action, int) {
+	seat := hr.handState.ActivePlayer
+	player := hr.handState.Players[seat]
+	bot := hr.bots[seat]
+
+	// Dispatch to appropriate normalization based on bot's protocol version
+	if bot.ProtocolVersion == "1" {
+		return normalizeActionV1(action.Action, action.Amount)
+	}
+	return normalizeActionV2(action.Action, action.Amount, player, hr.handState.Betting)
 }
 
 // processAction processes a bot's action and broadcasts it

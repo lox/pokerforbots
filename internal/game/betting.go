@@ -51,14 +51,16 @@ func NewBettingRound(numPlayers int, bigBlind int) *BettingRound {
 	}
 }
 
-// GetValidActions returns valid actions for a player
+// GetValidActions returns valid actions for a player.
+// Protocol v2: Returns simplified 4-action vocabulary (fold, call, raise, allin).
+// The server normalizes "call" to "check" internally when to_call=0.
 func (br *BettingRound) GetValidActions(player *Player) []Action {
 	actions := []Action{Fold}
 	toCall := br.CurrentBet - player.Bet
 
 	if toCall == 0 {
-		// No amount to call - can check
-		actions = append(actions, Check)
+		// No amount to call - return Call (server will normalize to check internally)
+		actions = append(actions, Call)
 		// Can also raise if we have enough chips
 		if player.Chips > br.MinRaise {
 			actions = append(actions, Raise)

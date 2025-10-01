@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lox/pokerforbots/internal/server"
+	"github.com/lox/pokerforbots/v2/internal/server"
 )
 
 // SimpleProgressMonitor shows clean progress without overlapping animations

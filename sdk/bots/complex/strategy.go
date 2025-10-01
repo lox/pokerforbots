@@ -1,6 +1,6 @@
 package complex
 
-import "github.com/lox/pokerforbots/sdk/analysis"
+import "github.com/lox/pokerforbots/v2/sdk/analysis"
 
 // FoldThreshold defines minimum equity needed to continue at different bet sizes.
 type FoldThreshold struct {

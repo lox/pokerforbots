@@ -3,7 +3,7 @@ package classification
 import (
 	"testing"
 
-	"github.com/lox/pokerforbots/poker"
+	"github.com/lox/pokerforbots/v2/poker"
 )
 
 // Helper function to parse card strings for tests

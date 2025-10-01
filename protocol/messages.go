@@ -28,10 +28,11 @@ type Card string
 
 // Connect is sent by client when connecting
 type Connect struct {
-	Type      string `msg:"type"`
-	Name      string `msg:"name"`
-	Game      string `msg:"game,omitempty"`
-	AuthToken string `msg:"auth_token,omitempty"`
+	Type            string `msg:"type"`
+	Name            string `msg:"name"`
+	Game            string `msg:"game,omitempty"`
+	AuthToken       string `msg:"auth_token,omitempty"`
+	ProtocolVersion string `msg:"protocol_version,omitempty"` // "1" or "2", defaults to "2" if omitted
 }
 
 // Action is sent by client in response to ActionRequest

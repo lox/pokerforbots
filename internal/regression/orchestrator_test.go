@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lox/pokerforbots/internal/server"
-	"github.com/lox/pokerforbots/protocol"
+	"github.com/lox/pokerforbots/v2/internal/server"
+	"github.com/lox/pokerforbots/v2/protocol"
 	"github.com/rs/zerolog"
 )
 

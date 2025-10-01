@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/lox/pokerforbots/internal/randutil"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
 
 	"context"
 	"errors"
@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lox/pokerforbots/cmd/pokerforbots/shared"
-	"github.com/lox/pokerforbots/internal/server"
+	"github.com/lox/pokerforbots/v2/cmd/pokerforbots/shared"
+	"github.com/lox/pokerforbots/v2/internal/server"
 )
 
 // ServerCmd contains core server configuration

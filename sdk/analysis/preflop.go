@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lox/pokerforbots/internal/randutil"
-	"github.com/lox/pokerforbots/poker"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
+	"github.com/lox/pokerforbots/v2/poker"
 )
 
 // PreflopHand represents a starting hand category (e.g., AA, AKs, AKo)
