@@ -34,11 +34,11 @@
 **Initial approach:** Clean breaking change with no version negotiation.
 
 **Final approach:** After discussion, implemented protocol version negotiation to support gradual migration:
-- v2 (default): Simplified 4-action protocol for new bots
-- v1 (legacy): Full 6-action protocol for backward compatibility
+- v2 (recommended): Simplified 4-action protocol for new bots
+- v1 (default, legacy): Full 6-action protocol for backward compatibility with existing bots
 - Server handles both protocols simultaneously via `bot.ProtocolVersion` field
 
-This allows existing bots to continue working while new bots benefit from simplified protocol.
+This allows existing bots to continue working (default v1) while new bots explicitly opt-in to v2.
 
 ## Plan
 
@@ -88,7 +88,7 @@ This allows existing bots to continue working while new bots benefit from simpli
 - [x] Add protocol_version field to Connect message (protocol/messages.go)
 - [x] Update Bot struct to store ProtocolVersion (internal/server/bot.go)
 - [x] Server validates and stores protocol version on connect (internal/server/server.go)
-- [x] Default to v2 if protocol_version omitted
+- [x] Default to v1 if protocol_version omitted (backward compatibility)
 
 ### ✅ Phase 3: Dual Protocol Support (Completed)
 - [x] Implement normalizeActionV1() for legacy bots
@@ -169,9 +169,9 @@ pokerforbots spawn --spec "complex:6" --hand-limit 10000 --seed 42
 - No performance degradation for correctly implemented v1 bots
 
 **Breaking Changes:**
-- None for existing bots (v1 protocol still supported)
+- None for existing bots (v1 protocol is the default)
 - v2 is opt-in via `protocol_version: "2"` in Connect message
-- Server defaults to v2 if `protocol_version` omitted (new bots get simplified protocol by default)
+- Server defaults to v1 if `protocol_version` omitted for maximum backward compatibility
 
 **Next Steps:**
 1. Aragorn team testing with existing bot (v1 compatibility validation)

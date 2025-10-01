@@ -32,10 +32,10 @@ Sent immediately after WebSocket connection established.
 If `game` is omitted the server will place the bot in the default game (until the lobby/listing flow ships). `auth_token` is ignored today but reserved for future authentication.
 
 **Protocol Version**: The server supports two protocol versions for backwards compatibility:
-- **Version 2** (default, recommended): Simplified 4-action protocol (`fold`, `call`, `raise`, `allin`). The server handles context-dependent normalization (e.g., `call` with `to_call=0` becomes `check` internally).
-- **Version 1** (legacy): Full 6-action protocol (`fold`, `check`, `call`, `bet`, `raise`, `allin`). Deprecated but still supported for backward compatibility.
+- **Version 2** (recommended): Simplified 4-action protocol (`fold`, `call`, `raise`, `allin`). The server handles context-dependent normalization (e.g., `call` with `to_call=0` becomes `check` internally).
+- **Version 1** (default, legacy): Full 6-action protocol (`fold`, `check`, `call`, `bet`, `raise`, `allin`). Used for backward compatibility with existing bots.
 
-If `protocol_version` is omitted, the server defaults to version 2.
+If `protocol_version` is omitted, the server defaults to version 1 for backward compatibility. New bots should explicitly set `"protocol_version": "2"`.
 
 ### Game Discovery & Selection *(TODO)*
 Planned additions to allow bots to list, join, and leave named game instances:

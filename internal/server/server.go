@@ -427,15 +427,15 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		botID = s.botIDGen()
 	}
 
-	// Determine protocol version (default to v2 if not specified)
+	// Determine protocol version (default to v1 for backward compatibility)
 	protocolVersion := connectMsg.ProtocolVersion
 	if protocolVersion == "" {
-		protocolVersion = "2" // Default to v2 for new bots
+		protocolVersion = "1" // Default to v1 for backward compatibility with old bots
 	}
 	// Validate protocol version
 	if protocolVersion != "1" && protocolVersion != "2" {
-		s.logger.Warn().Str("version", protocolVersion).Msg("Unsupported protocol version, defaulting to v2")
-		protocolVersion = "2"
+		s.logger.Warn().Str("version", protocolVersion).Msg("Unsupported protocol version, defaulting to v1")
+		protocolVersion = "1"
 	}
 
 	// Create bot instance tied to the selected game
