@@ -123,19 +123,169 @@ func TestNormalizeActionProtocolV2(t *testing.T) {
 			}
 
 			// This function doesn't exist yet - we're writing the failing test
-			action, amount := normalizeAction(tt.clientAction, tt.clientAmount, player, betting)
+			action, amount := normalizeActionV2(tt.clientAction, tt.clientAmount, player, betting)
 
 			if action != tt.wantAction {
-				t.Errorf("normalizeAction() action = %v, want %v", action, tt.wantAction)
+				t.Errorf("normalizeActionV2() action = %v, want %v", action, tt.wantAction)
 			}
 			if amount != tt.wantAmount {
-				t.Errorf("normalizeAction() amount = %d, want %d", amount, tt.wantAmount)
+				t.Errorf("normalizeActionV2() amount = %d, want %d", amount, tt.wantAmount)
 			}
 
 			// Verify the broadcast name matches semantic expectations
 			broadcastName := action.String()
 			if broadcastName != tt.wantBroadcast {
 				t.Errorf("broadcast action name = %q, want %q", broadcastName, tt.wantBroadcast)
+			}
+		})
+	}
+}
+
+// TestNormalizeActionProtocolV1 verifies that protocol v1 actions are handled correctly
+// with direct 1:1 mapping to game actions.
+func TestNormalizeActionProtocolV1(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		clientAction string
+		clientAmount int
+		wantAction   game.Action
+		wantAmount   int
+	}{
+		{
+			name:         "fold",
+			clientAction: "fold",
+			clientAmount: 0,
+			wantAction:   game.Fold,
+			wantAmount:   0,
+		},
+		{
+			name:         "check",
+			clientAction: "check",
+			clientAmount: 0,
+			wantAction:   game.Check,
+			wantAmount:   0,
+		},
+		{
+			name:         "call",
+			clientAction: "call",
+			clientAmount: 0,
+			wantAction:   game.Call,
+			wantAmount:   0,
+		},
+		{
+			name:         "bet with amount",
+			clientAction: "bet",
+			clientAmount: 50,
+			wantAction:   game.Raise,
+			wantAmount:   50,
+		},
+		{
+			name:         "raise with amount",
+			clientAction: "raise",
+			clientAmount: 100,
+			wantAction:   game.Raise,
+			wantAmount:   100,
+		},
+		{
+			name:         "allin",
+			clientAction: "allin",
+			clientAmount: 0,
+			wantAction:   game.AllIn,
+			wantAmount:   0,
+		},
+		{
+			name:         "invalid action defaults to fold",
+			clientAction: "invalid",
+			clientAmount: 0,
+			wantAction:   game.Fold,
+			wantAmount:   0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			action, amount := normalizeActionV1(tt.clientAction, tt.clientAmount)
+
+			if action != tt.wantAction {
+				t.Errorf("normalizeActionV1() action = %v, want %v", action, tt.wantAction)
+			}
+			if amount != tt.wantAmount {
+				t.Errorf("normalizeActionV1() amount = %d, want %d", amount, tt.wantAmount)
+			}
+		})
+	}
+}
+
+// TestConvertActionsForProtocol verifies that valid_actions are converted correctly
+// based on the protocol version.
+func TestConvertActionsForProtocol(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		actions []game.Action
+		toCall  int
+		version string
+		want    []string
+	}{
+		{
+			name:    "v1 check available",
+			actions: []game.Action{game.Fold, game.Check, game.Raise},
+			toCall:  0,
+			version: "1",
+			want:    []string{"fold", "check", "raise"},
+		},
+		{
+			name:    "v1 call available",
+			actions: []game.Action{game.Fold, game.Call, game.Raise},
+			toCall:  20,
+			version: "1",
+			want:    []string{"fold", "call", "raise"},
+		},
+		{
+			name:    "v2 check becomes call",
+			actions: []game.Action{game.Fold, game.Check, game.Raise},
+			toCall:  0,
+			version: "2",
+			want:    []string{"fold", "call", "raise"},
+		},
+		{
+			name:    "v2 call stays call",
+			actions: []game.Action{game.Fold, game.Call, game.Raise},
+			toCall:  20,
+			version: "2",
+			want:    []string{"fold", "call", "raise"},
+		},
+		{
+			name:    "v2 all actions",
+			actions: []game.Action{game.Fold, game.Check, game.Call, game.Raise, game.AllIn},
+			toCall:  10,
+			version: "2",
+			want:    []string{"fold", "call", "call", "raise", "allin"},
+		},
+		{
+			name:    "v1 all actions",
+			actions: []game.Action{game.Fold, game.Check, game.Call, game.Raise, game.AllIn},
+			toCall:  10,
+			version: "1",
+			want:    []string{"fold", "check", "call", "raise", "allin"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := convertActionsForProtocol(tt.actions, tt.toCall, tt.version)
+
+			if len(got) != len(tt.want) {
+				t.Errorf("convertActionsForProtocol() len = %d, want %d", len(got), len(tt.want))
+			}
+
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("convertActionsForProtocol()[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
 			}
 		})
 	}
@@ -168,13 +318,12 @@ func TestNormalizeActionRejectsOldProtocol(t *testing.T) {
 			player := &game.Player{Chips: 100}
 			betting := &game.BettingRound{CurrentBet: 0, MinRaise: 10}
 
-			// This should return an error or invalid action
-			action, _ := normalizeAction(tt.clientAction, 0, player, betting)
+			// Protocol v2 should reject old action names
+			action, _ := normalizeActionV2(tt.clientAction, 0, player, betting)
 
-			// For now, we expect Fold (invalid action default)
-			// TODO: Update when we add proper error handling
+			// Should return Fold (invalid action default)
 			if action != game.Fold {
-				t.Errorf("normalizeAction(%q) should reject old protocol, got %v", tt.clientAction, action)
+				t.Errorf("normalizeActionV2(%q) should reject old protocol, got %v", tt.clientAction, action)
 			}
 		})
 	}
