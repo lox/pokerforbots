@@ -20,9 +20,10 @@ vendor/
 # Build cache
 .task/
 
-# Generated code (protocol generation is committed for CI/tooling)
+# Generated code (committed for CI/tooling compatibility)
 *_gen.go
 !protocol/*_gen.go
+!sdk/analysis/preflop_gen.go
 *_gen_test.go
 
 # IDE

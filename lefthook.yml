@@ -17,6 +17,17 @@ pre-commit:
         fi
       stage_fixed: true
 
+    # Verify preflop generation is up to date
+    check-preflop-gen:
+      glob: "{sdk/analysis/preflop.go,cmd/gen-preflop/main.go}"
+      run: |
+        bin/task generate:preflop
+        if ! git diff --quiet sdk/analysis/preflop_gen.go; then
+          echo "❌ Preflop generation out of date. Changes staged automatically."
+          git add sdk/analysis/preflop_gen.go
+        fi
+      stage_fixed: true
+
     # Run all Go tests with race detector - MUST PASS
     go-test:
       run: bin/gotestsum --format=standard-quiet -- -race -parallel 12 ./...
