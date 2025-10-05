@@ -1,0 +1,74 @@
+---
+
+version: 2
+
+before:
+  hooks:
+    - task tools
+    - task generate
+
+builds:
+  - id: pokerforbots
+    main: ./cmd/pokerforbots
+    binary: pokerforbots
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+
+archives:
+  - id: pokerforbots
+    name_template: "pokerforbots-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    formats:
+      - tar.gz
+      - zip
+    files:
+      - README.md
+      - LICENSE
+      - docs/**/*
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: "^feat:"
+      order: 0
+    - title: Bug Fixes
+      regexp: "^fix:"
+      order: 1
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: lox
+    name: pokerforbots
+  draft: false
+  prerelease: auto
+  make_latest: true
+  mode: replace
+  header: |
+    ## PokerForBots {{ .Tag }}
+
+    High-performance poker server for bot-vs-bot play.
+  footer: |
+    **Full Changelog**: https://github.com/lox/pokerforbots/compare/{{ .PreviousTag }}...{{ .Tag }}

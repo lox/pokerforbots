@@ -1,10 +1,12 @@
+---
+
 name: Manual Release
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 1.2.3)'
+        description: 'Version to release (e.g., v1.2.3)'
         required: true
         type: string
 
@@ -35,59 +37,26 @@ jobs:
       - name: Validate version
         id: version
         run: |
-          NEW_VERSION="${{ inputs.version }}"
-          # Remove 'v' prefix if present
-          NEW_VERSION="${NEW_VERSION#v}"
+          VERSION="${{ inputs.version }}"
+          # Add v prefix if missing
+          if [[ ! "$VERSION" =~ ^v ]]; then
+            VERSION="v$VERSION"
+          fi
 
           # Basic semver validation
-          if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Error: Invalid version format. Use X.Y.Z"
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Invalid version format. Use vX.Y.Z or X.Y.Z"
             exit 1
           fi
 
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Generate release notes
-        id: release_notes
-        run: |
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          NEW_VERSION="v${{ steps.version.outputs.new_version }}"
-
-          {
-            echo "## Manual Release"
-            echo ""
-            echo "This release was created manually via workflow dispatch."
-            echo ""
-
-            if [ -n "$LAST_TAG" ]; then
-              echo "### Changes since $LAST_TAG"
-              echo ""
-              git log $LAST_TAG..HEAD --pretty=format:"- %s (%h)" --reverse
-              echo ""
-              echo ""
-              echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${LAST_TAG}...$NEW_VERSION"
-            else
-              echo "### Initial Release"
-              echo ""
-              echo "First release of PokerForBots."
-            fi
-          } > release_notes.md
-
-          echo "notes_file=release_notes.md" >> $GITHUB_OUTPUT
-
-      - name: Build binaries
-        run: task build:release VERSION=v${{ steps.version.outputs.new_version }}
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
-          tag_name: v${{ steps.version.outputs.new_version }}
-          name: Release v${{ steps.version.outputs.new_version }}
-          body_path: ${{ steps.release_notes.outputs.notes_file }}
-          draft: false
-          prerelease: false
-          files: |
-            dist/pokerforbots-*
-            dist/checksums.txt
+          distribution: goreleaser
+          version: latest
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ steps.version.outputs.version }}

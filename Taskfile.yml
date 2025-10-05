@@ -51,23 +51,12 @@ tasks:
       - dist/pokerforbots
       - dist/gen-preflop
 
-  build:release:
-    desc: Build release binaries for distribution
+  release:snapshot:
+    desc: Build snapshot release locally (no git tag required)
     deps:
       - generate
     cmds:
-      - |
-        if [ -z "{{.VERSION}}" ]; then
-          echo "VERSION is required (e.g. v1.2.3)" >&2
-          exit 1
-        fi
-      - mkdir -p dist
-      - rm -f dist/pokerforbots-linux-amd64 dist/pokerforbots-linux-arm64 dist/pokerforbots-darwin-amd64 dist/pokerforbots-darwin-arm64 dist/checksums.txt
-      - GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version={{.VERSION}}" -o dist/pokerforbots-linux-amd64 ./cmd/pokerforbots
-      - GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version={{.VERSION}}" -o dist/pokerforbots-linux-arm64 ./cmd/pokerforbots
-      - GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.version={{.VERSION}}" -o dist/pokerforbots-darwin-amd64 ./cmd/pokerforbots
-      - GOOS=darwin GOARCH=arm64 go build -ldflags "-X main.version={{.VERSION}}" -o dist/pokerforbots-darwin-arm64 ./cmd/pokerforbots
-      - shasum -a 256 dist/pokerforbots-* > dist/checksums.txt
+      - goreleaser release --snapshot --clean --skip=publish
 
   install:
     desc: Install pokerforbots to ~/bin

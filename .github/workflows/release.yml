@@ -1,3 +1,5 @@
+---
+
 name: Auto Release
 
 on:
@@ -35,21 +37,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for svu
+          fetch-depth: 0
 
       - uses: cashapp/activate-hermit@v1
 
       - name: Calculate next version
         id: version
         run: |
-          # Get next version using svu
           NEXT_VERSION=$(svu next)
           CURRENT_VERSION=$(svu current)
 
           echo "current=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           echo "next=$NEXT_VERSION" >> $GITHUB_OUTPUT
 
-          # Check if version needs bumping
           if [ "$CURRENT_VERSION" = "$NEXT_VERSION" ]; then
             echo "should_release=false" >> $GITHUB_OUTPUT
             echo "No version bump needed"
@@ -58,48 +58,12 @@ jobs:
             echo "Version bump: $CURRENT_VERSION -> $NEXT_VERSION"
           fi
 
-      - name: Generate release notes
+      - name: Run GoReleaser
         if: steps.version.outputs.should_release == 'true'
-        id: release_notes
-        run: |
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          NEW_VERSION="${{ steps.version.outputs.next }}"
-
-          {
-            echo "## What's Changed"
-            echo ""
-
-            if [ -n "$LAST_TAG" ]; then
-              git log $LAST_TAG..HEAD --pretty=format:"- %s (%h)" --reverse
-              echo ""
-              echo ""
-              echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${LAST_TAG}...$NEW_VERSION"
-            else
-              git log --pretty=format:"- %s (%h)" --reverse
-            fi
-          } > release_notes.md
-
-          echo "notes_file=release_notes.md" >> $GITHUB_OUTPUT
-
-      - name: Install code generation tools
-        if: steps.version.outputs.should_release == 'true'
-        run: task tools
-
-      - name: Build binaries
-        if: steps.version.outputs.should_release == 'true'
-        run: task build:release VERSION=${{ steps.version.outputs.next }}
-
-      - name: Create Release
-        if: steps.version.outputs.should_release == 'true'
-        uses: softprops/action-gh-release@v1
+        uses: goreleaser/goreleaser-action@v6
         with:
-          tag_name: ${{ steps.version.outputs.next }}
-          name: Release ${{ steps.version.outputs.next }}
-          body_path: ${{ steps.release_notes.outputs.notes_file }}
-          draft: false
-          prerelease: false
-          files: |
-            dist/pokerforbots-*
-            dist/checksums.txt
+          distribution: goreleaser
+          version: latest
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
