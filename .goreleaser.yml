@@ -31,7 +31,6 @@ archives:
       - zip
     files:
       - README.md
-      - LICENSE
       - docs/**/*
 
 checksum:
