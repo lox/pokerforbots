@@ -40,7 +40,8 @@ type SpawnCmd struct {
 	Count  int      `kong:"default='1',help='Number of each --bot-cmd to spawn'"`
 
 	// Game control
-	HandLimit int `kong:"help='Stop after N hands (0 for unlimited)'"`
+	HandLimit        int  `kong:"help='Stop after N hands (0 for unlimited)'"`
+	InfiniteBankroll bool `kong:"help='Players never bust out (always have chips to rebuy)'"`
 
 	// Stats output
 	WriteStats string `kong:"help='Write stats to file on exit'"`
@@ -144,6 +145,7 @@ func (c *SpawnCmd) Run() error {
 		MaxPlayers:            c.MaxPlayers,
 		Seed:                  seed, // Propagate seed to server config
 		HandLimit:             uint64(c.HandLimit),
+		InfiniteBankroll:      c.InfiniteBankroll,
 		EnableStats:           c.WriteStats != "" || c.PrintStats,
 		MaxStatsHands:         10000,
 		EnableLatencyTracking: c.LatencyTracking,
