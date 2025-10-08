@@ -207,13 +207,20 @@ func (c *SpawnCmd) Run() error {
 		// Get all spawned processes
 		processes := botSpawner.GetAllProcesses()
 
-		// Wait for any process to exit
+		// Wait for any process to exit (clean or error)
 		for _, proc := range processes {
 			go func(p *spawner.Process) {
-				if err := p.Wait(); err != nil {
-					// Bot exited with error - signal shutdown
+				err := p.Wait()
+				// Bot exited (with or without error) - signal shutdown
+				// We shouldn't have bots exiting before normal shutdown
+				if err != nil {
 					select {
 					case botErr <- fmt.Errorf("bot %s exited unexpectedly: %w", p.ID, err):
+					default:
+					}
+				} else {
+					select {
+					case botErr <- fmt.Errorf("bot %s exited unexpectedly (clean exit)", p.ID):
 					default:
 					}
 				}
