@@ -253,6 +253,17 @@ func (s *BotSpawner) GetProcess(botID string) (*Process, bool) {
 	return proc, ok
 }
 
+// GetAllProcesses returns all spawned processes.
+func (s *BotSpawner) GetAllProcesses() []*Process {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	processes := make([]*Process, 0, len(s.processes))
+	for _, proc := range s.processes {
+		processes = append(processes, proc)
+	}
+	return processes
+}
+
 // CollectStats fetches game statistics from the server.
 func CollectStats(serverURL string, gameID string) (*GameStats, error) {
 	// Convert WebSocket URL to HTTP

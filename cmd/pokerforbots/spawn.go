@@ -201,7 +201,27 @@ func (c *SpawnCmd) Run() error {
 		logger.Info().Int("count", botSpawner.ActiveCount()).Msg("Bots spawned")
 	}
 
-	// Wait for context cancellation, hand limit, or server error
+	// Monitor bot processes for unexpected exits
+	botErr := make(chan error, 1)
+	go func() {
+		// Get all spawned processes
+		processes := botSpawner.GetAllProcesses()
+
+		// Wait for any process to exit
+		for _, proc := range processes {
+			go func() {
+				if err := proc.Wait(); err != nil {
+					// Bot exited with error - signal shutdown
+					select {
+					case botErr <- fmt.Errorf("bot %s exited unexpectedly: %w", proc.ID, err):
+					default:
+					}
+				}
+			}()
+		}
+	}()
+
+	// Wait for context cancellation, hand limit, server error, or bot failure
 	select {
 	case <-ctx.Done():
 		logger.Info().Msg("Shutting down...")
@@ -211,6 +231,8 @@ func (c *SpawnCmd) Run() error {
 		}
 	case err := <-serverErr:
 		return fmt.Errorf("server error: %w", err)
+	case err := <-botErr:
+		return fmt.Errorf("bot failure: %w", err)
 	}
 
 	// Get metrics for final logging
