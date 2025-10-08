@@ -209,15 +209,15 @@ func (c *SpawnCmd) Run() error {
 
 		// Wait for any process to exit
 		for _, proc := range processes {
-			go func() {
-				if err := proc.Wait(); err != nil {
+			go func(p *spawner.Process) {
+				if err := p.Wait(); err != nil {
 					// Bot exited with error - signal shutdown
 					select {
-					case botErr <- fmt.Errorf("bot %s exited unexpectedly: %w", proc.ID, err):
+					case botErr <- fmt.Errorf("bot %s exited unexpectedly: %w", p.ID, err):
 					default:
 					}
 				}
-			}()
+			}(proc)
 		}
 	}()
 
