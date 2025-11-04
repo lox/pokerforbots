@@ -103,16 +103,13 @@ You can run example bots directly:
 
 ```bash
 # Run individual bots
-pokerforbots bots calling-station ws://localhost:8080/ws
-pokerforbots bots random ws://localhost:8080/ws
-pokerforbots bots aggressive ws://localhost:8080/ws
-pokerforbots bots complex ws://localhost:8080/ws
+pokerforbots bot calling-station ws://localhost:8080/ws
+pokerforbots bot random ws://localhost:8080/ws
+pokerforbots bot aggressive ws://localhost:8080/ws
+pokerforbots bot complex ws://localhost:8080/ws
 
 # With custom game
-pokerforbots bots random ws://localhost:8080/ws --game high-stakes
-
-# Check bot execution mode
-pokerforbots bots info
+pokerforbots bot random ws://localhost:8080/ws --game high-stakes
 ```
 
 ## Interactive Play

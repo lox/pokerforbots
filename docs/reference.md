@@ -13,7 +13,7 @@ Available commands:
 - `regression` - Run statistical bot comparison
 - `server` - Run standalone poker server
 - `client` - Connect as interactive human client
-- `bots` - Run built-in example bots
+- `bot` - Run a built-in bot
 
 ## spawn Command
 
@@ -256,15 +256,14 @@ pokerforbots client --server ws://localhost:8080/ws \
 pokerforbots client --server ws://poker.example.com/ws
 ```
 
-## bots Command
+## bot Command
 
-Run built-in example bots.
+Run a built-in bot.
 
 ### Synopsis
 
 ```bash
-pokerforbots bots <strategy> <server-url> [options]
-pokerforbots bots info
+pokerforbots bot <strategy> <server-url> [options]
 ```
 
 ### Available Strategies
@@ -285,16 +284,13 @@ pokerforbots bots info
 
 ```bash
 # Run calling station bot
-pokerforbots bots calling-station ws://localhost:8080/ws
+pokerforbots bot calling-station ws://localhost:8080/ws
 
 # Run with custom game
-pokerforbots bots random ws://localhost:8080/ws --game test
-
-# Check bot resolver information
-pokerforbots bots info
+pokerforbots bot random ws://localhost:8080/ws --game test
 
 # Run complex bot
-pokerforbots bots complex ws://localhost:8080/ws
+pokerforbots bot complex ws://localhost:8080/ws
 ```
 
 ## Environment Variables
