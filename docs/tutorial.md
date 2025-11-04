@@ -16,8 +16,8 @@ package main
 
 import (
     "context"
-    "github.com/lox/pokerforbots/protocol"
-    "github.com/lox/pokerforbots/sdk/client"
+    "github.com/lox/pokerforbots/v2/protocol"
+    "github.com/lox/pokerforbots/v2/sdk/client"
     "github.com/rs/zerolog"
     "os"
 )
@@ -249,7 +249,7 @@ See built-in bots in `sdk/bots/` for examples.
 - `aggressive` - Raises often
 - `complex` - Uses hand ranges and position (most complex)
 
-View source: [sdk/bots/bots.go](../sdk/bots/bots.go)
+View source: [sdk/bots/](../sdk/bots/)
 
 ### Read the Protocol
 
@@ -322,8 +322,8 @@ Make sure you're using the SDK's `client.New()` - it handles protocol automatica
 
 - [Go SDK Documentation](sdk.md)
 - [WebSocket Protocol](websocket-protocol.md)
-- [Built-in Bot Source](../sdk/bots/bots.go)
-- [Example: Range Bot](../sdk/bots/bots.go) (search for "Range")
+- [Built-in Bot Source](../sdk/bots/)
+- [Example: Complex Bot](../sdk/bots/complex/)
 
 ---
 

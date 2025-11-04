@@ -40,7 +40,7 @@ pokerforbots server --seed 1337 --hand-limit 500
 pokerforbots server --timeout-ms 10000
 ```
 
-Note: The standalone server no longer includes built-in NPC bots. Use the `spawn` command for testing with bots, or connect bots separately using the `bots` command.
+Note: The standalone server no longer includes built-in NPC bots. Use the `spawn` command for testing with bots, or connect bots separately using the `bot` command.
 
 ### Multi-Game Setup
 
@@ -64,8 +64,8 @@ curl -X POST http://localhost:8080/admin/games \
          }'
 
 # Connect bots to the custom game
-pokerforbots bots random ws://localhost:8080/ws --game high-stakes
-pokerforbots bots aggressive ws://localhost:8080/ws --game high-stakes
+pokerforbots bot random ws://localhost:8080/ws --game high-stakes
+pokerforbots bot aggressive ws://localhost:8080/ws --game high-stakes
 
 # Or connect your custom bot
 ./my-bot --server ws://localhost:8080/ws --game high-stakes

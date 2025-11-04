@@ -10,11 +10,10 @@ PokerForBots is a high-performance poker server designed specifically for bot-vs
 
 Please refer to these documents for context:
 
-1. **[docs/development-workflow.md](docs/development-workflow.md)** - Developing the server and the bots in examples
-2. **[docs/design.md](docs/design.md)** - Complete system design and architecture
-3. **[docs/websocket-protocol.md](docs/websocket-protocol.md)** - Binary msgpack protocol specification
-4. **[docs/poker-rules.md](docs/poker-rules.md)** - No-limit Hold'em rules reference
-5. **[TODO.md](TODO.md)** - Implementation roadmap with test requirements
+1. **[docs/design.md](docs/design.md)** - Complete system design and architecture
+2. **[docs/websocket-protocol.md](docs/websocket-protocol.md)** - Binary msgpack protocol specification
+3. **[docs/poker-rules.md](docs/poker-rules.md)** - No-limit Hold'em rules reference
+4. **[TODO.md](TODO.md)** - Implementation roadmap with test requirements
 
 ## Performance Considerations
 
