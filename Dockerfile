@@ -1,39 +1,16 @@
-# Build stage
-FROM golang:1.25-alpine AS builder
-
-ARG VERSION=dev
-
-WORKDIR /build
-
-# Install build dependencies
-RUN apk add --no-cache git make
-
-# Copy go mod files
-COPY go.mod go.sum ./
-RUN go mod download
-
-# Copy source
-COPY . .
-
-# Build binary with version info
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X main.version=${VERSION}" \
-    -o pokerforbots ./cmd/pokerforbots
-
-# Runtime stage
+# Runtime stage - GoReleaser provides pre-built binary
 FROM alpine:latest
+
+ARG TARGETPLATFORM
 
 # Install ca-certificates for HTTPS
 RUN apk --no-cache add ca-certificates
 
 WORKDIR /app
 
-# Copy binary from builder
-COPY --from=builder /build/pokerforbots /app/pokerforbots
-
-# Copy docs for reference
-COPY --from=builder /build/docs /app/docs
-COPY --from=builder /build/README.md /app/README.md
+# Copy pre-built binary from GoReleaser context
+# GoReleaser places binaries in $TARGETPLATFORM/ subdirectory
+COPY ${TARGETPLATFORM}/pokerforbots /app/pokerforbots
 
 # Create non-root user
 RUN addgroup -g 1000 poker && \
