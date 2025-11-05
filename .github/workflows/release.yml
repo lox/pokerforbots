@@ -68,6 +68,10 @@ jobs:
           git tag -a ${{ steps.version.outputs.next }} -m "Release ${{ steps.version.outputs.next }}"
           git push origin ${{ steps.version.outputs.next }}
 
+      - name: Set up QEMU
+        if: steps.version.outputs.should_release == 'true'
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         if: steps.version.outputs.should_release == 'true'
         uses: docker/setup-buildx-action@v3
