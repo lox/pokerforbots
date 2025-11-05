@@ -46,6 +46,7 @@ type Config struct {
 	BigBlind              int
 	StartChips            int
 	Timeout               time.Duration
+	MinActionTime         time.Duration // Minimum time to wait before processing action (prevents timing tells)
 	MinPlayers            int
 	MaxPlayers            int
 	Seed                  int64

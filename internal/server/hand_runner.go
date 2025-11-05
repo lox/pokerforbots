@@ -454,6 +454,20 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 	done := make(chan struct{})
 	defer close(done)
 
+	// Track when action request was sent for minimum action time enforcement
+	actionStartTime := time.Now()
+
+	// Ensure minimum action time is enforced regardless of outcome
+	// This prevents timing side-channels where bots could detect timeouts/errors
+	defer func() {
+		if hr.config.MinActionTime > 0 {
+			elapsed := time.Since(actionStartTime)
+			if remaining := hr.config.MinActionTime - elapsed; remaining > 0 {
+				time.Sleep(remaining)
+			}
+		}
+	}()
+
 	timer := time.NewTimer(hr.config.Timeout)
 	defer timer.Stop()
 
