@@ -70,7 +70,7 @@ type serverConfig struct {
 // AuthValidator validates authentication tokens.
 // This interface is defined here to avoid circular imports with internal/auth.
 type AuthValidator interface {
-	Validate(ctx context.Context, token string) (identity interface{}, err error)
+	Validate(ctx context.Context, token string) (identity any, err error)
 }
 
 // ServerOption configures how we create a server
@@ -267,16 +267,8 @@ func NewServer(logger zerolog.Logger, rng *rand.Rand, opts ...ServerOption) *Ser
 // noopAuthValidator is a no-op validator that allows all connections.
 type noopAuthValidator struct{}
 
-func (v *noopAuthValidator) Validate(ctx context.Context, token string) (interface{}, error) {
+func (v *noopAuthValidator) Validate(ctx context.Context, token string) (any, error) {
 	return nil, nil
-}
-
-// authIdentity represents an authenticated bot's identity.
-// This is returned by external auth validators (like internal/auth.HTTPValidator).
-type authIdentity struct {
-	BotID   string
-	BotName string
-	OwnerID string
 }
 
 // Error checking helpers - these check for specific error types from internal/auth
@@ -285,7 +277,7 @@ func isInvalidTokenError(err error) bool {
 		return false
 	}
 	// Check if error message contains "invalid token"
-	return err.Error() == "auth: invalid token" || 
+	return err.Error() == "auth: invalid token" ||
 		(len(err.Error()) > 15 && err.Error()[:16] == "auth: invalid token")
 }
 

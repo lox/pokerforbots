@@ -21,7 +21,7 @@ func NewAdapter(validator Validator) *Adapter {
 }
 
 // Validate implements the server.AuthValidator interface.
-func (a *Adapter) Validate(ctx context.Context, token string) (interface{}, error) {
+func (a *Adapter) Validate(ctx context.Context, token string) (any, error) {
 	identity, err := a.validator.Validate(ctx, token)
 	if err != nil {
 		return nil, err
