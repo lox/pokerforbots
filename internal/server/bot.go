@@ -12,6 +12,8 @@ import (
 // Bot represents a connected bot client
 type Bot struct {
 	ID              string
+	AuthBotID       string // External bot ID from auth service (empty if unauthenticated)
+	OwnerID         string // Owner identifier from auth (e.g., "github:123456", empty if unauthenticated)
 	conn            *websocket.Conn
 	send            chan []byte
 	pool            *BotPool

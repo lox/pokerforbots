@@ -7,9 +7,11 @@ import (
 	"errors"
 	rand "math/rand/v2"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/lox/pokerforbots/v2/cmd/pokerforbots/shared"
+	"github.com/lox/pokerforbots/v2/internal/auth"
 	"github.com/lox/pokerforbots/v2/internal/server"
 )
 
@@ -17,6 +19,9 @@ import (
 type ServerCmd struct {
 	Addr            string `kong:"default=':8080',help='Server address'"`
 	Debug           bool   `kong:"help='Enable debug logging'"`
+	AuthURL         string `kong:"env='AUTH_URL',help='Authentication service URL (optional, disables auth if empty)'"`
+	AdminSecret     string `kong:"env='ADMIN_SECRET',help='Shared secret for auth service (optional)'"`
+	AuthRequired    bool   `kong:"env='AUTH_REQUIRED',help='Fail closed on auth unavailable (default: fail open)'"`
 	SmallBlind      int    `kong:"default='5',help='Small blind amount'"`
 	BigBlind        int    `kong:"default='10',help='Big blind amount'"`
 	StartChips      int    `kong:"default='1000',help='Starting chip count'"`
@@ -32,6 +37,37 @@ type ServerCmd struct {
 func (c *ServerCmd) Run() error {
 	// Configure logging
 	logger := shared.SetupLogger(c.Debug)
+
+	// Setup authentication
+	var validator server.AuthValidator
+
+	// Reject invalid configuration: --auth-required without --auth-url
+	if c.AuthRequired && c.AuthURL == "" {
+		logger.Error().Msg("--auth-required requires --auth-url to be set")
+		return errors.New("invalid configuration: --auth-required requires --auth-url")
+	}
+
+	if c.AuthURL != "" {
+		// Warn if using HTTP (not HTTPS) with admin secret in production
+		if c.AdminSecret != "" && !strings.HasPrefix(c.AuthURL, "https://") &&
+			!strings.HasPrefix(c.AuthURL, "http://localhost") &&
+			!strings.HasPrefix(c.AuthURL, "http://127.0.0.1") {
+			logger.Warn().
+				Str("auth_url", c.AuthURL).
+				Msg("WARNING: Using HTTP (not HTTPS) with admin secret - secret will be sent in plaintext. Use HTTPS in production!")
+		}
+
+		httpValidator := auth.NewHTTPValidator(c.AuthURL, c.AdminSecret)
+		validator = auth.NewAdapter(httpValidator)
+		logger.Info().
+			Str("auth_url", c.AuthURL).
+			Bool("auth_required", c.AuthRequired).
+			Msg("authentication enabled")
+	} else {
+		noopValidator := auth.NewNoopValidator()
+		validator = auth.NewAdapter(noopValidator)
+		logger.Info().Msg("authentication disabled (dev mode)")
+	}
 
 	// Setup RNG and seed
 	var rng *rand.Rand
@@ -58,10 +94,11 @@ func (c *ServerCmd) Run() error {
 		EnableStats:           c.EnableStats,
 		MaxStatsHands:         c.MaxStatsHands,
 		EnableLatencyTracking: c.LatencyTracking,
+		AuthRequired:          c.AuthRequired,
 	}
 
 	// Create and start server
-	s := server.NewServer(logger, rng, server.WithConfig(cfg))
+	s := server.NewServer(logger, rng, server.WithConfig(cfg), server.WithAuthValidator(validator))
 
 	logger.Info().
 		Str("address", c.Addr).

@@ -95,6 +95,10 @@ func (b *Bot) Connect(serverURL string) error {
 	if game := os.Getenv("POKERFORBOTS_GAME"); game != "" {
 		connect.Game = game
 	}
+	// Include API key for authentication if provided
+	if apiKey := os.Getenv("POKERFORBOTS_API_KEY"); apiKey != "" {
+		connect.AuthToken = apiKey
+	}
 	payload, err := protocol.Marshal(connect)
 	if err != nil {
 		return err
