@@ -7,6 +7,7 @@ import (
 	"errors"
 	rand "math/rand/v2"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/lox/pokerforbots/v2/cmd/pokerforbots/shared"
@@ -40,6 +41,15 @@ func (c *ServerCmd) Run() error {
 	// Setup authentication
 	var validator server.AuthValidator
 	if c.AuthURL != "" {
+		// Warn if using HTTP (not HTTPS) with admin secret in production
+		if c.AdminSecret != "" && !strings.HasPrefix(c.AuthURL, "https://") &&
+			!strings.HasPrefix(c.AuthURL, "http://localhost") &&
+			!strings.HasPrefix(c.AuthURL, "http://127.0.0.1") {
+			logger.Warn().
+				Str("auth_url", c.AuthURL).
+				Msg("WARNING: Using HTTP (not HTTPS) with admin secret - secret will be sent in plaintext. Use HTTPS in production!")
+		}
+
 		httpValidator := auth.NewHTTPValidator(c.AuthURL, c.AdminSecret)
 		validator = auth.NewAdapter(httpValidator)
 		logger.Info().

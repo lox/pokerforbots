@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/lox/pokerforbots/v2/internal/auth"
 	"github.com/lox/pokerforbots/v2/internal/randutil"
 
 	"context"
@@ -271,24 +272,6 @@ func (v *noopAuthValidator) Validate(ctx context.Context, token string) (any, er
 	return nil, nil
 }
 
-// Error checking helpers - these check for specific error types from internal/auth
-func isInvalidTokenError(err error) bool {
-	if err == nil {
-		return false
-	}
-	// Check if error message contains "invalid token"
-	return err.Error() == "auth: invalid token" ||
-		(len(err.Error()) > 15 && err.Error()[:16] == "auth: invalid token")
-}
-
-func isUnavailableError(err error) bool {
-	if err == nil {
-		return false
-	}
-	// Check if error message contains "unavailable"
-	return len(err.Error()) > 16 && err.Error()[:17] == "auth: unavailable"
-}
-
 // Start starts the server on the given address
 func (s *Server) Start(addr string) error {
 	listener, err := net.Listen("tcp", addr)
@@ -458,6 +441,17 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject oversized tokens to prevent DoS (4KB limit)
+	const maxTokenSize = 4096
+	if len(connectMsg.AuthToken) > maxTokenSize {
+		s.logger.Warn().
+			Str("bot_name", connectMsg.Name).
+			Int("token_size", len(connectMsg.AuthToken)).
+			Msg("authentication token exceeds size limit")
+		_ = conn.Close()
+		return
+	}
+
 	if connectMsg.AuthToken != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
@@ -490,7 +484,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-		case isInvalidTokenError(err):
+		case errors.Is(err, auth.ErrInvalidToken):
 			// Definitive rejection
 			s.logger.Warn().
 				Str("bot_name", connectMsg.Name).
@@ -498,7 +492,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			_ = conn.Close()
 			return
 
-		case isUnavailableError(err):
+		case errors.Is(err, auth.ErrUnavailable):
 			// Auth service unavailable - fail open or closed based on config
 			if s.config.AuthRequired {
 				s.logger.Error().
@@ -578,6 +572,8 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	bot.SetDisplayName(connectMsg.Name)
 	bot.SetGameID(game.ID)
 	bot.ProtocolVersion = protocolVersion
+	bot.AuthBotID = authBotID
+	bot.OwnerID = ownerID
 
 	// Register with game pool
 	game.Pool.Register(bot)
