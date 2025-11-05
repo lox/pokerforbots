@@ -49,6 +49,19 @@ jobs:
         env:
           GOTESTSUM_FORMAT: github-actions
 
+  goreleaser:
+    name: Validate GoReleaser Config
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, '.goreleaser.yml') || contains(github.event.pull_request.files.*.filename, '.goreleaser.yml')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cashapp/activate-hermit@v1
+
+      - name: Validate GoReleaser config
+        run: goreleaser check
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
