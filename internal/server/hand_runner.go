@@ -454,21 +454,31 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 	done := make(chan struct{})
 	defer close(done)
 
+	// Track when action request was sent for minimum action time enforcement
+	actionStartTime := time.Now()
+
 	timer := time.NewTimer(hr.config.Timeout)
 	defer timer.Stop()
 
 	// Start goroutine to listen for action
 	go hr.listenForAction(botIndex, done)
 
+	var receivedAction game.Action
+	var receivedAmount int
+	var actionReceived bool
+
 	select {
 	case action := <-hr.actions:
 		if action.botIndex == botIndex {
 			hr.recordResponseLatency(botIndex, ResponseOutcomeSuccess)
-			return hr.convertAction(action.action)
+			receivedAction, receivedAmount = hr.convertAction(action.action)
+			actionReceived = true
+		} else {
+			// Wrong bot sent action, auto-fold
+			hr.recordResponseLatency(botIndex, ResponseOutcomeSuccess)
+			receivedAction, receivedAmount = game.Fold, 0
+			actionReceived = true
 		}
-		// Wrong bot sent action, auto-fold
-		hr.recordResponseLatency(botIndex, ResponseOutcomeSuccess)
-		return game.Fold, 0
 
 	case <-hr.bots[botIndex].Done():
 		hr.recordResponseLatency(botIndex, ResponseOutcomeDisconnect)
@@ -490,6 +500,16 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 		}
 		return game.Fold, 0
 	}
+
+	// If minimum action time is configured, wait until that time has elapsed
+	if actionReceived && hr.config.MinActionTime > 0 {
+		elapsed := time.Since(actionStartTime)
+		if remaining := hr.config.MinActionTime - elapsed; remaining > 0 {
+			time.Sleep(remaining)
+		}
+	}
+
+	return receivedAction, receivedAmount
 }
 
 // listenForAction listens for an action from a specific bot

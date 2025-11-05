@@ -26,6 +26,7 @@ type ServerCmd struct {
 	BigBlind         int    `kong:"default='10',help='Big blind amount'"`
 	StartChips       int    `kong:"default='1000',help='Starting chip count'"`
 	TimeoutMs        int    `kong:"default='100',help='Decision timeout in milliseconds'"`
+	MinActionTimeMs  int    `kong:"default='0',help='Minimum action time in milliseconds (prevents timing tells and controls game speed)'"`
 	MinPlayers       int    `kong:"default='2',help='Minimum players per hand'"`
 	MaxPlayers       int    `kong:"default='9',help='Maximum players per hand'"`
 	Seed             *int64 `kong:"help='Deterministic RNG seed for the server (optional)'"`
@@ -89,6 +90,7 @@ func (c *ServerCmd) Run() error {
 		BigBlind:              c.BigBlind,
 		StartChips:            c.StartChips,
 		Timeout:               time.Duration(c.TimeoutMs) * time.Millisecond,
+		MinActionTime:         time.Duration(c.MinActionTimeMs) * time.Millisecond,
 		MinPlayers:            c.MinPlayers,
 		MaxPlayers:            c.MaxPlayers,
 		Seed:                  seed, // Propagate seed to config
