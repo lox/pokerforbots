@@ -40,6 +40,13 @@ func (c *ServerCmd) Run() error {
 
 	// Setup authentication
 	var validator server.AuthValidator
+
+	// Reject invalid configuration: --auth-required without --auth-url
+	if c.AuthRequired && c.AuthURL == "" {
+		logger.Error().Msg("--auth-required requires --auth-url to be set")
+		return errors.New("invalid configuration: --auth-required requires --auth-url")
+	}
+
 	if c.AuthURL != "" {
 		// Warn if using HTTP (not HTTPS) with admin secret in production
 		if c.AdminSecret != "" && !strings.HasPrefix(c.AuthURL, "https://") &&
