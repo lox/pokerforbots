@@ -1,0 +1,33 @@
+# Build artifacts
+/pokerforbots
+*.test
+*.out
+dist/
+bin/
+
+# Task cache
+.task/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Git
+.git/
+.github/
+
+# Results
+*.json
+snapshots/
+
+# Plans (internal docs)
+plans/
+
+# Generated files that will be regenerated
+*_gen.go
+!protocol/*_gen.go
+!sdk/analysis/preflop_gen.go
