@@ -272,6 +272,11 @@ func (v *noopAuthValidator) Validate(ctx context.Context, token string) (any, er
 	return nil, nil
 }
 
+func isNoopValidator(v AuthValidator) bool {
+	_, ok := v.(*noopAuthValidator)
+	return ok
+}
+
 // Start starts the server on the given address
 func (s *Server) Start(addr string) error {
 	listener, err := net.Listen("tcp", addr)
@@ -431,9 +436,10 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Validate authentication
 	var authBotID, ownerID string
+	authEnabled := s.authValidator != nil && !isNoopValidator(s.authValidator)
 
-	// If auth is required and no token provided, reject
-	if s.config.AuthRequired && connectMsg.AuthToken == "" {
+	// If auth is enabled and no token provided, reject
+	if authEnabled && connectMsg.AuthToken == "" {
 		s.logger.Warn().
 			Str("bot_name", connectMsg.Name).
 			Msg("authentication required but no token provided")
