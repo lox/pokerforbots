@@ -57,22 +57,23 @@ changelog:
     - title: Others
       order: 999
 
-dockers:
-  - image_templates:
-      - "ghcr.io/lox/pokerforbots:{{ .Version }}"
-      - "ghcr.io/lox/pokerforbots:{{ .Major }}"
-      - "ghcr.io/lox/pokerforbots:{{ .Major }}.{{ .Minor }}"
-      - "ghcr.io/lox/pokerforbots:latest"
+dockers_v2:
+  - images:
+      - "ghcr.io/lox/pokerforbots"
+    tags:
+      - "{{ .Version }}"
+      - "{{ .Major }}"
+      - "{{ .Major }}.{{ .Minor }}"
+      - "latest"
     dockerfile: Dockerfile
-    build_flag_templates:
-      - "--pull"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title=pokerforbots"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.source=https://github.com/lox/pokerforbots"
-      - "--build-arg=VERSION={{.Version}}"
-      - "--platform=linux/amd64"
+    build_args:
+      VERSION: "{{ .Version }}"
+    labels:
+      "org.opencontainers.image.created": "{{ .Date }}"
+      "org.opencontainers.image.title": "pokerforbots"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.source": "https://github.com/lox/pokerforbots"
 
 release:
   github:
