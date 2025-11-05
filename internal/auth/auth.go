@@ -52,7 +52,7 @@ func NewHTTPValidator(url string, adminSecret string) *HTTPValidator {
 		url:         url,
 		adminSecret: adminSecret,
 		client: &http.Client{
-			Timeout: 1 * time.Second, // Overall timeout for the request
+			Timeout: 500 * time.Millisecond, // Align with context timeout
 		},
 	}
 }

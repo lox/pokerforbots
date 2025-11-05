@@ -18,9 +18,9 @@ import (
 type ServerCmd struct {
 	Addr            string `kong:"default=':8080',help='Server address'"`
 	Debug           bool   `kong:"help='Enable debug logging'"`
-	AuthURL         string `kong:"help='Authentication service URL (optional, disables auth if empty)'"`
+	AuthURL         string `kong:"env='AUTH_URL',help='Authentication service URL (optional, disables auth if empty)'"`
 	AdminSecret     string `kong:"env='ADMIN_SECRET',help='Shared secret for auth service (optional)'"`
-	AuthRequired    bool   `kong:"help='Fail closed on auth unavailable (default: fail open)'"`
+	AuthRequired    bool   `kong:"env='AUTH_REQUIRED',help='Fail closed on auth unavailable (default: fail open)'"`
 	SmallBlind      int    `kong:"default='5',help='Small blind amount'"`
 	BigBlind        int    `kong:"default='10',help='Big blind amount'"`
 	StartChips      int    `kong:"default='1000',help='Starting chip count'"`
