@@ -465,19 +465,18 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 
 	var receivedAction game.Action
 	var receivedAmount int
-	var actionReceived bool
+	var shouldDelay bool
 
 	select {
 	case action := <-hr.actions:
 		if action.botIndex == botIndex {
 			hr.recordResponseLatency(botIndex, ResponseOutcomeSuccess)
 			receivedAction, receivedAmount = hr.convertAction(action.action)
-			actionReceived = true
+			shouldDelay = true // Only delay for correct bot responses
 		} else {
-			// Wrong bot sent action, auto-fold
+			// Wrong bot sent action, auto-fold (no delay - error condition)
 			hr.recordResponseLatency(botIndex, ResponseOutcomeSuccess)
 			receivedAction, receivedAmount = game.Fold, 0
-			actionReceived = true
 		}
 
 	case <-hr.bots[botIndex].Done():
@@ -502,7 +501,8 @@ func (hr *HandRunner) waitForAction(botIndex int) (game.Action, int) {
 	}
 
 	// If minimum action time is configured, wait until that time has elapsed
-	if actionReceived && hr.config.MinActionTime > 0 {
+	// Only applies to successful bot responses, not timeouts or errors
+	if shouldDelay && hr.config.MinActionTime > 0 {
 		elapsed := time.Since(actionStartTime)
 		if remaining := hr.config.MinActionTime - elapsed; remaining > 0 {
 			time.Sleep(remaining)
