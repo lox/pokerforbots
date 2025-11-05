@@ -1,6 +1,8 @@
 # Build stage
 FROM golang:1.25-alpine AS builder
 
+ARG VERSION=dev
+
 WORKDIR /build
 
 # Install build dependencies
@@ -13,8 +15,10 @@ RUN go mod download
 # Copy source
 COPY . .
 
-# Build binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o pokerforbots ./cmd/pokerforbots
+# Build binary with version info
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w -X main.version=${VERSION}" \
+    -o pokerforbots ./cmd/pokerforbots
 
 # Runtime stage
 FROM alpine:latest
