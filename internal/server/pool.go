@@ -89,8 +89,8 @@ func NewBotPool(logger zerolog.Logger, rng *rand.Rand, config Config) *BotPool {
 	pool := &BotPool{
 		bots:          make(map[string]*Bot),
 		available:     make(chan *Bot, 100),
-		register:      make(chan *Bot),
-		unregister:    make(chan *Bot),
+		register:      make(chan *Bot, 10),
+		unregister:    make(chan *Bot, 10),
 		minPlayers:    config.MinPlayers,
 		maxPlayers:    config.MaxPlayers,
 		handLimit:     config.HandLimit,
@@ -192,7 +192,11 @@ func (p *BotPool) Run() {
 			}
 			bot.close()
 			p.mu.Lock()
-			delete(p.bots, bot.ID)
+			// Only delete if this bot is still the current one for this ID
+			// (handles case where bot reconnected with same ID)
+			if currentBot, exists := p.bots[bot.ID]; exists && currentBot == bot {
+				delete(p.bots, bot.ID)
+			}
 			remainingBots := len(p.bots)
 			p.mu.Unlock()
 
@@ -279,8 +283,13 @@ collectLoop:
 		case bot := <-p.available:
 			// Double-check bot is still connected and not in hand
 			p.mu.RLock()
-			_, connected := p.bots[bot.ID]
+			currentBot, connected := p.bots[bot.ID]
 			p.mu.RUnlock()
+
+			// Skip if this is a stale bot reference (bot reconnected with same ID)
+			if connected && currentBot != bot {
+				continue
+			}
 
 			switch {
 			case connected && !bot.IsInHand() && bot.HasChips():
