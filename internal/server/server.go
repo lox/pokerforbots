@@ -11,6 +11,7 @@ import (
 	rand "math/rand/v2"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -50,6 +51,7 @@ type Config struct {
 	EnableStats           bool // Collect detailed statistics
 	MaxStatsHands         int  // Maximum hands to track for stats (default 10000)
 	EnableLatencyTracking bool // Collect per-action response latency
+	AuthRequired          bool // Fail closed on auth unavailable (default: fail open)
 
 	// Legacy fields (deprecated - will be removed)
 	HandLimit              uint64 // Deprecated: Use spawner for hand limits
@@ -59,9 +61,16 @@ type Config struct {
 
 // serverConfig holds the configuration for building a server
 type serverConfig struct {
-	config   Config
-	pool     *BotPool      // Custom pool for testing
-	botIDGen func() string // Custom ID generator for testing
+	config        Config
+	pool          *BotPool      // Custom pool for testing
+	botIDGen      func() string // Custom ID generator for testing
+	authValidator AuthValidator // Auth validator (defaults to NoopValidator)
+}
+
+// AuthValidator validates authentication tokens.
+// This interface is defined here to avoid circular imports with internal/auth.
+type AuthValidator interface {
+	Validate(ctx context.Context, token string) (identity interface{}, err error)
 }
 
 // ServerOption configures how we create a server
@@ -104,6 +113,13 @@ func WithHandLimit(limit uint64) ServerOption {
 	}
 }
 
+// WithAuthValidator sets the authentication validator.
+func WithAuthValidator(validator AuthValidator) ServerOption {
+	return func(c *serverConfig) {
+		c.authValidator = validator
+	}
+}
+
 // Server represents the poker server
 type Server struct {
 	pool          *BotPool
@@ -116,6 +132,7 @@ type Server struct {
 	httpServer    *http.Server
 	botIDGen      func() string // Function to generate bot IDs
 	config        Config
+	authValidator AuthValidator // Auth validator
 	// NPC support removed - use spawner for bot orchestration
 	routesOnce sync.Once
 }
@@ -219,12 +236,19 @@ func NewServer(logger zerolog.Logger, rng *rand.Rand, opts ...ServerOption) *Ser
 	defaultGameID := "default"
 	manager.RegisterGame(defaultGameID, pool, cfg.config)
 
+	// Use provided auth validator or default to noop
+	authValidator := cfg.authValidator
+	if authValidator == nil {
+		authValidator = &noopAuthValidator{}
+	}
+
 	return &Server{
 		pool:          pool,
 		manager:       manager,
 		defaultGameID: defaultGameID,
 		botIDGen:      botIDGen,
 		config:        cfg.config,
+		authValidator: authValidator,
 		upgrader: websocket.Upgrader{
 			// Increased buffer sizes from 1024 to 4096 for better throughput
 			// Profiling showed 28.5% of time spent in read/write syscalls
@@ -238,6 +262,39 @@ func NewServer(logger zerolog.Logger, rng *rand.Rand, opts ...ServerOption) *Ser
 		mux:    http.NewServeMux(),
 		logger: logger,
 	}
+}
+
+// noopAuthValidator is a no-op validator that allows all connections.
+type noopAuthValidator struct{}
+
+func (v *noopAuthValidator) Validate(ctx context.Context, token string) (interface{}, error) {
+	return nil, nil
+}
+
+// authIdentity represents an authenticated bot's identity.
+// This is returned by external auth validators (like internal/auth.HTTPValidator).
+type authIdentity struct {
+	BotID   string
+	BotName string
+	OwnerID string
+}
+
+// Error checking helpers - these check for specific error types from internal/auth
+func isInvalidTokenError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Check if error message contains "invalid token"
+	return err.Error() == "auth: invalid token" || 
+		(len(err.Error()) > 15 && err.Error()[:16] == "auth: invalid token")
+}
+
+func isUnavailableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Check if error message contains "unavailable"
+	return len(err.Error()) > 16 && err.Error()[:17] == "auth: unavailable"
 }
 
 // Start starts the server on the given address
@@ -395,6 +452,82 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = conn.Close()
 		return
+	}
+
+	// Validate authentication if token provided
+	var authBotID, ownerID string
+	if connectMsg.AuthToken != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+
+		identity, err := s.authValidator.Validate(ctx, connectMsg.AuthToken)
+
+		// Handle validation errors using errors.As to check error type
+		switch {
+		case err == nil && identity != nil:
+			// Valid token - extract identity using type assertion
+			// The adapter returns a struct with BotID, BotName, OwnerID fields
+			// We use reflection.ValueOf to extract them without importing internal/auth
+			v := reflect.ValueOf(identity)
+			if v.Kind() == reflect.Ptr {
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.Struct {
+				if botIDField := v.FieldByName("BotID"); botIDField.IsValid() && botIDField.Kind() == reflect.String {
+					authBotID = botIDField.String()
+				}
+				if ownerIDField := v.FieldByName("OwnerID"); ownerIDField.IsValid() && ownerIDField.Kind() == reflect.String {
+					ownerID = ownerIDField.String()
+				}
+				if authBotID != "" {
+					s.logger.Info().
+						Str("auth_bot_id", authBotID).
+						Str("bot_name", connectMsg.Name).
+						Str("owner_id", ownerID).
+						Msg("bot authenticated")
+				}
+			}
+
+		case isInvalidTokenError(err):
+			// Definitive rejection
+			s.logger.Warn().
+				Str("bot_name", connectMsg.Name).
+				Msg("authentication failed: invalid token")
+			_ = conn.Close()
+			return
+
+		case isUnavailableError(err):
+			// Auth service unavailable - fail open or closed based on config
+			if s.config.AuthRequired {
+				s.logger.Error().
+					Str("bot_name", connectMsg.Name).
+					Err(err).
+					Msg("authentication failed: service unavailable (fail closed)")
+				_ = conn.Close()
+				return
+			}
+			s.logger.Warn().
+				Str("bot_name", connectMsg.Name).
+				Err(err).
+				Msg("authentication unavailable: allowing connection (fail open)")
+
+		default:
+			// Unexpected error - treat as unavailable
+			if err != nil {
+				if s.config.AuthRequired {
+					s.logger.Error().
+						Str("bot_name", connectMsg.Name).
+						Err(err).
+						Msg("authentication error (fail closed)")
+					_ = conn.Close()
+					return
+				}
+				s.logger.Warn().
+					Str("bot_name", connectMsg.Name).
+					Err(err).
+					Msg("authentication error: allowing connection (fail open)")
+			}
+		}
 	}
 
 	requestedGame := connectMsg.Game
