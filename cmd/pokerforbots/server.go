@@ -17,21 +17,22 @@ import (
 
 // ServerCmd contains core server configuration
 type ServerCmd struct {
-	Addr            string `kong:"default=':8080',help='Server address'"`
-	Debug           bool   `kong:"help='Enable debug logging'"`
-	AuthURL         string `kong:"env='AUTH_URL',help='Authentication service URL (optional, disables auth if empty)'"`
-	AdminSecret     string `kong:"env='ADMIN_SECRET',help='Shared secret for auth service (optional)'"`
-	AuthRequired    bool   `kong:"env='AUTH_REQUIRED',help='Fail closed on auth unavailable (default: fail open)'"`
-	SmallBlind      int    `kong:"default='5',help='Small blind amount'"`
-	BigBlind        int    `kong:"default='10',help='Big blind amount'"`
-	StartChips      int    `kong:"default='1000',help='Starting chip count'"`
-	TimeoutMs       int    `kong:"default='100',help='Decision timeout in milliseconds'"`
-	MinPlayers      int    `kong:"default='2',help='Minimum players per hand'"`
-	MaxPlayers      int    `kong:"default='9',help='Maximum players per hand'"`
-	Seed            *int64 `kong:"help='Deterministic RNG seed for the server (optional)'"`
-	EnableStats     bool   `kong:"help='Enable statistics collection'"`
-	MaxStatsHands   int    `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
-	LatencyTracking bool   `kong:"help='Collect per-action latency metrics'"`
+	Addr             string `kong:"default=':8080',help='Server address'"`
+	Debug            bool   `kong:"help='Enable debug logging'"`
+	AuthURL          string `kong:"env='AUTH_URL',help='Authentication service URL (optional, disables auth if empty)'"`
+	AdminSecret      string `kong:"env='ADMIN_SECRET',help='Shared secret for auth service (optional)'"`
+	AuthRequired     bool   `kong:"env='AUTH_REQUIRED',help='Fail closed on auth unavailable (default: fail open)'"`
+	SmallBlind       int    `kong:"default='5',help='Small blind amount'"`
+	BigBlind         int    `kong:"default='10',help='Big blind amount'"`
+	StartChips       int    `kong:"default='1000',help='Starting chip count'"`
+	TimeoutMs        int    `kong:"default='100',help='Decision timeout in milliseconds'"`
+	MinPlayers       int    `kong:"default='2',help='Minimum players per hand'"`
+	MaxPlayers       int    `kong:"default='9',help='Maximum players per hand'"`
+	Seed             *int64 `kong:"help='Deterministic RNG seed for the server (optional)'"`
+	EnableStats      bool   `kong:"help='Enable statistics collection'"`
+	MaxStatsHands    int    `kong:"default='10000',help='Maximum hands to track in statistics (memory limit)'"`
+	LatencyTracking  bool   `kong:"help='Collect per-action latency metrics'"`
+	InfiniteBankroll bool   `kong:"help='Players never bust out (always have chips to rebuy)'"`
 }
 
 func (c *ServerCmd) Run() error {
@@ -95,6 +96,7 @@ func (c *ServerCmd) Run() error {
 		MaxStatsHands:         c.MaxStatsHands,
 		EnableLatencyTracking: c.LatencyTracking,
 		AuthRequired:          c.AuthRequired,
+		InfiniteBankroll:      c.InfiniteBankroll,
 	}
 
 	// Create and start server
