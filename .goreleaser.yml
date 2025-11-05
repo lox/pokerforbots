@@ -70,6 +70,7 @@ dockers_v2:
       VERSION: "{{ .Version }}"
     platforms:
       - linux/amd64
+      - linux/arm64
     labels:
       "org.opencontainers.image.created": "{{ .Date }}"
       "org.opencontainers.image.title": "pokerforbots"
