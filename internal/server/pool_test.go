@@ -300,6 +300,66 @@ func TestBotPoolStatistics(t *testing.T) {
 	}
 }
 
+func TestBotPoolReconnectWithSameID(t *testing.T) {
+	t.Parallel()
+
+	config := testPoolConfig(3, 4)
+	pool := NewBotPool(testLogger(), randutil.New(42), config)
+	stopPool := startTestPool(t, pool)
+	defer stopPool()
+
+	// Register three bots
+	bot1 := newTestBot("test-bot", pool)
+	bot2 := newTestBot("other-bot", pool)
+	bot3 := newTestBot("third-bot", pool)
+
+	pool.Register(bot1)
+	pool.Register(bot2)
+	pool.Register(bot3)
+
+	waitForCondition(t, func() bool {
+		return pool.BotCount() == 3
+	}, 200*time.Millisecond, "Expected 3 bots to be registered")
+
+	// Reconnect bot1 with a new instance but same ID
+	// This simulates a bot disconnecting and reconnecting
+	bot1Reconnected := newTestBot("test-bot", pool)
+	pool.Register(bot1Reconnected)
+
+	// The old bot1 should be replaced in the map
+	// Wait a bit for registration to process
+	time.Sleep(20 * time.Millisecond)
+
+	// Verify the new bot is registered
+	retrieved, ok := pool.GetBot("test-bot")
+	if !ok {
+		t.Fatal("Bot should be retrievable after reconnect")
+	}
+	if retrieved != bot1Reconnected {
+		t.Error("Retrieved bot should be the reconnected instance, not the old one")
+	}
+
+	// Now unregister the OLD bot (simulating late disconnect message)
+	pool.Unregister(bot1)
+
+	// Wait for processing
+	time.Sleep(20 * time.Millisecond)
+
+	// The new bot should still be registered (old bot unregister should be ignored)
+	retrieved, ok = pool.GetBot("test-bot")
+	if !ok {
+		t.Fatal("New bot should still be registered after old bot unregister")
+	}
+	if retrieved != bot1Reconnected {
+		t.Error("Retrieved bot should still be the reconnected instance")
+	}
+
+	// Pool should still have 3 bots
+	if pool.BotCount() != 3 {
+		t.Errorf("Expected 3 bots, got %d", pool.BotCount())
+	}
+}
+
 // waitForCondition waits for a condition to be true with timeout
 func waitForCondition(t *testing.T, condition func() bool, timeout time.Duration, errMsg string) {
 	t.Helper()
