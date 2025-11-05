@@ -57,6 +57,23 @@ changelog:
     - title: Others
       order: 999
 
+dockers:
+  - image_templates:
+      - "ghcr.io/lox/pokerforbots:{{ .Version }}"
+      - "ghcr.io/lox/pokerforbots:{{ .Major }}"
+      - "ghcr.io/lox/pokerforbots:{{ .Major }}.{{ .Minor }}"
+      - "ghcr.io/lox/pokerforbots:latest"
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title=pokerforbots"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source=https://github.com/lox/pokerforbots"
+      - "--build-arg=VERSION={{.Version}}"
+      - "--platform=linux/amd64"
+
 release:
   github:
     owner: lox
@@ -69,5 +86,11 @@ release:
     ## PokerForBots {{ .Tag }}
 
     High-performance poker server for bot-vs-bot play.
+    
+    ### Docker Image
+    
+    ```bash
+    docker pull ghcr.io/lox/pokerforbots:{{ .Version }}
+    ```
   footer: |
     **Full Changelog**: https://github.com/lox/pokerforbots/compare/{{ .PreviousTag }}...{{ .Tag }}
