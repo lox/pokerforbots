@@ -446,8 +446,18 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate authentication if token provided
+	// Validate authentication
 	var authBotID, ownerID string
+	
+	// If auth is required and no token provided, reject
+	if s.config.AuthRequired && connectMsg.AuthToken == "" {
+		s.logger.Warn().
+			Str("bot_name", connectMsg.Name).
+			Msg("authentication required but no token provided")
+		_ = conn.Close()
+		return
+	}
+	
 	if connectMsg.AuthToken != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
