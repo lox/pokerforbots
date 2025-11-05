@@ -68,6 +68,8 @@ dockers_v2:
     dockerfile: Dockerfile
     build_args:
       VERSION: "{{ .Version }}"
+    platforms:
+      - linux/amd64
     labels:
       "org.opencontainers.image.created": "{{ .Date }}"
       "org.opencontainers.image.title": "pokerforbots"
