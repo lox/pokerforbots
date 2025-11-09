@@ -15,6 +15,24 @@ Binary protocol using msgpack for efficient bot-to-server communication. Optimiz
 
 All messages are msgpack-encoded with minimal fields for speed.
 
+## Message Catalog
+
+**Client → Server**
+- `connect`
+- `action`
+
+**Server → Client**
+- `hand_start`
+- `action_request`
+- `player_action`
+- `game_update`
+- `street_change`
+- `hand_result`
+- `game_completed`
+- `error`
+
+> There is no dedicated `game_start` payload. Bots learn that a game is underway when the first `hand_start` arrives and they learn that it is over when `game_completed` is broadcast.
+
 ## Client → Server Messages
 
 ### Connect
@@ -25,7 +43,7 @@ Sent immediately after WebSocket connection established.
   "name": "BotName",          // Bot identifier (max 32 chars)
   "game": "default",          // Preferred game/table identifier (optional, defaults to server's default game)
   "auth_token": "...",        // (optional/TODO) Authentication credential
-  "protocol_version": "2"     // Protocol version: "1" (legacy) or "2" (simplified, default)
+  "protocol_version": "2"     // Protocol version: "1" (legacy, default) or "2" (simplified, recommended)
 }
 ```
 
@@ -35,7 +53,7 @@ If `game` is omitted the server will place the bot in the default game (until th
 - **Version 2** (recommended): Simplified 4-action protocol (`fold`, `call`, `raise`, `allin`). The server handles context-dependent normalization (e.g., `call` with `to_call=0` becomes `check` internally).
 - **Version 1** (default, legacy): Full 6-action protocol (`fold`, `check`, `call`, `bet`, `raise`, `allin`). Used for backward compatibility with existing bots.
 
-If `protocol_version` is omitted, the server defaults to version 1 for backward compatibility. New bots should explicitly set `"protocol_version": "2"`.
+If `protocol_version` is omitted (or any unsupported value is supplied) the server coerces the session to version 1 for backward compatibility. New bots should explicitly set `"protocol_version": "2"` so they can use the simplified action vocabulary.
 
 ### Game Discovery & Selection *(TODO)*
 Planned additions to allow bots to list, join, and leave named game instances:
@@ -82,19 +100,23 @@ Sent when a new hand begins. Bot receives hole cards and game setup.
 ```
 {
   "type": "hand_start",
-  "hand_id": 12345,         // Unique hand identifier
-  "hole_cards": ["As", "Kh"], // Your two cards (string format)
-  "seat": 2,                // Your seat position (0-8)
-  "button": 0,               // Button seat position
-  "players": [               // All players in hand
-    {"seat": 0, "name": "Bot1", "chips": 1000},
+  "hand_id": "hand-42",         // Unique hand identifier (string)
+  "hole_cards": ["As", "Kh"],   // Always two cards
+  "your_seat": 2,                // Your seat index (0-based)
+  "button": 0,                   // Button seat index
+  "players": [                   // All seats, including you
+    {"seat": 0, "name": "bot-1", "chips": 1000},
     {"seat": 2, "name": "YourBot", "chips": 1000},
-    {"seat": 4, "name": "Bot3", "chips": 1000}
+    {"seat": 4, "name": "bot-3", "chips": 1000}
   ],
-  "small_blind": 5,          // Small blind amount
-  "big_blind": 10            // Big blind amount
+  "small_blind": 5,
+  "big_blind": 10
 }
 ```
+
+Fields:
+- `players[].bet`, `players[].folded`, and `players[].all_in` are omitted at hand start (zero values) but appear in later updates once action has occurred.
+- `name` is rendered from the observer's point of view – opponents appear as `bot-#` while your own seat uses your configured display name (see `internal/server/hand_runner.go` for the `displayName` logic).
 
 ### Action Request
 Server asks the acting bot to choose an action.
@@ -120,7 +142,7 @@ Field semantics:
 - `valid_actions` – subset of legal actions based on protocol version:
   - **Protocol v2**: `fold`, `call`, `raise`, `allin` (simplified vocabulary)
   - **Protocol v1**: `fold`, `check`, `call`, `bet`, `raise`, `allin` (semantic vocabulary)
-- `time_remaining` – deadline in milliseconds. Missing it causes the server to fold the hand automatically.
+- `time_remaining` – deadline in milliseconds. The value equals the server's configured timeout (it is not a live countdown). Missing it causes the server to fold the hand automatically.
 
 ### Player Action
 Broadcast immediately after every player action (including blind posts and auto-folds) so all bots can mirror wagering state.
@@ -148,6 +170,8 @@ Action vocabulary:
 - `post_small_blind`, `post_big_blind` – forced blinds at hand start.
 - `timeout_fold` – server auto-folded the player due to timeout or disconnect.
 
+`player_name` is also perspective-aware (self = configured display name, opponents = `bot-#`).
+
 ### Game Update
 Sent periodically to snapshot the full table state (e.g., after each action).
 
@@ -166,6 +190,8 @@ Sent periodically to snapshot the full table state (e.g., after each action).
 
 `bet` reflects the total chips each player has committed on the current street, `chips` is their remaining stack, and the boolean flags indicate folded/all-in status.
 
+As with other broadcasts, the `name` field is rendered from each recipient's viewpoint.
+
 ### Street Change
 Sent when moving to next betting round.
 ```
@@ -182,19 +208,27 @@ Sent at hand completion with winner(s) and final state.
 ```
 {
   "type": "hand_result",
+  "hand_id": "hand-42",
   "winners": [
     {
-      "seat": 2,
-      "amount": 200,         // Amount won
-      "hand_rank": "Two Pair", // Hand description
-      "hole_cards": ["As", "Kh"] // Winner's cards (if showdown)
+      "name": "bot-1",
+      "amount": 200,
+      "hand_rank": "Two Pair, Aces and Kings",
+      "hole_cards": ["As", "Kh"]
     }
   ],
-  "board": ["Ah", "Kd", "7c", "2s", "9h"], // Final board
-  "pot": 200,                // Final pot size
-  "showdown": true           // Whether cards were shown
+  "board": ["Ah", "Kd", "7c", "2s", "9h"],
+  "showdown": [              // Other hands that reached showdown but lost
+    {
+      "name": "bot-2",
+      "hole_cards": ["Qd", "Qs"],
+      "hand_rank": "Pair of Queens"
+    }
+  ]
 }
 ```
+
+`winners[].name` and `showdown[].name` are perspective-aware labels. `showdown` is omitted unless at least one losing player exposed cards at showdown.
 
 ### Game Completed
 Broadcast exactly once when a game instance stops creating new hands (for example, when a configured hand limit is reached). Bots can treat this as the end of a simulation run and disconnect or request a fresh game.
@@ -216,24 +250,45 @@ Broadcast exactly once when a game instance stops creating new hands (for exampl
       "total_won": 94210,
       "total_lost": 81360,
       "last_delta": 180,
+      "timeouts": 3,
+      "invalid_actions": 0,
+      "disconnects": 0,
+      "busts": 1,
       "detailed_stats": {  // Optional: only when server has --enable-stats
-        "bb_100": 257.0,
+        "hands": 500,
+        "net_bb": 2570.0,
+        "bb_per_100": 257.0,
         "mean": 25.7,
+        "median": 8.0,
         "std_dev": 68.2,
+        "ci_95_low": -5.1,
+        "ci_95_high": 56.5,
+        "winning_hands": 112,
         "win_rate": 22.4,
+        "showdown_wins": 62,
         "showdown_win_rate": 55.8,
+        "non_showdown_wins": 50,
+        "showdown_bb": 960.0,
+        "non_showdown_bb": 1610.0,
+        "max_pot_bb": 130.0,
+        "big_pots": 12,
+        "vpip": 34.2,
+        "pfr": 21.6,
+        "timeouts": 0,
+        "busts": 1,
+        "responses_tracked": 500,
+        "avg_response_ms": 18.5,
+        "p95_response_ms": 42.0,
         "position_stats": {
           "Button": {"hands": 125, "net_bb": 450.5, "bb_per_hand": 3.6},
-          "Cutoff": {"hands": 125, "net_bb": 320.2, "bb_per_hand": 2.56},
-          // ... other positions
+          "Cutoff": {"hands": 125, "net_bb": 320.2, "bb_per_hand": 2.56}
         },
         "street_stats": {
           "preflop": {"hands_ended": 150, "net_bb": -45.0, "bb_per_hand": -0.3},
           "river": {"hands_ended": 200, "net_bb": 1330.0, "bb_per_hand": 6.65}
         },
-        "hand_category_stats": {  // Only when stats_depth=full
+        "hand_category_stats": {
           "Premium": {"hands": 25, "net_bb": 750.0, "bb_per_hand": 30.0},
-          "Strong": {"hands": 45, "net_bb": 400.0, "bb_per_hand": 8.89},
           "Weak": {"hands": 280, "net_bb": -365.0, "bb_per_hand": -1.3}
         }
       }
@@ -242,17 +297,17 @@ Broadcast exactly once when a game instance stops creating new hands (for exampl
 }
 ```
 
-`reason` currently uses `hand_limit_reached`; additional values may appear as new shutdown triggers are implemented.
+Each entry in `players` matches `protocol.GameCompletedPlayer` and summarizes per-bot aggregates (`hands`, `net_chips`, `avg_per_hand`, `total_won`, `total_lost`, `last_delta`, `timeouts`, `invalid_actions`, `disconnects`, `busts`, plus optional `detailed_stats`).
 
-**DetailedStats fields** (when server runs with `--enable-stats`):
-- `bb_100`: Big blinds won/lost per 100 hands
-- `mean`: Average BB won/lost per hand
-- `std_dev`: Standard deviation of results
-- `win_rate`: Percentage of hands won
-- `showdown_win_rate`: Win rate when reaching showdown
-- `position_stats`: Performance breakdown by table position (BTN, CO, etc.)
-- `street_stats`: Analysis of where hands end (preflop, flop, turn, river, showdown)
-- `hand_category_stats`: Performance by hand strength (Premium, Strong, Medium, Weak)
+`reason` currently emits `hand_limit_reached`, but other reasons (admin stop, fatal error, etc.) may be added later. The `players` array is populated only when statistics collection is enabled; otherwise the list can be empty.
+
+**DetailedStats fields** mirror `protocol.PlayerDetailedStats` and are grouped as follows when `--enable-stats` is active:
+- Summary: `hands`, `net_bb`, `bb_per_100`, `mean`, `median`, `std_dev`, 95% confidence interval bounds.
+- Win/Loss split: `winning_hands`, `win_rate`, `showdown_wins`, `non_showdown_wins`, `showdown_win_rate`, `showdown_bb`, `non_showdown_bb`.
+- Pot metrics: `max_pot_bb`, `big_pots`.
+- Preflop tendencies: `vpip`, `pfr`.
+- Error/response tracking: `timeouts`, `busts`, `responses_tracked`, `avg_response_ms`, `p95_response_ms`, `max_response_ms`, `min_response_ms`, `response_std_ms`, `response_timeouts`, `response_disconnects`.
+- Optional breakdowns (when stats depth allows): `position_stats`, `street_stats`, `hand_category_stats`.
 
 ### Error
 Sent when bot sends invalid message or action.
@@ -292,16 +347,6 @@ Sent when bot sends invalid message or action.
 Notes:
 - The server does not support mid-hand reconnection. Every hand remains independent.
 - Future work will add bot authentication so a reconnecting bot can reclaim its bankroll balance when rejoining the idle pool, but it still starts fresh for upcoming hands.
-
-## Simulation Control *(TODO)*
-
-To support deterministic testing without restarting the process, a privileged control channel will be added:
-
-- `simulate` (client → server, auth required): describe a simulation session (`game_id`, `deck_seed`, `mirror_count`, `hands`, `bot_ids`).
-- `simulation_update` (server → client): stream progress for each generated hand, including mirror index and aggregated chip deltas.
-- `simulation_complete`: emit final statistics when the batch finishes.
-
-These messages are currently unimplemented; the existing protocol is sufficient for single-game bot play.
 
 ## Card Representation
 
