@@ -55,17 +55,6 @@ If `game` is omitted the server will place the bot in the default game (until th
 
 If `protocol_version` is omitted (or any unsupported value is supplied) the server coerces the session to version 1 for backward compatibility. New bots should explicitly set `"protocol_version": "2"` so they can use the simplified action vocabulary.
 
-### Game Discovery & Selection *(TODO)*
-Planned additions to allow bots to list, join, and leave named game instances:
-
-- `list_games` (client → server): request current catalog.
-- `game_list` (server → client): respond with an array of `{id, blinds, seats, description}`.
-- `join_game` (client → server): ask to enter a specific game.
-- `game_joined` (server → client): confirmation with final configuration.
-- `leave_game` / `game_left`: explicit detachment back to lobby.
-
-Until these messages are implemented, bots are matched in the single default game as described elsewhere in this document.
-
 ### Action
 Response to action_request from server. Must be sent within timeout window.
 
