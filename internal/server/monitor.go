@@ -25,9 +25,10 @@ type HandMonitor interface {
 
 // HandPlayer represents a player at the start of a hand.
 type HandPlayer struct {
-	Seat  int
-	Name  string
-	Chips int
+	Seat      int
+	Name      string
+	Chips     int
+	HoleCards []string // Hole cards for debugging/testing (not sent to other players)
 }
 
 // Blinds represents the blind structure.

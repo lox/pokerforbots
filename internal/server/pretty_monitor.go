@@ -21,19 +21,20 @@ const (
 
 // handState tracks the current hand for pretty printing
 type prettyHandState struct {
-	handID         string
-	players        []HandPlayer
-	button         int
-	smallBlind     int
-	bigBlind       int
-	board          []string
-	currentStreet  string
-	playerStacks   map[int]int
-	playerFolded   map[int]bool
-	playerAllIn    map[int]bool
-	roles          map[int][]string
-	printedStreets map[string]bool
-	printedHole    bool
+	handID          string
+	players         []HandPlayer
+	button          int
+	smallBlind      int
+	bigBlind        int
+	board           []string
+	currentStreet   string
+	playerStacks    map[int]int
+	playerFolded    map[int]bool
+	playerAllIn     map[int]bool
+	playerHoleCards map[int][]string // Hole cards for each seat
+	roles           map[int][]string
+	printedStreets  map[string]bool
+	printedHole     bool
 }
 
 // PrettyPrintMonitor implements HandMonitor for formatted hand display
@@ -82,24 +83,26 @@ func (p *PrettyPrintMonitor) OnHandStart(handID string, players []HandPlayer, bu
 
 	// Initialize hand state
 	p.currentHand = &prettyHandState{
-		handID:         handID,
-		players:        players,
-		button:         button,
-		smallBlind:     blinds.Small,
-		bigBlind:       blinds.Big,
-		board:          []string{},
-		currentStreet:  "preflop",
-		playerStacks:   make(map[int]int),
-		playerFolded:   make(map[int]bool),
-		playerAllIn:    make(map[int]bool),
-		roles:          make(map[int][]string),
-		printedStreets: make(map[string]bool),
-		printedHole:    false,
+		handID:          handID,
+		players:         players,
+		button:          button,
+		smallBlind:      blinds.Small,
+		bigBlind:        blinds.Big,
+		board:           []string{},
+		currentStreet:   "preflop",
+		playerStacks:    make(map[int]int),
+		playerFolded:    make(map[int]bool),
+		playerAllIn:     make(map[int]bool),
+		playerHoleCards: make(map[int][]string),
+		roles:           make(map[int][]string),
+		printedStreets:  make(map[string]bool),
+		printedHole:     false,
 	}
 
-	// Initialize player stacks
+	// Initialize player stacks and hole cards
 	for _, player := range players {
 		p.currentHand.playerStacks[player.Seat] = player.Chips
+		p.currentHand.playerHoleCards[player.Seat] = player.HoleCards
 	}
 
 	// Assign roles
@@ -150,6 +153,16 @@ func (p *PrettyPrintMonitor) OnPlayerAction(handID string, seat int, action stri
 		p.currentHand.printedHole = true
 		fmt.Fprintln(p.writer)
 		fmt.Fprintln(p.writer, colorize("*** HOLE CARDS ***", colorBold+colorBlue))
+
+		// Print hole cards for all players (for testing/debugging)
+		for _, player := range p.currentHand.players {
+			if cards, ok := p.currentHand.playerHoleCards[player.Seat]; ok && len(cards) > 0 {
+				name := fallbackName(player.Name, player.Seat)
+				fmt.Fprintf(p.writer, "Dealt to %s %s\n",
+					colorize(name, colorBold),
+					formatCards(cards))
+			}
+		}
 	}
 
 	// Get player name
