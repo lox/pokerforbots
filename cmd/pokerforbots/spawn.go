@@ -47,8 +47,8 @@ type SpawnCmd struct {
 	WriteStats string `kong:"help='Write stats to file on exit'"`
 	PrintStats bool   `kong:"help='Print stats on exit'"`
 
-	// Display mode
-	Pretty bool `kong:"help='Display hands in pretty format instead of logs'"`
+	// Output format
+	Output string `kong:"default='logs',enum='logs,bot-cmd,hand-history',help='Output format: logs (all logs), bot-cmd (only custom bot logs), hand-history (pretty hand visualization)'"`
 
 	// Logging
 	LogLevel string `kong:"help='Log level (debug|info|warn|error)'"`
@@ -68,8 +68,8 @@ func (c *SpawnCmd) Run() error {
 		level = zerolog.ErrorLevel
 	}
 
-	// In pretty mode, suppress most logs unless explicitly set
-	if c.Pretty && c.LogLevel == "" {
+	// In hand-history mode, suppress most logs unless explicitly set
+	if c.Output == "hand-history" && c.LogLevel == "" {
 		level = zerolog.WarnLevel
 	}
 
@@ -96,7 +96,7 @@ func (c *SpawnCmd) Run() error {
 	wsURL := fmt.Sprintf("ws://%s/ws", listener.Addr())
 
 	// Now parse bot specifications with the WebSocket URL
-	specs, err := parseSpecString(c.Spec, wsURL)
+	specs, err := parseSpecString(c.Spec, wsURL, c.Output)
 	if err != nil {
 		return fmt.Errorf("failed to parse spec: %w", err)
 	}
@@ -109,10 +109,12 @@ func (c *SpawnCmd) Run() error {
 		if len(parts) == 0 {
 			continue
 		}
+		// Custom bot logs are suppressed only in hand-history mode
 		specs = append(specs, spawner.BotSpec{
-			Command: parts[0],
-			Args:    parts[1:], // Don't append wsURL - bot should use POKERFORBOTS_SERVER
-			Count:   c.Count,
+			Command:   parts[0],
+			Args:      parts[1:], // Don't append wsURL - bot should use POKERFORBOTS_SERVER
+			Count:     c.Count,
+			QuietLogs: c.Output == "hand-history",
 		})
 	}
 
@@ -130,7 +132,7 @@ func (c *SpawnCmd) Run() error {
 	minPlayers := c.MinPlayers
 	if minPlayers == 0 {
 		minPlayers = max(2, min(totalBots, c.MaxPlayers))
-		if !c.Pretty {
+		if c.Output != "hand-history" {
 			logger.Info().Int("min_players", minPlayers).Int("total_bots", totalBots).Msg("Auto-setting min-players to match bot count")
 		}
 	}
@@ -168,8 +170,8 @@ func (c *SpawnCmd) Run() error {
 		return fmt.Errorf("server failed to start: %w", err)
 	}
 
-	// Set up pretty printer if requested
-	if c.Pretty {
+	// Set up hand-history monitor if requested
+	if c.Output == "hand-history" {
 		monitor := server.NewPrettyPrintMonitor(os.Stdout)
 		srv.SetHandMonitor(monitor)
 	} else {
@@ -179,16 +181,13 @@ func (c *SpawnCmd) Run() error {
 		}
 	}
 
-	if !c.Pretty {
+	if c.Output != "hand-history" {
 		logger.Info().Str("spec", c.Spec).Int("additional", len(c.BotCmd)).Int("total_bots", totalBots).Msg("Spawning bots")
 	}
 
 	// Create spawner and spawn bots
+	// Note: Per-bot quiet logs are handled by BotSpec.QuietLogs, not here
 	spawnerLogger := logger
-	if c.Pretty {
-		// Create a quiet logger for bot processes in pretty mode
-		spawnerLogger = zerolog.New(io.Discard).Level(zerolog.Disabled)
-	}
 
 	botSpawner := spawner.NewWithSeed(wsURL, spawnerLogger, seed)
 	defer botSpawner.StopAll()
@@ -197,7 +196,7 @@ func (c *SpawnCmd) Run() error {
 		return fmt.Errorf("failed to spawn bots: %w", err)
 	}
 
-	if !c.Pretty {
+	if c.Output != "hand-history" {
 		logger.Info().Int("count", botSpawner.ActiveCount()).Msg("Bots spawned")
 	}
 
@@ -233,7 +232,7 @@ func (c *SpawnCmd) Run() error {
 	case <-ctx.Done():
 		logger.Info().Msg("Shutting down...")
 	case <-srv.DefaultGameDone():
-		if !c.Pretty {
+		if c.Output != "hand-history" {
 			logger.Info().Msg("Hand limit reached")
 		}
 	case err := <-serverErr:
@@ -271,7 +270,7 @@ func (c *SpawnCmd) Run() error {
 	time.Sleep(100 * time.Millisecond)
 
 	// Stop bots (will be done by defer)
-	if !c.Pretty {
+	if c.Output != "hand-history" {
 		logger.Info().Msg("Stopping bots...")
 	}
 
@@ -279,7 +278,7 @@ func (c *SpawnCmd) Run() error {
 }
 
 // parseSpecString parses a specification string like "calling-station:2,random:1,aggressive:3"
-func parseSpecString(spec string, wsURL string) ([]spawner.BotSpec, error) {
+func parseSpecString(spec string, wsURL string, outputMode string) ([]spawner.BotSpec, error) {
 	if spec == "" {
 		return nil, nil
 	}
@@ -314,6 +313,7 @@ func parseSpecString(spec string, wsURL string) ([]spawner.BotSpec, error) {
 		// Check if it's a built-in bot or a custom command
 		var command string
 		var args []string
+		var isBuiltIn bool
 
 		if strings.Contains(strategy, "/") || strings.Contains(strategy, ".") {
 			// Custom command (e.g., "./my-bot")
@@ -324,16 +324,29 @@ func parseSpecString(spec string, wsURL string) ([]spawner.BotSpec, error) {
 			command = fields[0]
 			args = fields[1:]
 			args = append(args, wsURL)
+			isBuiltIn = false
 		} else {
 			// Built-in bot - use pokerforbots bot subcommand
 			command = pokerforbotsBin
 			args = []string{"bot", strategy, "--server", wsURL}
+			isBuiltIn = true
+		}
+
+		// Determine if logs should be suppressed for this bot
+		quietLogs := false
+		if isBuiltIn {
+			// Suppress built-in bot logs in bot-cmd and hand-history modes
+			quietLogs = (outputMode == "bot-cmd" || outputMode == "hand-history")
+		} else {
+			// Suppress custom bot logs only in hand-history mode
+			quietLogs = (outputMode == "hand-history")
 		}
 
 		specs = append(specs, spawner.BotSpec{
-			Command: command,
-			Args:    args,
-			Count:   count,
+			Command:   command,
+			Args:      args,
+			Count:     count,
+			QuietLogs: quietLogs,
 		})
 	}
 
