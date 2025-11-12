@@ -326,9 +326,10 @@ func (hr *HandRunner) broadcastHandStart() {
 				displayName = bot.ID // Fallback to ID if no display name
 			}
 			players[i] = HandPlayer{
-				Seat:  i,
-				Name:  displayName,
-				Chips: player.Chips,
+				Seat:        i,
+				Name:        bot.ID,      // Stable bot ID for stats tracking
+				DisplayName: displayName, // Human-readable name for display
+				Chips:       player.Chips,
 				HoleCards: []string{
 					player.HoleCards.GetCard(0).String(),
 					player.HoleCards.GetCard(1).String(),

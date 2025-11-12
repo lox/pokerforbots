@@ -115,7 +115,7 @@ func (p *PrettyPrintMonitor) OnHandStart(handID string, players []HandPlayer, bu
 	// Print players
 	for _, player := range players {
 		seatNum := player.Seat + 1
-		name := p.formatPlayerName(player.Seat, player.Name, false, false)
+		name := p.formatPlayerName(player.Seat, player.DisplayName, false, false)
 		line := fmt.Sprintf("Seat %d: %s", seatNum, name)
 		line += fmt.Sprintf(" (%s in chips)", formatAmountPlain(player.Chips))
 		fmt.Fprintln(p.writer, line)
@@ -157,7 +157,7 @@ func (p *PrettyPrintMonitor) OnPlayerAction(handID string, seat int, action stri
 		// Print hole cards for all players (for testing/debugging)
 		for _, player := range p.currentHand.players {
 			if cards, ok := p.currentHand.playerHoleCards[player.Seat]; ok && len(cards) > 0 {
-				name := fallbackName(player.Name, player.Seat)
+				name := fallbackName(player.DisplayName, player.Seat)
 				fmt.Fprintf(p.writer, "Dealt to %s %s\n",
 					colorize(name, colorBold),
 					formatCards(cards))
@@ -169,7 +169,7 @@ func (p *PrettyPrintMonitor) OnPlayerAction(handID string, seat int, action stri
 	playerName := "Unknown"
 	for _, player := range p.currentHand.players {
 		if player.Seat == seat {
-			playerName = player.Name
+			playerName = player.DisplayName
 			break
 		}
 	}
