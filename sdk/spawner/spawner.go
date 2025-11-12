@@ -30,11 +30,12 @@ type BotSpawner struct {
 
 // BotSpec defines a bot to spawn.
 type BotSpec struct {
-	Command string            // Command to execute (e.g. "go")
-	Args    []string          // Arguments (e.g. ["run", "./sdk/examples/calling-station"])
-	Count   int               // Number to spawn
-	GameID  string            // Target game (default: "default")
-	Env     map[string]string // Additional environment variables
+	Command   string            // Command to execute (e.g. "go")
+	Args      []string          // Arguments (e.g. ["run", "./sdk/examples/calling-station"])
+	Count     int               // Number to spawn
+	GameID    string            // Target game (default: "default")
+	Env       map[string]string // Additional environment variables
+	QuietLogs bool              // Suppress process output logs
 }
 
 // GameStats represents game statistics from the server.
@@ -109,8 +110,14 @@ func (s *BotSpawner) Spawn(specs ...BotSpec) error {
 			// Build environment with deterministic bot ID
 			env := s.buildEnvWithID(spec, botID)
 
+			// Create logger - use quiet logger if requested
+			procLogger := s.logger
+			if spec.QuietLogs {
+				procLogger = zerolog.New(io.Discard).Level(zerolog.Disabled)
+			}
+
 			// Create and start process
-			proc := NewProcess(s.ctx, spec.Command, spec.Args, env, s.logger)
+			proc := NewProcess(s.ctx, spec.Command, spec.Args, env, procLogger)
 			if err := proc.Start(); err != nil {
 				s.logger.Error().Err(err).Int("index", i).Msg("Failed to spawn bot")
 				// Stop previously spawned bots on error
