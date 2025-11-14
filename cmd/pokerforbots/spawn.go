@@ -48,7 +48,7 @@ type SpawnCmd struct {
 	PrintStats bool   `kong:"help='Print stats on exit'"`
 
 	// Output format
-	Output string `kong:"default='logs',enum='logs,bot-cmd,hand-history,dots',help='Output format: logs (all logs), bot-cmd (only custom bot logs), hand-history (pretty hand visualization), dots (progress dots with win/loss colors)'"`
+	Output string `kong:"default='logs',enum='logs,bot-cmd,hand-history,dots,list',help='Output format: logs (all logs), bot-cmd (only custom bot logs), hand-history (pretty hand visualization), dots (progress dots with win/loss colors), list (one line per hand with winner and BB)'"`
 
 	// Logging
 	LogLevel string `kong:"help='Log level (debug|info|warn|error)'"`
@@ -68,8 +68,8 @@ func (c *SpawnCmd) Run() error {
 		level = zerolog.ErrorLevel
 	}
 
-	// In hand-history and dots modes, suppress most logs unless explicitly set
-	if (c.Output == "hand-history" || c.Output == "dots") && c.LogLevel == "" {
+	// In hand-history, dots, and list modes, suppress most logs unless explicitly set
+	if (c.Output == "hand-history" || c.Output == "dots" || c.Output == "list") && c.LogLevel == "" {
 		level = zerolog.WarnLevel
 	}
 
@@ -109,12 +109,12 @@ func (c *SpawnCmd) Run() error {
 		if len(parts) == 0 {
 			continue
 		}
-		// Custom bot logs are suppressed in hand-history and dots modes
+		// Custom bot logs are suppressed in hand-history, dots, and list modes
 		specs = append(specs, spawner.BotSpec{
 			Command:   parts[0],
 			Args:      parts[1:], // Don't append wsURL - bot should use POKERFORBOTS_SERVER
 			Count:     c.Count,
-			QuietLogs: c.Output == "hand-history" || c.Output == "dots",
+			QuietLogs: c.Output == "hand-history" || c.Output == "dots" || c.Output == "list",
 		})
 	}
 
@@ -132,7 +132,7 @@ func (c *SpawnCmd) Run() error {
 	minPlayers := c.MinPlayers
 	if minPlayers == 0 {
 		minPlayers = max(2, min(totalBots, c.MaxPlayers))
-		if c.Output != "hand-history" && c.Output != "dots" {
+		if c.Output != "hand-history" && c.Output != "dots" && c.Output != "list" {
 			logger.Info().Int("min_players", minPlayers).Int("total_bots", totalBots).Msg("Auto-setting min-players to match bot count")
 		}
 	}
@@ -178,6 +178,9 @@ func (c *SpawnCmd) Run() error {
 	case "dots":
 		monitor := server.NewDotsMonitor(os.Stdout)
 		srv.SetHandMonitor(monitor)
+	case "list":
+		monitor := server.NewListMonitor(os.Stdout)
+		srv.SetHandMonitor(monitor)
 	default:
 		logger.Info().Str("url", wsURL).Msg("Server started")
 		if c.Seed != 0 {
@@ -185,7 +188,7 @@ func (c *SpawnCmd) Run() error {
 		}
 	}
 
-	if c.Output != "hand-history" && c.Output != "dots" {
+	if c.Output != "hand-history" && c.Output != "dots" && c.Output != "list" {
 		logger.Info().Str("spec", c.Spec).Int("additional", len(c.BotCmd)).Int("total_bots", totalBots).Msg("Spawning bots")
 	}
 
@@ -200,7 +203,7 @@ func (c *SpawnCmd) Run() error {
 		return fmt.Errorf("failed to spawn bots: %w", err)
 	}
 
-	if c.Output != "hand-history" && c.Output != "dots" {
+	if c.Output != "hand-history" && c.Output != "dots" && c.Output != "list" {
 		logger.Info().Int("count", botSpawner.ActiveCount()).Msg("Bots spawned")
 	}
 
@@ -236,7 +239,7 @@ func (c *SpawnCmd) Run() error {
 	case <-ctx.Done():
 		logger.Info().Msg("Shutting down...")
 	case <-srv.DefaultGameDone():
-		if c.Output != "hand-history" && c.Output != "dots" {
+		if c.Output != "hand-history" && c.Output != "dots" && c.Output != "list" {
 			logger.Info().Msg("Hand limit reached")
 		}
 	case err := <-serverErr:
@@ -274,7 +277,7 @@ func (c *SpawnCmd) Run() error {
 	time.Sleep(100 * time.Millisecond)
 
 	// Stop bots (will be done by defer)
-	if c.Output != "hand-history" && c.Output != "dots" {
+	if c.Output != "hand-history" && c.Output != "dots" && c.Output != "list" {
 		logger.Info().Msg("Stopping bots...")
 	}
 
@@ -339,11 +342,11 @@ func parseSpecString(spec string, wsURL string, outputMode string) ([]spawner.Bo
 		// Determine if logs should be suppressed for this bot
 		quietLogs := false
 		if isBuiltIn {
-			// Suppress built-in bot logs in bot-cmd, hand-history, and dots modes
-			quietLogs = (outputMode == "bot-cmd" || outputMode == "hand-history" || outputMode == "dots")
+			// Suppress built-in bot logs in bot-cmd, hand-history, dots, and list modes
+			quietLogs = (outputMode == "bot-cmd" || outputMode == "hand-history" || outputMode == "dots" || outputMode == "list")
 		} else {
-			// Suppress custom bot logs in hand-history and dots modes
-			quietLogs = (outputMode == "hand-history" || outputMode == "dots")
+			// Suppress custom bot logs in hand-history, dots, and list modes
+			quietLogs = (outputMode == "hand-history" || outputMode == "dots" || outputMode == "list")
 		}
 
 		specs = append(specs, spawner.BotSpec{
