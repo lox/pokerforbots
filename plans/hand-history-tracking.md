@@ -1,8 +1,8 @@
 # Hand History Tracking
 
 - Owner: @lox
-- Status: in-progress (implementation complete, critical bugs found in testing)
-- Updated: 2025-11-15
+- Status: complete
+- Updated: 2025-11-16
 - Tags: feature, server, observability
 - Scope: internal/phh, internal/server, cmd/pokerforbots
 - Risk: low
@@ -17,33 +17,26 @@
 ## Current Status
 
 **Implementation**: ✅ Complete (all phases 1-6)
-**Testing**: ⚠️ Critical bugs found in PHH output
+**Testing**: ✅ All acceptance criteria met
 
-### Critical Bugs to Fix
+### Implementation Summary
 
-**Bug 1: Board cards repeat entire board each street** ❌
-- **Expected**: Each `d db` action shows ONLY new cards for that street
-  - Flop: `"d db 5dJdAh"` ✓
-  - Turn: `"d db 6s"` (just turn card)
-  - River: `"d db 5s"` (just river card)
-- **Actual**: Turn shows `"d db 5dJdAh6s"` (repeating flop + turn)
-- **Impact**: PHH spec violation, parsers will reconstruct board incorrectly
-- **Fix location**: `internal/server/hand_history/monitor.go` - `OnStreetChange` needs to emit only new cards, not cumulative board
-
-**Bug 2: All-in showing as `cbr 0`** ❌
-- **Expected**: `"p4 cbr 630"` (cumulative total bet this street)
-- **Actual**: `"p4 cbr 0"` when player goes all-in
-- **Impact**: PHH loses bet sizing information on all-ins
-- **Fix location**: `internal/server/hand_history/monitor.go` - `OnPlayerAction` seat contribution tracking for all-ins
-
-### What Works ✅
-- Hole cards masked as `????` by default
-- Cumulative bet amounts on normal raises (e.g., 20→30→40→50→60)
-- Blind posts correctly skipped
-- Valid TOML structure
-- Buffer concurrency (no races detected)
-- Flush failure state machine
-- Manager lifecycle (register/unregister)
+All critical bugs resolved and verified:
+- ✅ Board cards emit in chronological order (flop=3, turn=1, river=1)
+- ✅ All-in actions show correct cumulative bet amounts
+- ✅ Player rotation (SB-first) per PHH spec
+- ✅ 100% PHH spec compliance (no custom extensions)
+- ✅ UTC timestamp normalization
+- ✅ Accurate showdown tracking via actual card reveals
+- ✅ Bulk `.phhs` format with section headers
+- ✅ Hole cards masked as `????` by default
+- ✅ Cumulative bet amounts on all raises
+- ✅ Blind posts correctly skipped
+- ✅ Valid TOML structure
+- ✅ Buffer concurrency (no races detected)
+- ✅ Flush failure state machine (3 strikes → disable)
+- ✅ Manager lifecycle (register/unregister)
+- ✅ Flushing flag properly cleared via defer
 
 ## Goals
 
@@ -409,17 +402,17 @@ hands/
     └── session.phhs
 ```
 
-Each `session.phhs` contains multiple hands separated by comment dividers:
+Each `session.phhs` contains multiple hands with section headers:
 
 ```toml
+[1]
 variant = "NT"
-hand_id = "hand-1"
+hand = "hand-1"
 # ... hand 1 data ...
 
-# ────────────────────────────────────────
-
+[2]
 variant = "NT"
-hand_id = "hand-2"
+hand = "hand-2"
 # ... hand 2 data ...
 ```
 
@@ -445,15 +438,18 @@ hand_id = "hand-2"
 
 ## Acceptance Criteria
 
-- [ ] PHH files are valid TOML and parseable by standard TOML libraries
-- [ ] Hand histories include all required PHH fields (variant, stacks, actions)
-- [ ] Buffering reduces disk I/O to 1 write per 100 hands or 10 seconds
-- [ ] Graceful shutdown flushes all buffered hands (0% data loss)
-- [ ] Memory overhead < 5MB per game (measured at 100 hand buffer)
-- [ ] No measurable performance regression in spawn throughput (350+ hands/sec maintained)
-- [ ] Multi-game server correctly isolates hand histories by game ID
-- [ ] Hole cards are excluded by default, included only with `--hand-history-hole-cards`
-- [ ] All tests pass including race detection: `go test -race ./...`
+- [x] PHH files are valid TOML and parseable by standard TOML libraries
+- [x] Hand histories include all required PHH fields (variant, stacks, actions)
+- [x] Buffering reduces disk I/O to 1 write per 100 hands or 10 seconds
+- [x] Graceful shutdown flushes all buffered hands (0% data loss)
+- [x] Memory overhead < 5MB per game (measured at 100 hand buffer)
+- [x] No measurable performance regression in spawn throughput (350+ hands/sec maintained)
+- [x] Multi-game server correctly isolates hand histories by game ID
+- [x] Hole cards are excluded by default, included only with `--hand-history-hole-cards`
+- [x] All tests pass including race detection: `go test -race ./...`
+- [x] 100% PHH spec compliance (no custom extensions)
+- [x] Player rotation follows PHH spec (SB-first ordering)
+- [x] UTC timestamps for consistent time handling
 
 ## Risks & Mitigations
 
@@ -500,7 +496,7 @@ pokerforbots spawn --spec "complex:6" --hand-limit 1000 --output dots --hand-his
 - [x] Implement card notation conversion (10c → Tc)
 - [x] Write PHH encoder unit tests (valid TOML, action notation)
 
-**Phase 2 - Monitor**: ⚠️ BUGS FOUND
+**Phase 2 - Monitor**: ✅ COMPLETE
 - [x] Create `internal/server/hand_history/` subpackage
 - [x] Implement `Monitor` with mutex-protected buffer
 - [x] Add `seatContributions` tracking for cumulative bet calculation
@@ -514,9 +510,12 @@ pokerforbots spawn --spec "complex:6" --hand-limit 1000 --output dots --hand-his
 - [x] Write test: seat contributions reset per street
 - [x] Write test: hole card masking on/off
 - [x] Write test: disabled monitor short-circuits and stops buffering
-- [x] **BUG FIX**: `OnStreetChange` should emit only new cards, not cumulative board (preserved via `HandState.BoardCards` + `TestBoardCardsPreserveDealingOrder`)
-- [x] **BUG FIX**: All-in actions showing `cbr 0` instead of actual cumulative amount
-- [x] Replace `[metadata]` table with proper PHH fields (seat_count, button, seats, street_*, total_pot, winners, etc.) per spec
+- [x] Fixed board card ordering via `HandState.BoardCards()` chronological tracking
+- [x] Fixed all-in bet amount tracking with proper seat contributions
+- [x] Implement PHH spec-compliant fields (no custom `_` extensions)
+- [x] Add player rotation (SB-first ordering per spec)
+- [x] Implement UTC timestamp normalization
+- [x] Add accurate showdown tracking via card reveal actions
 
 **Phase 3 - Manager**: ✅ COMPLETE
 - [x] Implement `Manager` with mutex-protected monitor registry
@@ -545,15 +544,18 @@ pokerforbots spawn --spec "complex:6" --hand-limit 1000 --output dots --hand-his
 - [x] Write integration test: full hand → valid PHH file
 - [x] Write integration test: multi-game file isolation
 - [x] Write integration test: graceful shutdown flush
-- [x] **VERIFICATION NEEDED**: cumulative bet amounts in PHH (see `TestMonitorRecordsAllInCumulativeBet`)
+- [x] Write integration test: board card ordering (`TestHandRunnerEmitsOrderedBoardSlices`)
+- [x] Write integration test: PHH monitor captures ordered board (`TestHandHistoryMonitorCapturesOrderedBoard`)
+- [x] Add regression test: all-in cumulative bet tracking (`TestMonitorRecordsAllInCumulativeBet`)
+- [x] Add regression test: manager failure state machine (`TestManagerDisablesMonitorAfterRepeatedFailures`)
+- [x] Add regression test: concurrent CreateMonitor prevention (`TestManagerCreateMonitorPreventsDuplicates`)
+- [x] Add regression test: auto-win doesn't mark showdown (`TestHandRunnerAutoWinDoesNotMarkShowdown`)
 - [x] Benchmark spawn throughput with/without hand history
 - [x] Create `docs/hand-history.md` with format guide
 - [x] Update `docs/operations.md` with usage examples
-- [x] Add `examples/analyze-phh.py` parsing demo
 - [x] Update README with hand history feature
-
-**Remaining Work**:
-- [x] Re-test with `--hand-history-hole-cards` to verify showdown card recording (`go run ./cmd/pokerforbots spawn --spec "calling-station:2" --hand-limit 5 --output dots --hand-history --hand-history-dir ./.tmp-hands --hand-history-hole-cards` on 2025-11-16)
+- [x] Verify with `--hand-history-hole-cards` for showdown card recording
+- [x] Verify PHH spec compliance against official documentation
 
 ## Future Extensions
 
