@@ -29,6 +29,7 @@ PokerForBots is a complete, production-ready poker server for bot-vs-bot play.
 - `pokerforbots client` - Interactive human client
 - Multi-game support with independent hand limits
 - Deterministic testing with seed support
+- Optional PHH hand history recorder with buffered flushing (`--hand-history`)
 
 ### Testing ✅
 - Comprehensive unit tests for all core logic

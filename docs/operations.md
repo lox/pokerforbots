@@ -71,6 +71,18 @@ pokerforbots bot aggressive ws://localhost:8080/ws --game high-stakes
 ./my-bot --server ws://localhost:8080/ws --game high-stakes
 ```
 
+## Hand History Recording
+
+Set `--hand-history` (on either `spawn` or `server`) to persist every hand in PHH format. Example (spawn mode):
+
+```bash
+pokerforbots spawn --spec "complex:3,random:3" --hand-limit 200 \
+  --hand-history --hand-history-dir ./hands \
+  --hand-history-flush-secs 5 --hand-history-flush-hands 50
+```
+
+The standalone server exposes the same flags. Hand histories are written to `<dir>/game-<id>/session.phhs`. See [docs/hand-history.md](hand-history.md) for details on the PHH format, configuration options, and parsing.
+
 ## Monitoring
 
 The server exposes HTTP endpoints for monitoring and discovery:
