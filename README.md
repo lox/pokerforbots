@@ -50,6 +50,7 @@ pokerforbots client --name Alice
 - [Poker Rules](docs/poker-rules.md) - No-limit Hold'em rules implementation
 - [Go SDK](docs/sdk.md) - Bot development SDK
 - [Operations](docs/operations.md) - Server operation and monitoring
+- [Hand History](docs/hand-history.md) - PHH recording and tooling
 - [HTTP API](docs/http-api.md) - REST endpoints for stats and control
 - [Benchmarking](docs/benchmarking.md) - Performance testing
 
@@ -62,6 +63,7 @@ The `pokerforbots` CLI provides these sub-commands:
 - **`regression`** - Statistical bot comparison
 - **`server`** - Standalone poker server
 - **`client`** - Interactive human client
+- **`hand-history render`** - Pretty-print PHH session files
 
 Run `pokerforbots <command> --help` for detailed options.
 

@@ -225,15 +225,15 @@ func (p *PrettyPrintMonitor) OnHandComplete(outcome HandOutcome) {
 		}
 	}
 
-	// Print showdown if applicable
-	hasShowdown := len(showdown) > 0 || (len(winners) > 0 && len(winners[0].HoleCards) > 0)
+	// Print showdown if applicable (i.e. at least two players required)
+	hasShowdown := len(showdown) > 0
 	if hasShowdown {
 		fmt.Fprintln(p.writer)
 		fmt.Fprintln(p.writer, colorize("*** SHOWDOWN ***", colorBold+colorBlue))
 
 		// Show winners
 		for _, winner := range winners {
-			if len(winner.HoleCards) > 0 {
+			if winner.WentToShowdown && len(winner.HoleCards) > 0 {
 				name := p.formatSummaryName(p.getBotDisplayName(winner.Bot))
 				showLine := fmt.Sprintf("%s: shows %s", name, formatCards(winner.HoleCards))
 				// Note: HandRank would need to be added to BotHandOutcome for full detail
@@ -278,9 +278,17 @@ func (p *PrettyPrintMonitor) OnHandComplete(outcome HandOutcome) {
 		// Add outcome description
 		switch {
 		case bot.NetChips > 0:
-			line += fmt.Sprintf(" showed %s and won (%s)", formatCards(bot.HoleCards), formatAmountPlain(bot.NetChips))
+			if bot.WentToShowdown && len(bot.HoleCards) > 0 {
+				line += fmt.Sprintf(" showed %s and won (%s)", formatCards(bot.HoleCards), formatAmountPlain(bot.NetChips))
+			} else {
+				line += fmt.Sprintf(" won (%s)", formatAmountPlain(bot.NetChips))
+			}
 		case bot.WentToShowdown:
-			line += fmt.Sprintf(" showed %s and lost", formatCards(bot.HoleCards))
+			if len(bot.HoleCards) > 0 {
+				line += fmt.Sprintf(" showed %s and lost", formatCards(bot.HoleCards))
+			} else {
+				line += " lost at showdown"
+			}
 		default:
 			// Get street from actions map
 			streetFolded := ""

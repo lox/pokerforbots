@@ -13,6 +13,7 @@ type HandState struct {
 	Button       int
 	Street       Street
 	Board        poker.Hand
+	boardOrder   []poker.Card
 	PotManager   *PotManager
 	ActivePlayer int
 	Deck         *poker.Deck
@@ -367,21 +368,30 @@ func (h *HandState) NextStreet() {
 	}
 	h.Betting.ResetForNewRound(len(h.Players))
 
+	if h.contestingPlayerCount() <= 1 {
+		h.Street = Showdown
+		h.ActivePlayer = -1
+		return
+	}
+
 	// Move to next street and deal community cards
 	switch h.Street {
 	case Preflop:
 		h.Street = Flop
 		cards := h.Deck.Deal(3)
 		for _, c := range cards {
+			h.boardOrder = append(h.boardOrder, c)
 			h.Board |= poker.Hand(c)
 		}
 	case Flop:
 		h.Street = Turn
 		cards := h.Deck.Deal(1)
+		h.boardOrder = append(h.boardOrder, cards[0])
 		h.Board |= poker.Hand(cards[0])
 	case Turn:
 		h.Street = River
 		cards := h.Deck.Deal(1)
+		h.boardOrder = append(h.boardOrder, cards[0])
 		h.Board |= poker.Hand(cards[0])
 	case River:
 		h.Street = Showdown
@@ -394,18 +404,30 @@ func (h *HandState) NextStreet() {
 
 	// If no active players (all non-folded players are all-in), keep advancing to showdown
 	if h.ActivePlayer == -1 && h.Street != Showdown {
-		// Make sure there are still players in the hand
-		hasPlayers := false
-		for _, p := range h.Players {
-			if !p.Folded {
-				hasPlayers = true
-				break
-			}
-		}
-		if hasPlayers {
+		if h.contestingPlayerCount() > 0 {
 			h.NextStreet()
 		}
 	}
+}
+
+func (h *HandState) contestingPlayerCount() int {
+	count := 0
+	for _, p := range h.Players {
+		if !p.Folded {
+			count++
+		}
+	}
+	return count
+}
+
+// BoardCards returns the community cards in the order they were dealt.
+func (h *HandState) BoardCards() []poker.Card {
+	if len(h.boardOrder) == 0 {
+		return nil
+	}
+	cards := make([]poker.Card, len(h.boardOrder))
+	copy(cards, h.boardOrder)
+	return cards
 }
 
 // GetPots returns the current pots including uncollected bets

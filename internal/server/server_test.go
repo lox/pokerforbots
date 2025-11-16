@@ -34,6 +34,38 @@ func TestServerHealth(t *testing.T) {
 	}
 }
 
+func TestServerEnablesHandHistory(t *testing.T) {
+	t.Parallel()
+	logger := testLogger()
+	rng := randutil.New(7)
+	dir := t.TempDir()
+	cfg := Config{
+		SmallBlind:                  5,
+		BigBlind:                    10,
+		StartChips:                  1000,
+		Timeout:                     100 * time.Millisecond,
+		MinPlayers:                  2,
+		MaxPlayers:                  2,
+		EnableHandHistory:           true,
+		HandHistoryDir:              dir,
+		HandHistoryFlushSecs:        1,
+		HandHistoryFlushHands:       1,
+		HandHistoryIncludeHoleCards: false,
+	}
+	srv := NewServer(logger, rng, WithConfig(cfg))
+	t.Cleanup(func() {
+		if srv.handHistoryManager != nil {
+			srv.handHistoryManager.Shutdown()
+		}
+	})
+	if srv.handHistoryManager == nil {
+		t.Fatalf("expected hand history manager to be created")
+	}
+	if srv.pool.handHistoryMonitor == nil {
+		t.Fatalf("expected pool to have hand history monitor")
+	}
+}
+
 // TestStatsEndpoint verifies the enhanced stats endpoint
 func TestStatsEndpoint(t *testing.T) {
 	t.Parallel()

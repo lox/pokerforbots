@@ -1,15 +1,29 @@
 package server
 
 import (
-	"github.com/lox/pokerforbots/v2/internal/randutil"
-
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/lox/pokerforbots/v2/internal/game"
+	"github.com/lox/pokerforbots/v2/internal/randutil"
+	handhistory "github.com/lox/pokerforbots/v2/internal/server/hand_history"
+	"github.com/lox/pokerforbots/v2/poker"
 	"github.com/lox/pokerforbots/v2/protocol"
 )
+
+type captureMonitor struct {
+	NullHandMonitor
+	boards [][]string
+}
+
+func (m *captureMonitor) OnStreetChange(handID string, street string, cards []string) {
+	copyCards := append([]string(nil), cards...)
+	m.boards = append(m.boards, copyCards)
+}
 
 func TestHandRunner(t *testing.T) {
 	t.Parallel()
@@ -195,6 +209,206 @@ func TestHandRunnerComplete(t *testing.T) {
 		case <-time.After(100 * time.Millisecond):
 			t.Errorf("Bot %s did not receive hand result", bot.ID)
 		}
+	}
+}
+
+func TestHandRunnerEmitsOrderedBoardSlices(t *testing.T) {
+	t.Parallel()
+	deckSeed := int64(99)
+	deckForHand := poker.NewDeck(randutil.New(deckSeed))
+	deckForExpect := poker.NewDeck(randutil.New(deckSeed))
+
+	runner := NewHandRunner(testLogger(), nil, "hand-board-order", 0, randutil.New(123))
+	runner.handState = game.NewHandState(
+		randutil.New(55),
+		[]string{"alice", "bob"},
+		0,
+		5,
+		10,
+		game.WithChips(100),
+		game.WithDeck(deckForHand),
+	)
+
+	pool := NewBotPool(testLogger(), randutil.New(1), Config{
+		SmallBlind: 5,
+		BigBlind:   10,
+		MinPlayers: 2,
+		MaxPlayers: 2,
+	})
+	monitor := &captureMonitor{}
+	pool.SetHandHistoryMonitor(monitor)
+	runner.pool = pool
+
+	expected := expectedBoardSequences(t, deckForExpect, len(runner.handState.Players))
+
+	prev := runner.handState.Street
+	runner.handState.NextStreet()
+	runner.broadcastStreetChange(prev)
+	prev = runner.handState.Street
+	runner.handState.NextStreet()
+	runner.broadcastStreetChange(prev)
+	prev = runner.handState.Street
+	runner.handState.NextStreet()
+	runner.broadcastStreetChange(prev)
+
+	if len(monitor.boards) != len(expected) {
+		t.Fatalf("captured %d board emissions, expected %d", len(monitor.boards), len(expected))
+	}
+	for i := range expected {
+		if !slices.Equal(monitor.boards[i], expected[i]) {
+			t.Fatalf("street %d board mismatch: got %v want %v", i, monitor.boards[i], expected[i])
+		}
+	}
+}
+
+func TestHandHistoryMonitorCapturesOrderedBoard(t *testing.T) {
+	t.Parallel()
+	deckSeed := int64(77)
+	deckForHand := poker.NewDeck(randutil.New(deckSeed))
+	deckForExpect := poker.NewDeck(randutil.New(deckSeed))
+
+	runner := NewHandRunner(testLogger(), nil, "hand-phh", 0, randutil.New(321))
+	runner.handState = game.NewHandState(
+		randutil.New(12),
+		[]string{"alice", "bob"},
+		0,
+		5,
+		10,
+		game.WithChips(200),
+		game.WithDeck(deckForHand),
+	)
+
+	players := make([]HandPlayer, len(runner.handState.Players))
+	for i, p := range runner.handState.Players {
+		players[i] = HandPlayer{Seat: p.Seat, Name: p.Name, Chips: p.Chips}
+	}
+
+	dir := t.TempDir()
+	monitorCfg := handhistory.MonitorConfig{
+		GameID:     "game-phh",
+		OutputDir:  dir,
+		FlushHands: 1,
+	}
+	hhMonitor, err := handhistory.NewMonitor(monitorCfg, testLogger())
+	if err != nil {
+		t.Fatalf("NewMonitor error: %v", err)
+	}
+	adapter := newHandHistoryAdapter(hhMonitor)
+
+	adapter.OnHandStart(runner.handID, players, runner.handState.Button, Blinds{Small: 5, Big: 10})
+
+	runner.handState.NextStreet()
+	adapter.OnStreetChange(runner.handID, runner.handState.Street.String(), runner.boardStrings())
+	adapter.OnPlayerAction(runner.handID, 0, "call", 5, runner.handState.Players[0].Chips)
+	adapter.OnPlayerAction(runner.handID, 1, "check", 0, runner.handState.Players[1].Chips)
+
+	runner.handState.NextStreet()
+	adapter.OnStreetChange(runner.handID, runner.handState.Street.String(), runner.boardStrings())
+	adapter.OnPlayerAction(runner.handID, 1, "check", 0, runner.handState.Players[1].Chips)
+	adapter.OnPlayerAction(runner.handID, 0, "check", 0, runner.handState.Players[0].Chips)
+
+	runner.handState.NextStreet()
+	adapter.OnStreetChange(runner.handID, runner.handState.Street.String(), runner.boardStrings())
+	adapter.OnPlayerAction(runner.handID, 1, "check", 0, runner.handState.Players[1].Chips)
+	adapter.OnPlayerAction(runner.handID, 0, "check", 0, runner.handState.Players[0].Chips)
+
+	outcome := HandOutcome{
+		HandID:         runner.handID,
+		HandsCompleted: 1,
+		Detail: &HandOutcomeDetail{
+			Board:    runner.boardStrings(),
+			TotalPot: 20,
+			BotOutcomes: []BotHandOutcome{
+				{Bot: &Bot{ID: players[0].Name}, Position: players[0].Seat, NetChips: -10, HoleCards: holeCardsStrings(runner.handState.Players[0]), WentToShowdown: true},
+				{Bot: &Bot{ID: players[1].Name}, Position: players[1].Seat, NetChips: 10, HoleCards: holeCardsStrings(runner.handState.Players[1]), WentToShowdown: true},
+			},
+		},
+	}
+	adapter.OnHandComplete(outcome)
+
+	if err := hhMonitor.Flush(); err != nil {
+		t.Fatalf("flush error: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "session.phhs"))
+	if err != nil {
+		t.Fatalf("read PHH: %v", err)
+	}
+	contents := string(data)
+	expected := expectedBoardSequences(t, deckForExpect, len(players))
+	flopRun := strings.Join(expected[0], "")
+	turnRun := expected[1][len(expected[1])-1]
+	riverRun := expected[2][len(expected[2])-1]
+	if !strings.Contains(contents, "d db "+flopRun) {
+		t.Fatalf("missing flop action for %s", flopRun)
+	}
+	if !strings.Contains(contents, "d db "+turnRun) {
+		t.Fatalf("missing turn action for %s", turnRun)
+	}
+	if !strings.Contains(contents, "d db "+riverRun) {
+		t.Fatalf("missing river action for %s", riverRun)
+	}
+}
+
+func TestHandRunnerAutoWinDoesNotMarkShowdown(t *testing.T) {
+	t.Parallel()
+	bots := []*Bot{{ID: "p1"}, {ID: "p2"}, {ID: "p3"}}
+	runner := NewHandRunner(testLogger(), bots, "auto-win", 0, randutil.New(7))
+	runner.handState = game.NewHandState(
+		randutil.New(7),
+		[]string{"p1", "p2", "p3"},
+		0,
+		5,
+		10,
+		game.WithChips(1000),
+	)
+	runner.seatBuyIns = []int{1000, 1000, 1000}
+	runner.handState.Players[1].Folded = true
+	runner.handState.Players[2].Folded = true
+	runner.handState.Street = game.Showdown
+
+	detail := runner.buildDetailedOutcome([]winnerSummary{{seat: 0, name: "p1", amount: 15}})
+	if detail == nil {
+		t.Fatalf("expected detailed outcome")
+	}
+	if len(detail.BotOutcomes) != len(bots) {
+		t.Fatalf("expected %d bot outcomes, got %d", len(bots), len(detail.BotOutcomes))
+	}
+	for i, outcome := range detail.BotOutcomes {
+		if outcome.WentToShowdown {
+			t.Fatalf("seat %d should not be marked WentToShowdown", i)
+		}
+	}
+}
+
+func expectedBoardSequences(t *testing.T, deck *poker.Deck, numPlayers int) [][]string {
+	t.Helper()
+	for range numPlayers {
+		deck.Deal(2)
+	}
+	flop := cardsToStrings(deck.Deal(3))
+	turn := cardsToStrings(deck.Deal(1))
+	river := cardsToStrings(deck.Deal(1))
+	turnSlice := append(append([]string{}, flop...), turn...)
+	riverSlice := append(append([]string{}, turnSlice...), river...)
+	return [][]string{
+		flop,
+		turnSlice,
+		riverSlice,
+	}
+}
+
+func cardsToStrings(cards []poker.Card) []string {
+	out := make([]string, len(cards))
+	for i, c := range cards {
+		out[i] = c.String()
+	}
+	return out
+}
+
+func holeCardsStrings(p *game.Player) []string {
+	return []string{
+		p.HoleCards.GetCard(0).String(),
+		p.HoleCards.GetCard(1).String(),
 	}
 }
 

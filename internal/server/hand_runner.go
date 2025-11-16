@@ -832,12 +832,13 @@ func (hr *HandRunner) broadcastGameUpdate() {
 }
 
 func (hr *HandRunner) boardStrings() []string {
-	boardCards := make([]string, 0, hr.handState.Board.CountCards())
-	for i := 0; i < hr.handState.Board.CountCards(); i++ {
-		card := hr.handState.Board.GetCard(i)
-		if card != 0 {
-			boardCards = append(boardCards, card.String())
-		}
+	cards := hr.handState.BoardCards()
+	if len(cards) == 0 {
+		return nil
+	}
+	boardCards := make([]string, len(cards))
+	for i, card := range cards {
+		boardCards[i] = card.String()
 	}
 	return boardCards
 }
@@ -1014,13 +1015,21 @@ func (hr *HandRunner) buildDetailedOutcome(winners []winnerSummary) *HandOutcome
 	wentToShowdown := make(map[int]bool)
 	wonAtShowdown := make(map[int]bool)
 	if hr.handState.Street == game.Showdown {
-		for i, player := range hr.handState.Players {
+		nonFolded := 0
+		for _, player := range hr.handState.Players {
 			if !player.Folded {
-				wentToShowdown[i] = true
+				nonFolded++
 			}
 		}
-		for _, winner := range winners {
-			wonAtShowdown[winner.seat] = true
+		if nonFolded >= 2 {
+			for i, player := range hr.handState.Players {
+				if !player.Folded {
+					wentToShowdown[i] = true
+				}
+			}
+			for _, winner := range winners {
+				wonAtShowdown[winner.seat] = true
+			}
 		}
 	}
 
