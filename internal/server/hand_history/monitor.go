@@ -1,10 +1,12 @@
 package handhistory
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -25,6 +27,7 @@ type Monitor struct {
 	outPath string
 
 	mu                  sync.Mutex
+	flushMu             sync.Mutex
 	buffer              []*phh.HandHistory
 	current             *handState
 	seatContributions   []int
@@ -70,13 +73,18 @@ func NewMonitor(cfg MonitorConfig, logger zerolog.Logger) (*Monitor, error) {
 	}
 
 	outPath := filepath.Join(cfg.OutputDir, cfg.Filename)
+	counter, err := readLastSectionCounter(outPath)
+	if err != nil {
+		return nil, fmt.Errorf("handhistory: read sections: %w", err)
+	}
 
 	m := &Monitor{
-		cfg:     cfg,
-		logger:  logger,
-		clock:   cfg.Clock,
-		outPath: outPath,
-		buffer:  make([]*phh.HandHistory, 0, max(1, cfg.FlushHands)),
+		cfg:            cfg,
+		logger:         logger,
+		clock:          cfg.Clock,
+		outPath:        outPath,
+		buffer:         make([]*phh.HandHistory, 0, max(1, cfg.FlushHands)),
+		sectionCounter: counter,
 	}
 	return m, nil
 }
@@ -243,14 +251,16 @@ func (m *Monitor) OnHandComplete(outcome Outcome) {
 
 // Flush writes buffered hands to disk.
 func (m *Monitor) Flush() error {
+	m.flushMu.Lock()
+	defer m.flushMu.Unlock()
+
 	m.mu.Lock()
 	if m.disabled || len(m.buffer) == 0 {
 		m.mu.Unlock()
 		return nil
 	}
-
-	hands := m.buffer
-	m.buffer = make([]*phh.HandHistory, 0, cap(m.buffer))
+	hands := append([]*phh.HandHistory(nil), m.buffer...)
+	baseSection := m.sectionCounter
 	m.mu.Unlock()
 
 	file, err := os.OpenFile(m.outPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
@@ -259,23 +269,19 @@ func (m *Monitor) Flush() error {
 	}
 	defer file.Close()
 
+	written := 0
+	lastSection := baseSection
 	for i, hand := range hands {
-		m.sectionCounter++
-		if _, err := fmt.Fprintf(file, "[%d]\n", m.sectionCounter); err != nil {
+		section := lastSection + 1
+		if err := writeHand(file, section, hand, i < len(hands)-1); err != nil {
+			m.finalizeFlush(written, lastSection)
 			return err
 		}
-		if err := phh.Encode(file, hand); err != nil {
-			return err
-		}
-		if _, err := file.WriteString("\n"); err != nil {
-			return err
-		}
-		if i < len(hands)-1 {
-			if _, err := file.WriteString("\n"); err != nil {
-				return err
-			}
-		}
+		lastSection = section
+		written++
 	}
+
+	m.finalizeFlush(len(hands), lastSection)
 	return nil
 }
 
@@ -468,4 +474,64 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func (m *Monitor) finalizeFlush(flushed int, lastSection int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if flushed > 0 {
+		if flushed >= len(m.buffer) {
+			m.buffer = m.buffer[:0]
+		} else {
+			m.buffer = m.buffer[flushed:]
+		}
+	}
+	if lastSection > m.sectionCounter {
+		m.sectionCounter = lastSection
+	}
+}
+
+func writeHand(file *os.File, section int, hand *phh.HandHistory, needBlank bool) error {
+	if _, err := fmt.Fprintf(file, "[%d]\n", section); err != nil {
+		return err
+	}
+	if err := phh.Encode(file, hand); err != nil {
+		return err
+	}
+	if _, err := file.WriteString("\n"); err != nil {
+		return err
+	}
+	if needBlank {
+		if _, err := file.WriteString("\n"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func readLastSectionCounter(path string) (int, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	last := 0
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if len(line) >= 3 && line[0] == '[' && line[len(line)-1] == ']' {
+			if n, err := strconv.Atoi(line[1 : len(line)-1]); err == nil && n > last {
+				last = n
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return 0, err
+	}
+	return last, nil
 }
