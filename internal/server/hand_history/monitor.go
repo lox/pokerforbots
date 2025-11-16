@@ -455,12 +455,12 @@ func populateTimeFields(hist *phh.HandHistory) {
 	if t.IsZero() {
 		return
 	}
-	hist.Time = t.Format("15:04:05")
-	hist.TimeZone = t.Location().String()
-	hist.TimeZoneAbbrev = t.Format("MST")
-	hist.Day = t.Day()
-	hist.Month = int(t.Month())
-	hist.Year = t.Year()
+	utc := t.UTC()
+	hist.Time = utc.Format("15:04:05")
+	hist.TimeZone = "UTC"
+	hist.Day = utc.Day()
+	hist.Month = int(utc.Month())
+	hist.Year = utc.Year()
 }
 
 func max(a, b int) int {
