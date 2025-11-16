@@ -13,10 +13,11 @@ func TestPlaybackOutcomeComputesNetResults(t *testing.T) {
 		{Seat: 1, Name: "p2"},
 	}
 	hand := phh.HandHistory{
-		Seats:    []int{1, 2},
-		Winnings: []int{0, 15},
+		Seats:           []int{1, 2},
+		StartingStacks:  []int{100, 100},
+		FinishingStacks: []int{95, 105},
 	}
-	detail := playbackOutcome(hand, players, []string{"5d", "Js", "Ah"}, []int{5, 10})
+	detail := playbackOutcome(hand, players, []string{"5d", "Js", "Ah"}, []int{5, 10}, nil)
 	if detail == nil {
 		t.Fatalf("expected detail, got nil")
 	}
@@ -47,12 +48,12 @@ func TestPlaybackOutcomeMetadataFallback(t *testing.T) {
 			"total_pot": int64(20),
 		},
 	}
-	detail := playbackOutcome(hand, players, nil, []int{0, 0})
+	detail := playbackOutcome(hand, players, nil, []int{0, 0}, nil)
 	if detail == nil {
 		t.Fatalf("expected detail for legacy metadata")
 	}
-	if detail.BotOutcomes[1].NetChips != 20 {
-		t.Fatalf("expected metadata winnings propagated")
+	if detail.TotalPot != 20 {
+		t.Fatalf("expected total pot from metadata, got %d", detail.TotalPot)
 	}
 }
 
@@ -63,15 +64,16 @@ func TestPlaybackOutcomeMapsSeatsFromPositionOrder(t *testing.T) {
 		{Seat: 2, Name: "button"},
 	}
 	hand := phh.HandHistory{
-		Seats:    []int{2, 3, 1},
-		Winnings: []int{0, 0, 10},
+		Seats:           []int{1, 2, 3},
+		StartingStacks:  []int{100, 100, 100},
+		FinishingStacks: []int{105, 95, 100},
 	}
-	detail := playbackOutcome(hand, players, nil, []int{5, 10, 0})
+	detail := playbackOutcome(hand, players, nil, []int{5, 10, 0}, nil)
 	if detail == nil {
 		t.Fatalf("expected detail")
 	}
-	if detail.BotOutcomes[1].NetChips != -10 {
-		t.Fatalf("expected seat 1 to lose 10, got %d", detail.BotOutcomes[1].NetChips)
+	if detail.BotOutcomes[1].NetChips != -5 {
+		t.Fatalf("expected seat 1 to lose 5, got %d", detail.BotOutcomes[1].NetChips)
 	}
 	if detail.BotOutcomes[0].NetChips != 5 {
 		t.Fatalf("expected seat 0 net +5, got %d", detail.BotOutcomes[0].NetChips)
@@ -89,7 +91,8 @@ func TestPlaybackShowdownActionUpdatesHoleCards(t *testing.T) {
 	investments := []int{0}
 	currentBet := 0
 	positionToSeat := []int{0}
-	if err := playback.playAction("hand-1", "p1 sm AhKh", positionToSeat, stacks, contributions, investments, players, &currentBet); err != nil {
+	revealed := []bool{false}
+	if err := playback.playAction("hand-1", "p1 sm AhKh", positionToSeat, stacks, contributions, investments, players, revealed, &currentBet); err != nil {
 		t.Fatalf("playAction error: %v", err)
 	}
 	got := players[0].HoleCards
@@ -103,10 +106,12 @@ func TestPlaybackOutcomeInfersShowdownFromCards(t *testing.T) {
 		{Seat: 0, Name: "p1", HoleCards: []string{"Ah", "Ad"}},
 	}
 	hand := phh.HandHistory{
-		Seats:    []int{1},
-		Winnings: []int{20},
+		Seats:           []int{1},
+		StartingStacks:  []int{100},
+		FinishingStacks: []int{120},
 	}
-	detail := playbackOutcome(hand, players, nil, []int{50})
+	revealed := []bool{true}
+	detail := playbackOutcome(hand, players, nil, []int{50}, revealed)
 	if detail == nil {
 		t.Fatalf("expected detail")
 	}

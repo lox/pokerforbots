@@ -349,6 +349,37 @@ func TestHandHistoryMonitorCapturesOrderedBoard(t *testing.T) {
 	}
 }
 
+func TestHandRunnerAutoWinDoesNotMarkShowdown(t *testing.T) {
+	t.Parallel()
+	bots := []*Bot{{ID: "p1"}, {ID: "p2"}, {ID: "p3"}}
+	runner := NewHandRunner(testLogger(), bots, "auto-win", 0, randutil.New(7))
+	runner.handState = game.NewHandState(
+		randutil.New(7),
+		[]string{"p1", "p2", "p3"},
+		0,
+		5,
+		10,
+		game.WithChips(1000),
+	)
+	runner.seatBuyIns = []int{1000, 1000, 1000}
+	runner.handState.Players[1].Folded = true
+	runner.handState.Players[2].Folded = true
+	runner.handState.Street = game.Showdown
+
+	detail := runner.buildDetailedOutcome([]winnerSummary{{seat: 0, name: "p1", amount: 15}})
+	if detail == nil {
+		t.Fatalf("expected detailed outcome")
+	}
+	if len(detail.BotOutcomes) != len(bots) {
+		t.Fatalf("expected %d bot outcomes, got %d", len(bots), len(detail.BotOutcomes))
+	}
+	for i, outcome := range detail.BotOutcomes {
+		if outcome.WentToShowdown {
+			t.Fatalf("seat %d should not be marked WentToShowdown", i)
+		}
+	}
+}
+
 func expectedBoardSequences(t *testing.T, deck *poker.Deck, numPlayers int) [][]string {
 	t.Helper()
 	for range numPlayers {

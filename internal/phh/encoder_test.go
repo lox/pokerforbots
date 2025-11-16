@@ -81,15 +81,14 @@ func TestEncodeHandHistory(t *testing.T) {
 			"p2 f",
 			"p3 cc",
 		},
-		Players:        []string{"alice-bot", "bob-bot", "charlie-bot"},
-		HandID:         "hand-00042",
-		Time:           "15:22:00",
-		TimeZone:       "UTC",
-		TimeZoneAbbrev: "UTC",
-		Day:            14,
-		Month:          11,
-		Year:           2025,
-		Timestamp:      time.Date(2025, time.November, 14, 15, 22, 0, 0, time.UTC),
+		Players:   []string{"alice-bot", "bob-bot", "charlie-bot"},
+		HandID:    "hand-00042",
+		Time:      "15:22:00",
+		TimeZone:  "UTC",
+		Day:       14,
+		Month:     11,
+		Year:      2025,
+		Timestamp: time.Date(2025, time.November, 14, 15, 22, 0, 0, time.UTC),
 	}
 
 	var buf bytes.Buffer
@@ -114,7 +113,6 @@ func TestEncodeHandHistory(t *testing.T) {
 		"hand = \"hand-00042\"\n" +
 		"time = \"15:22:00\"\n" +
 		"time_zone = \"UTC\"\n" +
-		"time_zone_abbreviation = \"UTC\"\n" +
 		"day = 14\n" +
 		"month = 11\n" +
 		"year = 2025\n"

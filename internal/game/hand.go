@@ -368,6 +368,12 @@ func (h *HandState) NextStreet() {
 	}
 	h.Betting.ResetForNewRound(len(h.Players))
 
+	if h.contestingPlayerCount() <= 1 {
+		h.Street = Showdown
+		h.ActivePlayer = -1
+		return
+	}
+
 	// Move to next street and deal community cards
 	switch h.Street {
 	case Preflop:
@@ -398,18 +404,20 @@ func (h *HandState) NextStreet() {
 
 	// If no active players (all non-folded players are all-in), keep advancing to showdown
 	if h.ActivePlayer == -1 && h.Street != Showdown {
-		// Make sure there are still players in the hand
-		hasPlayers := false
-		for _, p := range h.Players {
-			if !p.Folded {
-				hasPlayers = true
-				break
-			}
-		}
-		if hasPlayers {
+		if h.contestingPlayerCount() > 0 {
 			h.NextStreet()
 		}
 	}
+}
+
+func (h *HandState) contestingPlayerCount() int {
+	count := 0
+	for _, p := range h.Players {
+		if !p.Folded {
+			count++
+		}
+	}
+	return count
 }
 
 // BoardCards returns the community cards in the order they were dealt.

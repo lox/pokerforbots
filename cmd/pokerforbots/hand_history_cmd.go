@@ -185,6 +185,7 @@ func (p *phhPlayback) RenderHand(idx int, hand phh.HandHistory) error {
 	}
 
 	rawHoleCards := extractHoleCards(hand.Actions, playerCount)
+	revealed := make([]bool, playerCount)
 	positionToSeat := make([]int, playerCount)
 	for i := 0; i < playerCount; i++ {
 		seat := i
@@ -294,7 +295,7 @@ func (p *phhPlayback) RenderHand(idx int, hand phh.HandHistory) error {
 			cards := parseCardRun(strings.TrimSpace(strings.TrimPrefix(raw, "d db")))
 			board, currentBet, contributions = p.advanceStreet(hand.HandID, board, cards, contributions)
 		case strings.HasPrefix(raw, "p"):
-			if err := p.playAction(hand.HandID, raw, positionToSeat, stacks, contributions, investments, players, &currentBet); err != nil {
+			if err := p.playAction(hand.HandID, raw, positionToSeat, stacks, contributions, investments, players, revealed, &currentBet); err != nil {
 				return err
 			}
 		default:
@@ -305,7 +306,7 @@ func (p *phhPlayback) RenderHand(idx int, hand phh.HandHistory) error {
 	p.monitor.OnHandComplete(server.HandOutcome{
 		HandID:         hand.HandID,
 		HandsCompleted: uint64(idx + 1),
-		Detail:         playbackOutcome(hand, players, board, investments),
+		Detail:         playbackOutcome(hand, players, board, investments, revealed),
 	})
 	return nil
 }
@@ -334,7 +335,7 @@ func (p *phhPlayback) advanceStreet(handID string, currentBoard, newCards []stri
 	return board, 0, contributions
 }
 
-func (p *phhPlayback) playAction(handID, raw string, positionToSeat []int, stacks, contributions, investments []int, players []server.HandPlayer, currentBet *int) error {
+func (p *phhPlayback) playAction(handID, raw string, positionToSeat []int, stacks, contributions, investments []int, players []server.HandPlayer, revealed []bool, currentBet *int) error {
 	parts := strings.Fields(raw)
 	if len(parts) < 2 {
 		return fmt.Errorf("invalid action %q", raw)
@@ -405,6 +406,9 @@ func (p *phhPlayback) playAction(handID, raw string, positionToSeat []int, stack
 		cards := parseCardRun(parts[2])
 		if seat >= 0 && seat < len(players) {
 			players[seat].HoleCards = append([]string(nil), cards...)
+		}
+		if seat >= 0 && seat < len(revealed) {
+			revealed[seat] = true
 		}
 	default:
 		return fmt.Errorf("unsupported action code %q", raw)
@@ -555,56 +559,45 @@ func streetName(boardLen int) string {
 	}
 }
 
-func playbackOutcome(hand phh.HandHistory, players []server.HandPlayer, board []string, investments []int) *server.HandOutcomeDetail {
+func playbackOutcome(hand phh.HandHistory, players []server.HandPlayer, board []string, investments []int, revealed []bool) *server.HandOutcomeDetail {
 	if len(players) == 0 {
 		return nil
 	}
-	payouts := mapPayoutsBySeat(hand, len(players))
-	winnerSeats := seatsWithWinnings(payouts)
-
-	totalPot := sumSlice(payouts)
-	if totalPot == 0 {
-		totalPot = metadataInt(hand.Metadata, "total_pot", 0)
+	nets, hasStackDiffs := stackDiffsBySeat(hand, len(players))
+	if !hasStackDiffs {
+		nets = mapWinningEntriesBySeat(hand, len(players))
 	}
-	if totalPot == 0 {
-		totalPot = sumInts(investments)
-	}
+	winnerSeats := seatsWithNet(nets)
 	if len(winnerSeats) == 0 {
-		legacy := metadataStringSlice(hand.Metadata, "winners")
-		for _, name := range legacy {
-			seat := findPlayerSeat(players, name)
-			if seat >= 0 {
-				winnerSeats = append(winnerSeats, seat)
+		fallback := mapWinningEntriesBySeat(hand, len(players))
+		winnerSeats = seatsWithNet(fallback)
+		if len(winnerSeats) == 0 {
+			legacy := metadataStringSlice(hand.Metadata, "winners")
+			for _, name := range legacy {
+				seat := findPlayerSeat(players, name)
+				if seat >= 0 {
+					winnerSeats = append(winnerSeats, seat)
+				}
 			}
 		}
 	}
 	if len(winnerSeats) == 0 {
 		return nil
 	}
-	if sumSlice(payouts) == 0 && totalPot > 0 {
-		share := totalPot / len(winnerSeats)
-		remainder := totalPot % len(winnerSeats)
-		for _, seat := range winnerSeats {
-			portion := share
-			if remainder > 0 {
-				portion++
-				remainder--
-			}
-			if seat >= 0 && seat < len(payouts) {
-				payouts[seat] = portion
-			}
-		}
+
+	totalPot := sumInts(investments)
+	if totalPot == 0 {
+		totalPot = metadataInt(hand.Metadata, "total_pot", 0)
 	}
 
 	botOutcomes := make([]server.BotHandOutcome, 0, len(players))
 	for _, player := range players {
 		seat := player.Seat
-		net := payouts[seat] - safeIndex(investments, seat)
-		revealed := revealedHoleCards(player.HoleCards)
-		wentToShowdown := len(revealed) > 0
+		net := nets[seat]
+		wentToShowdown := seat >= 0 && seat < len(revealed) && revealed[seat]
 		var holeCards []string
-		if len(revealed) > 0 {
-			holeCards = revealed
+		if wentToShowdown && len(player.HoleCards) > 0 {
+			holeCards = append([]string(nil), player.HoleCards...)
 		}
 		botOutcomes = append(botOutcomes, server.BotHandOutcome{
 			Bot:            &server.Bot{ID: player.Name},
@@ -623,15 +616,33 @@ func playbackOutcome(hand phh.HandHistory, players []server.HandPlayer, board []
 	}
 }
 
-func mapPayoutsBySeat(hand phh.HandHistory, playerCount int) []int {
-	payouts := make([]int, playerCount)
+func stackDiffsBySeat(hand phh.HandHistory, playerCount int) ([]int, bool) {
+	nets := make([]int, playerCount)
+	limit := min(len(hand.StartingStacks), len(hand.FinishingStacks))
+	if limit == 0 {
+		return nets, false
+	}
+	for pos := 0; pos < limit; pos++ {
+		seat := seatForPosition(hand, pos, playerCount)
+		if seat < 0 || seat >= len(nets) {
+			continue
+		}
+		start := hand.StartingStacks[pos]
+		finish := hand.FinishingStacks[pos]
+		nets[seat] = finish - start
+	}
+	return nets, true
+}
+
+func mapWinningEntriesBySeat(hand phh.HandHistory, playerCount int) []int {
+	values := make([]int, playerCount)
 	for pos, amount := range hand.Winnings {
 		seat := seatForPosition(hand, pos, playerCount)
-		if seat >= 0 && seat < len(payouts) {
-			payouts[seat] = amount
+		if seat >= 0 && seat < len(values) {
+			values[seat] = amount
 		}
 	}
-	return payouts
+	return values
 }
 
 func seatForPosition(hand phh.HandHistory, pos, playerCount int) int {
@@ -650,22 +661,14 @@ func seatForPosition(hand phh.HandHistory, pos, playerCount int) int {
 	return pos % playerCount
 }
 
-func seatsWithWinnings(payouts []int) []int {
-	seats := make([]int, 0, len(payouts))
-	for seat, amount := range payouts {
+func seatsWithNet(nets []int) []int {
+	seats := make([]int, 0, len(nets))
+	for seat, amount := range nets {
 		if amount > 0 {
 			seats = append(seats, seat)
 		}
 	}
 	return seats
-}
-
-func sumSlice(values []int) int {
-	sum := 0
-	for _, v := range values {
-		sum += v
-	}
-	return sum
 }
 
 func metadataStringSlice(meta map[string]any, key string) []string {
@@ -694,19 +697,19 @@ func metadataStringSlice(meta map[string]any, key string) []string {
 	}
 }
 
-func safeIndex(values []int, idx int) int {
-	if idx >= 0 && idx < len(values) {
-		return values[idx]
-	}
-	return 0
-}
-
 func sumInts(values []int) int {
 	sum := 0
 	for _, v := range values {
 		sum += v
 	}
 	return sum
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func metadataInt(meta map[string]any, key string, fallback int) int {
@@ -737,18 +740,4 @@ func findPlayerSeat(players []server.HandPlayer, name string) int {
 		}
 	}
 	return -1
-}
-
-func revealedHoleCards(cards []string) []string {
-	if len(cards) < 2 {
-		return nil
-	}
-	revealed := make([]string, len(cards))
-	for i, card := range cards {
-		if card == "" || strings.Contains(card, "?") {
-			return nil
-		}
-		revealed[i] = card
-	}
-	return revealed
 }

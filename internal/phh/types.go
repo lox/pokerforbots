@@ -20,7 +20,6 @@ type HandHistory struct {
 	LegacyHandID      string         `toml:"hand_id,omitempty"`
 	Time              string         `toml:"time,omitempty"`
 	TimeZone          string         `toml:"time_zone,omitempty"`
-	TimeZoneAbbrev    string         `toml:"time_zone_abbreviation,omitempty"`
 	Day               int            `toml:"day,omitempty"`
 	Month             int            `toml:"month,omitempty"`
 	Year              int            `toml:"year,omitempty"`

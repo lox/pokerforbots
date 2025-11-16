@@ -75,9 +75,8 @@ actions = [
 ]
 players = ["bob", "charlie", "alice"]
 hand = "hand-00042"
-time = "12:34:56"
-time_zone = "Local"
-time_zone_abbreviation = "AEDT"
+time = "01:34:56"
+time_zone = "UTC"
 day = 14
 month = 11
 year = 2025
@@ -85,7 +84,7 @@ year = 2025
 
 All player-indexed arrays (`players`, `seats`, `antes`, `blinds_or_straddles`, `starting_stacks`, `finishing_stacks`, and `winnings`) start with the small blind and wrap clockwise. That means the button is implicitly the last entry in multi-handed games, while in heads-up play the button/small blind naturally occupies the first slot.
 
-Fields listed in the [required](https://phh.readthedocs.io/en/stable/required.html) and [optional](https://phh.readthedocs.io/en/stable/optional.html) PHH spec are emitted verbatim; we no longer emit `_`-prefixed extras.
+Fields listed in the [required](https://phh.readthedocs.io/en/stable/required.html) and [optional](https://phh.readthedocs.io/en/stable/optional.html) PHH spec are emitted verbatim; timestamps are always converted to UTC so downstream tooling has a consistent reference.
 
 ## Parsing PHH Files
 
