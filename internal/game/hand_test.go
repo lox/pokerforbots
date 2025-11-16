@@ -18,6 +18,58 @@ func parseCards(strs ...string) poker.Hand {
 	return hand
 }
 
+func TestBoardCardsPreserveDealingOrder(t *testing.T) {
+	seed := int64(99)
+	deckForHand := poker.NewDeck(randutil.New(seed))
+	deckForExpected := poker.NewDeck(randutil.New(seed))
+
+	h := NewHandState(
+		randutil.New(1234),
+		[]string{"Alice", "Bob"},
+		0,
+		5,
+		10,
+		WithChips(100),
+		WithDeck(deckForHand),
+	)
+
+	for range h.Players {
+		deckForExpected.Deal(2)
+	}
+
+	expectFlop := append([]poker.Card(nil), deckForExpected.Deal(3)...)
+	h.NextStreet()
+	assertBoardOrder(t, h.BoardCards(), expectFlop)
+
+	expectTurn := append([]poker.Card(nil), deckForExpected.Deal(1)...)
+	h.NextStreet()
+	assertBoardOrder(t, h.BoardCards(), append(expectFlop, expectTurn...))
+
+	expectRiver := append([]poker.Card(nil), deckForExpected.Deal(1)...)
+	h.NextStreet()
+	assertBoardOrder(t, h.BoardCards(), append(append(expectFlop, expectTurn...), expectRiver...))
+}
+
+func assertBoardOrder(t *testing.T, got, want []poker.Card) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("board length mismatch: got %d want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			gotStr := make([]string, len(got))
+			wantStr := make([]string, len(want))
+			for j, c := range got {
+				gotStr[j] = c.String()
+			}
+			for j, c := range want {
+				wantStr[j] = c.String()
+			}
+			t.Fatalf("board order mismatch at %d: got %v want %v", i, gotStr, wantStr)
+		}
+	}
+}
+
 func TestHandStateCreation(t *testing.T) {
 	t.Parallel()
 	players := []string{"Alice", "Bob", "Charlie"}

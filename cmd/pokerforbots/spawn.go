@@ -5,6 +5,7 @@ import (
 
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -24,15 +25,20 @@ import (
 
 type SpawnCmd struct {
 	// Server configuration
-	Addr            string `kong:"default='localhost:0',help='Server address, defaults to random port on localhost'"`
-	SmallBlind      int    `kong:"default='5',help='Small blind'"`
-	BigBlind        int    `kong:"default='10',help='Big blind'"`
-	StartChips      int    `kong:"default='1000',help='Starting chip stack'"`
-	TimeoutMs       int    `kong:"default='100',help='Bot decision timeout in milliseconds'"`
-	MinPlayers      int    `kong:"default='0',help='Minimum players to start a hand (0 = auto, matches bot count)'"`
-	MaxPlayers      int    `kong:"default='9',help='Maximum players at a table'"`
-	Seed            int64  `kong:"help='Seed for deterministic testing (0 for random)'"`
-	LatencyTracking bool   `kong:"help='Collect per-action latency metrics (adds overhead)'"`
+	Addr                  string `kong:"default='localhost:0',help='Server address, defaults to random port on localhost'"`
+	SmallBlind            int    `kong:"default='5',help='Small blind'"`
+	BigBlind              int    `kong:"default='10',help='Big blind'"`
+	StartChips            int    `kong:"default='1000',help='Starting chip stack'"`
+	TimeoutMs             int    `kong:"default='100',help='Bot decision timeout in milliseconds'"`
+	MinPlayers            int    `kong:"default='0',help='Minimum players to start a hand (0 = auto, matches bot count)'"`
+	MaxPlayers            int    `kong:"default='9',help='Maximum players at a table'"`
+	Seed                  int64  `kong:"help='Seed for deterministic testing (0 for random)'"`
+	LatencyTracking       bool   `kong:"help='Collect per-action latency metrics (adds overhead)'"`
+	HandHistory           bool   `kong:"help='Enable PHH hand history recording to disk (server side)'"`
+	HandHistoryDir        string `kong:"default='hands',help='Directory for PHH files'"`
+	HandHistoryFlushSecs  int    `kong:"default='10',help='Flush interval in seconds'"`
+	HandHistoryFlushHands int    `kong:"default='100',help='Flush after N hands'"`
+	HandHistoryHoleCards  bool   `kong:"help='Include hole cards when writing PHH files (default masks with ???? )'"`
 
 	// Bot specification
 	Spec   string   `kong:"default='calling-station:6',help='Bot specification (e.g. calling-station:2,random:1,aggressive:3)'"`
@@ -152,6 +158,11 @@ func (c *SpawnCmd) Run() error {
 		MaxStatsHands:         10000,
 		EnableLatencyTracking: c.LatencyTracking,
 	}
+	serverCfg.EnableHandHistory = c.HandHistory
+	serverCfg.HandHistoryDir = c.HandHistoryDir
+	serverCfg.HandHistoryFlushSecs = c.HandHistoryFlushSecs
+	serverCfg.HandHistoryFlushHands = c.HandHistoryFlushHands
+	serverCfg.HandHistoryIncludeHoleCards = c.HandHistoryHoleCards
 
 	// Create and start server
 	srv := server.NewServer(logger, rng, server.WithConfig(serverCfg))
@@ -279,6 +290,12 @@ func (c *SpawnCmd) Run() error {
 	// Stop bots (will be done by defer)
 	if c.Output != "hand-history" && c.Output != "dots" && c.Output != "list" {
 		logger.Info().Msg("Stopping bots...")
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		logger.Warn().Err(err).Msg("Server shutdown encountered an error")
 	}
 
 	return nil

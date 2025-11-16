@@ -832,12 +832,13 @@ func (hr *HandRunner) broadcastGameUpdate() {
 }
 
 func (hr *HandRunner) boardStrings() []string {
-	boardCards := make([]string, 0, hr.handState.Board.CountCards())
-	for i := 0; i < hr.handState.Board.CountCards(); i++ {
-		card := hr.handState.Board.GetCard(i)
-		if card != 0 {
-			boardCards = append(boardCards, card.String())
-		}
+	cards := hr.handState.BoardCards()
+	if len(cards) == 0 {
+		return nil
+	}
+	boardCards := make([]string, len(cards))
+	for i, card := range cards {
+		boardCards[i] = card.String()
 	}
 	return boardCards
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/lox/pokerforbots/v2/internal/auth"
 	"github.com/lox/pokerforbots/v2/internal/randutil"
+	handhistory "github.com/lox/pokerforbots/v2/internal/server/hand_history"
 
 	"context"
 	"encoding/json"
@@ -59,6 +60,13 @@ type Config struct {
 	HandLimit              uint64 // Deprecated: Use spawner for hand limits
 	InfiniteBankroll       bool   // Deprecated: Use spawner for bankroll management
 	StopOnInsufficientBots bool   // Deprecated: Use spawner for bot management
+
+	// Hand history recording
+	EnableHandHistory           bool
+	HandHistoryDir              string
+	HandHistoryFlushSecs        int
+	HandHistoryFlushHands       int
+	HandHistoryIncludeHoleCards bool
 }
 
 // serverConfig holds the configuration for building a server
@@ -124,17 +132,18 @@ func WithAuthValidator(validator AuthValidator) ServerOption {
 
 // Server represents the poker server
 type Server struct {
-	pool          *BotPool
-	manager       *GameManager
-	defaultGameID string
-	upgrader      websocket.Upgrader
-	botCount      atomic.Int64
-	mux           *http.ServeMux
-	logger        zerolog.Logger
-	httpServer    *http.Server
-	botIDGen      func() string // Function to generate bot IDs
-	config        Config
-	authValidator AuthValidator // Auth validator
+	pool               *BotPool
+	manager            *GameManager
+	handHistoryManager *handhistory.Manager
+	defaultGameID      string
+	upgrader           websocket.Upgrader
+	botCount           atomic.Int64
+	mux                *http.ServeMux
+	logger             zerolog.Logger
+	httpServer         *http.Server
+	botIDGen           func() string // Function to generate bot IDs
+	config             Config
+	authValidator      AuthValidator // Auth validator
 	// NPC support removed - use spawner for bot orchestration
 	routesOnce sync.Once
 }
@@ -196,14 +205,18 @@ func NewServer(logger zerolog.Logger, rng *rand.Rand, opts ...ServerOption) *Ser
 	// Default configuration
 	cfg := serverConfig{
 		config: Config{
-			SmallBlind: 5,
-			BigBlind:   10,
-			StartChips: 1000,
-			Timeout:    100 * time.Millisecond,
-			MinPlayers: 2,
-			MaxPlayers: 9,
-			HandLimit:  0,
-			Seed:       0,
+			SmallBlind:                  5,
+			BigBlind:                    10,
+			StartChips:                  1000,
+			Timeout:                     100 * time.Millisecond,
+			MinPlayers:                  2,
+			MaxPlayers:                  9,
+			HandLimit:                   0,
+			Seed:                        0,
+			HandHistoryDir:              "hands",
+			HandHistoryFlushSecs:        10,
+			HandHistoryFlushHands:       100,
+			HandHistoryIncludeHoleCards: false,
 		},
 	}
 
@@ -238,19 +251,40 @@ func NewServer(logger zerolog.Logger, rng *rand.Rand, opts ...ServerOption) *Ser
 	defaultGameID := "default"
 	manager.RegisterGame(defaultGameID, pool, cfg.config)
 
+	// Optional hand history manager
+	var hhManager *handhistory.Manager
+	if cfg.config.EnableHandHistory {
+		hhLogger := logger.With().Str("component", "hand_history_manager").Logger()
+		flushSecs := cfg.config.HandHistoryFlushSecs
+		if flushSecs <= 0 {
+			flushSecs = 10
+		}
+		flushHands := cfg.config.HandHistoryFlushHands
+		if flushHands <= 0 {
+			flushHands = 100
+		}
+		hhManager = handhistory.NewManager(hhLogger, handhistory.ManagerConfig{
+			BaseDir:          cfg.config.HandHistoryDir,
+			FlushInterval:    time.Duration(flushSecs) * time.Second,
+			FlushHands:       flushHands,
+			IncludeHoleCards: cfg.config.HandHistoryIncludeHoleCards,
+		})
+	}
+
 	// Use provided auth validator or default to noop
 	authValidator := cfg.authValidator
 	if authValidator == nil {
 		authValidator = &noopAuthValidator{}
 	}
 
-	return &Server{
-		pool:          pool,
-		manager:       manager,
-		defaultGameID: defaultGameID,
-		botIDGen:      botIDGen,
-		config:        cfg.config,
-		authValidator: authValidator,
+	srv := &Server{
+		pool:               pool,
+		manager:            manager,
+		handHistoryManager: hhManager,
+		defaultGameID:      defaultGameID,
+		botIDGen:           botIDGen,
+		config:             cfg.config,
+		authValidator:      authValidator,
 		upgrader: websocket.Upgrader{
 			// Increased buffer sizes from 1024 to 4096 for better throughput
 			// Profiling showed 28.5% of time spent in read/write syscalls
@@ -264,6 +298,12 @@ func NewServer(logger zerolog.Logger, rng *rand.Rand, opts ...ServerOption) *Ser
 		mux:    http.NewServeMux(),
 		logger: logger,
 	}
+
+	if hhManager != nil {
+		srv.attachHandHistoryMonitor(defaultGameID, pool, cfg.config)
+	}
+
+	return srv
 }
 
 // noopAuthValidator is a no-op validator that allows all connections.
@@ -325,8 +365,15 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.httpServer != nil {
 		if err := s.httpServer.Shutdown(ctx); err != nil {
 			s.logger.Error().Err(err).Msg("Error during HTTP server shutdown")
+			if s.handHistoryManager != nil {
+				s.handHistoryManager.Shutdown()
+			}
 			return err
 		}
+	}
+
+	if s.handHistoryManager != nil {
+		s.handHistoryManager.Shutdown()
 	}
 
 	s.logger.Info().Msg("Server shutdown completed")
@@ -692,6 +739,11 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 		InfiniteBankroll: false,
 		HandLimit:        0,
 	}
+	config.EnableHandHistory = s.config.EnableHandHistory
+	config.HandHistoryDir = s.config.HandHistoryDir
+	config.HandHistoryFlushSecs = s.config.HandHistoryFlushSecs
+	config.HandHistoryFlushHands = s.config.HandHistoryFlushHands
+	config.HandHistoryIncludeHoleCards = s.config.HandHistoryIncludeHoleCards
 
 	if req.InfiniteBankroll != nil {
 		config.InfiniteBankroll = *req.InfiniteBankroll
@@ -710,6 +762,7 @@ func (s *Server) handleAdminGames(w http.ResponseWriter, r *http.Request) {
 	rng := randutil.New(seed)
 	pool := NewBotPool(s.logger, rng, config)
 	instance := s.manager.RegisterGame(req.ID, pool, config)
+	s.attachHandHistoryMonitor(req.ID, pool, config)
 	go pool.Run()
 
 	_ = instance // Avoid unused variable warning
@@ -766,6 +819,9 @@ func (s *Server) serveAdminGameDelete(w http.ResponseWriter, id string, partsLen
 	}
 
 	instance.Pool.Stop()
+	if s.handHistoryManager != nil {
+		s.handHistoryManager.RemoveMonitor(id)
+	}
 	s.logger.Info().Str("game_id", id).Msg("Admin deleted game")
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -791,6 +847,18 @@ func (s *Server) serveAdminGameStatsJSON(w http.ResponseWriter, id string) {
 		s.logger.Error().Err(err).Msg("failed to encode game stats response")
 		w.WriteHeader(http.StatusInternalServerError)
 	}
+}
+
+func (s *Server) attachHandHistoryMonitor(gameID string, pool *BotPool, config Config) {
+	if s.handHistoryManager == nil || !config.EnableHandHistory {
+		return
+	}
+	monitor, err := s.handHistoryManager.CreateMonitor(gameID)
+	if err != nil {
+		s.logger.Error().Err(err).Str("game_id", gameID).Msg("failed to create hand history monitor")
+		return
+	}
+	pool.SetHandHistoryMonitor(newHandHistoryAdapter(monitor))
 }
 
 // WaitForHealthy polls the /health endpoint until it returns 200 OK or the context is cancelled.

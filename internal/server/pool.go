@@ -45,8 +45,9 @@ type BotPool struct {
 	metricsLock      sync.RWMutex
 	completionReason atomic.Value
 
-	progressMonitor HandMonitor
-	statsMonitor    *StatsMonitor
+	progressMonitor    HandMonitor
+	handHistoryMonitor HandMonitor
+	statsMonitor       *StatsMonitor
 }
 
 // WithRNG executes fn with exclusive access to the pool's RNG.
@@ -125,6 +126,11 @@ func (p *BotPool) SetHandMonitor(monitor HandMonitor) {
 	}
 }
 
+// SetHandHistoryMonitor wires the per-game hand history monitor.
+func (p *BotPool) SetHandHistoryMonitor(monitor HandMonitor) {
+	p.handHistoryMonitor = monitor
+}
+
 func (p *BotPool) ensureMatchLoop() {
 	p.runOnce.Do(func() {
 		p.matcherWG.Add(1)
@@ -145,6 +151,9 @@ func (p *BotPool) GetHandMonitor() HandMonitor {
 	monitors := []HandMonitor{}
 	if p.progressMonitor != nil {
 		monitors = append(monitors, p.progressMonitor)
+	}
+	if p.handHistoryMonitor != nil {
+		monitors = append(monitors, p.handHistoryMonitor)
 	}
 	if p.statsMonitor != nil {
 		monitors = append(monitors, p.statsMonitor)
@@ -576,6 +585,10 @@ func (p *BotPool) RecordHandOutcome(outcome HandOutcome) {
 
 	if p.progressMonitor != nil {
 		p.progressMonitor.OnHandComplete(outcome)
+	}
+
+	if p.handHistoryMonitor != nil {
+		p.handHistoryMonitor.OnHandComplete(outcome)
 	}
 
 	p.maybeNotifyHandLimit()
